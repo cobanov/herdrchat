@@ -1,0 +1,39 @@
+# XcodeGen spec for the HerdrChat iOS app.
+# Regenerate the .xcodeproj with:  xcodegen generate
+#
+# The app is a thin @main shell (in App/) that depends on the local Swift
+# package's HerdrChatUI product, which pulls in HerdrNet (SSH) and HerdrKit.
+name: HerdrChat
+options:
+  bundleIdPrefix: dev.herdr
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  HerdrChat:
+    path: .
+
+targets:
+  HerdrChat:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: HerdrChat
+        product: HerdrChatUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.herdr.HerdrChat
+        PRODUCT_NAME: HerdrChat
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: HerdrChat
+        # Tailscale addresses are reached over the local network on iOS.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "herdr sunucularina Tailscale uzerinden baglanmak icin yerel ag erisimi gerekir."

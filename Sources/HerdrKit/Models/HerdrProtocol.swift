@@ -38,6 +38,12 @@ public enum SplitDirection: String, Codable, Sendable {
     case down
 }
 
+/// A result we don't care about the body of; decoding it only checks that the
+/// envelope wasn't an error (used for fire-and-forget commands like send-text).
+public struct IgnoredResult: Decodable, Sendable {
+    public init(from decoder: Decoder) throws {}
+}
+
 /// Shared JSON coding for herdr payloads. herdr uses snake_case on the wire.
 public enum HerdrJSON {
     public static func makeDecoder() -> JSONDecoder {

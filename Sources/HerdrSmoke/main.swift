@@ -99,6 +99,49 @@ func runSmoke() -> Int {
     return failures
 }
 
+// `swift run HerdrSmoke --live` exercises the HerdrClient stack against the
+// real herdr running on this machine (read-only), verifying the command +
+// transport + parse layers end to end.
+#if os(macOS)
+if CommandLine.arguments.contains("--live") {
+    func live() async {
+        let client = HerdrClient(transport: LocalProcessTransport())
+        let store = TranscriptStore(transport: LocalProcessTransport())
+        do {
+            let ws = try await client.workspaces()
+            print("workspaces: \(ws.count)")
+            for w in ws { print("  [\(w.number)] \(w.label) — \(w.agentStatus.rawValue)\(w.focused ? " (focused)" : "")") }
+
+            let agents = try await client.agents()
+            print("agents: \(agents.count)")
+
+            let snap = try await client.snapshot()
+            print("snapshot: \(snap.agents.count) agents, focused workspace \(snap.focusedWorkspaceId ?? "-")")
+
+            if let cwd = agents.first(where: { $0.agent == "claude" })?.cwd,
+               let path = try await store.newestTranscriptPath(forCwd: cwd) {
+                let messages = try await store.loadMessages(atPath: path, agentLabel: "claude")
+                let visible = messages.filter { !$0.isToolOnly }
+                print("transcript for \(cwd):")
+                print("  \(path)")
+                print("  \(messages.count) bubbles, \(visible.count) with text")
+                if let last = visible.last {
+                    print("  last: [\(last.role.rawValue)] \(last.displayText.prefix(120))")
+                }
+            } else {
+                print("no claude transcript located (that's fine)")
+            }
+            print("\nLIVE OK")
+        } catch {
+            print("LIVE FAILED: \(error)")
+            exit(1)
+        }
+    }
+    await live()
+    exit(0)
+}
+#endif
+
 // Optional: `swift run HerdrSmoke <transcript.jsonl>` parses a real file and
 // prints a summary, to sanity-check against live Claude Code transcripts.
 if CommandLine.arguments.count > 1 {

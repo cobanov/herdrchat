@@ -1,7 +1,7 @@
 import Foundation
 
 /// One agent-bearing pane, as returned by `agent.list` / inside `session.snapshot`.
-public struct AgentInfo: Decodable, Sendable, Identifiable, Equatable {
+public struct AgentInfo: Decodable, Sendable, Identifiable, Hashable {
     public let agent: String?          // detected agent label, e.g. "claude"; nil for plain panes
     public let agentStatus: AgentStatus
     public let cwd: String

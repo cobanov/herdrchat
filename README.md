@@ -38,26 +38,58 @@ remote machine (nuc / spark / mac …)
 
 ## Layout
 
-- `Sources/HerdrKit/` — pure, dependency-free core (models, protocol envelope,
-  transcript parser). Builds and tests with the Swift toolchain, no Xcode.
+- `Sources/HerdrKit/` — pure, dependency-free core: models, protocol envelope,
+  transcript parser, and the transport-agnostic `HerdrClient` / `TranscriptStore`.
+  Builds and tests with the Swift toolchain, no Xcode.
+- `Sources/HerdrNet/` — `SSHTransport` (Citadel/SwiftNIO SSH) for reaching a
+  remote herdr host over Tailscale. Kept separate so the core stays dep-free.
+- `Sources/HerdrChatUI/` — SwiftUI views + view models (chat list, thread,
+  blocked quick-replies, connection setup). A library so it type-checks on macOS.
+- `App/` — the thin `@main` iOS shell that shows `RootView()`.
 - `Sources/HerdrSmoke/` — runnable assertion harness for machines without XCTest.
 - `Tests/HerdrKitTests/` — XCTest suite + JSON/JSONL fixtures (runs in Xcode/CI).
-- *(coming)* SSH transport target (Citadel) and the SwiftUI iOS app.
+- `scripts/herdr-ntfy-notifier.py` — host-side blocked→ntfy push.
+- `project.yml` / `HerdrChat.xcodeproj` — XcodeGen spec and generated project.
 
 ## Verify the core (no Xcode needed)
 
 ```bash
-swift build
-swift run HerdrSmoke                 # runs all core assertions
+swift build                          # builds HerdrKit + HerdrNet + HerdrChatUI
+swift run HerdrSmoke                 # 22 core assertions
+swift run HerdrSmoke --live          # exercises HerdrClient against local herdr
 swift run HerdrSmoke path/to/session.jsonl   # parse a real transcript
+```
+
+## Build & run the iOS app (needs full Xcode)
+
+```bash
+brew install xcodegen        # once
+xcodegen generate            # regenerate HerdrChat.xcodeproj from project.yml
+open HerdrChat.xcodeproj     # build & run on a device/simulator in Xcode
+```
+
+On first launch, add a server: name, Tailscale host, SSH username, and paste an
+OpenSSH private key (or password). The phone must be on the same tailnet
+(Tailscale app installed and logged in).
+
+## Notifications (optional, no APNs)
+
+Run the notifier on the herdr host so a blocked agent pings your phone's ntfy app:
+
+```bash
+NTFY_URL=https://ntfy.example.ts.net/herdr scripts/herdr-ntfy-notifier.py
 ```
 
 ## Status
 
 - [x] HerdrKit models decode real herdr `snapshot` / `workspace list` JSON
 - [x] Transcript parser → chat bubbles (verified on real Claude Code transcripts)
-- [ ] SSH transport (Citadel) + herdr client
-- [ ] SwiftUI app: chat list, chat thread, blocked quick-replies, ntfy alerts
+- [x] `HerdrClient` + `TranscriptStore` (verified live against local herdr)
+- [x] SSH transport (Citadel 0.12.1) — compiles; runtime auth needs a device test
+- [x] SwiftUI app: chat list, chat thread, blocked quick-replies
+- [x] Host-side ntfy notifier for blocked agents
+- [ ] Runtime test on device over Tailscale (needs Xcode + iPhone on tailnet)
+- [ ] Multi-agent thread merge polish; transcript-file rotation handling
 
-Building the app targets requires a full Xcode install (this repo's core only
-needs Command Line Tools).
+Building the app requires a full Xcode install (this repo's core only needs
+Command Line Tools).
