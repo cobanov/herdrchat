@@ -37,3 +37,13 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: HerdrChat
         # Tailscale addresses are reached over the local network on iOS.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "herdr sunucularina Tailscale uzerinden baglanmak icin yerel ag erisimi gerekir."
+
+schemes:
+  HerdrChat:
+    build:
+      targets:
+        HerdrChat: all
+    run:
+      config: Debug
+    archive:
+      config: Release
