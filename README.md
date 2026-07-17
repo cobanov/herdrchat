@@ -50,6 +50,8 @@ remote machine (nuc / spark / mac …)
 - `Tests/HerdrKitTests/` — XCTest suite + JSON/JSONL fixtures (runs in Xcode/CI).
 - `scripts/herdr-ntfy-notifier.py` — host-side blocked→ntfy push.
 - `project.yml` / `HerdrChat.xcodeproj` — XcodeGen spec and generated project.
+- `android/` — native Android port (Kotlin + Jetpack Compose + sshj), feature
+  parity with the iOS app. See [`android/README.md`](android/README.md).
 
 ## Verify the core (no Xcode needed)
 
