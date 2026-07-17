@@ -30,11 +30,18 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone-only (a phone-first chat app); avoids iPad multitasking orientation rules.
+        TARGETED_DEVICE_FAMILY: "1"
+        # App Store distribution signing (managed automatically via the ASC API key).
+        DEVELOPMENT_TEAM: "6U58AKY6F8"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: HerdrChat
+        # herdr's SSH transport uses only standard/exempt encryption -> no CCATS filing.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         # Tailscale addresses are reached over the local network on iOS.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "herdr sunucularina Tailscale uzerinden baglanmak icin yerel ag erisimi gerekir."
 
