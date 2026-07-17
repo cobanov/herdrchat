@@ -47,6 +47,17 @@ class ChatThreadViewModel(
     private var statusJob: Job? = null
     private var scope: CoroutineScope? = null
 
+    init {
+        // Seed from the process cache so reopening a chat shows its history
+        // instantly instead of re-reading the whole transcript.
+        val cached = ThreadCache.messages(workspaceId)
+        if (cached.isNotEmpty()) {
+            arrival.addAll(cached)
+            seenIds.addAll(ThreadCache.seenIds(workspaceId))
+            messages = arrival.toList()
+        }
+    }
+
     /** The agent pane a reply is typed into (focused agent, else first). */
     val primaryPane: AgentInfo?
         get() = liveAgents.firstOrNull { it.focused }
@@ -57,6 +68,16 @@ class ChatThreadViewModel(
     val blockedPane: AgentInfo? get() = liveAgents.firstOrNull { it.agentStatus == AgentStatus.BLOCKED }
 
     val isBlocked: Boolean get() = blockedPane != null
+
+    /** Aggregate presence for the header, most-urgent-wins. */
+    val status: AgentStatus
+        get() = when {
+            liveAgents.any { it.agentStatus == AgentStatus.BLOCKED } -> AgentStatus.BLOCKED
+            liveAgents.any { it.agentStatus == AgentStatus.WORKING } -> AgentStatus.WORKING
+            liveAgents.any { it.agentStatus == AgentStatus.DONE } -> AgentStatus.DONE
+            liveAgents.isNotEmpty() -> AgentStatus.IDLE
+            else -> AgentStatus.UNKNOWN
+        }
 
     fun start(scope: CoroutineScope) {
         this.scope = scope
@@ -79,9 +100,18 @@ class ChatThreadViewModel(
         for (agent in agents) {
             val path = runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull() ?: continue
             val label = if (agents.size > 1) agent.agent else null
+            // Resume from the cached byte offset when the file still contains it;
+            // otherwise read from the start (first open, or the file rotated).
+            val cachedBytes = ThreadCache.consumedBytes(workspaceId, path)
+            val size = runCatching { store.fileSize(path) }.getOrNull() ?: -1L
+            val start = if (cachedBytes != null && size >= cachedBytes) cachedBytes else 0L
+            if (start == 0L) ThreadCache.resetBytes(workspaceId, path)
             val job = scope.launch {
                 try {
-                    store.tailMessages(path, label).collect { ingest(it) }
+                    store.tail(path, label, start).collect { chunk ->
+                        chunk.message?.let { ingest(it) }
+                        ThreadCache.setConsumedBytes(workspaceId, path, chunk.consumedBytes)
+                    }
                 } catch (e: Exception) {
                     setError(e)
                 }
@@ -92,6 +122,7 @@ class ChatThreadViewModel(
 
     private fun ingest(message: ChatMessage) {
         if (!seenIds.add(message.id)) return
+        ThreadCache.add(workspaceId, message)
         arrival.add(message)
         rebuild()
     }

@@ -1,13 +1,14 @@
 package dev.herdr.herdrchat.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -40,12 +41,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.herdr.herdrchat.core.model.AgentStatus
 import dev.herdr.herdrchat.ui.chat.ChatSummary
 import dev.herdr.herdrchat.ui.chat.WorkspacesViewModel
 import dev.herdr.herdrchat.ui.components.PresenceDot
+import dev.herdr.herdrchat.ui.components.TypingDots
 import dev.herdr.herdrchat.ui.connection.ConnectionStore
 import dev.herdr.herdrchat.ui.connection.ServerConnection
 import dev.herdr.herdrchat.ui.theme.HerdrColors
+import dev.herdr.herdrchat.ui.theme.avatarColor
+import dev.herdr.herdrchat.ui.theme.pressScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,8 +99,14 @@ fun ChatListScreen(
                         item { ConnectionErrorRow(error) }
                     }
                     items(summaries, key = { it.workspaceId }) { summary ->
-                        ChatRow(summary) { onOpenThread(summary) }
-                        HorizontalDivider(modifier = Modifier.padding(start = 74.dp), thickness = 0.5.dp)
+                        Column(Modifier.animateItem()) {
+                            ChatRow(summary) { onOpenThread(summary) }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 74.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            )
+                        }
                     }
                 }
             }
@@ -112,8 +123,11 @@ private fun EmptyState(loading: Boolean) {
     ) {
         if (loading) {
             CircularProgressIndicator(color = HerdrColors.headerGreen)
-            Spacer(Modifier.size(12.dp))
-            Text("Bağlanılıyor…", color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "Bağlanılıyor…",
+                modifier = Modifier.padding(top = 14.dp),
+                color = MaterialTheme.colorScheme.onBackground,
+            )
         } else {
             Text("Workspace yok", color = MaterialTheme.colorScheme.onBackground)
         }
@@ -123,30 +137,33 @@ private fun EmptyState(loading: Boolean) {
 @Composable
 private fun ChatRow(summary: ChatSummary, onClick: () -> Unit) {
     val dark = isSystemInDarkTheme()
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .pressScale(interaction, pressedScale = 0.98f)
+            .clickable(interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(contentAlignment = Alignment.BottomEnd) {
+            val color = avatarColor(summary.title.ifEmpty { summary.workspaceId })
             Box(
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(HerdrColors.headerGreen.copy(alpha = 0.18f)),
+                    .background(color),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = initials(summary.title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = HerdrColors.headerGreen,
+                    color = Color.White,
                 )
             }
-            PresenceDot(summary.status)
+            PresenceDot(summary.status, ringColor = MaterialTheme.colorScheme.background)
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -155,21 +172,32 @@ private fun ChatRow(summary: ChatSummary, onClick: () -> Unit) {
                 color = HerdrColors.primaryText(dark),
                 maxLines = 1,
             )
-            Text(
-                text = summary.subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (summary.needsAttention) HerdrColors.statusColor(dev.herdr.herdrchat.core.model.AgentStatus.BLOCKED)
-                else HerdrColors.secondaryText(dark),
-                maxLines = 1,
-            )
+            Subtitle(summary)
         }
         if (summary.needsAttention) {
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(11.dp)
                     .clip(CircleShape)
-                    .background(HerdrColors.statusColor(dev.herdr.herdrchat.core.model.AgentStatus.BLOCKED)),
+                    .background(HerdrColors.statusColor(AgentStatus.BLOCKED)),
             )
+        }
+    }
+}
+
+@Composable
+private fun Subtitle(summary: ChatSummary) {
+    val dark = isSystemInDarkTheme()
+    val tint = if (summary.needsAttention) HerdrColors.statusColor(AgentStatus.BLOCKED) else HerdrColors.secondaryText(dark)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = summary.subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = tint,
+            maxLines = 1,
+        )
+        if (summary.status == AgentStatus.WORKING) {
+            TypingDots(color = HerdrColors.statusColor(AgentStatus.WORKING), dotSize = 4.dp)
         }
     }
 }

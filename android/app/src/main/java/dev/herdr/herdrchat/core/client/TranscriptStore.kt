@@ -5,7 +5,12 @@ import dev.herdr.herdrchat.core.net.ShellQuoting
 import dev.herdr.herdrchat.core.transcript.ChatMessage
 import dev.herdr.herdrchat.core.transcript.TranscriptParser
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
+
+/** One streamed transcript line: the parsed bubble (null for non-message lines)
+ *  and the running byte offset consumed, so a re-open can resume from there. */
+data class TailChunk(val message: ChatMessage?, val consumedBytes: Long)
 
 /**
  * Reads Claude Code transcripts on the herdr host so chat threads show clean
@@ -29,9 +34,19 @@ class TranscriptStore(private val transport: HerdrTransport) {
     suspend fun loadMessages(path: String, agentLabel: String?): List<ChatMessage> =
         TranscriptParser.parse(transport.shell("cat ${ShellQuoting.quote(path)}"), agentLabel)
 
-    /** Stream chat messages as they are appended. Emits existing content first
-     *  (`tail -n +1`) then follows the file. */
-    fun tailMessages(path: String, agentLabel: String?): Flow<ChatMessage> =
-        transport.streamLines("tail -n +1 -f ${ShellQuoting.quote(path)}")
-            .mapNotNull { TranscriptParser.message(it, agentLabel) }
+    /** Current file size in bytes, or -1 if unknown. Used to decide whether a
+     *  cached byte offset is still valid (file grew) or the file rotated. */
+    suspend fun fileSize(path: String): Long =
+        transport.shell("wc -c < ${ShellQuoting.quote(path)} 2>/dev/null").trim().toLongOrNull() ?: -1
+
+    /** Stream transcript lines from [startByte] to end, then follow appends.
+     *  `startByte = 0` reads the whole file. Each chunk carries the running byte
+     *  offset so the caller can persist it and resume later without re-reading. */
+    fun tail(path: String, agentLabel: String?, startByte: Long): Flow<TailChunk> = flow {
+        var consumed = startByte
+        transport.streamLines("tail -c +${startByte + 1} -f ${ShellQuoting.quote(path)}").collect { line ->
+            consumed += line.toByteArray(Charsets.UTF_8).size + 1  // + newline
+            emit(TailChunk(TranscriptParser.message(line, agentLabel), consumed))
+        }
+    }
 }
