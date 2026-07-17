@@ -55,11 +55,18 @@ class SshTransport(private val config: SshConfig) : HerdrTransport {
         client = null
     }
 
+    // Non-interactive SSH shells don't load the user's profile, so herdr's
+    // install dir (~/.local/bin, Homebrew) usually isn't on PATH and `herdr`
+    // resolves to command-not-found (exit 127). Prepend the common bin dirs so
+    // the default `herdr` just works without the user hard-coding a path.
+    private fun withPath(command: String): String =
+        "export PATH=\"\$HOME/.local/bin:\$HOME/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH\"; $command"
+
     override suspend fun shell(command: String): String = withContext(Dispatchers.IO) {
         val c = connected()
         val session = c.startSession()
         try {
-            val cmd = session.exec(command)
+            val cmd = session.exec(withPath(command))
             val out = IOUtils.readFully(cmd.inputStream).toByteArray().toString(Charsets.UTF_8)
             cmd.join()
             val code = cmd.exitStatus
@@ -75,7 +82,7 @@ class SshTransport(private val config: SshConfig) : HerdrTransport {
     override fun streamLines(command: String): Flow<String> = callbackFlow {
         val c = connected()
         val session = c.startSession()
-        val cmd = session.exec(command)
+        val cmd = session.exec(withPath(command))
         val reader = cmd.inputStream.bufferedReader()
         val job = launch(Dispatchers.IO) {
             try {

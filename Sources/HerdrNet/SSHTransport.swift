@@ -55,10 +55,18 @@ public actor SSHTransport: HerdrTransport {
         }
     }
 
+    /// Non-interactive SSH shells don't load the user's profile, so herdr's
+    /// install dir (~/.local/bin, Homebrew) usually isn't on PATH and `herdr`
+    /// resolves to command-not-found (exit 127). Prepend the common bin dirs so
+    /// the default `herdr` just works without the user hard-coding a path.
+    private static func withPath(_ command: String) -> String {
+        #"export PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; "# + command
+    }
+
     public func shell(_ command: String) async throws -> Data {
         let client = try await connected()
         do {
-            let buffer = try await client.executeCommand(command)
+            let buffer = try await client.executeCommand(Self.withPath(command))
             return Data(buffer.readableBytesView)
         } catch let error as SSHClient.CommandFailed {
             throw HerdrError(code: "ssh_command_failed", message: "exit status \(error.exitCode)")
@@ -70,7 +78,7 @@ public actor SSHTransport: HerdrTransport {
             let task = Task {
                 do {
                     let client = try await self.connected()
-                    let events = try await client.executeCommandStream(command)
+                    let events = try await client.executeCommandStream(Self.withPath(command))
                     var buffer = Data()
                     for try await event in events {
                         guard case .stdout(let chunk) = event else { continue }

@@ -67,6 +67,30 @@ class ConnectionStore(context: Context) {
         return HerdrClient(SshTransport(config), connection.herdrPath)
     }
 
+    /** Build a client from in-progress edit-form values, for a pre-save
+     *  connection test. Falls back to the stored secret when [fallbackId] is set
+     *  and the secret field was left blank. */
+    fun makeTestClient(
+        host: String,
+        port: Int,
+        username: String,
+        authKind: ServerConnection.AuthKind,
+        secret: String,
+        herdrPath: String,
+        fallbackId: String?,
+    ): HerdrClient {
+        val resolved = if (secret.isEmpty() && fallbackId != null) secrets.get(fallbackId) ?: "" else secret
+        val auth: SshAuth = when (authKind) {
+            ServerConnection.AuthKind.PASSWORD -> SshAuth.Password(resolved)
+            ServerConnection.AuthKind.PRIVATE_KEY -> SshAuth.PrivateKey(resolved, null)
+        }
+        val herdr = herdrPath.ifBlank { "herdr" }
+        return HerdrClient(
+            SshTransport(SshConfig(host, port, username, auth, herdr)),
+            herdr,
+        )
+    }
+
     private fun load(): List<ServerConnection> =
         prefs.getString("connections", null)?.let {
             runCatching { json.decodeFromString(listSerializer, it) }.getOrNull()

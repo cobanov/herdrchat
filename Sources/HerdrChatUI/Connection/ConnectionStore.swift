@@ -64,6 +64,33 @@ public final class ConnectionStore {
         return .ssh(config)
     }
 
+    /// Build a client from in-progress edit-form values, for a pre-save
+    /// connection test. Falls back to the stored secret when editing and the
+    /// secret field was left blank.
+    public func makeTestClient(
+        host: String,
+        port: Int,
+        username: String,
+        authKind: ServerConnection.AuthKind,
+        secret: String,
+        herdrPath: String,
+        fallbackId: ServerConnection.ID?
+    ) -> HerdrClient {
+        let resolved = secret.isEmpty ? (fallbackId.flatMap { Keychain.get($0.uuidString) } ?? "") : secret
+        let auth: SSHConfig.Auth = switch authKind {
+        case .password: .password(resolved)
+        case .privateKey: .privateKey(pem: resolved, passphrase: nil)
+        }
+        let config = SSHConfig(
+            host: host,
+            port: port,
+            username: username,
+            auth: auth,
+            herdrPath: herdrPath.isEmpty ? "herdr" : herdrPath
+        )
+        return .ssh(config)
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(connections) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
