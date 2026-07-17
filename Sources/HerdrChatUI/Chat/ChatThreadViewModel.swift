@@ -31,6 +31,22 @@ public final class ChatThreadViewModel {
         self.title = summary.title
         self.workspaceId = summary.workspaceId
         self.liveAgents = summary.agents
+        // Seed from the process cache so reopening a chat shows its history
+        // instantly instead of re-reading the whole transcript.
+        let cached = ThreadCache.shared.messages(summary.workspaceId)
+        if !cached.isEmpty {
+            arrival = cached
+            seenIDs = ThreadCache.shared.seenIDs(summary.workspaceId)
+            messages = arrival
+        }
+    }
+
+    /// Aggregate presence for the header, most-urgent-wins.
+    public var status: AgentStatus {
+        if liveAgents.contains(where: { $0.agentStatus == .blocked }) { return .blocked }
+        if liveAgents.contains(where: { $0.agentStatus == .working }) { return .working }
+        if liveAgents.contains(where: { $0.agentStatus == .done }) { return .done }
+        return liveAgents.isEmpty ? .unknown : .idle
     }
 
     /// The agent pane a reply is typed into (focused agent, else first).
@@ -64,11 +80,18 @@ public final class ChatThreadViewModel {
         let agents = liveAgents.filter { $0.agent != nil }
         for agent in agents {
             guard let path = try? await store.newestTranscriptPath(forCwd: agent.cwd) else { continue }
-            let stream = store.tailMessages(atPath: path, agentLabel: agents.count > 1 ? agent.agent : nil)
+            let label = agents.count > 1 ? agent.agent : nil
+            // Resume from the cached byte offset when the file still contains it;
+            // otherwise read from the start (first open, or the file rotated).
+            let cachedBytes = ThreadCache.shared.bytes(workspaceId, path: path)
+            let size = (try? await store.fileSize(atPath: path)) ?? -1
+            let start = (cachedBytes.map { size >= $0 } ?? false) ? cachedBytes! : 0
+            if start == 0 { ThreadCache.shared.resetBytes(workspaceId, path: path) }
+            let stream = store.tail(atPath: path, agentLabel: label, startByte: start)
             let task = Task { [weak self] in
                 do {
-                    for try await message in stream {
-                        await self?.ingest(message)
+                    for try await chunk in stream {
+                        await self?.ingestChunk(chunk, path: path)
                     }
                 } catch {
                     await self?.setError(error)
@@ -78,9 +101,15 @@ public final class ChatThreadViewModel {
         }
     }
 
+    private func ingestChunk(_ chunk: TailChunk, path: String) {
+        if let message = chunk.message { ingest(message) }
+        ThreadCache.shared.setBytes(workspaceId, path: path, chunk.consumedBytes)
+    }
+
     private func ingest(_ message: ChatMessage) {
         guard !seenIDs.contains(message.id) else { return }
         seenIDs.insert(message.id)
+        ThreadCache.shared.add(workspaceId, message)
         arrival.append(message)
         rebuild()
     }

@@ -46,6 +46,11 @@ struct ChatListView: View {
                     }
                 }
             }
+            #if os(iOS)
+            .toolbarBackground(Theme.headerGreen, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
             .refreshable { await model.refresh() }
             .sheet(isPresented: $showingConnections) {
                 NavigationStack { ConnectionListView(store: store) }
@@ -67,33 +72,37 @@ struct ChatRow: View {
         HStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
                 Circle()
-                    .fill(Theme.headerGreen.opacity(0.18))
-                    .frame(width: 46, height: 46)
+                    .fill(Avatar.color(for: summary.title.isEmpty ? summary.workspaceId : summary.title))
+                    .frame(width: 48, height: 48)
                     .overlay(
                         Text(initials)
                             .font(.headline)
-                            .foregroundStyle(Theme.headerGreen)
+                            .foregroundStyle(.white)
                     )
-                PresenceDot(status: summary.status)
-                    .overlay(Circle().stroke(.background, lineWidth: 2))
+                PresenceDot(status: summary.status, ring: Theme.background(scheme))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary.title)
                     .font(.headline)
                     .foregroundStyle(Theme.primaryText(scheme))
-                Text(summary.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(summary.needsAttention ? Theme.statusColor(.blocked) : Theme.secondaryText(scheme))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(summary.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(summary.needsAttention ? Theme.statusColor(.blocked) : Theme.secondaryText(scheme))
+                        .lineLimit(1)
+                    if summary.status == .working {
+                        TypingDots(color: Theme.statusColor(.working), size: 4)
+                    }
+                }
             }
             Spacer()
             if summary.needsAttention {
                 Circle()
                     .fill(Theme.statusColor(.blocked))
-                    .frame(width: 10, height: 10)
+                    .frame(width: 11, height: 11)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 
     private var initials: String {

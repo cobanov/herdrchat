@@ -13,6 +13,9 @@ public final class ConnectionStore {
     public var selectedID: ServerConnection.ID?
 
     private let defaultsKey = "herdrchat.connections"
+    // One long-lived client (= one reused SSH connection) per host, shared by the
+    // chat list and every thread so navigation never reconnects.
+    @ObservationIgnored private var clients: [ServerConnection.ID: HerdrClient] = [:]
 
     public init() {
         if let data = UserDefaults.standard.data(forKey: defaultsKey),
@@ -37,18 +40,21 @@ public final class ConnectionStore {
         }
         if let secret { Keychain.set(secret, for: connection.id.uuidString) }
         selectedID = connection.id
+        invalidate(connection.id)   // edited fields -> rebuild the shared client
         persist()
     }
 
     public func delete(_ connection: ServerConnection) {
         connections.removeAll { $0.id == connection.id }
         Keychain.delete(connection.id.uuidString)
+        invalidate(connection.id)
         if selectedID == connection.id { selectedID = connections.first?.id }
         persist()
     }
 
-    /// Build a herdr client for a connection, pulling its secret from Keychain.
+    /// The shared herdr client for a connection (one reused SSH connection).
     public func makeClient(for connection: ServerConnection) -> HerdrClient {
+        if let existing = clients[connection.id] { return existing }
         let secret = Keychain.get(connection.id.uuidString) ?? ""
         let auth: SSHConfig.Auth = switch connection.authKind {
         case .password: .password(secret)
@@ -61,7 +67,17 @@ public final class ConnectionStore {
             auth: auth,
             herdrPath: connection.herdrPath
         )
-        return .ssh(config)
+        let client = HerdrClient.ssh(config)
+        clients[connection.id] = client
+        return client
+    }
+
+    /// Drop (and close) the cached connection for a host — after an edit/delete.
+    private func invalidate(_ id: ServerConnection.ID) {
+        guard let client = clients.removeValue(forKey: id) else { return }
+        if let transport = client.transport as? SSHTransport {
+            Task { await transport.disconnect() }
+        }
     }
 
     /// Build a client from in-progress edit-form values, for a pre-save
