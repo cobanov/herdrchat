@@ -85,10 +85,10 @@ struct BlockedReplyBar: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.statusColor(.blocked))
             HStack(spacing: 8) {
-                replyButton("Onayla", keys: ["enter"])
-                replyButton("1", keys: ["1", "enter"])
-                replyButton("2", keys: ["2", "enter"])
-                replyButton("Esc", keys: ["escape"])
+                replyButton("Onayla", keys: ["Enter"])
+                replyButton("1", keys: ["1", "Enter"])
+                replyButton("2", keys: ["2", "Enter"])
+                replyButton("Esc", keys: ["Escape"])
             }
         }
         .padding(10)

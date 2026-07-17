@@ -41,10 +41,11 @@ class HerdrClient(
 
     // Writes
 
-    /** Type a chat message into an agent pane and submit it (text then Enter). */
+    /** Type a chat message into an agent pane and submit it. `pane run` sends the
+     *  text and a real Enter in one request — a separate `send-keys enter` types
+     *  the text but doesn't submit inside an agent TUI (only in a plain shell). */
     suspend fun sendMessage(paneId: String, text: String) {
-        ensureOk(transport.run(listOf(herdr, "pane", "send-text", paneId, text)))
-        ensureOk(transport.run(listOf(herdr, "pane", "send-keys", paneId, "enter")))
+        ensureOk(transport.run(listOf(herdr, "pane", "run", paneId, text)))
     }
 
     /** Send raw keys to a pane, e.g. quick-reply to a blocked prompt. */

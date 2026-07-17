@@ -138,10 +138,10 @@ fun BlockedReplyBar(onKeys: (List<String>) -> Unit) {
             color = blocked,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReplyButton("Onayla", listOf("enter"), onKeys)
-            ReplyButton("1", listOf("1", "enter"), onKeys)
-            ReplyButton("2", listOf("2", "enter"), onKeys)
-            ReplyButton("Esc", listOf("escape"), onKeys)
+            ReplyButton("Onayla", listOf("Enter"), onKeys)
+            ReplyButton("1", listOf("1", "Enter"), onKeys)
+            ReplyButton("2", listOf("2", "Enter"), onKeys)
+            ReplyButton("Esc", listOf("Escape"), onKeys)
         }
     }
 }
