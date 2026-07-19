@@ -132,10 +132,15 @@ public struct TranscriptStore: Sendable {
                 ($0.isLetter && $0.isASCII) || $0.isNumber || $0 == ":" || $0 == "-" || $0 == "_"
             }) else { continue }
             let dir = TranscriptParser.projectDirName(forCwd: request.cwd)
-            var resolve = #"f=$(ls -t "$HOME/.claude/projects/\#(dir)"/*.jsonl 2>/dev/null | head -1); "#
+            let resolve: String
             if let sid = request.sessionId, !sid.isEmpty,
                sid.allSatisfy({ ($0.isLetter && $0.isASCII) || $0.isNumber || $0 == "-" }) {
-                resolve = #"f="$HOME/.claude/projects/\#(dir)/\#(sid).jsonl"; [ -s "$f" ] || "# + resolve
+                // Exact session file only — never fall back to the newest (a
+                // previous session's) transcript, so the list can't preview a
+                // foreign chat's last message under a reused workspace.
+                resolve = #"f="$HOME/.claude/projects/\#(dir)/\#(sid).jsonl"; "#
+            } else {
+                resolve = #"f=$(ls -t "$HOME/.claude/projects/\#(dir)"/*.jsonl 2>/dev/null | head -1); "#
             }
             script += resolve
             script += #"printf '\n@@HERDRCHAT %s\n' '\#(request.workspaceId)'; "#

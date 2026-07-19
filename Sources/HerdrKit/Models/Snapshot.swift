@@ -29,6 +29,22 @@ public struct AgentSessionRef: Decodable, Sendable, Hashable {
     public let value: String?
 }
 
+public extension Array where Element == AgentInfo {
+    /// Stable identity of the conversation(s) these agents host: the sorted,
+    /// joined Claude session ids. A chat's identity is its session, not its
+    /// workspace slot — this is what distinguishes a new chat from the one that
+    /// used the workspace before it. Nil when no agent reports a session id yet.
+    var sessionSignature: String? {
+        let ids = compactMap { agent -> String? in
+            guard agent.agent != nil, agent.agentSession?.kind == "id",
+                  let value = agent.agentSession?.value, !value.isEmpty else { return nil }
+            return value
+        }
+        guard !ids.isEmpty else { return nil }
+        return Set(ids).sorted().joined(separator: ",")
+    }
+}
+
 /// A workspace row, as returned by `workspace.list`.
 public struct Workspace: Decodable, Sendable, Identifiable, Equatable {
     public let workspaceId: String

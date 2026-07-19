@@ -58,6 +58,11 @@ class ChatThreadViewModel(
     private val tailJobs = mutableListOf<Job>()
     private val tailedPaths = mutableMapOf<String, String>()    // agent cwd -> transcript path
     private val tailedSessions = mutableMapOf<String, String?>() // agent cwd -> session id (when known)
+    /** The session signature whose history is currently loaded. A chat's identity
+     *  is its Claude session(s), not its workspace slot — so when this changes
+     *  (workspace reused by a new chat, or a live rotation) the old history is
+     *  dropped instead of shown/appended-to. */
+    private var boundSig: String? = null
     private var tailsDead = false
     private var statusJob: Job? = null
     private var scope: CoroutineScope? = null
@@ -67,14 +72,41 @@ class ChatThreadViewModel(
     val unreadKey: String get() = UnreadStore.key(connectionId, workspaceId)
 
     init {
-        // Seed from the disk-backed cache so reopening (even after an app
-        // restart) shows history instantly.
-        val cached = ThreadCache.messages(connectionId, workspaceId)
-        if (cached.isNotEmpty()) {
-            arrival.addAll(cached)
-            seenIds.addAll(ThreadCache.seenIds(connectionId, workspaceId))
-            messages = arrival.toList()
+        // Seed from the disk-backed cache so reopening (even after an app restart)
+        // shows history instantly — but ONLY when the cache belongs to the same
+        // session that's live now. If this workspace was reused by a new chat
+        // (same agent name), seeding is skipped so old history can't appear.
+        val initSig = sessionSignature(summary.agents)
+        val cachedSig = ThreadCache.sessionSig(connectionId, workspaceId)
+        if (initSig == null || initSig == cachedSig) {
+            val cached = ThreadCache.messages(connectionId, workspaceId)
+            if (cached.isNotEmpty()) {
+                arrival.addAll(cached)
+                seenIds.addAll(ThreadCache.seenIds(connectionId, workspaceId))
+                messages = arrival.toList()
+            }
         }
+        bindSession(initSig)
+    }
+
+    /** Point this thread at [sig]. When it differs from the loaded history's
+     *  session — a new chat reusing this workspace, or a live rotation — the
+     *  stale history is dropped (in memory and on disk) so it can't bleed into
+     *  the new conversation. No-op while the session is still unknown. */
+    private fun bindSession(sig: String?) {
+        if (sig == null || sig == boundSig) return
+        if (ThreadCache.rebind(connectionId, workspaceId, sig)) resetHistory()
+        boundSig = sig
+    }
+
+    /** Drop all loaded history (in memory; the disk cache is cleared by
+     *  ThreadCache.rebind). Used when the thread switches to a new session. */
+    private fun resetHistory() {
+        arrival.clear()
+        localEchoes.clear()
+        seenIds.clear()
+        failedEchoIds = emptySet()
+        messages = emptyList()
     }
 
     /** Aggregate presence for the header, most-urgent-wins. */
@@ -119,20 +151,22 @@ class ChatThreadViewModel(
 
     // MARK: - Reading
 
-    /** Resolve the transcript: exact session-id path when the integration
-     *  reports one (authoritative), newest file otherwise. */
+    /** Resolve the transcript to follow for an agent. When the integration
+     *  reports a session id (authoritative): wait for exactly that file — never
+     *  fall back to the newest `.jsonl`, which would be the PREVIOUS session's
+     *  transcript and make a new chat show old history. Only agents with no
+     *  session reference use the newest-file guess. */
     private suspend fun transcriptPath(agent: dev.herdr.herdrchat.core.model.AgentInfo): String? {
         val sid = agent.agentSession?.takeIf { it.kind == "id" }?.value
-        if (sid != null) {
+        if (!sid.isNullOrEmpty()) {
+            tailedSessions[agent.cwd] = sid
             if (hostHome == null) hostHome = runCatching { store.homeDirectory() }.getOrNull()
-            val home = hostHome
-            if (home != null) {
-                val path = store.sessionTranscriptPath(home, agent.cwd, sid)
-                if (path != null && (runCatching { store.fileSize(path) }.getOrNull() ?: -1L) >= 0L) {
-                    tailedSessions[agent.cwd] = sid
-                    return path
-                }
-            }
+            val home = hostHome ?: return null
+            val path = store.sessionTranscriptPath(home, agent.cwd, sid) ?: return null
+            // The session may be known a moment before its file is written; return
+            // null until it exists (the poll retries) rather than tailing a stale one.
+            val size = runCatching { store.fileSize(path) }.getOrNull() ?: -1L
+            return if (size >= 0L) path else null
         }
         tailedSessions[agent.cwd] = null
         return runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull()
@@ -141,6 +175,10 @@ class ChatThreadViewModel(
     private suspend fun startTails(scope: CoroutineScope) {
         // One transcript tail per agent that owns a conversation.
         val agents = liveAgents.filter { it.agent != null }
+        // Bind to the session(s) now in the workspace before loading anything —
+        // if they changed (rotation, or a new chat reusing this slot), stale
+        // history is dropped here so the reload starts clean.
+        bindSession(sessionSignature(agents))
         for (agent in agents) {
             val path = transcriptPath(agent) ?: continue
             val label = if (agents.size > 1) agent.agent else null
@@ -230,7 +268,7 @@ class ChatThreadViewModel(
                     if (tailsDead) {
                         tailsDead = false
                         restartTails()
-                    } else if (rotationDetected()) {
+                    } else if (rotationDetected() || unresolvedSession()) {
                         restartTails()
                     }
                     refreshLiveTail()
@@ -239,6 +277,17 @@ class ChatThreadViewModel(
             }
         }
     }
+
+    /** A conversation agent whose session id is known but whose transcript file
+     *  isn't tailed yet (still being written at session start). Keeps the poll
+     *  retrying resolution so the new chat fills in — without ever tailing the
+     *  previous session's file meanwhile. */
+    private fun unresolvedSession(): Boolean =
+        liveAgents.any { agent ->
+            agent.agent != null &&
+                (agent.agentSession?.takeIf { it.kind == "id" }?.value?.isNotEmpty() == true) &&
+                tailedPaths[agent.cwd] == null
+        }
 
     /** Session-id change is the authoritative rotation signal (a new Claude
      *  conversation = new transcript file). */
@@ -372,6 +421,18 @@ class ChatThreadViewModel(
     }
 
     companion object {
+        /** A stable identity for the conversation(s) a workspace currently hosts:
+         *  the sorted, joined Claude session ids of its agents. Null when no agent
+         *  reports a session id yet (identity still unknown). */
+        private fun sessionSignature(agents: List<AgentInfo>): String? {
+            val ids = agents
+                .filter { it.agent != null }
+                .mapNotNull { it.agentSession?.takeIf { s -> s.kind == "id" }?.value }
+                .filter { it.isNotEmpty() }
+            if (ids.isEmpty()) return null
+            return ids.toSortedSet().joinToString(",")
+        }
+
         // Only bulk-load this many bytes of a fresh transcript up front; older
         // history stays on disk. Keeps the first open fast even on huge sessions.
         private const val RECENT_BYTES = 400_000L

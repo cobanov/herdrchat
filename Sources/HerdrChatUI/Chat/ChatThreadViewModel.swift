@@ -38,6 +38,11 @@ public final class ChatThreadViewModel {
     private var tailTasks: [Task<Void, Never>] = []
     private var tailedPaths: [String: String] = [:]      // agent cwd -> transcript path
     private var tailedSessions: [String: String] = [:]   // agent cwd -> session id (when known)
+    /// The session signature whose history is currently loaded. A chat's identity
+    /// is its Claude session(s), not its workspace slot — so when this changes
+    /// (workspace reused by a new chat, or a live rotation) the old history is
+    /// dropped instead of shown/appended-to.
+    private var boundSig: String?
     private var tailsDead = false
     private var statusTask: Task<Void, Never>?
     private var started = false
@@ -62,14 +67,43 @@ public final class ChatThreadViewModel {
         self.title = summary.title
         self.workspaceId = summary.workspaceId
         self.liveAgents = summary.agents
-        // Seed from the disk-backed cache so reopening (even after an app
-        // restart) shows history instantly.
-        let cached = ThreadCache.shared.messages(connectionID, summary.workspaceId)
-        if !cached.isEmpty {
-            arrival = cached
-            seenIDs = ThreadCache.shared.seenIDs(connectionID, summary.workspaceId)
-            rebuild()
+        // Seed from the disk-backed cache so reopening (even after an app restart)
+        // shows history instantly — but ONLY when the cache belongs to the same
+        // session that's live now. If this workspace was reused by a new chat
+        // (same agent name), seeding is skipped so the old history can't appear.
+        let initSig = summary.agents.sessionSignature
+        let cachedSig = ThreadCache.shared.sessionSig(connectionID, summary.workspaceId)
+        if initSig == nil || initSig == cachedSig {
+            let cached = ThreadCache.shared.messages(connectionID, summary.workspaceId)
+            if !cached.isEmpty {
+                arrival = cached
+                seenIDs = ThreadCache.shared.seenIDs(connectionID, summary.workspaceId)
+                rebuild()
+            }
         }
+        bindSession(initSig)
+    }
+
+    /// Point this thread at `sig`. When it differs from the loaded history's
+    /// session — a new chat reusing this workspace, or a live rotation — the
+    /// stale history is dropped (both in memory and on disk) so it can't bleed
+    /// into the new conversation. No-op while the session is still unknown.
+    private func bindSession(_ sig: String?) {
+        guard let sig, sig != boundSig else { return }
+        if ThreadCache.shared.rebind(connectionID, workspaceId, sessionSig: sig) {
+            resetHistory()
+        }
+        boundSig = sig
+    }
+
+    /// Drop all loaded history (in-memory only; the disk cache is cleared by
+    /// `ThreadCache.rebind`). Used when the thread switches to a new session.
+    private func resetHistory() {
+        arrival.removeAll()
+        localEchoes.removeAll()
+        seenIDs.removeAll()
+        failedEchoIDs.removeAll()
+        messages = []
     }
 
     var unreadKey: String { UnreadStore.key(connectionID, workspaceId) }
@@ -115,19 +149,23 @@ public final class ChatThreadViewModel {
 
     // MARK: - Reading
 
-    /// Resolve the transcript to follow for an agent: exact session-id path
-    /// when the integration reports one (authoritative), newest file otherwise.
+    /// Resolve the transcript to follow for an agent. When the integration
+    /// reports a session id (authoritative) that IS the target: wait for exactly
+    /// that file — never fall back to the newest `.jsonl`, which would be the
+    /// PREVIOUS session's transcript and make a new chat show old history. Only
+    /// agents with no session reference use the newest-file guess.
     private func transcriptPath(for agent: AgentInfo) async -> String? {
-        if agent.agentSession?.kind == "id", let sid = agent.agentSession?.value {
+        if agent.agentSession?.kind == "id", let sid = agent.agentSession?.value, !sid.isEmpty {
+            tailedSessions[agent.cwd] = sid
             if hostHome == nil { hostHome = try? await store.homeDirectory() }
-            if let home = hostHome,
-               let path = store.sessionTranscriptPath(home: home, cwd: agent.cwd, sessionId: sid) {
-                let size = (try? await store.fileSize(atPath: path)) ?? -1
-                if size >= 0 {
-                    tailedSessions[agent.cwd] = sid
-                    return path
-                }
+            guard let home = hostHome,
+                  let path = store.sessionTranscriptPath(home: home, cwd: agent.cwd, sessionId: sid) else {
+                return nil
             }
+            // The session may be known a moment before its file is written; return
+            // nil until it exists (the poll retries) rather than tailing a stale one.
+            let size = (try? await store.fileSize(atPath: path)) ?? -1
+            return size >= 0 ? path : nil
         }
         tailedSessions[agent.cwd] = nil
         return try? await store.newestTranscriptPath(forCwd: agent.cwd)
@@ -136,6 +174,10 @@ public final class ChatThreadViewModel {
     private func startTails() async {
         // One transcript tail per agent that owns a conversation.
         let agents = liveAgents.filter { $0.agent != nil }
+        // Bind to the session(s) now in the workspace before loading anything —
+        // if they changed (rotation, or a new chat reusing this slot), stale
+        // history is dropped here so the reload starts clean.
+        bindSession(agents.sessionSignature)
         for agent in agents {
             guard let path = await transcriptPath(for: agent) else { continue }
             let label = agents.count > 1 ? agent.agent : nil
@@ -227,13 +269,26 @@ public final class ChatThreadViewModel {
                     if self.tailsDead {
                         self.tailsDead = false
                         await self.restartTails()
-                    } else if self.rotationDetected() {
+                    } else if self.rotationDetected() || self.unresolvedSession() {
                         await self.restartTails()
                     }
                     await self.refreshLiveTail()
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// A conversation agent whose session id is known but whose transcript file
+    /// isn't tailed yet (still being written at session start). Keeps the poll
+    /// retrying resolution so the new chat fills in — without ever tailing the
+    /// previous session's file in the meantime.
+    private func unresolvedSession() -> Bool {
+        liveAgents.contains { agent in
+            agent.agent != nil
+                && agent.agentSession?.kind == "id"
+                && agent.agentSession?.value?.isEmpty == false
+                && tailedPaths[agent.cwd] == nil
         }
     }
 

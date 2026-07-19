@@ -14,6 +14,11 @@ final class ThreadCache {
         var version = 1
         var messages: [ChatMessage] = []
         var bytes: [String: Int] = [:]   // transcript path -> bytes consumed
+        /// The Claude session(s) these messages belong to (sorted session ids,
+        /// joined). A chat's identity is its session, NOT its workspace slot: when
+        /// a workspace is reused by a new session (same agent name), the signature
+        /// changes and the stale history is dropped instead of being shown.
+        var sessionSig: String? = nil
     }
 
     private var entries: [String: Entry] = [:]
@@ -42,7 +47,11 @@ final class ThreadCache {
         if !loaded.contains(key) {
             loaded.insert(key)
             if let data = try? Data(contentsOf: fileURL(key)),
-               let stored = try? JSONDecoder().decode(Entry.self, from: data) {
+               let stored = try? JSONDecoder().decode(Entry.self, from: data),
+               stored.sessionSig != nil {
+                // A stored entry always carries the session it belongs to. One
+                // without a signature is legacy/unbound — ignore its messages so
+                // a new session can never inherit them.
                 entries[key] = stored
                 seen[key] = Set(stored.messages.map(\.id))
             }
@@ -80,6 +89,30 @@ final class ThreadCache {
         let key = Self.key(connectionID, workspaceId)
         _ = entry(key)
         return seen[key] ?? []
+    }
+
+    /// The session signature the cached messages belong to (nil = nothing bound).
+    func sessionSig(_ connectionID: String, _ workspaceId: String) -> String? {
+        entry(Self.key(connectionID, workspaceId)).sessionSig
+    }
+
+    /// Bind this workspace's cache to `sessionSig`. If it already held a
+    /// different session, its messages/cursors are dropped (the workspace now
+    /// hosts a new conversation). Returns true only when a real prior session
+    /// was replaced — the signal for the caller to also clear in-memory history.
+    @discardableResult
+    func rebind(_ connectionID: String, _ workspaceId: String, sessionSig: String) -> Bool {
+        let key = Self.key(connectionID, workspaceId)
+        var e = entry(key)
+        guard e.sessionSig != sessionSig else { return false }
+        let replaced = e.sessionSig != nil
+        e.messages.removeAll()
+        e.bytes.removeAll()
+        e.sessionSig = sessionSig
+        entries[key] = e
+        seen[key] = []
+        markDirty(key)
+        return replaced
     }
 
     /// Record a freshly parsed message (deduped by id).

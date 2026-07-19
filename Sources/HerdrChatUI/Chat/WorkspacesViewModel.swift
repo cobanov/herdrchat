@@ -27,6 +27,7 @@ public final class WorkspacesViewModel {
     private var pollTask: Task<Void, Never>?
     private var previousStatuses: [String: AgentStatus] = [:]
     private var previews: [String: MessagePreview] = [:]
+    private var previewSessions: [String: String] = [:]   // workspaceId -> session signature
     private var previewTick = 0
 
     public init(client: HerdrClient, connectionID: String, pollInterval: Duration = .seconds(3)) {
@@ -60,6 +61,7 @@ public final class WorkspacesViewModel {
             async let snapshotFetch = client.snapshot()
             let workspaces = try await workspacesFetch
             let agents = try await snapshotFetch.agents
+            invalidateStalePreviews(agents: agents)
             await refreshPreviews(agents: agents)
             let rows = ChatSummary.build(workspaces: workspaces, agents: agents, previews: previews)
             markUnreadTransitions(rows)
@@ -98,6 +100,23 @@ public final class WorkspacesViewModel {
             changed = true
         }
         if changed { persistPreviews() }
+    }
+
+    /// Drop a workspace's cached last-message when its session changed, so the
+    /// list never previews a previous chat's line under a reused workspace (same
+    /// bug as the thread view: identity is the session, not the workspace slot).
+    private func invalidateStalePreviews(agents: [AgentInfo]) {
+        let byWorkspace = Dictionary(grouping: agents.filter { $0.agent != nil }, by: \.workspaceId)
+        var dropped = false
+        for (workspaceId, group) in byWorkspace {
+            guard let sig = group.sessionSignature else { continue }
+            if let previous = previewSessions[workspaceId], previous != sig {
+                previews[workspaceId] = nil
+                dropped = true
+            }
+            previewSessions[workspaceId] = sig
+        }
+        if dropped { persistPreviews() }
     }
 
     /// working → done/idle while the thread is off-screen = unread.
