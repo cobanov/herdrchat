@@ -53,8 +53,10 @@ class HerdrClient(
         ensureOk(transport.run(listOf(herdr, "pane", "send-keys", paneId) + keys))
     }
 
-    // Decode just to surface a transported error; ignore the body.
+    // Surface a transported error if the CLI printed an envelope; commands like
+    // `pane run` / `send-keys` print NOTHING on success, so empty output is OK.
     private fun ensureOk(output: String) {
+        if (output.isBlank()) return
         HerdrJson.decode<JsonElement>(output)
     }
 }

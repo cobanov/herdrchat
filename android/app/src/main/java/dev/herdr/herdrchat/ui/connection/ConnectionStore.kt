@@ -5,9 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.herdr.herdrchat.core.client.HerdrClient
+import dev.herdr.herdrchat.core.net.HostKeyPin
 import dev.herdr.herdrchat.core.net.SshAuth
 import dev.herdr.herdrchat.core.net.SshConfig
 import dev.herdr.herdrchat.core.net.SshTransport
+import dev.herdr.herdrchat.ui.chat.ThreadCache
+import dev.herdr.herdrchat.ui.chat.ThreadSessions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,6 +49,8 @@ class ConnectionStore(context: Context) {
             connections + connection
         }
         if (secret != null) secrets.set(connection.id, secret)
+        // Editing a host resets its TOFU pin: the next connect re-pins.
+        secrets.delete(pinAccount(connection.id))
         selectedId = connection.id
         invalidate(connection.id)   // edited fields -> rebuild the shared client
         persist()
@@ -54,7 +59,9 @@ class ConnectionStore(context: Context) {
     fun delete(connection: ServerConnection) {
         connections = connections.filterNot { it.id == connection.id }
         secrets.delete(connection.id)
+        secrets.delete(pinAccount(connection.id))
         invalidate(connection.id)
+        ThreadCache.clear(connection.id)
         if (selectedId == connection.id) selectedId = connections.firstOrNull()?.id
         persist()
     }
@@ -71,13 +78,15 @@ class ConnectionStore(context: Context) {
         authKind: ServerConnection.AuthKind,
         secret: String,
         herdrPath: String,
+        pinId: String?,
     ): HerdrClient {
         val auth: SshAuth = when (authKind) {
             ServerConnection.AuthKind.PASSWORD -> SshAuth.Password(secret)
             ServerConnection.AuthKind.PRIVATE_KEY -> SshAuth.PrivateKey(secret, null)
         }
         val herdr = herdrPath.ifBlank { "herdr" }
-        return HerdrClient(SshTransport(SshConfig(host, port, username, auth, herdr)), herdr)
+        val config = SshConfig(host, port, username, auth, herdr, hostKeyPin = pinId?.let(::pin))
+        return HerdrClient(SshTransport(config), herdr)
     }
 
     private fun buildClient(connection: ServerConnection): HerdrClient =
@@ -88,10 +97,23 @@ class ConnectionStore(context: Context) {
             authKind = connection.authKind,
             secret = secrets.get(connection.id) ?: "",
             herdrPath = connection.herdrPath,
+            pinId = connection.id,
         )
+
+    private fun pinAccount(connectionId: String) = "hostkey-$connectionId"
+
+    /** TOFU pin storage backed by the encrypted secret store. */
+    private fun pin(connectionId: String): HostKeyPin {
+        val account = pinAccount(connectionId)
+        return HostKeyPin(
+            load = { secrets.get(account) },
+            save = { secrets.set(account, it) },
+        )
+    }
 
     /** Drop (and close) the cached connection for a host — after an edit/delete. */
     private fun invalidate(connectionId: String) {
+        ThreadSessions.drop(connectionId)
         val client = clients.remove(connectionId) ?: return
         (client.transport as? SshTransport)?.let { transport ->
             CoroutineScope(Dispatchers.IO).launch { runCatching { transport.disconnect() } }
@@ -111,7 +133,8 @@ class ConnectionStore(context: Context) {
         fallbackId: String?,
     ): HerdrClient {
         val resolved = if (secret.isEmpty() && fallbackId != null) secrets.get(fallbackId) ?: "" else secret
-        return buildClient(host, port, username, authKind, resolved, herdrPath)
+        // New hosts (no id yet) pin on their first real connect after save.
+        return buildClient(host, port, username, authKind, resolved, herdrPath, pinId = fallbackId)
     }
 
     private fun load(): List<ServerConnection> =

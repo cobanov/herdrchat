@@ -14,5 +14,6 @@ class HerdrChatApplication : Application() {
         super.onCreate()
         Security.removeProvider("BC")
         Security.addProvider(BouncyCastleProvider())
+        dev.herdr.herdrchat.ui.chat.ThreadCache.init(this)
     }
 }

@@ -53,8 +53,11 @@ public struct HerdrClient: Sendable {
         try check(await transport.run([herdr, "pane", "send-keys", paneId] + keys))
     }
 
-    // Decode just to surface a transported error; ignore the body.
+    // Surface a transported error if the CLI printed an envelope; commands like
+    // `pane run` / `send-keys` print NOTHING on success, so empty output is OK.
     private func check(_ data: Data) throws {
+        let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
         _ = try HerdrJSON.decode(IgnoredResult.self, from: data)
     }
 }

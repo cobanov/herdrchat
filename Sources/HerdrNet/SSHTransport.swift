@@ -3,13 +3,17 @@ import Crypto
 import Citadel
 import HerdrKit
 import NIOCore
+import NIOSSH
 
 /// A `HerdrTransport` that runs commands on a remote herdr host over SSH. The
 /// app points this at a Tailscale address, so there is no public network
 /// surface: the phone and the host are peers on the tailnet.
 ///
-/// The connection is opened lazily and reused across commands (SSH handshakes
-/// are expensive relative to the short `herdr` invocations we make).
+/// The connection is opened lazily and reused across commands. A cached client
+/// is validated for liveness before use, and a command that fails at the
+/// connection level (network change, background suspension, NAT timeout) drops
+/// the client, reconnects, and retries once — so a stale connection heals
+/// transparently instead of erroring until app restart.
 public actor SSHTransport: HerdrTransport {
     private let config: SSHConfig
     private var client: SSHClient?
@@ -23,21 +27,41 @@ public actor SSHTransport: HerdrTransport {
         client = nil
     }
 
+    private func resetClient() async {
+        if let client { try? await client.close() }
+        client = nil
+    }
+
     private func connected() async throws -> SSHClient {
-        if let client { return client }
+        // Liveness: a dead cached client (dropped TCP) must not be reused.
+        if let client {
+            if client.isConnected { return client }
+            await resetClient()
+        }
         // Parse the key up front: the settings closure must be non-throwing.
         // SSHAuthenticationMethod isn't Sendable but is effectively immutable
         // once built, so the capture is safe.
         nonisolated(unsafe) let auth = try Self.authMethod(for: config)
+        let mismatch = MismatchBox()
         let settings = SSHClientSettings(
             host: config.host,
             port: config.port,
             authenticationMethod: { auth },
-            hostKeyValidator: .acceptAnything()
+            hostKeyValidator: Self.hostKeyValidator(for: config, mismatch: mismatch)
         )
-        let newClient = try await SSHClient.connect(to: settings)
-        client = newClient
-        return newClient
+        do {
+            let newClient = try await SSHClient.connect(to: settings)
+            client = newClient
+            return newClient
+        } catch {
+            if mismatch.tripped {
+                throw HerdrError(
+                    code: "host_key_changed",
+                    message: "Sunucunun SSH anahtarı kayıtlı olandan FARKLI (olası MITM ya da sunucu yeniden kuruldu). Doğruladıysan sunucuyu düzenleyip kaydet; pin sıfırlanır."
+                )
+            }
+            throw error
+        }
     }
 
     private static func authMethod(for config: SSHConfig) throws -> SSHAuthenticationMethod {
@@ -55,6 +79,55 @@ public actor SSHTransport: HerdrTransport {
         }
     }
 
+    // MARK: - Host key pinning (TOFU)
+
+    /// Single-connect flag: written once on the SSH event loop before the
+    /// handshake resolves, read after `connect` returns/throws.
+    private final class MismatchBox: @unchecked Sendable {
+        var tripped = false
+    }
+
+    private static func hostKeyValidator(for config: SSHConfig, mismatch: MismatchBox) -> SSHHostKeyValidator {
+        guard let pin = config.hostKeyPin else { return .acceptAnything() }
+        return .custom(TOFUHostKeyDelegate(pin: pin, mismatch: mismatch))
+    }
+
+    /// Trust-on-first-use: pin the host key's SHA-256 fingerprint on first
+    /// contact; refuse any later connection presenting a different key.
+    private final class TOFUHostKeyDelegate: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
+        private let pin: HostKeyPin
+        private let mismatch: MismatchBox
+
+        init(pin: HostKeyPin, mismatch: MismatchBox) {
+            self.pin = pin
+            self.mismatch = mismatch
+        }
+
+        func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
+            var buffer = ByteBuffer()
+            _ = hostKey.write(to: &buffer)
+            let digest = SHA256.hash(data: Data(buffer.readableBytesView))
+            let fingerprint = Data(digest).base64EncodedString()
+
+            if let stored = pin.load() {
+                if stored == fingerprint {
+                    validationCompletePromise.succeed(())
+                } else {
+                    mismatch.tripped = true
+                    validationCompletePromise.fail(HerdrError(
+                        code: "host_key_changed",
+                        message: "host key fingerprint mismatch"
+                    ))
+                }
+            } else {
+                pin.save(fingerprint)   // first contact: trust and pin
+                validationCompletePromise.succeed(())
+            }
+        }
+    }
+
+    // MARK: - Commands
+
     /// Non-interactive SSH shells don't load the user's profile, so herdr's
     /// install dir (~/.local/bin, Homebrew) usually isn't on PATH and `herdr`
     /// resolves to command-not-found (exit 127). Prepend the common bin dirs so
@@ -63,13 +136,29 @@ public actor SSHTransport: HerdrTransport {
         #"export PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; "# + command
     }
 
-    public func shell(_ command: String) async throws -> Data {
+    private func execOnce(_ command: String) async throws -> Data {
         let client = try await connected()
+        let buffer = try await client.executeCommand(Self.withPath(command))
+        return Data(buffer.readableBytesView)
+    }
+
+    public func shell(_ command: String) async throws -> Data {
         do {
-            let buffer = try await client.executeCommand(Self.withPath(command))
-            return Data(buffer.readableBytesView)
+            return try await execOnce(command)
         } catch let error as SSHClient.CommandFailed {
+            // The command ran and exited non-zero: a real result, don't retry.
             throw HerdrError(code: "ssh_command_failed", message: "exit status \(error.exitCode)")
+        } catch let error as HerdrError {
+            throw error   // host_key_changed etc. — retrying won't change it
+        } catch {
+            // Connection-level failure (dead socket, handshake, channel):
+            // rebuild the connection and retry once, transparently.
+            await resetClient()
+            do {
+                return try await execOnce(command)
+            } catch let retryError as SSHClient.CommandFailed {
+                throw HerdrError(code: "ssh_command_failed", message: "exit status \(retryError.exitCode)")
+            }
         }
     }
 
@@ -77,7 +166,16 @@ public actor SSHTransport: HerdrTransport {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let client = try await self.connected()
+                    // Establish (or heal) the connection with one retry, then stream.
+                    var client: SSHClient
+                    do {
+                        client = try await self.connected()
+                    } catch let error as HerdrError {
+                        throw error
+                    } catch {
+                        await self.resetClient()
+                        client = try await self.connected()
+                    }
                     let events = try await client.executeCommandStream(Self.withPath(command))
                     var buffer = Data()
                     for try await event in events {

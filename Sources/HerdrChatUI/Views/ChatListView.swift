@@ -37,7 +37,11 @@ struct ChatListView: View {
             .listStyle(.plain)
             .navigationTitle(connection.name)
             .navigationDestination(for: ChatSummary.self) { summary in
-                ChatThreadView(client: store.makeClient(for: connection), summary: summary)
+                ChatThreadView(
+                    client: store.makeClient(for: connection),
+                    connectionID: connection.id.uuidString,
+                    summary: summary
+                )
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -46,11 +50,6 @@ struct ChatListView: View {
                     }
                 }
             }
-            #if os(iOS)
-            .toolbarBackground(Theme.headerGreen, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
             .refreshable { await model.refresh() }
             .sheet(isPresented: $showingConnections) {
                 NavigationStack { ConnectionListView(store: store) }

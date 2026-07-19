@@ -60,10 +60,13 @@ object TranscriptParser {
         )
     }
 
-    /** Claude escapes a cwd into a project dir name by replacing `/` and `.` with
-     *  hyphens, e.g. `/Users/x/Dev/app` -> `-Users-x-Dev-app`. */
+    /** Claude escapes a cwd into a project dir name by replacing every character
+     *  that is not ASCII-alphanumeric with a hyphen, e.g.
+     *  `/Users/x/Documents/obsidian/07_homelab` -> `-Users-x-Documents-obsidian-07-homelab`
+     *  (verified empirically against ~/.claude/projects). Restricting the output
+     *  to `[A-Za-z0-9-]` also keeps the name shell-safe when interpolated. */
     fun projectDirName(cwd: String): String =
-        buildString { cwd.forEach { append(if (it == '/' || it == '.') '-' else it) } }
+        buildString { cwd.forEach { append(if (it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9') it else '-') } }
 
     // MARK: - Internals
 

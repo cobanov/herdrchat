@@ -4,8 +4,8 @@ import Foundation
 /// One transcript entry (a user or assistant turn) maps to one ChatMessage; the
 /// turn's parts become ordered `segments` so the UI can show text while
 /// collapsing thinking and tool activity.
-public struct ChatMessage: Sendable, Identifiable, Equatable {
-    public enum Role: String, Sendable {
+public struct ChatMessage: Sendable, Identifiable, Equatable, Codable {
+    public enum Role: String, Sendable, Codable {
         case user
         case assistant
         case system
@@ -53,7 +53,7 @@ public struct ChatMessage: Sendable, Identifiable, Equatable {
     }
 }
 
-public enum MessageSegment: Sendable, Equatable {
+public enum MessageSegment: Sendable, Equatable, Codable {
     case text(String)
     case thinking(String)
     case toolUse(name: String, input: String?)

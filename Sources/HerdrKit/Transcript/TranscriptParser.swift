@@ -42,11 +42,15 @@ public enum TranscriptParser {
         )
     }
 
-    /// Claude escapes a cwd into a project directory name by replacing path
-    /// separators and dots with hyphens, e.g.
-    /// `/Users/cobanov/Developer/capsarsiv` -> `-Users-cobanov-Developer-capsarsiv`.
+    /// Claude escapes a cwd into a project directory name by replacing every
+    /// character that is not ASCII-alphanumeric with a hyphen, e.g.
+    /// `/Users/x/Documents/obsidian/07_homelab` -> `-Users-x-Documents-obsidian-07-homelab`
+    /// (verified empirically against ~/.claude/projects). Restricting the output
+    /// to `[A-Za-z0-9-]` also keeps the name shell-safe when interpolated.
     public static func projectDirName(forCwd cwd: String) -> String {
-        String(cwd.map { ($0 == "/" || $0 == ".") ? "-" : $0 })
+        String(cwd.map { char in
+            char.isASCII && (char.isLetter || char.isNumber) ? char : "-"
+        })
     }
 
     // MARK: - Internals

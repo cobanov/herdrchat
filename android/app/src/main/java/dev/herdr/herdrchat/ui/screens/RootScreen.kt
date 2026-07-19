@@ -63,6 +63,7 @@ fun RootScreen(store: ConnectionStore) {
                 }
                 ChatThreadScreen(
                     client = client,
+                    connectionId = connection.id,
                     summary = (current as Screen.Thread).summary,
                     onBack = { pop() },
                 )

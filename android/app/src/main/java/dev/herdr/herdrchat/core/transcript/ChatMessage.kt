@@ -1,8 +1,12 @@
 package dev.herdr.herdrchat.core.transcript
 
+import kotlinx.serialization.Serializable
+
 /** A single WhatsApp-style bubble derived from a Claude Code transcript turn.
  *  One transcript entry maps to one ChatMessage; the turn's parts become ordered
- *  [segments] so the UI can show text while collapsing thinking and tool activity. */
+ *  [segments] so the UI can show text while collapsing thinking and tool activity.
+ *  Serializable so the thread cache can persist parsed history to disk. */
+@Serializable
 data class ChatMessage(
     val id: String,
     val role: Role,
@@ -25,9 +29,14 @@ data class ChatMessage(
     val isToolOnly: Boolean get() = displayText.isBlank()
 }
 
+@Serializable
 sealed interface MessageSegment {
+    @Serializable
     data class Text(val value: String) : MessageSegment
+    @Serializable
     data class Thinking(val value: String) : MessageSegment
+    @Serializable
     data class ToolUse(val name: String, val input: String?) : MessageSegment
+    @Serializable
     data class ToolResult(val value: String) : MessageSegment
 }

@@ -39,6 +39,8 @@ public final class ConnectionStore {
             connections.append(connection)
         }
         if let secret { Keychain.set(secret, for: connection.id.uuidString) }
+        // Editing a host resets its TOFU pin: the next connect re-pins.
+        Keychain.delete(Self.pinAccount(connection.id))
         selectedID = connection.id
         invalidate(connection.id)   // edited fields -> rebuild the shared client
         persist()
@@ -47,7 +49,9 @@ public final class ConnectionStore {
     public func delete(_ connection: ServerConnection) {
         connections.removeAll { $0.id == connection.id }
         Keychain.delete(connection.id.uuidString)
+        Keychain.delete(Self.pinAccount(connection.id))
         invalidate(connection.id)
+        ThreadCache.shared.clear(connectionID: connection.id.uuidString)
         if selectedID == connection.id { selectedID = connections.first?.id }
         persist()
     }
@@ -65,15 +69,28 @@ public final class ConnectionStore {
             port: connection.port,
             username: connection.username,
             auth: auth,
-            herdrPath: connection.herdrPath
+            herdrPath: connection.herdrPath,
+            hostKeyPin: Self.pin(for: connection.id)
         )
         let client = HerdrClient.ssh(config)
         clients[connection.id] = client
         return client
     }
 
+    private static func pinAccount(_ id: ServerConnection.ID) -> String { "hostkey-\(id.uuidString)" }
+
+    /// TOFU pin storage backed by the Keychain.
+    private static func pin(for id: ServerConnection.ID) -> HostKeyPin {
+        let account = pinAccount(id)
+        return HostKeyPin(
+            load: { Keychain.get(account) },
+            save: { Keychain.set($0, for: account) }
+        )
+    }
+
     /// Drop (and close) the cached connection for a host — after an edit/delete.
     private func invalidate(_ id: ServerConnection.ID) {
+        ThreadSessions.shared.drop(connectionID: id.uuidString)
         guard let client = clients.removeValue(forKey: id) else { return }
         if let transport = client.transport as? SSHTransport {
             Task { await transport.disconnect() }
@@ -102,7 +119,8 @@ public final class ConnectionStore {
             port: port,
             username: username,
             auth: auth,
-            herdrPath: herdrPath.isEmpty ? "herdr" : herdrPath
+            herdrPath: herdrPath.isEmpty ? "herdr" : herdrPath,
+            hostKeyPin: fallbackId.map(Self.pin(for:))   // new hosts pin on first real connect
         )
         return .ssh(config)
     }

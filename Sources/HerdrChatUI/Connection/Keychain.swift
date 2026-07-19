@@ -15,7 +15,8 @@ enum Keychain {
         ]
         SecItemDelete(query as CFDictionary)
         query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // ThisDeviceOnly: never migrates via backups to another device.
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(query as CFDictionary, nil)
     }
 

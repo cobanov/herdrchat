@@ -21,9 +21,15 @@ import java.util.UUID
  * Drives one workspace thread: tails the transcript(s) of the agent(s) in the
  * workspace into chat bubbles, tracks live blocked/typing state, and sends
  * replies back through herdr.
+ *
+ * Lifecycle: owned by [ThreadSessions] (app-scoped), NOT by the screen — so
+ * navigating away keeps the tails alive and coming back is instant. The status
+ * poll doubles as a health loop: it restarts dead tails after a connection blip
+ * and follows transcript file rotation (new session files).
  */
 class ChatThreadViewModel(
     private val client: HerdrClient,
+    private val connectionId: String,
     summary: ChatSummary,
 ) {
     val title: String = summary.title
@@ -39,24 +45,39 @@ class ChatThreadViewModel(
         private set
     var isSending by mutableStateOf(false)
         private set
+    var failedEchoIds by mutableStateOf<Set<String>>(emptySet())
+        private set
 
     private val seenIds = mutableSetOf<String>()
     private val arrival = mutableListOf<ChatMessage>()      // real transcript bubbles, in order
     private val localEchoes = mutableListOf<ChatMessage>()  // optimistic user sends, pre-transcript
     private val tailJobs = mutableListOf<Job>()
+    private val tailedPaths = mutableMapOf<String, String>() // agent cwd -> transcript path
+    private var tailsDead = false
     private var statusJob: Job? = null
     private var scope: CoroutineScope? = null
+    private var started = false
 
     init {
-        // Seed from the process cache so reopening a chat shows its history
-        // instantly instead of re-reading the whole transcript.
-        val cached = ThreadCache.messages(workspaceId)
+        // Seed from the disk-backed cache so reopening (even after an app
+        // restart) shows history instantly.
+        val cached = ThreadCache.messages(connectionId, workspaceId)
         if (cached.isNotEmpty()) {
             arrival.addAll(cached)
-            seenIds.addAll(ThreadCache.seenIds(workspaceId))
+            seenIds.addAll(ThreadCache.seenIds(connectionId, workspaceId))
             messages = arrival.toList()
         }
     }
+
+    /** Aggregate presence for the header, most-urgent-wins. */
+    val status: AgentStatus
+        get() = when {
+            liveAgents.any { it.agentStatus == AgentStatus.BLOCKED } -> AgentStatus.BLOCKED
+            liveAgents.any { it.agentStatus == AgentStatus.WORKING } -> AgentStatus.WORKING
+            liveAgents.any { it.agentStatus == AgentStatus.DONE } -> AgentStatus.DONE
+            liveAgents.isNotEmpty() -> AgentStatus.IDLE
+            else -> AgentStatus.UNKNOWN
+        }
 
     /** The agent pane a reply is typed into (focused agent, else first). */
     val primaryPane: AgentInfo?
@@ -69,17 +90,9 @@ class ChatThreadViewModel(
 
     val isBlocked: Boolean get() = blockedPane != null
 
-    /** Aggregate presence for the header, most-urgent-wins. */
-    val status: AgentStatus
-        get() = when {
-            liveAgents.any { it.agentStatus == AgentStatus.BLOCKED } -> AgentStatus.BLOCKED
-            liveAgents.any { it.agentStatus == AgentStatus.WORKING } -> AgentStatus.WORKING
-            liveAgents.any { it.agentStatus == AgentStatus.DONE } -> AgentStatus.DONE
-            liveAgents.isNotEmpty() -> AgentStatus.IDLE
-            else -> AgentStatus.UNKNOWN
-        }
-
-    fun start(scope: CoroutineScope) {
+    fun startIfNeeded(scope: CoroutineScope) {
+        if (started) return
+        started = true
         this.scope = scope
         startStatusPolling(scope)
         scope.launch { startTails(scope) }
@@ -88,9 +101,13 @@ class ChatThreadViewModel(
     fun stop() {
         tailJobs.forEach { it.cancel() }
         tailJobs.clear()
+        tailedPaths.clear()
         statusJob?.cancel()
         statusJob = null
+        started = false
     }
+
+    fun clearError() { error = null }
 
     // MARK: - Reading
 
@@ -100,22 +117,25 @@ class ChatThreadViewModel(
         for (agent in agents) {
             val path = runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull() ?: continue
             val label = if (agents.size > 1) agent.agent else null
-            val cachedBytes = ThreadCache.consumedBytes(workspaceId, path)
+            tailedPaths[agent.cwd] = path
+
+            val cachedBytes = ThreadCache.consumedBytes(connectionId, workspaceId, path)
             val size = runCatching { store.fileSize(path) }.getOrNull() ?: -1L
             val canResume = cachedBytes != null && size >= cachedBytes
 
             val followStart: Long
             if (canResume) {
-                // Reopen: history already cached; just follow from where we left off.
-                followStart = cachedBytes!!
+                // Reopen: history cached; follow from just before where we left
+                // off (rewind heals a mid-line cursor, dedupe eats the overlap).
+                followStart = maxOf(0L, cachedBytes!! - RESUME_REWIND)
             } else {
-                // First open: bulk-load only the recent slice in ONE read + ONE
-                // batch (not line-by-line), then follow new appends live.
-                ThreadCache.resetBytes(workspaceId, path)
+                // First open (or rotation): bulk-load only the recent slice in
+                // ONE read + ONE batch, then follow new appends live.
+                ThreadCache.resetBytes(connectionId, workspaceId, path)
                 val recent = runCatching { store.recent(path, label, RECENT_BYTES) }.getOrNull()
                 if (recent != null) {
                     ingestBatch(recent.messages)
-                    ThreadCache.setConsumedBytes(workspaceId, path, recent.consumedBytes)
+                    ThreadCache.setConsumedBytes(connectionId, workspaceId, path, recent.consumedBytes)
                     followStart = recent.consumedBytes
                 } else {
                     followStart = 0L
@@ -126,19 +146,30 @@ class ChatThreadViewModel(
                 try {
                     store.tail(path, label, followStart).collect { chunk ->
                         chunk.message?.let { ingest(it) }
-                        ThreadCache.setConsumedBytes(workspaceId, path, chunk.consumedBytes)
+                        ThreadCache.setConsumedBytes(connectionId, workspaceId, path, chunk.consumedBytes)
                     }
+                    tailsDead = true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    setError(e)
+                    tailsDead = true
                 }
             }
             tailJobs.add(job)
         }
     }
 
+    private suspend fun restartTails() {
+        val s = scope ?: return
+        tailJobs.forEach { it.cancel() }
+        tailJobs.clear()
+        tailedPaths.clear()
+        startTails(s)
+    }
+
     private fun ingest(message: ChatMessage) {
         if (!seenIds.add(message.id)) return
-        ThreadCache.add(workspaceId, message)
+        ThreadCache.add(connectionId, workspaceId, message)
         arrival.add(message)
         rebuild()
     }
@@ -148,7 +179,7 @@ class ChatThreadViewModel(
         var added = false
         for (message in incoming) {
             if (seenIds.add(message.id)) {
-                ThreadCache.add(workspaceId, message)
+                ThreadCache.add(connectionId, workspaceId, message)
                 arrival.add(message)
                 added = true
             }
@@ -156,15 +187,35 @@ class ChatThreadViewModel(
         if (added) rebuild()
     }
 
+    /** Status poll doubles as tail health/rotation watchdog. */
     private fun startStatusPolling(scope: CoroutineScope) {
         statusJob = scope.launch {
+            var tick = 0
             while (isActive) {
                 runCatching { client.snapshot() }.getOrNull()?.let { snapshot ->
                     liveAgents = snapshot.agents.filter { it.workspaceId == workspaceId }
+                    if (error?.contains("host_key") != true) error = null
+                    if (tailsDead) {
+                        tailsDead = false
+                        restartTails()
+                    } else if (tick % 3 == 0 && rotationDetected()) {
+                        restartTails()
+                    }
                 }
+                tick += 1
                 delay(2000)
             }
         }
+    }
+
+    /** True when any tailed agent's newest transcript is no longer the file we
+     *  follow (Claude started a new session file). */
+    private suspend fun rotationDetected(): Boolean {
+        for ((cwd, tailed) in tailedPaths.toMap()) {
+            val newest = runCatching { store.newestTranscriptPath(cwd) }.getOrNull() ?: continue
+            if (newest != tailed) return true
+        }
+        return false
     }
 
     private fun rebuild() {
@@ -173,7 +224,11 @@ class ChatThreadViewModel(
             .filter { it.role == ChatMessage.Role.USER }
             .map { it.displayText.trim() }
             .toSet()
-        localEchoes.removeAll { realUserTexts.contains(it.displayText.trim()) }
+        localEchoes.removeAll { echo ->
+            if (!realUserTexts.contains(echo.displayText.trim())) return@removeAll false
+            failedEchoIds = failedEchoIds - echo.id
+            true
+        }
         messages = arrival + localEchoes
     }
 
@@ -184,12 +239,10 @@ class ChatThreadViewModel(
     // MARK: - Writing
 
     fun send() {
-        val s = scope ?: return
         val text = draft.trim()
         val pane = primaryPane
         if (text.isEmpty() || pane == null) return
         draft = ""
-        isSending = true
         // Optimistic echo so the bubble appears instantly.
         val echo = ChatMessage(
             id = "local-${UUID.randomUUID()}",
@@ -199,13 +252,30 @@ class ChatThreadViewModel(
         )
         localEchoes.add(echo)
         rebuild()
+        deliver(text, echo.id, pane.paneId)
+    }
+
+    /** Re-send a failed optimistic echo. */
+    fun retry(echoId: String) {
+        val echo = localEchoes.firstOrNull { it.id == echoId } ?: return
+        val pane = primaryPane ?: return
+        failedEchoIds = failedEchoIds - echoId
+        deliver(echo.displayText, echoId, pane.paneId)
+    }
+
+    private fun deliver(text: String, echoId: String, paneId: String) {
+        val s = scope ?: return
+        isSending = true
         s.launch {
-            runCatching { client.sendMessage(pane.paneId, text) }.onFailure { setError(it) }
+            runCatching { client.sendMessage(paneId, text) }.onFailure {
+                failedEchoIds = failedEchoIds + echoId
+                setError(it)
+            }
             isSending = false
         }
     }
 
-    /** Quick reply to a blocked prompt (e.g. "enter", "1", "escape"). */
+    /** Quick reply to a blocked prompt (e.g. "Enter", "1", "Escape"). */
     fun sendKeys(keys: List<String>) {
         val s = scope ?: return
         val pane = blockedPane ?: primaryPane ?: return
@@ -218,5 +288,9 @@ class ChatThreadViewModel(
         // Only bulk-load this many bytes of a fresh transcript up front; older
         // history stays on disk. Keeps the first open fast even on huge sessions.
         private const val RECENT_BYTES = 400_000L
+        // On resume, rewind this much before the stored offset: if a disconnect
+        // left the cursor mid-line, the boundary line is re-read in full (dedupe
+        // drops anything already seen), so no message is lost at the seam.
+        private const val RESUME_REWIND = 4_096L
     }
 }
