@@ -24,6 +24,13 @@ struct ChatThreadView: View {
         model.messages.filter { !$0.isSidechain && !($0.role == .user && $0.isToolOnly) }
     }
 
+    /// True while we're waiting on the agent — it's working, or a send is still
+    /// being submitted/verified — but not when it's blocked (the quick-reply bar
+    /// covers that). Drives the slim waiting bar under the newest bubble.
+    private var isWaiting: Bool {
+        !model.isBlocked && (model.status == .working || model.isSending)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             messageList
@@ -121,7 +128,7 @@ struct ChatThreadView: View {
     /// scroll restoration and made iOS 26's scroll-edge blur cover the screen.
     private var messageList: some View {
         ScrollView {
-            if rows.isEmpty && model.liveTail == nil {
+            if rows.isEmpty && !isWaiting {
                 ContentUnavailableView(
                     "Henüz mesaj yok",
                     systemImage: "text.bubble",
@@ -134,17 +141,21 @@ struct ChatThreadView: View {
                         rowView(row)
                             .padding(.top, row.startsGroup ? 10 : 2)
                     }
-                    // The live "agent is typing this right now" terminal tail
-                    // rides at the very bottom, under the newest bubble.
-                    if let tail = model.liveTail {
-                        LiveTailBubble(text: tail)
-                            .padding(.top, 10)
+                    // While waiting on the agent, a slim sweeping bar sits at the
+                    // very bottom, under the newest bubble.
+                    if isWaiting {
+                        WaitingBar()
+                            .padding(.horizontal, 44)
+                            .padding(.top, 16)
+                            .padding(.bottom, 4)
+                            .transition(.opacity)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isWaiting)
         .defaultScrollAnchor(.bottom)
         #if os(iOS)
         .scrollDismissesKeyboard(.immediately)
@@ -210,44 +221,47 @@ struct ChatThreadView: View {
         .background(.bar)
     }
 
-    // MARK: - Composer (iMessage anatomy: send button inside the field)
+    // MARK: - Composer (floating glass capsule, iMessage-style)
 
+    /// A single floating pill that hovers above the keyboard: a frosted-glass
+    /// capsule with the send button inside on the trailing edge. No full-width
+    /// bar behind it — the pill sits on the chat background with breathing room
+    /// on every side, so there's no flat edge trying (and failing) to meet the
+    /// keyboard's rounded top.
     private var composer: some View {
         let canSend = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isSending
-        return HStack(alignment: .bottom, spacing: 0) {
-            HStack(alignment: .bottom, spacing: 4) {
-                TextField("Mesaj", text: $model.draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.leading, 12)
-                    .padding(.vertical, 7)
-                Button {
-                    sendTrigger += 1
-                    Task { await model.send() }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 27))
-                        .foregroundStyle(canSend ? Theme.tint : Color.secondary.opacity(0.45))
-                        .symbolRenderingMode(.hierarchical)
-                }
-                .buttonStyle(PressableStyle())
-                .disabled(!canSend)
-                .padding(.trailing, 3)
-                .padding(.bottom, 3)
-                .animation(.spring(response: 0.25, dampingFraction: 1), value: canSend)
-                .sendHaptic(sendTrigger)
+        return HStack(alignment: .bottom, spacing: 6) {
+            TextField("Mesaj", text: $model.draft, axis: .vertical)
+                .lineLimit(1...5)
+                .padding(.leading, 16)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                sendTrigger += 1
+                Task { await model.send() }
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(canSend ? Theme.tint : Color.secondary.opacity(0.4))
+                    .symbolRenderingMode(.hierarchical)
             }
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 19, style: .continuous)
-                        .fill(Theme.background)
-                    RoundedRectangle(cornerRadius: 19, style: .continuous)
-                        .strokeBorder(Theme.separator.opacity(0.6), lineWidth: 0.7)
-                }
-            )
+            .buttonStyle(PressableStyle())
+            .disabled(!canSend)
+            .padding(.trailing, 5)
+            .padding(.bottom, 4)
+            .animation(.spring(response: 0.25, dampingFraction: 1), value: canSend)
+            .sendHaptic(sendTrigger)
         }
+        .background(
+            ZStack {
+                Capsule(style: .continuous).fill(.regularMaterial)
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.35), lineWidth: 0.5)
+            }
+        )
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
     }
 
     private func copyToPasteboard(_ text: String) {

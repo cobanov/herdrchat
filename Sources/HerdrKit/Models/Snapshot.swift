@@ -19,6 +19,13 @@ public struct AgentInfo: Decodable, Sendable, Identifiable, Hashable {
     public let agentSession: AgentSessionRef?
 
     public var id: String { paneId }
+
+    /// True when the integration reports a concrete native session id (for Claude
+    /// Code, its session UUID). Only then can a transcript be targeted exactly —
+    /// without it the newest-`.jsonl` guess may hit a previous session's file.
+    public var hasSessionId: Bool {
+        agentSession?.kind == "id" && (agentSession?.value?.isEmpty == false)
+    }
 }
 
 /// `agent_session` payload: how an integration identifies its native session.

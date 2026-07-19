@@ -39,6 +39,32 @@ public struct HerdrClient: Sendable {
         _ = try await transport.run([herdr, "status", "server"])
     }
 
+    /// The host user's home directory — the sensible starting point for browsing
+    /// to a working directory in the new-chat folder picker.
+    public func homeDirectory() async throws -> String {
+        let data = try await transport.shell(#"printf %s "$HOME""#)
+        let home = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return home.isEmpty ? "/" : home
+    }
+
+    /// Immediate subdirectories of `path` on the host (names only, sorted, hidden
+    /// dirs excluded). Powers the new-chat folder picker so a working directory
+    /// can be chosen by browsing the device instead of typed from memory.
+    public func listDirectories(at path: String) async throws -> [String] {
+        // `-p` appends "/" to directories and `-L` follows symlinked dirs, so we
+        // can keep only entries ending in "/" and strip it. An unreadable path
+        // yields nothing rather than erroring the picker.
+        let command = "cd \(ShellQuoting.quote(path)) 2>/dev/null && ls -1Lp 2>/dev/null; true"
+        let data = try await transport.shell(command)
+        return String(decoding: data, as: UTF8.self)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasSuffix("/") }
+            .map { String($0.dropLast()) }
+            .filter { !$0.isEmpty && $0 != "." && $0 != ".." }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     // MARK: - Writes
 
     /// Type a chat message into an agent pane and submit it. `pane run` sends the

@@ -169,42 +169,36 @@ struct MessageBubble: View {
     }
 }
 
-// MARK: - Live tail (pseudo token stream)
+// MARK: - Waiting indicator
 
-/// While the agent works, the phone can't see token deltas (transcripts are
-/// turn-granular) — but it CAN see the terminal. This bubble shows the live
-/// tail of the agent's pane, refreshed every couple of seconds: the phone-side
-/// equivalent of watching the terminal stream.
-struct LiveTailBubble: View {
-    let text: String
+/// A slim, indeterminate "waiting for the reply" bar shown while the agent
+/// works. Transcripts are turn-granular, so there's no finer token stream to
+/// surface — a quiet sweeping bar reads as progress without pretending to show
+/// content it doesn't have (it replaces the old terminal-tail bubble).
+struct WaitingBar: View {
+    var height: CGFloat = 3
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    TypingDots(color: Theme.tint, size: 4)
-                    Text("canlı")
-                        .font(.system(.caption2, design: .monospaced).weight(.semibold))
-                        .foregroundStyle(Theme.tint)
+        GeometryReader { geo in
+            let w = geo.size.width
+            let segment = max(48, w * 0.28)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.tint.opacity(0.14))
+                TimelineView(.animation) { context in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    // Ease-in-out sweep back and forth across the track.
+                    let phase = 0.5 - 0.5 * cos(t * 1.5)
+                    let x = (w - segment) * phase
+                    Capsule()
+                        .fill(Theme.tint)
+                        .frame(width: segment)
+                        .offset(x: x)
                 }
-                Text(text)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Theme.bubbleIncoming.opacity(0.6))
-            .overlay(
-                UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
-                    .strokeBorder(Theme.tint.opacity(0.35), lineWidth: 1)
-            )
-            .clipShape(
-                UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
-            )
-            Spacer(minLength: 48)
         }
+        .frame(height: height)
+        .clipShape(Capsule())
+        .accessibilityLabel("Yanıt bekleniyor")
     }
 }
 

@@ -23,9 +23,6 @@ public final class ChatThreadViewModel {
     public private(set) var error: String?
     public private(set) var isSending = false
     public private(set) var failedEchoIDs: Set<String> = []
-    /// Live tail of the working agent's terminal — the phone-side stand-in for
-    /// token streaming (transcripts are turn-granular; the TUI buffer is not).
-    public private(set) var liveTail: String?
 
     private let client: HerdrClient
     private let store: TranscriptStore
@@ -257,8 +254,8 @@ public final class ChatThreadViewModel {
         if added { rebuild() }
     }
 
-    /// Status poll doubles as tail health/rotation watchdog and, while the
-    /// agent works, refreshes the live terminal tail.
+    /// Status poll doubles as tail health/rotation watchdog: it refreshes live
+    /// agent presence and restarts tails on rotation or death.
     private func startStatusPolling() {
         statusTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -272,7 +269,6 @@ public final class ChatThreadViewModel {
                     } else if self.rotationDetected() || self.unresolvedSession() {
                         await self.restartTails()
                     }
-                    await self.refreshLiveTail()
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
@@ -304,32 +300,6 @@ public final class ChatThreadViewModel {
             }
         }
         return false
-    }
-
-    /// While working, surface the last few lines of the agent's terminal as a
-    /// pseudo-stream; cleared as soon as the turn completes.
-    private func refreshLiveTail() async {
-        guard status == .working, let pane = primaryPane else {
-            if liveTail != nil { liveTail = nil }
-            return
-        }
-        guard let raw = try? await client.paneTail(pane: pane.paneId, lines: 12) else { return }
-        let cleaned = Self.cleanTail(raw)
-        liveTail = cleaned.isEmpty ? nil : cleaned
-    }
-
-    /// Strip TUI chrome (box borders, prompt, blank lines) and keep the tail.
-    static func cleanTail(_ raw: String) -> String {
-        let lines = raw
-            .components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                guard !line.isEmpty else { return false }
-                guard let first = line.first else { return false }
-                return !"╭╰│❯┃└┌".contains(first)
-            }
-        let joined = lines.suffix(6).joined(separator: "\n")
-        return String(joined.suffix(400))
     }
 
     /// Merge transcript arrivals with optimistic echoes chronologically, so an

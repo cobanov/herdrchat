@@ -232,6 +232,7 @@ private struct NewWorkspaceSheet: View {
     @State private var cwd = ""
     @State private var label = ""
     @State private var creating = false
+    @State private var showingPicker = false
 
     private var canStart: Bool {
         !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !creating
@@ -247,10 +248,15 @@ private struct NewWorkspaceSheet: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         #endif
+                    Button {
+                        showingPicker = true
+                    } label: {
+                        Label("Cihazda klasör seç", systemImage: "folder")
+                    }
                 } header: {
                     Text("Çalışma dizini")
                 } footer: {
-                    Text("Claude bu dizinde başlar — host üzerinde var olan bir klasör olmalı.")
+                    Text("Claude bu dizinde başlar. Yolu yazabilir ya da cihazdaki klasörlere göz atıp seçebilirsin.")
                 }
 
                 if !model.knownCwds.isEmpty {
@@ -288,6 +294,11 @@ private struct NewWorkspaceSheet: View {
             }
             .interactiveDismissDisabled(creating)
             .onAppear { if cwd.isEmpty { cwd = model.lastCwd } }
+            .sheet(isPresented: $showingPicker) {
+                DirectoryPickerView(model: model, start: cwd) { picked in
+                    cwd = picked
+                }
+            }
         }
     }
 
