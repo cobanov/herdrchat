@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- App Store Connect (TestFlight) export options for `xcodebuild -exportArchive`. -->
+<!-- App Store Connect (TestFlight) export options for `xcodebuild -exportArchive`.
+     MANUAL signing: the ASC API key has no cloud-managed-signing permission, so
+     automatic style fails with "Cloud signing permission error". The pinned
+     cert + profile exist on this machine (created via scripts/asc.swift). -->
 <plist version="1.0">
 <dict>
     <key>method</key>
@@ -8,7 +11,14 @@
     <key>teamID</key>
     <string>6U58AKY6F8</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>dev.herdr.HerdrChat</key>
+        <string>HerdrChat App Store</string>
+    </dict>
     <key>destination</key>
     <string>export</string>
     <key>uploadSymbols</key>
