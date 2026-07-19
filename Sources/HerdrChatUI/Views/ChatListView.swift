@@ -12,6 +12,7 @@ struct ChatListView: View {
 
     @State private var model: WorkspacesViewModel
     @State private var showingConnections = false
+    @State private var showingNewWorkspace = false
     @State private var path = NavigationPath()
 
     init(store: ConnectionStore, connection: ServerConnection) {
@@ -50,8 +51,10 @@ struct ChatListView: View {
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) { serverButton }
+                ToolbarItem(placement: .topBarTrailing) { newWorkspaceButton }
                 #else
                 ToolbarItem { serverButton }
+                ToolbarItem { newWorkspaceButton }
                 #endif
             }
             .navigationDestination(for: ChatSummary.self) { summary in
@@ -64,6 +67,11 @@ struct ChatListView: View {
             .refreshable { await model.refresh() }
             .sheet(isPresented: $showingConnections) {
                 NavigationStack { ConnectionListView(store: store) }
+            }
+            .sheet(isPresented: $showingNewWorkspace) {
+                NewWorkspaceSheet(model: model) { summary in
+                    path.append(summary)
+                }
             }
         }
         .task { model.start() }
@@ -87,6 +95,16 @@ struct ChatListView: View {
             .font(.subheadline)
         }
         .accessibilityLabel("Sunucu: \(connection.name). Sunucuları yönet.")
+    }
+
+    /// Start a fresh chat: create a workspace on the host and launch Claude in it.
+    private var newWorkspaceButton: some View {
+        Button {
+            showingNewWorkspace = true
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .accessibilityLabel("Yeni sohbet")
     }
 
     #if DEBUG
@@ -201,6 +219,102 @@ func formatListTime(_ date: Date?) -> String? {
         formatter.dateFormat = "d.MM.yyyy"
     }
     return formatter.string(from: date)
+}
+
+/// Start a new conversation: create a workspace on the host at a chosen working
+/// directory and launch Claude in it. Prefills the last-used directory and
+/// offers the directories already in use as one-tap suggestions.
+private struct NewWorkspaceSheet: View {
+    let model: WorkspacesViewModel
+    let onCreated: (ChatSummary) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var cwd = ""
+    @State private var label = ""
+    @State private var creating = false
+
+    private var canStart: Bool {
+        !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !creating
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("/Users/…/proje", text: $cwd, axis: .vertical)
+                        .autocorrectionDisabled()
+                        .font(.callout.monospaced())
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } header: {
+                    Text("Çalışma dizini")
+                } footer: {
+                    Text("Claude bu dizinde başlar — host üzerinde var olan bir klasör olmalı.")
+                }
+
+                if !model.knownCwds.isEmpty {
+                    Section("Son kullanılanlar") {
+                        ForEach(model.knownCwds, id: \.self) { dir in
+                            Button { cwd = dir } label: {
+                                Label(dir, systemImage: "folder")
+                                    .font(.callout)
+                                    .lineLimit(1)
+                                    .truncationMode(.head)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+
+                Section("İsim (opsiyonel)") {
+                    TextField("Otomatik (klasör adı)", text: $label)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle("Yeni sohbet")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                #if os(iOS)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }.disabled(creating)
+                }
+                ToolbarItem(placement: .confirmationAction) { startControl }
+                #else
+                ToolbarItem { startControl }
+                #endif
+            }
+            .interactiveDismissDisabled(creating)
+            .onAppear { if cwd.isEmpty { cwd = model.lastCwd } }
+        }
+    }
+
+    @ViewBuilder
+    private var startControl: some View {
+        if creating {
+            ProgressView()
+        } else {
+            Button("Başlat") { start() }.disabled(!canStart)
+        }
+    }
+
+    private func start() {
+        creating = true
+        Task {
+            let summary = await model.createWorkspace(
+                cwd: cwd,
+                label: label.isEmpty ? nil : label
+            )
+            creating = false
+            if let summary {
+                dismiss()
+                onCreated(summary)
+            }
+            // On failure the sheet stays open; the list row shows the error.
+        }
+    }
 }
 
 struct ConnectionErrorRow: View {

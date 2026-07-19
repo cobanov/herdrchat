@@ -54,6 +54,44 @@ public final class WorkspacesViewModel {
         pollTask = nil
     }
 
+    /// The last working directory a workspace was created in (per connection),
+    /// so the "new chat" sheet can prefill it — repeat use is one tap.
+    public var lastCwd: String {
+        get { UserDefaults.standard.string(forKey: "herdrchat.lastCwd.\(connectionID)") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "herdrchat.lastCwd.\(connectionID)") }
+    }
+
+    /// Distinct working directories already in use, offered as quick-fill
+    /// suggestions in the new-chat sheet (start another agent in a known repo).
+    public var knownCwds: [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for summary in summaries {
+            for agent in summary.agents where agent.agent != nil {
+                if seen.insert(agent.cwd).inserted { result.append(agent.cwd) }
+            }
+        }
+        return result
+    }
+
+    /// Create a workspace at `cwd` and start `command` (Claude) in it. Returns the
+    /// new workspace's summary once the list refresh sees it, so the caller can
+    /// navigate straight into the fresh chat. Nil on failure (error is published).
+    public func createWorkspace(cwd: String, label: String?, command: String = "claude") async -> ChatSummary? {
+        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCwd.isEmpty else { return nil }
+        do {
+            let creation = try await client.createWorkspace(cwd: trimmedCwd, label: label?.trimmingCharacters(in: .whitespacesAndNewlines))
+            try await client.startAgent(inPane: creation.rootPane.paneId, command: command)
+            lastCwd = trimmedCwd
+            await refresh()
+            return summaries.first { $0.workspaceId == creation.workspace.workspaceId }
+        } catch {
+            connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
+            return nil
+        }
+    }
+
     public func refresh() async {
         if summaries.isEmpty { isLoading = true }
         do {

@@ -71,6 +71,17 @@ data class Snapshot(
     val focusedWorkspaceId: String? = null,
 )
 
+/** `workspace.create` result: the new workspace and its root pane. The app starts
+ *  an agent in `rootPane` (`pane run <id> "claude"`) and navigates to `workspace`. */
+@Serializable
+data class WorkspaceCreation(
+    val workspace: Workspace,
+    val rootPane: RootPane,
+) {
+    @Serializable
+    data class RootPane(val paneId: String, val workspaceId: String = "")
+}
+
 // MARK: - CLI/socket result envelopes
 
 @Serializable data class SnapshotResult(val snapshot: Snapshot)

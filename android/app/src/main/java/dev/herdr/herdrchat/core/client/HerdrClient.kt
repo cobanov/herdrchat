@@ -9,6 +9,7 @@ import dev.herdr.herdrchat.core.model.PaneListResult
 import dev.herdr.herdrchat.core.model.Snapshot
 import dev.herdr.herdrchat.core.model.SnapshotResult
 import dev.herdr.herdrchat.core.model.Workspace
+import dev.herdr.herdrchat.core.model.WorkspaceCreation
 import dev.herdr.herdrchat.core.model.WorkspaceListResult
 import dev.herdr.herdrchat.core.net.HerdrTransport
 import dev.herdr.herdrchat.core.net.run
@@ -52,6 +53,21 @@ class HerdrClient(
     /** Send raw keys to a pane, e.g. quick-reply to a blocked prompt. */
     suspend fun sendKeys(paneId: String, keys: List<String>) {
         ensureOk(transport.run(listOf(herdr, "pane", "send-keys", paneId) + keys))
+    }
+
+    /** Create a new workspace rooted at [cwd] (optional [label]) without stealing
+     *  desktop focus, and return its ids. Follow with [startAgent] on the returned
+     *  root pane to launch Claude in it. */
+    suspend fun createWorkspace(cwd: String, label: String?): WorkspaceCreation {
+        val args = mutableListOf(herdr, "workspace", "create", "--cwd", cwd, "--no-focus")
+        if (!label.isNullOrEmpty()) { args += "--label"; args += label }
+        return HerdrJson.decode<WorkspaceCreation>(transport.run(args))
+    }
+
+    /** Launch an agent in a freshly created pane's shell (e.g. run "claude").
+     *  Uses `pane run`, which types the command and presses Enter in one request. */
+    suspend fun startAgent(paneId: String, command: String = "claude") {
+        ensureOk(transport.run(listOf(herdr, "pane", "run", paneId, command)))
     }
 
     /** Block until the agent reaches [status] (true) or the timeout elapses

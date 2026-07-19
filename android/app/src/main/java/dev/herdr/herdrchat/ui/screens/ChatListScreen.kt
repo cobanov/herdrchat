@@ -21,20 +21,27 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +82,7 @@ fun ChatListScreen(
     var watchEnabled by remember {
         mutableStateOf(dev.herdr.herdrchat.notify.WatchControl.isEnabled(context))
     }
+    var showNewWorkspace by remember { mutableStateOf(false) }
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             dev.herdr.herdrchat.notify.WatchControl.setEnabled(context, true)
@@ -101,6 +109,9 @@ fun ChatListScreen(
             TopAppBar(
                 title = { Text(connection.name) },
                 actions = {
+                    IconButton(onClick = { showNewWorkspace = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Yeni sohbet")
+                    }
                     IconButton(onClick = { toggleWatch() }) {
                         Icon(
                             if (watchEnabled) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
@@ -148,7 +159,111 @@ fun ChatListScreen(
             }
         }
     }
+
+    if (showNewWorkspace) {
+        NewWorkspaceSheet(
+            model = model,
+            onDismiss = { showNewWorkspace = false },
+            onCreated = onOpenThread,
+        )
+    }
 }
+
+/** Bottom sheet to start a new conversation: create a workspace at a chosen
+ *  working directory on the host and launch Claude in it. Prefills the last-used
+ *  directory and offers directories already in use as one-tap suggestions. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewWorkspaceSheet(
+    model: WorkspacesViewModel,
+    onDismiss: () -> Unit,
+    onCreated: (ChatSummary) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var cwd by remember { mutableStateOf(model.lastCwd) }
+    var label by remember { mutableStateOf("") }
+    var creating by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(onDismissRequest = { if (!creating) onDismiss() }, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Yeni sohbet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = cwd,
+                onValueChange = { cwd = it },
+                label = { Text("Çalışma dizini") },
+                placeholder = { Text("/Users/…/proje") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "Claude bu dizinde başlar — host üzerinde var olan bir klasör olmalı.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val known = model.knownCwds
+            if (known.isNotEmpty()) {
+                Text(
+                    "Son kullanılanlar",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                known.forEach { dir ->
+                    Text(
+                        text = shortPath(dir),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = HerdrColors.accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { cwd = dir }
+                            .padding(vertical = 6.dp),
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("İsim (opsiyonel)") },
+                placeholder = { Text("Otomatik (klasör adı)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    creating = true
+                    scope.launch {
+                        val summary = model.createWorkspace(cwd, label.ifBlank { null })
+                        creating = false
+                        if (summary != null) {
+                            onDismiss()
+                            onCreated(summary)
+                        }
+                    }
+                },
+                enabled = cwd.isNotBlank() && !creating,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (creating) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Text("Başlat")
+                }
+            }
+        }
+    }
+}
+
+/** Show the meaningful tail of a long path (the project folder), not the head. */
+private fun shortPath(path: String, max: Int = 34): String =
+    if (path.length <= max) path else "…" + path.takeLast(max - 1)
 
 @Composable
 private fun EmptyState(loading: Boolean) {

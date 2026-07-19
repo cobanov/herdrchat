@@ -113,6 +113,18 @@ public struct Rect: Decodable, Sendable, Equatable {
     public let height: Int
 }
 
+/// `workspace.create` result: the new workspace and its root pane. The app
+/// starts an agent in `rootPane` (`pane run <id> "claude"`) and can navigate
+/// straight to the new `workspace`.
+public struct WorkspaceCreation: Decodable, Sendable {
+    public struct RootPane: Decodable, Sendable {
+        public let paneId: String
+        public let workspaceId: String
+    }
+    public let workspace: Workspace
+    public let rootPane: RootPane
+}
+
 // MARK: - CLI/socket result envelopes
 
 public struct SnapshotResult: Decodable, Sendable { public let snapshot: Snapshot }

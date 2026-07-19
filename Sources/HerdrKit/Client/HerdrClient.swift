@@ -53,6 +53,22 @@ public struct HerdrClient: Sendable {
         try check(await transport.run([herdr, "pane", "send-keys", paneId] + keys))
     }
 
+    /// Create a new workspace rooted at `cwd` (optional `label`) without stealing
+    /// focus on the desktop, and return its ids. Follow with `startAgent` on the
+    /// returned root pane to launch Claude in it.
+    public func createWorkspace(cwd: String, label: String?) async throws -> WorkspaceCreation {
+        var args = [herdr, "workspace", "create", "--cwd", cwd, "--no-focus"]
+        if let label, !label.isEmpty { args += ["--label", label] }
+        let data = try await transport.run(args)
+        return try HerdrJSON.decode(WorkspaceCreation.self, from: data)
+    }
+
+    /// Launch an agent in a freshly created pane's shell (e.g. run "claude").
+    /// Uses `pane run`, which types the command and presses Enter in one request.
+    public func startAgent(inPane paneId: String, command: String = "claude") async throws {
+        try check(await transport.run([herdr, "pane", "run", paneId, command]))
+    }
+
     /// Block until the agent in a pane reaches `status` (true) or the timeout
     /// elapses (false). Backs delivery verification: after submitting a prompt
     /// the agent should flip to `working`.

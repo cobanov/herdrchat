@@ -29,6 +29,9 @@ class WorkspacesViewModel(
         private set
     var isLoading by mutableStateOf(false)
         private set
+    /** Last directory a workspace was created in, to prefill the new-chat sheet. */
+    var lastCwd by mutableStateOf("")
+        private set
 
     private var job: Job? = null
     private val previousStatuses = mutableMapOf<String, dev.herdr.herdrchat.core.model.AgentStatus>()
@@ -77,6 +80,29 @@ class WorkspacesViewModel(
                 UnreadStore.mark(UnreadStore.key(connectionId, row.workspaceId))
             }
             previousStatuses[row.workspaceId] = row.status
+        }
+    }
+
+    /** Distinct working directories already in use, offered as one-tap
+     *  suggestions in the new-chat sheet (start another agent in a known repo). */
+    val knownCwds: List<String>
+        get() = summaries.flatMap { it.agents }.filter { it.agent != null }.map { it.cwd }.distinct()
+
+    /** Create a workspace at [cwd] and start [command] (Claude) in it. Returns the
+     *  new workspace's summary once the refresh sees it, so the caller can open the
+     *  fresh chat. Null on failure (error is published to [connectionError]). */
+    suspend fun createWorkspace(cwd: String, label: String?, command: String = "claude"): ChatSummary? {
+        val trimmed = cwd.trim()
+        if (trimmed.isEmpty()) return null
+        return try {
+            val creation = client.createWorkspace(trimmed, label?.trim())
+            client.startAgent(creation.rootPane.paneId, command)
+            lastCwd = trimmed
+            refresh()
+            summaries.firstOrNull { it.workspaceId == creation.workspace.workspaceId }
+        } catch (e: Exception) {
+            connectionError = (e as? HerdrException)?.message ?: e.message ?: e.toString()
+            null
         }
     }
 
