@@ -53,6 +53,33 @@ public struct HerdrClient: Sendable {
         try check(await transport.run([herdr, "pane", "send-keys", paneId] + keys))
     }
 
+    /// Block until the agent in a pane reaches `status` (true) or the timeout
+    /// elapses (false). Backs delivery verification: after submitting a prompt
+    /// the agent should flip to `working`.
+    public func waitAgentStatus(pane paneId: String, status: AgentStatus, timeoutMs: Int) async -> Bool {
+        do {
+            _ = try await transport.run([
+                herdr, "agent", "wait", paneId,
+                "--status", status.rawValue,
+                "--timeout", String(timeoutMs),
+            ])
+            return true
+        } catch {
+            return false   // timeout (exit 1) or transport error
+        }
+    }
+
+    /// Recent unwrapped terminal tail of a pane — the live "what is the agent
+    /// doing right now" view while it streams (transcripts are turn-granular).
+    public func paneTail(pane paneId: String, lines: Int) async throws -> String {
+        let data = try await transport.run([
+            herdr, "pane", "read", paneId,
+            "--source", "recent-unwrapped",
+            "--lines", String(lines),
+        ])
+        return String(decoding: data, as: UTF8.self)
+    }
+
     // Surface a transported error if the CLI printed an envelope; commands like
     // `pane run` / `send-keys` print NOTHING on success, so empty output is OK.
     private func check(_ data: Data) throws {

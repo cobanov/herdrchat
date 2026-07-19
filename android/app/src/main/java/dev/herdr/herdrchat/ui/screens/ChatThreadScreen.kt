@@ -85,21 +85,26 @@ fun ChatThreadScreen(
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
 
+    // Opening the thread clears its unread dot; leaving re-arms it.
+    androidx.compose.runtime.DisposableEffect(model.unreadKey) {
+        dev.herdr.herdrchat.ui.chat.UnreadStore.activeKey = model.unreadKey
+        dev.herdr.herdrchat.ui.chat.UnreadStore.clear(model.unreadKey)
+        onDispose {
+            if (dev.herdr.herdrchat.ui.chat.UnreadStore.activeKey == model.unreadKey) {
+                dev.herdr.herdrchat.ui.chat.UnreadStore.activeKey = null
+            }
+        }
+    }
+
     // Bubbles worth showing: hide sidechain chatter and raw tool-result user turns.
     val visible = model.messages.filter {
         !it.isSidechain && !(it.role == ChatMessage.Role.USER && it.isToolOnly)
     }
 
+    // reverseLayout pins offset 0 to the NEWEST message: every open lands on
+    // the last message with no scroll management, and live arrivals appear at
+    // the bottom without yanking the reader.
     val listState = rememberLazyListState()
-    val atBottom by remember {
-        derivedStateOf { !listState.canScrollForward }
-    }
-    LaunchedEffect(visible.size) {
-        if (visible.isEmpty()) return@LaunchedEffect
-        val lastIsMine = visible.last().role == ChatMessage.Role.USER
-        // Don't yank the list while the user is reading scrollback.
-        if (atBottom || lastIsMine) listState.animateScrollToItem(visible.lastIndex)
-    }
 
     Scaffold(
         topBar = {
@@ -125,15 +130,27 @@ fun ChatThreadScreen(
                 .background(HerdrColors.background(dark))
                 .imePadding(),
         ) {
+            val reversed = visible.asReversed()
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp),
                 state = listState,
+                reverseLayout = true,
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
-                itemsIndexed(visible, key = { _, m -> m.id }) { i, m ->
+                // Item 0 in a reversed list = visually at the very bottom:
+                // the live "agent is typing this right now" terminal tail.
+                model.liveTail?.let { tail ->
+                    item(key = "live-tail") {
+                        Box(Modifier.animateItem().padding(top = 8.dp)) {
+                            dev.herdr.herdrchat.ui.components.LiveTailBubble(tail)
+                        }
+                    }
+                }
+                itemsIndexed(reversed, key = { _, m -> m.id }) { ri, m ->
+                    val i = visible.lastIndex - ri
                     val prev = visible.getOrNull(i - 1)
                     val grouped = prev != null && prev.role == m.role && prev.agentLabel == m.agentLabel
                     val failed = model.failedEchoIds.contains(m.id)

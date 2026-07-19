@@ -199,6 +199,47 @@ private fun Chip(icon: ImageVector, label: String, tint: Color) {
     }
 }
 
+/** While the agent works, the phone can't see token deltas (transcripts are
+ *  turn-granular) — but it CAN see the terminal. This bubble shows the live
+ *  tail of the agent's pane, refreshed every couple of seconds. */
+@Composable
+fun LiveTailBubble(text: String) {
+    val dark = isSystemInDarkTheme()
+    Row(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 328.dp)
+                .clip(RoundedCornerShape(5.dp, 17.dp, 17.dp, 17.dp))
+                .background(HerdrColors.incomingBubble(dark).copy(alpha = 0.7f))
+                .border(
+                    1.dp,
+                    HerdrColors.accent.copy(alpha = 0.35f),
+                    RoundedCornerShape(5.dp, 17.dp, 17.dp, 17.dp),
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TypingDots(color = HerdrColors.accent, dotSize = 4.dp)
+                Text(
+                    "canlı",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = HerdrColors.accent,
+                )
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                color = HerdrColors.secondaryText(dark),
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 /** Quick-reply bar shown when an agent is blocked, waiting for input. */
 @Composable
 fun BlockedReplyBar(onKeys: (List<String>) -> Unit) {

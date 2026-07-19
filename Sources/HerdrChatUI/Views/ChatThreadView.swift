@@ -12,7 +12,6 @@ import UIKit
 struct ChatThreadView: View {
     @State private var model: ChatThreadViewModel
     @State private var sendTrigger = 0
-    @State private var didInitialScroll = false
 
     init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
         _model = State(initialValue: ThreadSessions.shared.model(
@@ -48,6 +47,15 @@ struct ChatThreadView: View {
             ToolbarItem(placement: .principal) { header }
         }
         .task { model.startIfNeeded() }
+        .onAppear {
+            UnreadStore.shared.activeKey = model.unreadKey
+            UnreadStore.shared.clear(model.unreadKey)
+        }
+        .onDisappear {
+            if UnreadStore.shared.activeKey == model.unreadKey {
+                UnreadStore.shared.activeKey = nil
+            }
+        }
     }
 
     // MARK: - Header
@@ -85,75 +93,86 @@ struct ChatThreadView: View {
 
     // MARK: - Messages
 
-    private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                if visibleMessages.isEmpty {
-                    ContentUnavailableView(
-                        "Henüz mesaj yok",
-                        systemImage: "text.bubble",
-                        description: Text("İlk mesajını yaz — \(model.title) hazır.")
-                    )
-                    .padding(.top, 80)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
-                            let prev = index > 0 ? visibleMessages[index - 1] : nil
-                            let next = index + 1 < visibleMessages.count ? visibleMessages[index + 1] : nil
-                            let startsGroup = prev == nil || prev!.role != message.role || prev!.agentLabel != message.agentLabel
-                            let endsGroup = next == nil || next!.role != message.role || next!.agentLabel != message.agentLabel
-                            let failed = model.failedEchoIDs.contains(message.id)
+    /// A chronological row, precomputed so the flipped list stays simple.
+    private struct Row: Identifiable {
+        let message: ChatMessage
+        let startsGroup: Bool
+        let endsGroup: Bool
+        var id: String { message.id }
+    }
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                if startsGroup, let label = message.agentLabel, message.role != .user {
-                                    Text(label)
-                                        .font(.caption2.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                        .padding(.leading, 14)
-                                }
-                                MessageBubble(message: message, isLastInGroup: endsGroup)
-                                    .contextMenu {
-                                        Button {
-                                            copyToPasteboard(message.displayText)
-                                        } label: {
-                                            Label("Kopyala", systemImage: "doc.on.doc")
-                                        }
-                                    }
-                                if failed {
-                                    retryRow(for: message.id)
-                                }
-                            }
-                            .id(message.id)
-                            .padding(.top, startsGroup ? 10 : 2)
-                            .transition(.opacity.combined(with: .offset(y: 10)))
-                        }
+    private var rows: [Row] {
+        let visible = visibleMessages
+        return visible.enumerated().map { index, message in
+            let prev = index > 0 ? visible[index - 1] : nil
+            let next = index + 1 < visible.count ? visible[index + 1] : nil
+            return Row(
+                message: message,
+                startsGroup: prev == nil || prev!.role != message.role || prev!.agentLabel != message.agentLabel,
+                endsGroup: next == nil || next!.role != message.role || next!.agentLabel != message.agentLabel
+            )
+        }
+    }
+
+    /// The list is FLIPPED (scaled -1 vertically, rows re-flipped upright, data
+    /// reversed): offset zero is the newest message, so every open lands on the
+    /// last message with no scroll management, and live messages appear at the
+    /// bottom without yanking the reader — the technique every chat app uses.
+    private var messageList: some View {
+        ScrollView {
+            if rows.isEmpty && model.liveTail == nil {
+                ContentUnavailableView(
+                    "Henüz mesaj yok",
+                    systemImage: "text.bubble",
+                    description: Text("İlk mesajını yaz — \(model.title) hazır.")
+                )
+                .padding(.top, 80)
+            } else {
+                LazyVStack(spacing: 0) {
+                    // First in flipped space = visually at the very bottom:
+                    // the live "agent is typing this right now" tail.
+                    if let tail = model.liveTail {
+                        LiveTailBubble(text: tail)
+                            .scaleEffect(x: 1, y: -1)
+                            .padding(.bottom, 10)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.95), value: visibleMessages.count)
+                    ForEach(rows.reversed()) { row in
+                        rowView(row)
+                            .scaleEffect(x: 1, y: -1)
+                            .padding(.bottom, row.startsGroup ? 10 : 2)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
-            .defaultScrollAnchor(.bottom)
-            #if os(iOS)
-            .scrollDismissesKeyboard(.interactively)
-            #endif
-            .onChange(of: visibleMessages.count) { oldCount, newCount in
-                guard let last = visibleMessages.last else { return }
-                // Open pinned to the bottom instantly (no travel through the
-                // history); only a single live message that arrives afterwards
-                // gets a gentle animated scroll. Bulk/catch-up loads jump.
-                if didInitialScroll && newCount - oldCount == 1 {
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
-                } else {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-                didInitialScroll = true
+        }
+        .scaleEffect(x: 1, y: -1)
+        #if os(iOS)
+        .scrollDismissesKeyboard(.immediately)
+        #endif
+        .animation(.spring(response: 0.3, dampingFraction: 0.95), value: visibleMessages.count)
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: Row) -> some View {
+        let failed = model.failedEchoIDs.contains(row.message.id)
+        VStack(alignment: .leading, spacing: 2) {
+            if row.startsGroup, let label = row.message.agentLabel, row.message.role != .user {
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 14)
             }
-            .onAppear {
-                if let last = visibleMessages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                    didInitialScroll = true
+            MessageBubble(message: row.message, isLastInGroup: row.endsGroup)
+                .contextMenu {
+                    Button {
+                        copyToPasteboard(row.message.displayText)
+                    } label: {
+                        Label("Kopyala", systemImage: "doc.on.doc")
+                    }
                 }
+            if failed {
+                retryRow(for: row.message.id)
             }
         }
     }

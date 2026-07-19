@@ -69,7 +69,7 @@ fun ChatListScreen(
     onOpenThread: (ChatSummary) -> Unit,
     onOpenConnections: () -> Unit,
 ) {
-    val model = remember(connection.id) { WorkspacesViewModel(store.makeClient(connection)) }
+    val model = remember(connection.id) { WorkspacesViewModel(store.makeClient(connection), connection.id) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var watchEnabled by remember {
@@ -136,7 +136,7 @@ fun ChatListScreen(
                     }
                     items(summaries, key = { it.workspaceId }) { summary ->
                         Column(Modifier.animateItem()) {
-                            ChatRow(summary) { onOpenThread(summary) }
+                            ChatRow(summary, connection.id) { onOpenThread(summary) }
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 74.dp),
                                 thickness = 0.5.dp,
@@ -171,18 +171,32 @@ private fun EmptyState(loading: Boolean) {
 }
 
 @Composable
-private fun ChatRow(summary: ChatSummary, onClick: () -> Unit) {
+private fun ChatRow(summary: ChatSummary, connectionId: String, onClick: () -> Unit) {
     val dark = isSystemInDarkTheme()
     val interaction = remember { MutableInteractionSource() }
+    val isUnread = dev.herdr.herdrchat.ui.chat.UnreadStore.unread
+        .contains(dev.herdr.herdrchat.ui.chat.UnreadStore.key(connectionId, summary.workspaceId))
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .pressScale(interaction, pressedScale = 0.98f)
             .clickable(interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // Leading dot: orange = waiting for you, green = unread result.
+        val dotColor = when {
+            summary.needsAttention -> HerdrColors.statusColor(AgentStatus.BLOCKED)
+            isUnread -> HerdrColors.accent
+            else -> Color.Transparent
+        }
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(dotColor),
+        )
         Box(contentAlignment = Alignment.BottomEnd) {
             val color = avatarColor(summary.title.ifEmpty { summary.workspaceId })
             Box(
@@ -210,12 +224,11 @@ private fun ChatRow(summary: ChatSummary, onClick: () -> Unit) {
             )
             Subtitle(summary)
         }
-        if (summary.needsAttention) {
-            Box(
-                modifier = Modifier
-                    .size(11.dp)
-                    .clip(CircleShape)
-                    .background(HerdrColors.statusColor(AgentStatus.BLOCKED)),
+        if (summary.status == AgentStatus.WORKING) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = HerdrColors.accent,
             )
         }
     }

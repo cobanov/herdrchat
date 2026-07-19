@@ -2,6 +2,7 @@ package dev.herdr.herdrchat.core.client
 
 import dev.herdr.herdrchat.core.model.AgentInfo
 import dev.herdr.herdrchat.core.model.AgentListResult
+import dev.herdr.herdrchat.core.model.AgentStatus
 import dev.herdr.herdrchat.core.model.HerdrJson
 import dev.herdr.herdrchat.core.model.Pane
 import dev.herdr.herdrchat.core.model.PaneListResult
@@ -52,6 +53,18 @@ class HerdrClient(
     suspend fun sendKeys(paneId: String, keys: List<String>) {
         ensureOk(transport.run(listOf(herdr, "pane", "send-keys", paneId) + keys))
     }
+
+    /** Block until the agent reaches [status] (true) or the timeout elapses
+     *  (false). Backs delivery verification after submitting a prompt. */
+    suspend fun waitAgentStatus(paneId: String, status: AgentStatus, timeoutMs: Int): Boolean =
+        runCatching {
+            transport.run(listOf(herdr, "agent", "wait", paneId, "--status", status.raw, "--timeout", timeoutMs.toString()))
+        }.isSuccess
+
+    /** Recent unwrapped terminal tail of a pane — the live "what is the agent
+     *  doing right now" view while it streams (transcripts are turn-granular). */
+    suspend fun paneTail(paneId: String, lines: Int): String =
+        transport.run(listOf(herdr, "pane", "read", paneId, "--source", "recent-unwrapped", "--lines", lines.toString()))
 
     // Surface a transported error if the CLI printed an envelope; commands like
     // `pane run` / `send-keys` print NOTHING on success, so empty output is OK.

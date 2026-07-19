@@ -15,7 +15,10 @@ struct ChatListView: View {
     init(store: ConnectionStore, connection: ServerConnection) {
         self.store = store
         self.connection = connection
-        _model = State(initialValue: WorkspacesViewModel(client: store.makeClient(for: connection)))
+        _model = State(initialValue: WorkspacesViewModel(
+            client: store.makeClient(for: connection),
+            connectionID: connection.id.uuidString
+        ))
     }
 
     var body: some View {
@@ -25,7 +28,7 @@ struct ChatListView: View {
                     ConnectionErrorRow(message: error)
                 }
                 ForEach(model.summaries) { summary in
-                    ChatRow(summary: summary)
+                    ChatRow(summary: summary, connectionID: connection.id.uuidString)
                         .listRowInsets(EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 16))
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 90 }
                 }
@@ -82,19 +85,22 @@ struct ChatListView: View {
     }
 }
 
-/// A single workspace row: leading attention dot (iMessage's unread cue),
-/// presence-ring avatar, title + live status line. No disclosure chevron.
+/// A single workspace row: leading dot à la Messages (orange = waiting for you,
+/// emerald = unread result), presence-ring avatar, title + live status line, a
+/// small activity spinner while the agent works. No disclosure chevron.
 private struct ChatRow: View {
     let summary: ChatSummary
+    let connectionID: String
+
+    private var isUnread: Bool {
+        UnreadStore.shared.isUnread(UnreadStore.key(connectionID, summary.workspaceId))
+    }
 
     var body: some View {
         ZStack {
             NavigationLink(value: summary) { EmptyView() }.opacity(0)
             HStack(spacing: 10) {
-                Circle()
-                    .fill(Theme.attention)
-                    .frame(width: 9, height: 9)
-                    .opacity(summary.needsAttention ? 1 : 0)
+                leadingDot
                 PresenceRingAvatar(
                     title: summary.title,
                     key: summary.title.isEmpty ? summary.workspaceId : summary.title,
@@ -107,19 +113,33 @@ private struct ChatRow: View {
                     subtitle
                 }
                 Spacer(minLength: 0)
+                if summary.status == .working {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Theme.tint)
+                }
             }
         }
+    }
+
+    private var leadingDot: some View {
+        let color: Color? = summary.needsAttention ? Theme.attention : (isUnread ? Theme.tint : nil)
+        return Circle()
+            .fill(color ?? .clear)
+            .frame(width: 9, height: 9)
     }
 
     @ViewBuilder
     private var subtitle: some View {
         HStack(spacing: 6) {
-            Text(summary.subtitle)
+            Text(summary.status == .working ? "çalışıyor" : summary.subtitle)
                 .font(.subheadline)
-                .foregroundStyle(summary.needsAttention ? Theme.attention : Color.secondary)
+                .foregroundStyle(summary.needsAttention ? Theme.attention
+                                 : summary.status == .working ? Theme.tint
+                                 : Color.secondary)
                 .lineLimit(1)
             if summary.status == .working {
-                TypingDots(color: Theme.tint, size: 4)
+                TypingDots(color: Theme.tint, size: 4.5)
             }
         }
     }

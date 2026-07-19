@@ -169,6 +169,45 @@ struct MessageBubble: View {
     }
 }
 
+// MARK: - Live tail (pseudo token stream)
+
+/// While the agent works, the phone can't see token deltas (transcripts are
+/// turn-granular) — but it CAN see the terminal. This bubble shows the live
+/// tail of the agent's pane, refreshed every couple of seconds: the phone-side
+/// equivalent of watching the terminal stream.
+struct LiveTailBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    TypingDots(color: Theme.tint, size: 4)
+                    Text("canlı")
+                        .font(.system(.caption2, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(Theme.tint)
+                }
+                Text(text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.bubbleIncoming.opacity(0.6))
+            .overlay(
+                UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
+                    .strokeBorder(Theme.tint.opacity(0.35), lineWidth: 1)
+            )
+            .clipShape(
+                UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
+            )
+            Spacer(minLength: 48)
+        }
+    }
+}
+
 // MARK: - Blocked quick replies
 
 /// Shown when an agent is waiting for input: a QuickType-style row of capsule

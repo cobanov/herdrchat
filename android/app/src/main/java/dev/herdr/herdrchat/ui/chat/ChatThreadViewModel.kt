@@ -47,16 +47,24 @@ class ChatThreadViewModel(
         private set
     var failedEchoIds by mutableStateOf<Set<String>>(emptySet())
         private set
+    /** Live tail of the working agent's terminal — the phone-side stand-in for
+     *  token streaming (transcripts are turn-granular; the TUI buffer is not). */
+    var liveTail by mutableStateOf<String?>(null)
+        private set
 
     private val seenIds = mutableSetOf<String>()
     private val arrival = mutableListOf<ChatMessage>()      // real transcript bubbles, in order
     private val localEchoes = mutableListOf<ChatMessage>()  // optimistic user sends, pre-transcript
     private val tailJobs = mutableListOf<Job>()
-    private val tailedPaths = mutableMapOf<String, String>() // agent cwd -> transcript path
+    private val tailedPaths = mutableMapOf<String, String>()    // agent cwd -> transcript path
+    private val tailedSessions = mutableMapOf<String, String?>() // agent cwd -> session id (when known)
     private var tailsDead = false
     private var statusJob: Job? = null
     private var scope: CoroutineScope? = null
     private var started = false
+    private var hostHome: String? = null
+
+    val unreadKey: String get() = UnreadStore.key(connectionId, workspaceId)
 
     init {
         // Seed from the disk-backed cache so reopening (even after an app
@@ -111,11 +119,30 @@ class ChatThreadViewModel(
 
     // MARK: - Reading
 
+    /** Resolve the transcript: exact session-id path when the integration
+     *  reports one (authoritative), newest file otherwise. */
+    private suspend fun transcriptPath(agent: dev.herdr.herdrchat.core.model.AgentInfo): String? {
+        val sid = agent.agentSession?.takeIf { it.kind == "id" }?.value
+        if (sid != null) {
+            if (hostHome == null) hostHome = runCatching { store.homeDirectory() }.getOrNull()
+            val home = hostHome
+            if (home != null) {
+                val path = store.sessionTranscriptPath(home, agent.cwd, sid)
+                if (path != null && (runCatching { store.fileSize(path) }.getOrNull() ?: -1L) >= 0L) {
+                    tailedSessions[agent.cwd] = sid
+                    return path
+                }
+            }
+        }
+        tailedSessions[agent.cwd] = null
+        return runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull()
+    }
+
     private suspend fun startTails(scope: CoroutineScope) {
         // One transcript tail per agent that owns a conversation.
         val agents = liveAgents.filter { it.agent != null }
         for (agent in agents) {
-            val path = runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull() ?: continue
+            val path = transcriptPath(agent) ?: continue
             val label = if (agents.size > 1) agent.agent else null
             tailedPaths[agent.cwd] = path
 
@@ -164,6 +191,7 @@ class ChatThreadViewModel(
         tailJobs.forEach { it.cancel() }
         tailJobs.clear()
         tailedPaths.clear()
+        tailedSessions.clear()
         startTails(s)
     }
 
@@ -171,6 +199,10 @@ class ChatThreadViewModel(
         if (!seenIds.add(message.id)) return
         ThreadCache.add(connectionId, workspaceId, message)
         arrival.add(message)
+        // New assistant content while this thread isn't on screen = unread.
+        if (message.role == ChatMessage.Role.ASSISTANT && !message.isSidechain) {
+            UnreadStore.mark(unreadKey)
+        }
         rebuild()
     }
 
@@ -187,10 +219,10 @@ class ChatThreadViewModel(
         if (added) rebuild()
     }
 
-    /** Status poll doubles as tail health/rotation watchdog. */
+    /** Status poll doubles as tail health/rotation watchdog and, while the
+     *  agent works, refreshes the live terminal tail. */
     private fun startStatusPolling(scope: CoroutineScope) {
         statusJob = scope.launch {
-            var tick = 0
             while (isActive) {
                 runCatching { client.snapshot() }.getOrNull()?.let { snapshot ->
                     liveAgents = snapshot.agents.filter { it.workspaceId == workspaceId }
@@ -198,26 +230,45 @@ class ChatThreadViewModel(
                     if (tailsDead) {
                         tailsDead = false
                         restartTails()
-                    } else if (tick % 3 == 0 && rotationDetected()) {
+                    } else if (rotationDetected()) {
                         restartTails()
                     }
+                    refreshLiveTail()
                 }
-                tick += 1
                 delay(2000)
             }
         }
     }
 
-    /** True when any tailed agent's newest transcript is no longer the file we
-     *  follow (Claude started a new session file). */
-    private suspend fun rotationDetected(): Boolean {
-        for ((cwd, tailed) in tailedPaths.toMap()) {
-            val newest = runCatching { store.newestTranscriptPath(cwd) }.getOrNull() ?: continue
-            if (newest != tailed) return true
+    /** Session-id change is the authoritative rotation signal (a new Claude
+     *  conversation = new transcript file). */
+    private fun rotationDetected(): Boolean {
+        for (agent in liveAgents) {
+            if (agent.agent == null) continue
+            if (tailedPaths[agent.cwd] == null) continue   // not tailed yet
+            val sid = agent.agentSession?.takeIf { it.kind == "id" }?.value ?: continue
+            val tailedSid = tailedSessions[agent.cwd] ?: continue
+            if (tailedSid != sid) return true
         }
         return false
     }
 
+    /** While working, surface the last few lines of the agent's terminal as a
+     *  pseudo-stream; cleared as soon as the turn completes. */
+    private suspend fun refreshLiveTail() {
+        val pane = primaryPane
+        if (status != AgentStatus.WORKING || pane == null) {
+            if (liveTail != null) liveTail = null
+            return
+        }
+        val raw = runCatching { client.paneTail(pane.paneId, 12) }.getOrNull() ?: return
+        val cleaned = cleanTail(raw)
+        liveTail = cleaned.ifEmpty { null }
+    }
+
+    /** Merge transcript arrivals with optimistic echoes chronologically, so an
+     *  unconfirmed echo stays at its send position instead of pinning to the
+     *  bottom below newer messages. */
     private fun rebuild() {
         // Drop optimistic echoes once the real user turn has landed.
         val realUserTexts = arrival
@@ -229,7 +280,25 @@ class ChatThreadViewModel(
             failedEchoIds = failedEchoIds - echo.id
             true
         }
-        messages = arrival + localEchoes
+
+        if (localEchoes.isEmpty()) {
+            messages = arrival.toList()
+            return
+        }
+        val echoes = localEchoes.sortedBy { it.timestamp ?: Long.MIN_VALUE }
+        val merged = ArrayList<ChatMessage>(arrival.size + echoes.size)
+        var echoIndex = 0
+        var lastTime = Long.MIN_VALUE
+        for (message in arrival) {
+            val effective = message.timestamp ?: lastTime
+            lastTime = effective
+            while (echoIndex < echoes.size && (echoes[echoIndex].timestamp ?: Long.MAX_VALUE) <= effective) {
+                merged.add(echoes[echoIndex]); echoIndex++
+            }
+            merged.add(message)
+        }
+        while (echoIndex < echoes.size) { merged.add(echoes[echoIndex]); echoIndex++ }
+        messages = merged
     }
 
     private fun setError(e: Throwable) {
@@ -243,16 +312,16 @@ class ChatThreadViewModel(
         val pane = primaryPane
         if (text.isEmpty() || pane == null) return
         draft = ""
-        // Optimistic echo so the bubble appears instantly.
+        // Optimistic echo (timestamped so it merges chronologically).
         val echo = ChatMessage(
             id = "local-${UUID.randomUUID()}",
             role = ChatMessage.Role.USER,
             segments = listOf(MessageSegment.Text(text)),
-            timestamp = null,
+            timestamp = System.currentTimeMillis(),
         )
         localEchoes.add(echo)
         rebuild()
-        deliver(text, echo.id, pane.paneId)
+        deliver(text, echo.id, pane)
     }
 
     /** Re-send a failed optimistic echo. */
@@ -260,16 +329,34 @@ class ChatThreadViewModel(
         val echo = localEchoes.firstOrNull { it.id == echoId } ?: return
         val pane = primaryPane ?: return
         failedEchoIds = failedEchoIds - echoId
-        deliver(echo.displayText, echoId, pane.paneId)
+        deliver(echo.displayText, echoId, pane)
     }
 
-    private fun deliver(text: String, echoId: String, paneId: String) {
+    /** Submit + verify. `pane run` types the text and presses Enter, but a busy
+     *  TUI can leave the prompt sitting in the composer — so unless the agent
+     *  was already working (where a send just queues), require the status to
+     *  flip to `working`; if it doesn't, press Enter once more and re-check. */
+    private fun deliver(text: String, echoId: String, pane: dev.herdr.herdrchat.core.model.AgentInfo) {
         val s = scope ?: return
         isSending = true
         s.launch {
-            runCatching { client.sendMessage(paneId, text) }.onFailure {
+            val wasWorking = pane.agentStatus == AgentStatus.WORKING
+            try {
+                client.sendMessage(pane.paneId, text)
+                if (!wasWorking) {
+                    var accepted = client.waitAgentStatus(pane.paneId, AgentStatus.WORKING, 3500)
+                    if (!accepted) {
+                        runCatching { client.sendKeys(pane.paneId, listOf("Enter")) }
+                        accepted = client.waitAgentStatus(pane.paneId, AgentStatus.WORKING, 2500)
+                    }
+                    if (!accepted) {
+                        failedEchoIds = failedEchoIds + echoId
+                        error = "Gönderim doğrulanamadı — mesaj terminalde kalmış olabilir. Tekrar dene."
+                    }
+                }
+            } catch (e: Exception) {
                 failedEchoIds = failedEchoIds + echoId
-                setError(it)
+                setError(e)
             }
             isSending = false
         }
@@ -292,5 +379,13 @@ class ChatThreadViewModel(
         // left the cursor mid-line, the boundary line is re-read in full (dedupe
         // drops anything already seen), so no message is lost at the seam.
         private const val RESUME_REWIND = 4_096L
+
+        /** Strip TUI chrome (box borders, prompt, blank lines) and keep the tail. */
+        fun cleanTail(raw: String): String {
+            val lines = raw.split("\n")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it.first() !in "╭╰│❯┃└┌" }
+            return lines.takeLast(6).joinToString("\n").takeLast(400)
+        }
     }
 }

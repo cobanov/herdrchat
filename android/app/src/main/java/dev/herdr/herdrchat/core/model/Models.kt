@@ -19,9 +19,21 @@ data class AgentInfo(
     val terminalId: String? = null,
     val workspaceId: String,
     val revision: Int? = null,
+    /** Native session reference: for Claude Code, `value` (kind == "id") IS the
+     *  transcript filename — authoritative transcript targeting. */
+    val agentSession: AgentSessionRef? = null,
 ) {
     val id: String get() = paneId
 }
+
+/** `agent_session` payload: how an integration identifies its native session. */
+@Serializable
+data class AgentSessionRef(
+    val agent: String? = null,
+    val kind: String? = null,
+    val source: String? = null,
+    val value: String? = null,
+)
 
 /** A workspace row, as returned by `workspace.list`. */
 @Serializable

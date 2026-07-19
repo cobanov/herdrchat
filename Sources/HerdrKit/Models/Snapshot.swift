@@ -12,8 +12,21 @@ public struct AgentInfo: Decodable, Sendable, Identifiable, Hashable {
     public let terminalId: String?
     public let workspaceId: String
     public let revision: Int?
+    /// Native session reference reported by the agent integration. For Claude
+    /// Code, `value` (kind == "id") is the session UUID — i.e. the exact
+    /// transcript filename — so transcripts can be targeted precisely instead
+    /// of guessing "newest .jsonl in the project dir".
+    public let agentSession: AgentSessionRef?
 
     public var id: String { paneId }
+}
+
+/// `agent_session` payload: how an integration identifies its native session.
+public struct AgentSessionRef: Decodable, Sendable, Hashable {
+    public let agent: String?
+    public let kind: String?       // "id" | "path" | ...
+    public let source: String?
+    public let value: String?
 }
 
 /// A workspace row, as returned by `workspace.list`.

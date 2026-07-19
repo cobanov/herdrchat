@@ -18,6 +18,29 @@ public struct TranscriptStore: Sendable {
         self.transport = transport
     }
 
+    /// The host user's home directory (resolved once by the caller and cached;
+    /// stored transcript paths must be absolute so shell quoting stays safe).
+    public func homeDirectory() async throws -> String {
+        let data = try await transport.shell(#"printf %s "$HOME""#)
+        let home = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return home.isEmpty ? "~" : home
+    }
+
+    /// Exact transcript path for a known agent session id — the authoritative
+    /// target (herdr's `agent_session.value` IS the transcript filename for
+    /// Claude Code). Falls back to `newestTranscriptPath` only when no session
+    /// reference is available.
+    public func sessionTranscriptPath(home: String, cwd: String, sessionId: String) -> String? {
+        // Session ids are UUIDs; refuse anything that isn't [A-Za-z0-9-] so the
+        // path stays shell-safe under quoting.
+        guard !sessionId.isEmpty,
+              sessionId.allSatisfy({ ($0.isLetter && $0.isASCII) || $0.isNumber || $0 == "-" }) else {
+            return nil
+        }
+        let dir = TranscriptParser.projectDirName(forCwd: cwd)
+        return "\(home)/.claude/projects/\(dir)/\(sessionId).jsonl"
+    }
+
     /// Path to the most recently modified transcript for a working directory,
     /// or nil if the agent has no transcript there yet.
     public func newestTranscriptPath(forCwd cwd: String) async throws -> String? {

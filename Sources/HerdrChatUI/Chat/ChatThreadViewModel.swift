@@ -6,10 +6,13 @@ import HerdrKit
 /// workspace into chat bubbles, tracks live blocked/typing state, and sends
 /// replies back through herdr.
 ///
-/// Lifecycle: owned by `ThreadSessions` (app-scoped), NOT by the view — so
-/// navigating away keeps the tails alive and coming back is instant. The status
-/// poll doubles as a health loop: it restarts dead tails after a connection
-/// blip and follows transcript file rotation (new session files).
+/// Orchestration follows herdr's documented model: transcripts are targeted by
+/// the agent's native session reference (`agent_session.value` IS the Claude
+/// transcript filename) instead of guessing the newest file; sends are verified
+/// with `agent wait --status working` and re-submitted once with a real Enter
+/// if the prompt stayed in the composer; and rotation is detected by session-id
+/// change. Owned by `ThreadSessions` (app-scoped), NOT the view, so navigating
+/// away keeps tails alive and coming back is instant.
 @MainActor
 @Observable
 public final class ChatThreadViewModel {
@@ -20,6 +23,9 @@ public final class ChatThreadViewModel {
     public private(set) var error: String?
     public private(set) var isSending = false
     public private(set) var failedEchoIDs: Set<String> = []
+    /// Live tail of the working agent's terminal — the phone-side stand-in for
+    /// token streaming (transcripts are turn-granular; the TUI buffer is not).
+    public private(set) var liveTail: String?
 
     private let client: HerdrClient
     private let store: TranscriptStore
@@ -30,10 +36,12 @@ public final class ChatThreadViewModel {
     private var arrival: [ChatMessage] = []          // real transcript bubbles, in order
     private var localEchoes: [ChatMessage] = []      // optimistic user sends, pre-transcript
     private var tailTasks: [Task<Void, Never>] = []
-    private var tailedPaths: [String: String] = [:]  // agent cwd -> transcript path
+    private var tailedPaths: [String: String] = [:]      // agent cwd -> transcript path
+    private var tailedSessions: [String: String] = [:]   // agent cwd -> session id (when known)
     private var tailsDead = false
     private var statusTask: Task<Void, Never>?
     private var started = false
+    private var hostHome: String?
 
     /// Only bulk-load this many bytes of a fresh transcript up front; older
     /// history stays on disk. Keeps the first open fast even on huge sessions.
@@ -56,9 +64,11 @@ public final class ChatThreadViewModel {
         if !cached.isEmpty {
             arrival = cached
             seenIDs = ThreadCache.shared.seenIDs(connectionID, summary.workspaceId)
-            messages = arrival
+            rebuild()
         }
     }
+
+    var unreadKey: String { UnreadStore.key(connectionID, workspaceId) }
 
     /// Aggregate presence for the header, most-urgent-wins.
     public var status: AgentStatus {
@@ -91,6 +101,7 @@ public final class ChatThreadViewModel {
         tailTasks.forEach { $0.cancel() }
         tailTasks.removeAll()
         tailedPaths.removeAll()
+        tailedSessions.removeAll()
         statusTask?.cancel()
         statusTask = nil
         started = false
@@ -100,11 +111,29 @@ public final class ChatThreadViewModel {
 
     // MARK: - Reading
 
+    /// Resolve the transcript to follow for an agent: exact session-id path
+    /// when the integration reports one (authoritative), newest file otherwise.
+    private func transcriptPath(for agent: AgentInfo) async -> String? {
+        if agent.agentSession?.kind == "id", let sid = agent.agentSession?.value {
+            if hostHome == nil { hostHome = try? await store.homeDirectory() }
+            if let home = hostHome,
+               let path = store.sessionTranscriptPath(home: home, cwd: agent.cwd, sessionId: sid) {
+                let size = (try? await store.fileSize(atPath: path)) ?? -1
+                if size >= 0 {
+                    tailedSessions[agent.cwd] = sid
+                    return path
+                }
+            }
+        }
+        tailedSessions[agent.cwd] = nil
+        return try? await store.newestTranscriptPath(forCwd: agent.cwd)
+    }
+
     private func startTails() async {
         // One transcript tail per agent that owns a conversation.
         let agents = liveAgents.filter { $0.agent != nil }
         for agent in agents {
-            guard let path = try? await store.newestTranscriptPath(forCwd: agent.cwd) else { continue }
+            guard let path = await transcriptPath(for: agent) else { continue }
             let label = agents.count > 1 ? agent.agent : nil
             tailedPaths[agent.cwd] = path
 
@@ -114,12 +143,8 @@ public final class ChatThreadViewModel {
 
             let followStart: Int
             if canResume {
-                // Reopen: history cached; follow from just before where we left
-                // off (rewind heals a mid-line cursor, dedupe eats the overlap).
                 followStart = max(0, cachedBytes! - Self.resumeRewind)
             } else {
-                // First open (or rotation): bulk-load only the recent slice in
-                // ONE read + ONE batch, then follow new appends live.
                 ThreadCache.shared.resetBytes(connectionID, workspaceId, path: path)
                 if let recent = try? await store.recent(atPath: path, agentLabel: label, maxBytes: Self.recentBytes) {
                     ingestBatch(recent.messages)
@@ -147,14 +172,13 @@ public final class ChatThreadViewModel {
         }
     }
 
-    private func markTailsDead() {
-        tailsDead = true
-    }
+    private func markTailsDead() { tailsDead = true }
 
     private func restartTails() async {
         tailTasks.forEach { $0.cancel() }
         tailTasks.removeAll()
         tailedPaths.removeAll()
+        tailedSessions.removeAll()
         await startTails()
     }
 
@@ -168,6 +192,10 @@ public final class ChatThreadViewModel {
         seenIDs.insert(message.id)
         ThreadCache.shared.add(connectionID, workspaceId, message)
         arrival.append(message)
+        // New assistant content while this thread isn't on screen = unread.
+        if message.role == .assistant, !message.isSidechain {
+            UnreadStore.shared.mark(unreadKey)
+        }
         rebuild()
     }
 
@@ -183,10 +211,10 @@ public final class ChatThreadViewModel {
         if added { rebuild() }
     }
 
-    /// Status poll doubles as tail health/rotation watchdog.
+    /// Status poll doubles as tail health/rotation watchdog and, while the
+    /// agent works, refreshes the live terminal tail.
     private func startStatusPolling() {
         statusTask = Task { [weak self] in
-            var tick = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 if let snapshot = try? await self.client.snapshot() {
@@ -195,36 +223,92 @@ public final class ChatThreadViewModel {
                     if self.tailsDead {
                         self.tailsDead = false
                         await self.restartTails()
-                    } else if tick % 3 == 0, await self.rotationDetected() {
+                    } else if self.rotationDetected() {
                         await self.restartTails()
                     }
+                    await self.refreshLiveTail()
                 }
-                tick += 1
                 try? await Task.sleep(for: .seconds(2))
             }
         }
     }
 
-    /// True when any tailed agent's newest transcript is no longer the file we
-    /// follow (Claude started a new session file).
-    private func rotationDetected() async -> Bool {
-        for (cwd, tailed) in tailedPaths {
-            if let newest = try? await store.newestTranscriptPath(forCwd: cwd), newest != tailed {
+    /// Session-id change is the authoritative rotation signal (a new Claude
+    /// conversation = new transcript file). Agents without a session reference
+    /// fall back to being re-resolved on tail death only.
+    private func rotationDetected() -> Bool {
+        for agent in liveAgents where agent.agent != nil {
+            guard tailedPaths[agent.cwd] != nil else { continue }   // not tailed yet
+            if let sid = agent.agentSession?.value, agent.agentSession?.kind == "id",
+               let tailedSid = tailedSessions[agent.cwd], tailedSid != sid {
                 return true
             }
         }
         return false
     }
 
+    /// While working, surface the last few lines of the agent's terminal as a
+    /// pseudo-stream; cleared as soon as the turn completes.
+    private func refreshLiveTail() async {
+        guard status == .working, let pane = primaryPane else {
+            if liveTail != nil { liveTail = nil }
+            return
+        }
+        guard let raw = try? await client.paneTail(pane: pane.paneId, lines: 12) else { return }
+        let cleaned = Self.cleanTail(raw)
+        liveTail = cleaned.isEmpty ? nil : cleaned
+    }
+
+    /// Strip TUI chrome (box borders, prompt, blank lines) and keep the tail.
+    static func cleanTail(_ raw: String) -> String {
+        let lines = raw
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                guard !line.isEmpty else { return false }
+                guard let first = line.first else { return false }
+                return !"╭╰│❯┃└┌".contains(first)
+            }
+        let joined = lines.suffix(6).joined(separator: "\n")
+        return String(joined.suffix(400))
+    }
+
+    /// Merge transcript arrivals with optimistic echoes chronologically, so an
+    /// unconfirmed echo stays at its send position instead of pinning to the
+    /// bottom below newer messages.
     private func rebuild() {
-        // Drop optimistic echoes once the real user turn has landed.
-        let realUserTexts = Set(arrival.filter { $0.role == .user }.map { $0.displayText.normalized })
+        let confirmedTexts = Set(arrival.filter { $0.role == .user }.map { $0.displayText.normalized })
         localEchoes.removeAll { echo in
-            guard realUserTexts.contains(echo.displayText.normalized) else { return false }
+            guard confirmedTexts.contains(echo.displayText.normalized) else { return false }
             failedEchoIDs.remove(echo.id)
             return true
         }
-        messages = arrival + localEchoes
+
+        guard !localEchoes.isEmpty else {
+            messages = arrival
+            return
+        }
+        // Assign every arrival an effective timestamp (carrying the last known
+        // one forward), then merge the two time-ordered lists.
+        var merged: [ChatMessage] = []
+        merged.reserveCapacity(arrival.count + localEchoes.count)
+        let echoes = localEchoes.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
+        var echoIndex = 0
+        var lastTime = Date.distantPast
+        for message in arrival {
+            let effective = message.timestamp ?? lastTime
+            lastTime = effective
+            while echoIndex < echoes.count, (echoes[echoIndex].timestamp ?? .distantFuture) <= effective {
+                merged.append(echoes[echoIndex])
+                echoIndex += 1
+            }
+            merged.append(message)
+        }
+        while echoIndex < echoes.count {
+            merged.append(echoes[echoIndex])
+            echoIndex += 1
+        }
+        messages = merged
     }
 
     private func setError(_ error: Error) {
@@ -237,16 +321,16 @@ public final class ChatThreadViewModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let pane = primaryPane else { return }
         draft = ""
-        // Optimistic echo so the bubble appears instantly.
+        // Optimistic echo (timestamped so it merges chronologically).
         let echo = ChatMessage(
             id: "local-\(UUID().uuidString)",
             role: .user,
             segments: [.text(text)],
-            timestamp: nil
+            timestamp: Date()
         )
         localEchoes.append(echo)
         rebuild()
-        await deliver(text: text, echoID: echo.id, paneId: pane.paneId)
+        await deliver(text: text, echoID: echo.id, pane: pane)
     }
 
     /// Re-send a failed optimistic echo.
@@ -254,18 +338,34 @@ public final class ChatThreadViewModel {
         guard let echo = localEchoes.first(where: { $0.id == echoID }),
               let pane = primaryPane else { return }
         failedEchoIDs.remove(echoID)
-        await deliver(text: echo.displayText, echoID: echoID, paneId: pane.paneId)
+        await deliver(text: echo.displayText, echoID: echoID, pane: pane)
     }
 
-    private func deliver(text: String, echoID: String, paneId: String) async {
+    /// Submit + verify. `pane run` types the text and presses Enter, but a busy
+    /// TUI can leave the prompt sitting in the composer — so unless the agent
+    /// was already working (where a send just queues), require the status to
+    /// flip to `working`; if it doesn't, press Enter once more and re-check.
+    private func deliver(text: String, echoID: String, pane: AgentInfo) async {
         isSending = true
+        defer { isSending = false }
+        let wasWorking = pane.agentStatus == .working
         do {
-            try await client.sendMessage(toPane: paneId, text: text)
+            try await client.sendMessage(toPane: pane.paneId, text: text)
+            if !wasWorking {
+                var accepted = await client.waitAgentStatus(pane: pane.paneId, status: .working, timeoutMs: 3500)
+                if !accepted {
+                    try await client.sendKeys(toPane: pane.paneId, keys: ["Enter"])
+                    accepted = await client.waitAgentStatus(pane: pane.paneId, status: .working, timeoutMs: 2500)
+                }
+                if !accepted {
+                    failedEchoIDs.insert(echoID)
+                    error = "Gönderim doğrulanamadı — mesaj terminalde kalmış olabilir. Tekrar dene."
+                }
+            }
         } catch {
             failedEchoIDs.insert(echoID)
             setError(error)
         }
-        isSending = false
     }
 
     /// Quick reply to a blocked prompt (e.g. "Enter", "1", "Escape").

@@ -24,6 +24,19 @@ data class RecentLoad(val messages: List<ChatMessage>, val consumedBytes: Long)
  */
 class TranscriptStore(private val transport: HerdrTransport) {
 
+    /** The host user's home directory (resolve once and cache; stored paths
+     *  must be absolute so shell quoting stays safe). */
+    suspend fun homeDirectory(): String =
+        transport.shell("printf %s \"\$HOME\"").trim().ifEmpty { "~" }
+
+    /** Exact transcript path for a known agent session id — authoritative
+     *  (herdr's `agent_session.value` IS the transcript filename for Claude). */
+    fun sessionTranscriptPath(home: String, cwd: String, sessionId: String): String? {
+        if (sessionId.isEmpty() || !sessionId.all { it.isLetterOrDigit() || it == '-' }) return null
+        val dir = TranscriptParser.projectDirName(cwd)
+        return "$home/.claude/projects/$dir/$sessionId.jsonl"
+    }
+
     /** Path to the most recently modified transcript for a working directory,
      *  or null if the agent has no transcript there yet. */
     suspend fun newestTranscriptPath(cwd: String): String? {

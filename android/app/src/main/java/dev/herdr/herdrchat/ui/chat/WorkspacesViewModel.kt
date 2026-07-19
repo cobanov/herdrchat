@@ -18,7 +18,10 @@ import kotlinx.coroutines.launch
  * publishes [ChatSummary] rows. Polling (vs the socket event stream) keeps the
  * SSH transport simple and is plenty responsive for a phone.
  */
-class WorkspacesViewModel(private val client: HerdrClient) {
+class WorkspacesViewModel(
+    private val client: HerdrClient,
+    private val connectionId: String,
+) {
 
     var summaries by mutableStateOf<List<ChatSummary>>(emptyList())
         private set
@@ -28,6 +31,7 @@ class WorkspacesViewModel(private val client: HerdrClient) {
         private set
 
     private var job: Job? = null
+    private val previousStatuses = mutableMapOf<String, dev.herdr.herdrchat.core.model.AgentStatus>()
 
     fun start(scope: CoroutineScope, pollMillis: Long = 3000) {
         if (job != null) return
@@ -50,13 +54,30 @@ class WorkspacesViewModel(private val client: HerdrClient) {
             coroutineScope {
                 val workspaces = async { client.workspaces() }
                 val snapshot = async { client.snapshot() }
-                summaries = ChatSummary.build(workspaces.await(), snapshot.await().agents)
+                val rows = ChatSummary.build(workspaces.await(), snapshot.await().agents)
+                markUnreadTransitions(rows)
+                summaries = rows
             }
             connectionError = null
         } catch (e: Exception) {
             connectionError = (e as? HerdrException)?.message ?: e.message ?: e.toString()
         }
         isLoading = false
+    }
+
+    /** working -> done/idle while the thread is off-screen = unread (herdr's
+     *  own `done` semantics: finished but not looked at). */
+    private fun markUnreadTransitions(rows: List<ChatSummary>) {
+        for (row in rows) {
+            val previous = previousStatuses[row.workspaceId]
+            if (previous == dev.herdr.herdrchat.core.model.AgentStatus.WORKING &&
+                (row.status == dev.herdr.herdrchat.core.model.AgentStatus.DONE ||
+                    row.status == dev.herdr.herdrchat.core.model.AgentStatus.IDLE)
+            ) {
+                UnreadStore.mark(UnreadStore.key(connectionId, row.workspaceId))
+            }
+            previousStatuses[row.workspaceId] = row.status
+        }
     }
 
     /** Total workspaces currently needing attention (blocked), for the badge. */
