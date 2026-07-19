@@ -6,6 +6,10 @@ import HerdrKit
 /// and publishes `ChatSummary` rows. Polling (vs the socket event stream) keeps
 /// the SSH transport simple and is plenty responsive for a phone.
 ///
+/// Each poll also refreshes the per-workspace "last message" previews in one
+/// batched shell round-trip (see `TranscriptStore.latestMessages`), so rows read
+/// like Messages: title + snippet + time. Previews persist across launches.
+///
 /// Also feeds `UnreadStore`: herdr's `done` means "finished but not looked at",
 /// so a working→done/idle transition while the thread is off-screen marks the
 /// workspace unread (the blue-dot moment in Messages).
@@ -17,15 +21,20 @@ public final class WorkspacesViewModel {
     public private(set) var isLoading = false
 
     private let client: HerdrClient
+    private let store: TranscriptStore
     private let connectionID: String
     private let pollInterval: Duration
     private var pollTask: Task<Void, Never>?
     private var previousStatuses: [String: AgentStatus] = [:]
+    private var previews: [String: MessagePreview] = [:]
+    private var previewTick = 0
 
     public init(client: HerdrClient, connectionID: String, pollInterval: Duration = .seconds(3)) {
         self.client = client
+        self.store = TranscriptStore(transport: client.transport)
         self.connectionID = connectionID
         self.pollInterval = pollInterval
+        self.previews = Self.loadPreviews(connectionID: connectionID)
     }
 
     public func start() {
@@ -47,19 +56,48 @@ public final class WorkspacesViewModel {
     public func refresh() async {
         if summaries.isEmpty { isLoading = true }
         do {
-            async let workspaces = client.workspaces()
-            async let snapshot = client.snapshot()
-            let rows = try await ChatSummary.build(workspaces: workspaces, agents: snapshot.agents)
+            async let workspacesFetch = client.workspaces()
+            async let snapshotFetch = client.snapshot()
+            let workspaces = try await workspacesFetch
+            let agents = try await snapshotFetch.agents
+            await refreshPreviews(agents: agents)
+            let rows = ChatSummary.build(workspaces: workspaces, agents: agents, previews: previews)
             markUnreadTransitions(rows)
             summaries = rows
             connectionError = nil
             // Keep the notification baseline fresh: states the user is looking
             // at right now shouldn't re-notify from the background task later.
-            AgentNotifier.record(try await snapshot.agents)
+            AgentNotifier.record(agents)
         } catch {
             connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
         }
         isLoading = false
+    }
+
+    /// Refresh the last-message previews (one batched round-trip). Active or
+    /// preview-less workspaces refresh every poll; everything else joins a full
+    /// sweep every 5th poll, so steady-state traffic stays tiny. Best-effort:
+    /// a failed fetch keeps the previous snippets rather than erroring the list.
+    private func refreshPreviews(agents: [AgentInfo]) async {
+        previewTick += 1
+        let fullSweep = previewTick % 5 == 1   // includes the very first poll
+        let byWorkspace = Dictionary(grouping: agents.filter { $0.agent != nil }, by: \.workspaceId)
+        let requests = byWorkspace.compactMap { workspaceId, agents -> TranscriptStore.PreviewRequest? in
+            guard let agent = agents.first(where: { $0.focused }) ?? agents.first else { return nil }
+            let active = agents.contains { $0.agentStatus != .idle && $0.agentStatus != .unknown }
+            guard fullSweep || active || previews[workspaceId] == nil else { return nil }
+            let sessionId = agent.agentSession?.kind == "id" ? agent.agentSession?.value : nil
+            return TranscriptStore.PreviewRequest(workspaceId: workspaceId, cwd: agent.cwd, sessionId: sessionId)
+        }
+        guard !requests.isEmpty,
+              let latest = try? await store.latestMessages(for: requests) else { return }
+        var changed = false
+        for (workspaceId, message) in latest {
+            guard let preview = MessagePreview(message: message), previews[workspaceId] != preview else { continue }
+            previews[workspaceId] = preview
+            changed = true
+        }
+        if changed { persistPreviews() }
     }
 
     /// working → done/idle while the thread is off-screen = unread.
@@ -76,5 +114,21 @@ public final class WorkspacesViewModel {
     /// Total workspaces currently needing attention (blocked), for the badge.
     public var attentionCount: Int {
         summaries.filter(\.needsAttention).count
+    }
+
+    // MARK: - Preview persistence (so rows read right on launch, pre-connect)
+
+    private var previewsKey: String { "herdrchat.previews.\(connectionID)" }
+
+    private static func loadPreviews(connectionID: String) -> [String: MessagePreview] {
+        guard let data = UserDefaults.standard.data(forKey: "herdrchat.previews.\(connectionID)"),
+              let stored = try? JSONDecoder().decode([String: MessagePreview].self, from: data) else { return [:] }
+        return stored
+    }
+
+    private func persistPreviews() {
+        if let data = try? JSONEncoder().encode(previews) {
+            UserDefaults.standard.set(data, forKey: previewsKey)
+        }
     }
 }

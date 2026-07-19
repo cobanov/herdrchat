@@ -12,6 +12,10 @@ public enum AgentNotifier {
     private static let defaultsKey = "herdrchat.agentStatuses"
 
     public static func requestAuthorizationIfNeeded() {
+        #if DEBUG
+        // Headless test runs can't tap the system alert; let them opt out.
+        if ProcessInfo.processInfo.environment["HERDRCHAT_SKIP_NOTIF_PROMPT"] != nil { return }
+        #endif
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             guard settings.authorizationStatus == .notDetermined else { return }
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }

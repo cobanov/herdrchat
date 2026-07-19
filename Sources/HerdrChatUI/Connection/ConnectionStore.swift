@@ -25,7 +25,39 @@ public final class ConnectionStore {
             connections = []
         }
         selectedID = connections.first?.id
+        #if DEBUG
+        bootstrapFromEnvironment()
+        #endif
     }
+
+    #if DEBUG
+    /// Simulator/dev hook: environment variables create (or refresh) a host on
+    /// launch so headless test runs connect without touching the setup UI.
+    /// HERDRCHAT_BOOTSTRAP_HOST / _USER / _SECRET_B64 (base64 PEM or password),
+    /// plus optional _NAME, _PORT, _AUTH=password. Debug builds only.
+    private func bootstrapFromEnvironment() {
+        let env = ProcessInfo.processInfo.environment
+        guard let host = env["HERDRCHAT_BOOTSTRAP_HOST"],
+              let username = env["HERDRCHAT_BOOTSTRAP_USER"],
+              let secretB64 = env["HERDRCHAT_BOOTSTRAP_SECRET_B64"],
+              let secretData = Data(base64Encoded: secretB64),
+              let secret = String(data: secretData, encoding: .utf8) else { return }
+        let name = env["HERDRCHAT_BOOTSTRAP_NAME"] ?? "dev"
+        if let existing = connections.first(where: { $0.name == name && $0.host == host }) {
+            Keychain.set(secret, for: existing.id.uuidString)
+            selectedID = existing.id
+            return
+        }
+        let connection = ServerConnection(
+            name: name,
+            host: host,
+            port: Int(env["HERDRCHAT_BOOTSTRAP_PORT"] ?? "") ?? 22,
+            username: username,
+            authKind: env["HERDRCHAT_BOOTSTRAP_AUTH"] == "password" ? .password : .privateKey
+        )
+        save(connection, secret: secret)
+    }
+    #endif
 
     public var selected: ServerConnection? {
         connections.first { $0.id == selectedID }

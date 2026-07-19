@@ -4,13 +4,15 @@ import HerdrKit
 /// The chat list: one row per workspace with live presence. Native furniture
 /// throughout — large title, a visible server switcher in the top-left leading
 /// slot (tap the server name to manage / add / switch devices), iMessage-style
-/// leading attention dots, chevron-free rows.
+/// leading attention dots, chevron-free rows. Rows read like Messages: title +
+/// time on the first line, the last message (or live agent state) beneath.
 struct ChatListView: View {
     let store: ConnectionStore
     let connection: ServerConnection
 
     @State private var model: WorkspacesViewModel
     @State private var showingConnections = false
+    @State private var path = NavigationPath()
 
     init(store: ConnectionStore, connection: ServerConnection) {
         self.store = store
@@ -22,14 +24,14 @@ struct ChatListView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if let error = model.connectionError {
                     ConnectionErrorRow(message: error)
                 }
                 ForEach(model.summaries) { summary in
                     ChatRow(summary: summary, connectionID: connection.id.uuidString)
-                        .listRowInsets(EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 16))
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 90 }
                 }
                 if model.summaries.isEmpty && model.connectionError == nil {
@@ -66,6 +68,9 @@ struct ChatListView: View {
         }
         .task { model.start() }
         .onDisappear { model.stop() }
+        #if DEBUG
+        .task { await autoOpenIfRequested() }
+        #endif
     }
 
     /// Server switcher + settings entry, always visible top-left. Shows which
@@ -83,11 +88,28 @@ struct ChatListView: View {
         }
         .accessibilityLabel("Sunucu: \(connection.name). Sunucuları yönet.")
     }
+
+    #if DEBUG
+    /// Dev/simulator hook: HERDRCHAT_AUTO_OPEN_WORKSPACE=<label|id> pushes that
+    /// thread as soon as it appears, so headless test runs can screenshot the
+    /// conversation screen without UI scripting.
+    private func autoOpenIfRequested() async {
+        guard let target = ProcessInfo.processInfo.environment["HERDRCHAT_AUTO_OPEN_WORKSPACE"] else { return }
+        for _ in 0..<40 {   // up to ~10s for the first poll to land
+            if let summary = model.summaries.first(where: { $0.title == target || $0.workspaceId == target }) {
+                path.append(summary)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+    #endif
 }
 
-/// A single workspace row: leading dot à la Messages (orange = waiting for you,
-/// emerald = unread result), presence-ring avatar, title + live status line, a
-/// small activity spinner while the agent works. No disclosure chevron.
+/// A single workspace row, Messages anatomy: leading dot à la Messages (orange =
+/// waiting for you, emerald = unread result), presence-ring avatar, then
+/// title + time and a two-line last-message preview. Live agent activity
+/// overrides the preview line ("yazıyor…" / "seni bekliyor"), WhatsApp-style.
 private struct ChatRow: View {
     let summary: ChatSummary
     let connectionID: String
@@ -107,16 +129,18 @@ private struct ChatRow: View {
                     status: summary.status
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.title)
-                        .font(.headline)
-                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(summary.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if let time = formatListTime(summary.preview?.date) {
+                            Text(time)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     subtitle
-                }
-                Spacer(minLength: 0)
-                if summary.status == .working {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Theme.tint)
                 }
             }
         }
@@ -129,20 +153,54 @@ private struct ChatRow: View {
             .frame(width: 9, height: 9)
     }
 
+    /// Second line: live state wins (typing/blocked), last message otherwise.
     @ViewBuilder
     private var subtitle: some View {
-        HStack(spacing: 6) {
-            Text(summary.status == .working ? "çalışıyor" : summary.subtitle)
-                .font(.subheadline)
-                .foregroundStyle(summary.needsAttention ? Theme.attention
-                                 : summary.status == .working ? Theme.tint
-                                 : Color.secondary)
-                .lineLimit(1)
-            if summary.status == .working {
+        switch summary.status {
+        case .working:
+            HStack(spacing: 6) {
+                Text("yazıyor…")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.tint)
                 TypingDots(color: Theme.tint, size: 4.5)
             }
+            .frame(minHeight: 38, alignment: .top)
+        case .blocked:
+            Text("seni bekliyor")
+                .font(.subheadline)
+                .foregroundStyle(Theme.attention)
+                .frame(minHeight: 38, alignment: .top)
+        default:
+            Text(previewText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2, reservesSpace: true)
         }
     }
+
+    private var previewText: String {
+        guard let preview = summary.preview else { return summary.subtitle }
+        return preview.fromUser ? "Sen: \(preview.text)" : preview.text
+    }
+}
+
+/// Messages-style row timestamp: time today, "Dün", weekday inside a week, date
+/// beyond that.
+func formatListTime(_ date: Date?) -> String? {
+    guard let date else { return nil }
+    let calendar = Calendar.current
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "tr_TR")
+    if calendar.isDateInToday(date) {
+        formatter.dateFormat = "HH:mm"
+    } else if calendar.isDateInYesterday(date) {
+        return "Dün"
+    } else if let days = calendar.dateComponents([.day], from: date, to: .now).day, days < 7 {
+        formatter.dateFormat = "EEEE"
+    } else {
+        formatter.dateFormat = "d.MM.yyyy"
+    }
+    return formatter.string(from: date)
 }
 
 struct ConnectionErrorRow: View {

@@ -100,6 +100,65 @@ public struct TranscriptStore: Sendable {
         return Int(text) ?? -1
     }
 
+    /// One workspace's "last message" lookup: which transcript to peek for the
+    /// chat-list preview (exact session file when the integration reports one,
+    /// newest `.jsonl` in the project dir otherwise).
+    public struct PreviewRequest: Sendable {
+        public let workspaceId: String
+        public let cwd: String
+        public let sessionId: String?
+
+        public init(workspaceId: String, cwd: String, sessionId: String?) {
+            self.workspaceId = workspaceId
+            self.cwd = cwd
+            self.sessionId = sessionId
+        }
+    }
+
+    /// Fetch the tail of every workspace's transcript in ONE round-trip and
+    /// return the newest displayable message per workspace — the data behind the
+    /// Messages-style "last message" line in the chat list. A partial first
+    /// line (tail starting mid-line) fails to parse and is dropped; workspaces
+    /// with no transcript are simply absent from the result.
+    public func latestMessages(
+        for requests: [PreviewRequest],
+        tailBytes: Int = 48_000
+    ) async throws -> [String: ChatMessage] {
+        var script = ""
+        for request in requests {
+            // Workspace ids / session ids are interpolated into the script and
+            // the marker line: refuse anything that isn't obviously inert.
+            guard request.workspaceId.allSatisfy({
+                ($0.isLetter && $0.isASCII) || $0.isNumber || $0 == ":" || $0 == "-" || $0 == "_"
+            }) else { continue }
+            let dir = TranscriptParser.projectDirName(forCwd: request.cwd)
+            var resolve = #"f=$(ls -t "$HOME/.claude/projects/\#(dir)"/*.jsonl 2>/dev/null | head -1); "#
+            if let sid = request.sessionId, !sid.isEmpty,
+               sid.allSatisfy({ ($0.isLetter && $0.isASCII) || $0.isNumber || $0 == "-" }) {
+                resolve = #"f="$HOME/.claude/projects/\#(dir)/\#(sid).jsonl"; [ -s "$f" ] || "# + resolve
+            }
+            script += resolve
+            script += #"printf '\n@@HERDRCHAT %s\n' '\#(request.workspaceId)'; "#
+            script += #"[ -n "$f" ] && tail -c \#(tailBytes) "$f" 2>/dev/null; "#
+        }
+        guard !script.isEmpty else { return [:] }
+        script += "true"   // a workspace without a transcript must not fail the batch
+        let data = try await transport.shell(script)
+        let text = String(decoding: data, as: UTF8.self)
+
+        var result: [String: ChatMessage] = [:]
+        for block in text.components(separatedBy: "\n@@HERDRCHAT ").dropFirst() {
+            guard let headerEnd = block.firstIndex(of: "\n") else { continue }
+            let workspaceId = String(block[..<headerEnd]).trimmingCharacters(in: .whitespaces)
+            let body = String(block[block.index(after: headerEnd)...])
+            let messages = TranscriptParser.parse(body)
+            if let last = messages.last(where: { !$0.isSidechain && !$0.isToolOnly }) {
+                result[workspaceId] = last
+            }
+        }
+        return result
+    }
+
     /// Stream transcript lines from `startByte` to end, then follow appends.
     /// `startByte == 0` reads the whole file. Each chunk carries the running byte
     /// offset so the caller can persist it and resume later without re-reading.

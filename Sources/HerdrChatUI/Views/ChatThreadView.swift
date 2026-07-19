@@ -114,10 +114,11 @@ struct ChatThreadView: View {
         }
     }
 
-    /// The list is FLIPPED (scaled -1 vertically, rows re-flipped upright, data
-    /// reversed): offset zero is the newest message, so every open lands on the
-    /// last message with no scroll management, and live messages appear at the
-    /// bottom without yanking the reader — the technique every chat app uses.
+    /// Chronological list anchored to the BOTTOM (`defaultScrollAnchor`): every
+    /// open lands on the newest message, and while the reader stays at the
+    /// bottom, incoming messages keep the view pinned there — scrolled-up
+    /// readers are never yanked. No flipped-transform tricks: those broke
+    /// scroll restoration and made iOS 26's scroll-edge blur cover the screen.
     private var messageList: some View {
         ScrollView {
             if rows.isEmpty && model.liveTail == nil {
@@ -126,31 +127,28 @@ struct ChatThreadView: View {
                     systemImage: "text.bubble",
                     description: Text("İlk mesajını yaz — \(model.title) hazır.")
                 )
-                .padding(.top, 80)
+                .padding(.vertical, 80)
             } else {
                 LazyVStack(spacing: 0) {
-                    // First in flipped space = visually at the very bottom:
-                    // the live "agent is typing this right now" tail.
+                    ForEach(rows) { row in
+                        rowView(row)
+                            .padding(.top, row.startsGroup ? 10 : 2)
+                    }
+                    // The live "agent is typing this right now" terminal tail
+                    // rides at the very bottom, under the newest bubble.
                     if let tail = model.liveTail {
                         LiveTailBubble(text: tail)
-                            .scaleEffect(x: 1, y: -1)
-                            .padding(.bottom, 10)
-                    }
-                    ForEach(rows.reversed()) { row in
-                        rowView(row)
-                            .scaleEffect(x: 1, y: -1)
-                            .padding(.bottom, row.startsGroup ? 10 : 2)
+                            .padding(.top, 10)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
         }
-        .scaleEffect(x: 1, y: -1)
+        .defaultScrollAnchor(.bottom)
         #if os(iOS)
         .scrollDismissesKeyboard(.immediately)
         #endif
-        .animation(.spring(response: 0.3, dampingFraction: 0.95), value: visibleMessages.count)
     }
 
     @ViewBuilder

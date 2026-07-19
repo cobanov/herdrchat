@@ -44,8 +44,12 @@ public final class ChatThreadViewModel {
     private var hostHome: String?
 
     /// Only bulk-load this many bytes of a fresh transcript up front; older
-    /// history stays on disk. Keeps the first open fast even on huge sessions.
-    private static let recentBytes = 400_000
+    /// history stays on disk. Sized in megabytes because a single transcript
+    /// LINE can be one (image tool-results embed base64 payloads) — a smaller
+    /// window can land inside one giant line and open a rich session with just
+    /// a bubble or two of history. One-time cost per thread; reopens resume
+    /// from the cached byte offset.
+    private static let recentBytes = 3_000_000
     /// On resume, rewind this much before the stored offset: if a disconnect
     /// left the cursor mid-line, the boundary line is re-read in full (dedupe
     /// drops anything already seen), so no message is lost at the seam.
