@@ -12,6 +12,7 @@ import dev.herdr.herdrchat.core.model.Workspace
 import dev.herdr.herdrchat.core.model.WorkspaceCreation
 import dev.herdr.herdrchat.core.model.WorkspaceListResult
 import dev.herdr.herdrchat.core.net.HerdrTransport
+import dev.herdr.herdrchat.core.net.ShellQuoting
 import dev.herdr.herdrchat.core.net.run
 import kotlinx.serialization.json.JsonElement
 
@@ -39,6 +40,28 @@ class HerdrClient(
     /** Confirms the host is reachable and herdr is answering. */
     suspend fun ping() {
         transport.run(listOf(herdr, "status", "server"))
+    }
+
+    /** The host user's home directory — the sensible starting point for browsing
+     *  to a working directory in the new-chat folder picker. */
+    suspend fun homeDirectory(): String =
+        transport.shell("printf %s \"\$HOME\"").trim().ifEmpty { "/" }
+
+    /** Immediate subdirectories of [path] on the host (names only, sorted, hidden
+     *  dirs excluded). Powers the new-chat folder picker so a working directory
+     *  can be chosen by browsing the device instead of typed from memory. */
+    suspend fun listDirectories(path: String): List<String> {
+        // `-p` appends "/" to directories and `-L` follows symlinked dirs, so we
+        // keep only entries ending in "/" and strip it. An unreadable path yields
+        // nothing rather than erroring the picker.
+        val command = "cd ${ShellQuoting.quote(path)} 2>/dev/null && ls -1Lp 2>/dev/null; true"
+        return transport.shell(command)
+            .split("\n")
+            .map { it.trim() }
+            .filter { it.endsWith("/") }
+            .map { it.dropLast(1) }
+            .filter { it.isNotEmpty() && it != "." && it != ".." }
+            .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }
 
     // Writes

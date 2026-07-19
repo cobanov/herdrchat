@@ -108,4 +108,14 @@ class WorkspacesViewModel(
 
     /** Total workspaces currently needing attention (blocked), for the badge. */
     val attentionCount: Int get() = summaries.count { it.needsAttention }
+
+    /** Host home directory for the folder picker's starting point (falls back to
+     *  root if the host can't be reached). */
+    suspend fun homeDirectory(): String =
+        runCatching { client.homeDirectory() }.getOrDefault("/")
+
+    /** Immediate subdirectories of [path] on the host, for the folder picker.
+     *  Best-effort: an unreachable host or unreadable path yields an empty list. */
+    suspend fun listDirectories(path: String): List<String> =
+        runCatching { client.listDirectories(path) }.getOrDefault(emptyList())
 }

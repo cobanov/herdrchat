@@ -7,17 +7,21 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -199,42 +203,34 @@ private fun Chip(icon: ImageVector, label: String, tint: Color) {
     }
 }
 
-/** While the agent works, the phone can't see token deltas (transcripts are
- *  turn-granular) — but it CAN see the terminal. This bubble shows the live
- *  tail of the agent's pane, refreshed every couple of seconds. */
+/** A slim, indeterminate "waiting for the reply" bar shown while the agent
+ *  works. Transcripts are turn-granular, so there's no finer token stream to
+ *  surface — a quiet sweeping bar reads as progress without pretending to show
+ *  content it doesn't have (it replaces the old terminal-tail bubble). */
 @Composable
-fun LiveTailBubble(text: String) {
-    val dark = isSystemInDarkTheme()
-    Row(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 328.dp)
-                .clip(RoundedCornerShape(5.dp, 17.dp, 17.dp, 17.dp))
-                .background(HerdrColors.incomingBubble(dark).copy(alpha = 0.7f))
-                .border(
-                    1.dp,
-                    HerdrColors.accent.copy(alpha = 0.35f),
-                    RoundedCornerShape(5.dp, 17.dp, 17.dp, 17.dp),
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TypingDots(color = HerdrColors.accent, dotSize = 4.dp)
-                Text(
-                    "canlı",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = HerdrColors.accent,
-                )
-            }
-            Text(
-                text,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                color = HerdrColors.secondaryText(dark),
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis,
+fun WaitingBar(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "waiting")
+    val phase by t.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "sweep",
+    )
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(3.dp)
+            .clip(CircleShape)
+            .background(HerdrColors.accent.copy(alpha = 0.14f)),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxHeight()) {
+            val segment = maxWidth * 0.28f
+            Box(
+                Modifier
+                    .offset(x = (maxWidth - segment) * phase)
+                    .width(segment)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(HerdrColors.accent),
             )
         }
     }

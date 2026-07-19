@@ -140,12 +140,16 @@ fun ChatThreadScreen(
                 reverseLayout = true,
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
-                // Item 0 in a reversed list = visually at the very bottom:
-                // the live "agent is typing this right now" terminal tail.
-                model.liveTail?.let { tail ->
-                    item(key = "live-tail") {
-                        Box(Modifier.animateItem().padding(top = 8.dp)) {
-                            dev.herdr.herdrchat.ui.components.LiveTailBubble(tail)
+                // Item 0 in a reversed list = visually at the very bottom: a slim
+                // sweeping bar while we wait on the agent (working, or a send still
+                // being submitted/verified) — but not when it's blocked (the
+                // quick-reply bar covers that case).
+                val isWaiting = !model.isBlocked &&
+                    (model.status == AgentStatus.WORKING || model.isSending)
+                if (isWaiting) {
+                    item(key = "waiting-bar") {
+                        Box(Modifier.animateItem().padding(horizontal = 32.dp, vertical = 10.dp)) {
+                            dev.herdr.herdrchat.ui.components.WaitingBar()
                         }
                     }
                 }

@@ -47,10 +47,6 @@ class ChatThreadViewModel(
         private set
     var failedEchoIds by mutableStateOf<Set<String>>(emptySet())
         private set
-    /** Live tail of the working agent's terminal — the phone-side stand-in for
-     *  token streaming (transcripts are turn-granular; the TUI buffer is not). */
-    var liveTail by mutableStateOf<String?>(null)
-        private set
 
     private val seenIds = mutableSetOf<String>()
     private val arrival = mutableListOf<ChatMessage>()      // real transcript bubbles, in order
@@ -257,8 +253,8 @@ class ChatThreadViewModel(
         if (added) rebuild()
     }
 
-    /** Status poll doubles as tail health/rotation watchdog and, while the
-     *  agent works, refreshes the live terminal tail. */
+    /** Status poll doubles as tail health/rotation watchdog: it refreshes live
+     *  agent presence and restarts tails on rotation or death. */
     private fun startStatusPolling(scope: CoroutineScope) {
         statusJob = scope.launch {
             while (isActive) {
@@ -271,7 +267,6 @@ class ChatThreadViewModel(
                     } else if (rotationDetected() || unresolvedSession()) {
                         restartTails()
                     }
-                    refreshLiveTail()
                 }
                 delay(2000)
             }
@@ -300,19 +295,6 @@ class ChatThreadViewModel(
             if (tailedSid != sid) return true
         }
         return false
-    }
-
-    /** While working, surface the last few lines of the agent's terminal as a
-     *  pseudo-stream; cleared as soon as the turn completes. */
-    private suspend fun refreshLiveTail() {
-        val pane = primaryPane
-        if (status != AgentStatus.WORKING || pane == null) {
-            if (liveTail != null) liveTail = null
-            return
-        }
-        val raw = runCatching { client.paneTail(pane.paneId, 12) }.getOrNull() ?: return
-        val cleaned = cleanTail(raw)
-        liveTail = cleaned.ifEmpty { null }
     }
 
     /** Merge transcript arrivals with optimistic echoes chronologically, so an
@@ -440,13 +422,5 @@ class ChatThreadViewModel(
         // left the cursor mid-line, the boundary line is re-read in full (dedupe
         // drops anything already seen), so no message is lost at the seam.
         private const val RESUME_REWIND = 4_096L
-
-        /** Strip TUI chrome (box borders, prompt, blank lines) and keep the tail. */
-        fun cleanTail(raw: String): String {
-            val lines = raw.split("\n")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() && it.first() !in "╭╰│❯┃└┌" }
-            return lines.takeLast(6).joinToString("\n").takeLast(400)
-        }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Warning
@@ -36,11 +39,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -184,6 +192,7 @@ private fun NewWorkspaceSheet(
     var cwd by remember { mutableStateOf(model.lastCwd) }
     var label by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = { if (!creating) onDismiss() }, sheetState = sheetState) {
         Column(
@@ -203,10 +212,17 @@ private fun NewWorkspaceSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "Claude bu dizinde başlar — host üzerinde var olan bir klasör olmalı.",
+                "Claude bu dizinde başlar. Yolu yazabilir ya da cihazdaki klasörlere göz atıp seçebilirsin.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(
+                onClick = { showPicker = true },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+            ) {
+                Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("  Cihazda klasör seç")
+            }
             val known = model.knownCwds
             if (known.isNotEmpty()) {
                 Text(
@@ -259,6 +275,143 @@ private fun NewWorkspaceSheet(
             }
         }
     }
+
+    if (showPicker) {
+        DirectoryPickerDialog(
+            model = model,
+            start = cwd,
+            onDismiss = { showPicker = false },
+            onPick = { picked -> cwd = picked },
+        )
+    }
+}
+
+/** Browse the host's filesystem to pick a working directory, instead of typing
+ *  an absolute path from memory. Starts at the home directory (or the path
+ *  already entered), drills into folders, walks back up, and returns the chosen
+ *  directory. One shell round-trip per level over the same transport. */
+@Composable
+private fun DirectoryPickerDialog(
+    model: WorkspacesViewModel,
+    start: String,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var path by remember { mutableStateOf("") }
+    var entries by remember { mutableStateOf<List<String>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    fun navigate(to: String) {
+        loading = true
+        path = to
+        scope.launch {
+            entries = model.listDirectories(to)
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val initial = start.trim().ifEmpty { model.homeDirectory() }
+        navigate(initial)
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.8f),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp,
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("Klasör seç", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = path.ifEmpty { " " },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HorizontalDivider()
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp).align(Alignment.Center),
+                            color = HerdrColors.accent,
+                        )
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            if (path != "/" && path.isNotEmpty()) {
+                                item(key = "..") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { navigate(parentPath(path)) }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, tint = HerdrColors.accent)
+                                        Text("Üst klasör", style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                }
+                            }
+                            items(entries, key = { it }) { name ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { navigate(childPath(path, name)) }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Icon(Icons.Filled.Folder, contentDescription = null, tint = HerdrColors.accent)
+                                    Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (entries.isEmpty()) {
+                                item(key = "empty") {
+                                    Text(
+                                        "Alt klasör yok",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(16.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("İptal") }
+                    Button(
+                        onClick = { onPick(path); onDismiss() },
+                        enabled = path.isNotEmpty() && !loading,
+                    ) { Text("Seç") }
+                }
+            }
+        }
+    }
+}
+
+private fun childPath(base: String, name: String): String =
+    if (base == "/") "/$name" else "$base/$name"
+
+private fun parentPath(p: String): String {
+    if (p == "/" || p.isEmpty()) return "/"
+    val idx = p.lastIndexOf('/')
+    return if (idx <= 0) "/" else p.substring(0, idx)
 }
 
 /** Show the meaningful tail of a long path (the project folder), not the head. */
