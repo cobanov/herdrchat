@@ -74,22 +74,22 @@ On first launch, add a server: name, Tailscale host, SSH username, and paste an
 OpenSSH private key (or password). The phone must be on the same tailnet
 (Tailscale app installed and logged in).
 
-## Notifications (optional, no APNs)
+## Notifications (built in — no server, no account)
 
-Run the notifier on the herdr host so the phone's ntfy app pings when an agent
-gets **blocked** (needs you) or **done** (finished):
+The apps notify **from within the app itself** when an agent gets **blocked**
+(needs you) or **done** (finished). Nothing to host, nothing to sign up for:
 
-```bash
-NTFY_URL=https://ntfy.example.com/herdr NTFY_TOKEN=tk_xxx scripts/herdr-ntfy-notifier.py
-```
+- **Android** — toggle the bell in the chat list: a foreground service keeps the
+  SSH watch alive and posts local notifications in real time, even with the UI
+  closed.
+- **iOS** — grant notification permission once; a Background App Refresh task
+  periodically checks agent states and posts local notifications. Timing is at
+  iOS's discretion (typically ≥15 min, and force-quitting the app pauses it —
+  platform rules). Instant iOS push would need a small APNs relay; not shipped.
 
-On macOS the token can live in the Keychain instead of the environment
-(`security add-generic-password -s herdrchat-ntfy -a herdr -w <token>`), and a
-LaunchAgent keeps it running (see `~/Library/LaunchAgents/dev.herdr.ntfy-notifier.plist`):
-
-```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.herdr.ntfy-notifier.plist
-```
+`scripts/herdr-ntfy-notifier.py` remains as an **optional self-hosted
+alternative** for ntfy users (instant push on both platforms, requires your own
+ntfy topic).
 
 ## Status
 
@@ -103,7 +103,8 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.herdr.ntfy-notifier.
 - [x] TOFU host-key pinning (fingerprint stored on first connect)
 - [x] Disk-persisted per-workspace message cache; tail resumes by byte offset
 - [x] Transcript-file rotation handling (status poll follows new session files)
-- [x] Host-side ntfy notifier for blocked **and done** agents (+ LaunchAgent)
+- [x] In-app notifications, serverless: Android foreground watch (real-time),
+      iOS Background App Refresh (periodic); optional self-hosted ntfy script
 - [ ] Load older history on scroll-up (first open loads the last ~400 KB)
 - [ ] Multi-agent thread merge polish
 

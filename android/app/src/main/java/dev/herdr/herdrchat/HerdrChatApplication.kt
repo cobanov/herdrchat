@@ -15,5 +15,6 @@ class HerdrChatApplication : Application() {
         Security.removeProvider("BC")
         Security.addProvider(BouncyCastleProvider())
         dev.herdr.herdrchat.ui.chat.ThreadCache.init(this)
+        dev.herdr.herdrchat.notify.WatchControl.restoreIfEnabled(this)
     }
 }

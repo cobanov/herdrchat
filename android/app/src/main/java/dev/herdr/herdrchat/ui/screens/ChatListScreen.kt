@@ -16,8 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,10 +39,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +71,27 @@ fun ChatListScreen(
 ) {
     val model = remember(connection.id) { WorkspacesViewModel(store.makeClient(connection)) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var watchEnabled by remember {
+        mutableStateOf(dev.herdr.herdrchat.notify.WatchControl.isEnabled(context))
+    }
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            dev.herdr.herdrchat.notify.WatchControl.setEnabled(context, true)
+            watchEnabled = true
+        }
+    }
+    fun toggleWatch() {
+        if (watchEnabled) {
+            dev.herdr.herdrchat.notify.WatchControl.setEnabled(context, false)
+            watchEnabled = false
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            dev.herdr.herdrchat.notify.WatchControl.setEnabled(context, true)
+            watchEnabled = true
+        }
+    }
 
     LaunchedEffect(connection.id) { model.start(scope) }
     DisposableEffect(connection.id) { onDispose { model.stop() } }
@@ -71,6 +101,12 @@ fun ChatListScreen(
             TopAppBar(
                 title = { Text(connection.name) },
                 actions = {
+                    IconButton(onClick = { toggleWatch() }) {
+                        Icon(
+                            if (watchEnabled) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
+                            contentDescription = if (watchEnabled) "Bildirimler açık" else "Bildirimler kapalı",
+                        )
+                    }
                     IconButton(onClick = onOpenConnections) {
                         Icon(Icons.Filled.Dns, contentDescription = "Sunucular")
                     }

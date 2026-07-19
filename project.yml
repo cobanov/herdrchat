@@ -23,12 +23,24 @@ targets:
     dependencies:
       - package: HerdrChat
         product: HerdrChatUI
+    # Array-valued Info.plist keys (no INFOPLIST_KEY_* equivalent): background
+    # app refresh powers the server-free agent notifications.
+    info:
+      path: App/Info.plist
+      properties:
+        # Keep versioning driven by build settings, not the plist literals
+        # xcodegen writes by default.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers:
+          - dev.herdr.HerdrChat.refresh
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.herdr.HerdrChat
         PRODUCT_NAME: HerdrChat
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "7"
         SWIFT_VERSION: "6.0"
         # iPhone-only (a phone-first chat app); avoids iPad multitasking orientation rules.
         TARGETED_DEVICE_FAMILY: "1"

@@ -45,6 +45,9 @@ public final class WorkspacesViewModel {
             let rows = try await ChatSummary.build(workspaces: workspaces, agents: snapshot.agents)
             summaries = rows
             connectionError = nil
+            // Keep the notification baseline fresh: states the user is looking
+            // at right now shouldn't re-notify from the background task later.
+            AgentNotifier.record(try await snapshot.agents)
         } catch {
             connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
         }

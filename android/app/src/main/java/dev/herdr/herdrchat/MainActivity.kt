@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             HerdrTheme {
                 val dark = androidx.compose.foundation.isSystemInDarkTheme()
-                val store = remember { ConnectionStore(applicationContext) }
+                val store = remember { AppServices.store(applicationContext) }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = HerdrColors.background(dark),
