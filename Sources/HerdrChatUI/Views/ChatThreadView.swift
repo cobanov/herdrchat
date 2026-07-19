@@ -12,6 +12,7 @@ import UIKit
 struct ChatThreadView: View {
     @State private var model: ChatThreadViewModel
     @State private var sendTrigger = 0
+    @State private var didInitialScroll = false
 
     init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
         _model = State(initialValue: ThreadSessions.shared.model(
@@ -136,9 +137,22 @@ struct ChatThreadView: View {
             #if os(iOS)
             .scrollDismissesKeyboard(.interactively)
             #endif
-            .onChange(of: visibleMessages.count) {
+            .onChange(of: visibleMessages.count) { oldCount, newCount in
+                guard let last = visibleMessages.last else { return }
+                // Open pinned to the bottom instantly (no travel through the
+                // history); only a single live message that arrives afterwards
+                // gets a gentle animated scroll. Bulk/catch-up loads jump.
+                if didInitialScroll && newCount - oldCount == 1 {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                } else {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+                didInitialScroll = true
+            }
+            .onAppear {
                 if let last = visibleMessages.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                    didInitialScroll = true
                 }
             }
         }

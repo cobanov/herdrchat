@@ -139,9 +139,8 @@ struct MessageBubble: View {
     private func segmentView(_ segment: MessageSegment) -> some View {
         switch segment {
         case .text(let text):
-            Text(text)
+            MarkdownText(markdown: text, foreground: isOutgoing ? .white : .primary, onTint: isOutgoing)
                 .font(.body)
-                .foregroundStyle(isOutgoing ? Color.white : Color.primary)
                 .textSelection(.enabled)
         case .thinking:
             terminalChip(glyph: "…", label: "düşündü", glyphColor: .secondary)

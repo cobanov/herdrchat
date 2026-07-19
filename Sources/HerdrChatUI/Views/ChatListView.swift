@@ -2,8 +2,9 @@ import SwiftUI
 import HerdrKit
 
 /// The chat list: one row per workspace with live presence. Native furniture
-/// throughout — large title, a server switcher folded into the title menu,
-/// iMessage-style leading attention dots, chevron-free rows.
+/// throughout — large title, a visible server switcher in the top-left leading
+/// slot (tap the server name to manage / add / switch devices), iMessage-style
+/// leading attention dots, chevron-free rows.
 struct ChatListView: View {
     let store: ConnectionStore
     let connection: ServerConnection
@@ -25,8 +26,8 @@ struct ChatListView: View {
                 }
                 ForEach(model.summaries) { summary in
                     ChatRow(summary: summary)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 16))
-                        .alignmentGuide(.listRowSeparatorLeading) { _ in 91 }   // align to text, iMessage-style
+                        .listRowInsets(EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 16))
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 90 }
                 }
                 if model.summaries.isEmpty && model.connectionError == nil {
                     ContentUnavailableView(
@@ -41,25 +42,12 @@ struct ChatListView: View {
             }
             .listStyle(.plain)
             .navigationTitle("Sohbetler")
-            .toolbarTitleMenu {
-                // Server switcher lives in the title — tap "Sohbetler ˅".
-                ForEach(store.connections) { candidate in
-                    Button {
-                        store.selectedID = candidate.id
-                    } label: {
-                        if candidate.id == connection.id {
-                            Label(candidate.name, systemImage: "checkmark")
-                        } else {
-                            Text(candidate.name)
-                        }
-                    }
-                }
-                Divider()
-                Button {
-                    showingConnections = true
-                } label: {
-                    Label("Sunucuları yönet", systemImage: "server.rack")
-                }
+            .toolbar {
+                #if os(iOS)
+                ToolbarItem(placement: .topBarLeading) { serverButton }
+                #else
+                ToolbarItem { serverButton }
+                #endif
             }
             .navigationDestination(for: ChatSummary.self) { summary in
                 ChatThreadView(
@@ -73,10 +61,24 @@ struct ChatListView: View {
                 NavigationStack { ConnectionListView(store: store) }
             }
         }
-        .task {
-            model.start()
-        }
+        .task { model.start() }
         .onDisappear { model.stop() }
+    }
+
+    /// Server switcher + settings entry, always visible top-left. Shows which
+    /// host you're on and opens device management (add / edit / switch).
+    private var serverButton: some View {
+        Button {
+            showingConnections = true
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "server.rack").imageScale(.small)
+                Text(connection.name).fontWeight(.semibold)
+                Image(systemName: "chevron.down").font(.caption2).opacity(0.5)
+            }
+            .font(.subheadline)
+        }
+        .accessibilityLabel("Sunucu: \(connection.name). Sunucuları yönet.")
     }
 }
 
