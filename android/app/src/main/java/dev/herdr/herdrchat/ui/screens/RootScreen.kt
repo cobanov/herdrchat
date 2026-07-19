@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import dev.herdr.herdrchat.ui.chat.ChatSummary
+import dev.herdr.herdrchat.ui.chat.WorkspacesViewModel
 import dev.herdr.herdrchat.ui.connection.ConnectionStore
 import dev.herdr.herdrchat.ui.connection.ServerConnection
 
@@ -31,13 +32,21 @@ fun RootScreen(store: ConnectionStore) {
 
     BackHandler(enabled = backStack.isNotEmpty()) { pop() }
 
+    // Hoisted above the `when` so the same instance survives list <-> thread
+    // navigation: the chat list keeps its rows and its shared connection instead
+    // of reconnecting (matching iOS, where the list is the persistent nav root).
+    val workspacesVM: WorkspacesViewModel? = remember(store.selectedId) {
+        store.selected?.let { WorkspacesViewModel(store.makeClient(it), it.id) }
+    }
+
     when (current) {
         Screen.ChatList -> {
             val connection = store.selected
-            if (connection != null) {
+            if (connection != null && workspacesVM != null) {
                 ChatListScreen(
                     store = store,
                     connection = connection,
+                    model = workspacesVM,
                     onOpenThread = { push(Screen.Thread(it)) },
                     onOpenConnections = { push(Screen.Connections) },
                 )

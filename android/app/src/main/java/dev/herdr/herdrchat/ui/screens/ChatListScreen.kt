@@ -81,10 +81,12 @@ import dev.herdr.herdrchat.ui.theme.pressScale
 fun ChatListScreen(
     store: ConnectionStore,
     connection: ServerConnection,
+    model: WorkspacesViewModel,
     onOpenThread: (ChatSummary) -> Unit,
     onOpenConnections: () -> Unit,
 ) {
-    val model = remember(connection.id) { WorkspacesViewModel(store.makeClient(connection), connection.id) }
+    // `model` is hoisted to RootScreen so it survives navigating into a thread and
+    // back — the list keeps its rows (no reconnect / "Connecting…" flash).
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var watchEnabled by remember {
