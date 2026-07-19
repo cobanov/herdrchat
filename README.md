@@ -76,10 +76,19 @@ OpenSSH private key (or password). The phone must be on the same tailnet
 
 ## Notifications (optional, no APNs)
 
-Run the notifier on the herdr host so a blocked agent pings your phone's ntfy app:
+Run the notifier on the herdr host so the phone's ntfy app pings when an agent
+gets **blocked** (needs you) or **done** (finished):
 
 ```bash
-NTFY_URL=https://ntfy.example.ts.net/herdr scripts/herdr-ntfy-notifier.py
+NTFY_URL=https://ntfy.example.com/herdr NTFY_TOKEN=tk_xxx scripts/herdr-ntfy-notifier.py
+```
+
+On macOS the token can live in the Keychain instead of the environment
+(`security add-generic-password -s herdrchat-ntfy -a herdr -w <token>`), and a
+LaunchAgent keeps it running (see `~/Library/LaunchAgents/dev.herdr.ntfy-notifier.plist`):
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.herdr.ntfy-notifier.plist
 ```
 
 ## Status
@@ -87,11 +96,16 @@ NTFY_URL=https://ntfy.example.ts.net/herdr scripts/herdr-ntfy-notifier.py
 - [x] HerdrKit models decode real herdr `snapshot` / `workspace list` JSON
 - [x] Transcript parser → chat bubbles (verified on real Claude Code transcripts)
 - [x] `HerdrClient` + `TranscriptStore` (verified live against local herdr)
-- [x] SSH transport (Citadel 0.12.1) — compiles; runtime auth needs a device test
-- [x] SwiftUI app: chat list, chat thread, blocked quick-replies
-- [x] Host-side ntfy notifier for blocked agents
-- [ ] Runtime test on device over Tailscale (needs Xcode + iPhone on tailnet)
-- [ ] Multi-agent thread merge polish; transcript-file rotation handling
+- [x] SSH transport — verified end-to-end on device over Tailscale (send + tail)
+- [x] SwiftUI app: chat list, chat thread, blocked quick-replies (TestFlight)
+- [x] Android app (Kotlin + Compose + sshj), feature parity (`android/`)
+- [x] One persistent SSH connection per host; liveness check + retry-once heal
+- [x] TOFU host-key pinning (fingerprint stored on first connect)
+- [x] Disk-persisted per-workspace message cache; tail resumes by byte offset
+- [x] Transcript-file rotation handling (status poll follows new session files)
+- [x] Host-side ntfy notifier for blocked **and done** agents (+ LaunchAgent)
+- [ ] Load older history on scroll-up (first open loads the last ~400 KB)
+- [ ] Multi-agent thread merge polish
 
 Building the app requires a full Xcode install (this repo's core only needs
 Command Line Tools).
