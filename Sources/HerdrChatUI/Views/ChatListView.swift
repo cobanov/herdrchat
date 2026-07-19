@@ -1,14 +1,15 @@
 import SwiftUI
 import HerdrKit
 
-/// The chat list: one row per workspace, WhatsApp-style, with live presence.
+/// The chat list: one row per workspace with live presence. Native furniture
+/// throughout — large title, a server switcher folded into the title menu,
+/// iMessage-style leading attention dots, chevron-free rows.
 struct ChatListView: View {
     let store: ConnectionStore
     let connection: ServerConnection
 
     @State private var model: WorkspacesViewModel
     @State private var showingConnections = false
-    @Environment(\.colorScheme) private var scheme
 
     init(store: ConnectionStore, connection: ServerConnection) {
         self.store = store
@@ -23,32 +24,49 @@ struct ChatListView: View {
                     ConnectionErrorRow(message: error)
                 }
                 ForEach(model.summaries) { summary in
-                    NavigationLink(value: summary) {
-                        ChatRow(summary: summary)
-                    }
+                    ChatRow(summary: summary)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 16))
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 91 }   // align to text, iMessage-style
                 }
                 if model.summaries.isEmpty && model.connectionError == nil {
                     ContentUnavailableView(
                         model.isLoading ? "Bağlanılıyor…" : "Workspace yok",
-                        systemImage: model.isLoading ? "antenna.radiowaves.left.and.right" : "tray"
+                        systemImage: model.isLoading ? "antenna.radiowaves.left.and.right" : "tray",
+                        description: model.isLoading
+                            ? Text("\(connection.name) üzerindeki herdr'a bağlanılıyor.")
+                            : Text("herdr'da bir workspace açtığında burada görünür.")
                     )
+                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
-            .navigationTitle(connection.name)
+            .navigationTitle("Sohbetler")
+            .toolbarTitleMenu {
+                // Server switcher lives in the title — tap "Sohbetler ˅".
+                ForEach(store.connections) { candidate in
+                    Button {
+                        store.selectedID = candidate.id
+                    } label: {
+                        if candidate.id == connection.id {
+                            Label(candidate.name, systemImage: "checkmark")
+                        } else {
+                            Text(candidate.name)
+                        }
+                    }
+                }
+                Divider()
+                Button {
+                    showingConnections = true
+                } label: {
+                    Label("Sunucuları yönet", systemImage: "server.rack")
+                }
+            }
             .navigationDestination(for: ChatSummary.self) { summary in
                 ChatThreadView(
                     client: store.makeClient(for: connection),
                     connectionID: connection.id.uuidString,
                     summary: summary
                 )
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showingConnections = true } label: {
-                        Image(systemName: "server.rack")
-                    }
-                }
             }
             .refreshable { await model.refresh() }
             .sheet(isPresented: $showingConnections) {
@@ -62,51 +80,46 @@ struct ChatListView: View {
     }
 }
 
-/// A single workspace row.
-struct ChatRow: View {
+/// A single workspace row: leading attention dot (iMessage's unread cue),
+/// presence-ring avatar, title + live status line. No disclosure chevron.
+private struct ChatRow: View {
     let summary: ChatSummary
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack(alignment: .bottomTrailing) {
+        ZStack {
+            NavigationLink(value: summary) { EmptyView() }.opacity(0)
+            HStack(spacing: 10) {
                 Circle()
-                    .fill(Avatar.color(for: summary.title.isEmpty ? summary.workspaceId : summary.title))
-                    .frame(width: 48, height: 48)
-                    .overlay(
-                        Text(initials)
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                    )
-                PresenceDot(status: summary.status, ring: Theme.background(scheme))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(summary.title)
-                    .font(.headline)
-                    .foregroundStyle(Theme.primaryText(scheme))
-                HStack(spacing: 6) {
-                    Text(summary.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(summary.needsAttention ? Theme.statusColor(.blocked) : Theme.secondaryText(scheme))
+                    .fill(Theme.attention)
+                    .frame(width: 9, height: 9)
+                    .opacity(summary.needsAttention ? 1 : 0)
+                PresenceRingAvatar(
+                    title: summary.title,
+                    key: summary.title.isEmpty ? summary.workspaceId : summary.title,
+                    status: summary.status
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary.title)
+                        .font(.headline)
                         .lineLimit(1)
-                    if summary.status == .working {
-                        TypingDots(color: Theme.statusColor(.working), size: 4)
-                    }
+                    subtitle
                 }
-            }
-            Spacer()
-            if summary.needsAttention {
-                Circle()
-                    .fill(Theme.statusColor(.blocked))
-                    .frame(width: 11, height: 11)
+                Spacer(minLength: 0)
             }
         }
-        .padding(.vertical, 5)
     }
 
-    private var initials: String {
-        let letters = summary.title.split(separator: " ").compactMap(\.first).prefix(2)
-        return letters.isEmpty ? "?" : String(letters).uppercased()
+    @ViewBuilder
+    private var subtitle: some View {
+        HStack(spacing: 6) {
+            Text(summary.subtitle)
+                .font(.subheadline)
+                .foregroundStyle(summary.needsAttention ? Theme.attention : Color.secondary)
+                .lineLimit(1)
+            if summary.status == .working {
+                TypingDots(color: Theme.tint, size: 4)
+            }
+        }
     }
 }
 
@@ -119,7 +132,7 @@ struct ConnectionErrorRow: View {
                 Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
         } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.attention)
         }
     }
 }

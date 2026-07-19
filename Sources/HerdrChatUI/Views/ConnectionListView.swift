@@ -24,7 +24,7 @@ struct ConnectionListView: View {
                             }
                             Spacer()
                             if connection.id == store.selectedID {
-                                Image(systemName: "checkmark").foregroundStyle(Theme.accent)
+                                Image(systemName: "checkmark").foregroundStyle(Theme.tint)
                             }
                         }
                     }

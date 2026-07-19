@@ -18,5 +18,6 @@ public struct RootView: View {
                 }
             }
         }
+        .tint(Theme.tint)
     }
 }
