@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.mapNotNull
  *  and the running byte offset consumed, so a re-open can resume from there. */
 data class TailChunk(val message: ChatMessage?, val consumedBytes: Long)
 
+/** Result of a bulk "recent" read: parsed bubbles + the byte offset the live
+ *  tail should follow from. */
+data class RecentLoad(val messages: List<ChatMessage>, val consumedBytes: Long)
+
 /**
  * Reads Claude Code transcripts on the herdr host so chat threads show clean
  * bubbles instead of the raw TUI buffer. Given a pane's cwd, it finds the newest
@@ -33,6 +37,18 @@ class TranscriptStore(private val transport: HerdrTransport) {
     /** Load and parse a transcript file in full. */
     suspend fun loadMessages(path: String, agentLabel: String?): List<ChatMessage> =
         TranscriptParser.parse(transport.shell("cat ${ShellQuoting.quote(path)}"), agentLabel)
+
+    /** Bulk-load only the most recent [maxBytes] of a transcript in one read and
+     *  parse, instead of streaming the whole (possibly multi-MB) file line by
+     *  line. A partial first line (window starts mid-file) fails to parse and is
+     *  dropped. Returns the bubbles + the byte offset consumed for the tail. */
+    suspend fun recent(path: String, agentLabel: String?, maxBytes: Long): RecentLoad {
+        val size = fileSize(path)
+        val start = if (size > maxBytes) size - maxBytes else 0L
+        val text = transport.shell("tail -c +${start + 1} ${ShellQuoting.quote(path)}")
+        val messages = TranscriptParser.parse(text, agentLabel)
+        return RecentLoad(messages, start + text.toByteArray(Charsets.UTF_8).size)
+    }
 
     /** Current file size in bytes, or -1 if unknown. Used to decide whether a
      *  cached byte offset is still valid (file grew) or the file rotated. */

@@ -75,19 +75,38 @@ public final class ChatThreadViewModel {
 
     // MARK: - Reading
 
+    /// Only bulk-load this many bytes of a fresh transcript up front; older
+    /// history stays on disk. Keeps the first open fast even on huge sessions.
+    private static let recentBytes = 400_000
+
     private func startTails() async {
         // One transcript tail per agent that owns a conversation.
         let agents = liveAgents.filter { $0.agent != nil }
         for agent in agents {
             guard let path = try? await store.newestTranscriptPath(forCwd: agent.cwd) else { continue }
             let label = agents.count > 1 ? agent.agent : nil
-            // Resume from the cached byte offset when the file still contains it;
-            // otherwise read from the start (first open, or the file rotated).
             let cachedBytes = ThreadCache.shared.bytes(workspaceId, path: path)
             let size = (try? await store.fileSize(atPath: path)) ?? -1
-            let start = (cachedBytes.map { size >= $0 } ?? false) ? cachedBytes! : 0
-            if start == 0 { ThreadCache.shared.resetBytes(workspaceId, path: path) }
-            let stream = store.tail(atPath: path, agentLabel: label, startByte: start)
+            let canResume = cachedBytes.map { size >= $0 } ?? false
+
+            let followStart: Int
+            if canResume {
+                // Reopen: history already cached; just follow from where we left off.
+                followStart = cachedBytes!
+            } else {
+                // First open: bulk-load only the recent slice in ONE read + ONE
+                // batch (not line-by-line), then follow new appends live.
+                ThreadCache.shared.resetBytes(workspaceId, path: path)
+                if let recent = try? await store.recent(atPath: path, agentLabel: label, maxBytes: Self.recentBytes) {
+                    ingestBatch(recent.messages)
+                    ThreadCache.shared.setBytes(workspaceId, path: path, recent.consumedBytes)
+                    followStart = recent.consumedBytes
+                } else {
+                    followStart = 0
+                }
+            }
+
+            let stream = store.tail(atPath: path, agentLabel: label, startByte: followStart)
             let task = Task { [weak self] in
                 do {
                     for try await chunk in stream {
@@ -99,6 +118,18 @@ public final class ChatThreadViewModel {
             }
             tailTasks.append(task)
         }
+    }
+
+    /// Ingest many messages with a single rebuild (used for the initial bulk load).
+    private func ingestBatch(_ incoming: [ChatMessage]) {
+        var added = false
+        for message in incoming where !seenIDs.contains(message.id) {
+            seenIDs.insert(message.id)
+            ThreadCache.shared.add(workspaceId, message)
+            arrival.append(message)
+            added = true
+        }
+        if added { rebuild() }
     }
 
     private func ingestChunk(_ chunk: TailChunk, path: String) {

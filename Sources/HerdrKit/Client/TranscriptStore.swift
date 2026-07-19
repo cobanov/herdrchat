@@ -56,6 +56,19 @@ public struct TranscriptStore: Sendable {
         }
     }
 
+    /// Bulk-load only the most recent `maxBytes` of a transcript in one read and
+    /// parse, instead of streaming the whole (possibly multi-MB) file line by
+    /// line. Returns the parsed bubbles plus the byte offset consumed, so the
+    /// live tail can follow from exactly there. A partial first line (when the
+    /// window starts mid-file) simply fails to parse and is dropped.
+    public func recent(atPath path: String, agentLabel: String?, maxBytes: Int) async throws -> (messages: [ChatMessage], consumedBytes: Int) {
+        let size = try await fileSize(atPath: path)
+        let start = size > maxBytes ? size - maxBytes : 0
+        let data = try await transport.shell("tail -c +\(start + 1) \(ShellQuoting.quote(path))")
+        let text = String(decoding: data, as: UTF8.self)
+        return (TranscriptParser.parse(text, agentLabel: agentLabel), start + data.count)
+    }
+
     /// Current file size in bytes, or -1 if unknown. Used to decide whether a
     /// cached byte offset is still valid (file grew) or the file rotated.
     public func fileSize(atPath path: String) async throws -> Int {

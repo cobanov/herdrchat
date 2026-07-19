@@ -100,15 +100,31 @@ class ChatThreadViewModel(
         for (agent in agents) {
             val path = runCatching { store.newestTranscriptPath(agent.cwd) }.getOrNull() ?: continue
             val label = if (agents.size > 1) agent.agent else null
-            // Resume from the cached byte offset when the file still contains it;
-            // otherwise read from the start (first open, or the file rotated).
             val cachedBytes = ThreadCache.consumedBytes(workspaceId, path)
             val size = runCatching { store.fileSize(path) }.getOrNull() ?: -1L
-            val start = if (cachedBytes != null && size >= cachedBytes) cachedBytes else 0L
-            if (start == 0L) ThreadCache.resetBytes(workspaceId, path)
+            val canResume = cachedBytes != null && size >= cachedBytes
+
+            val followStart: Long
+            if (canResume) {
+                // Reopen: history already cached; just follow from where we left off.
+                followStart = cachedBytes!!
+            } else {
+                // First open: bulk-load only the recent slice in ONE read + ONE
+                // batch (not line-by-line), then follow new appends live.
+                ThreadCache.resetBytes(workspaceId, path)
+                val recent = runCatching { store.recent(path, label, RECENT_BYTES) }.getOrNull()
+                if (recent != null) {
+                    ingestBatch(recent.messages)
+                    ThreadCache.setConsumedBytes(workspaceId, path, recent.consumedBytes)
+                    followStart = recent.consumedBytes
+                } else {
+                    followStart = 0L
+                }
+            }
+
             val job = scope.launch {
                 try {
-                    store.tail(path, label, start).collect { chunk ->
+                    store.tail(path, label, followStart).collect { chunk ->
                         chunk.message?.let { ingest(it) }
                         ThreadCache.setConsumedBytes(workspaceId, path, chunk.consumedBytes)
                     }
@@ -125,6 +141,19 @@ class ChatThreadViewModel(
         ThreadCache.add(workspaceId, message)
         arrival.add(message)
         rebuild()
+    }
+
+    /** Ingest many messages with a single rebuild (used for the initial bulk load). */
+    private fun ingestBatch(incoming: List<ChatMessage>) {
+        var added = false
+        for (message in incoming) {
+            if (seenIds.add(message.id)) {
+                ThreadCache.add(workspaceId, message)
+                arrival.add(message)
+                added = true
+            }
+        }
+        if (added) rebuild()
     }
 
     private fun startStatusPolling(scope: CoroutineScope) {
@@ -183,5 +212,11 @@ class ChatThreadViewModel(
         s.launch {
             runCatching { client.sendKeys(pane.paneId, keys) }.onFailure { setError(it) }
         }
+    }
+
+    companion object {
+        // Only bulk-load this many bytes of a fresh transcript up front; older
+        // history stays on disk. Keeps the first open fast even on huge sessions.
+        private const val RECENT_BYTES = 400_000L
     }
 }
