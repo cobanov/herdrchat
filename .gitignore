@@ -8,3 +8,5 @@ DerivedData/
 *.pem
 *.key
 secrets.plist
+__pycache__/
+*.pyc
