@@ -161,11 +161,13 @@ fun MessageBubble(message: ChatMessage, groupedWithPrev: Boolean) {
 @Composable
 private fun SegmentView(segment: MessageSegment, dark: Boolean) {
     when (segment) {
-        is MessageSegment.Text -> Text(
-            text = segment.value,
-            style = MaterialTheme.typography.bodyLarge,
-            color = HerdrColors.primaryText(dark),
-        )
+        is MessageSegment.Text -> androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.bodyLarge) {
+            MarkdownText(
+                markdown = segment.value,
+                color = HerdrColors.primaryText(dark),
+                onTint = false,
+            )
+        }
         is MessageSegment.Thinking -> Chip(Icons.Filled.Psychology, "düşündü", HerdrColors.secondaryText(dark))
         is MessageSegment.ToolUse -> Chip(
             Icons.Filled.Build,
