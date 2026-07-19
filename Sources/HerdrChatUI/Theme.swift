@@ -8,12 +8,15 @@ import AppKit
 
 /// Native-first palette. Every surface comes from the SYSTEM so the app sits
 /// naturally next to first-party iOS apps (and adapts to dark mode for free);
-/// the only brand ink is an emerald tint — deliberately neither iMessage blue
-/// nor WhatsApp green, a quiet nod to terminal green. Attention rides system
-/// orange, the platform's own "needs you" colour.
+/// the brand ink is a periwinkle tint drawn from the app logo (indigo-navy +
+/// lavender). Attention rides system orange, the platform's own "needs you"
+/// colour, which also pops against the cool blue tint.
 public enum Theme {
     /// Brand tint: outgoing bubbles, send button, working presence, app tint.
-    public static let tint = Color(hex: 0x2EA26A)
+    /// A mid periwinkle from the logo's blue — legible on light and dark.
+    public static let tint = Color(hex: 0x6E74E6)
+    /// The logo's light periwinkle, for accents that sit on dark surfaces.
+    public static let lavender = Color(hex: 0xC3C7F9)
     /// A blocked agent needs the user — system orange, not alarm red.
     public static let attention = Color.orange
 
