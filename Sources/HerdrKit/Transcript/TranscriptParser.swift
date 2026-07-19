@@ -42,6 +42,21 @@ public enum TranscriptParser {
         )
     }
 
+    /// Model + context-size for a single assistant line, for the chat header.
+    /// `contextTokens` is the size of the request's prompt (new input + both cache
+    /// tiers) — i.e. how full the context window is right now. Nil for non-assistant
+    /// lines or lines without usage.
+    public static func assistantMeta<S: StringProtocol>(fromLine line: S) -> (model: String?, contextTokens: Int?)? {
+        guard let data = String(line).data(using: .utf8),
+              let raw = try? decoder.decode(RawEntry.self, from: data),
+              raw.type == "assistant", let message = raw.message else { return nil }
+        let context = message.usage.map {
+            ($0.inputTokens ?? 0) + ($0.cacheCreationInputTokens ?? 0) + ($0.cacheReadInputTokens ?? 0)
+        }
+        guard message.model != nil || context != nil else { return nil }
+        return (message.model, context)
+    }
+
     /// Claude escapes a cwd into a project directory name by replacing every
     /// character that is not ASCII-alphanumeric with a hyphen, e.g.
     /// `/Users/x/Documents/obsidian/07_homelab` -> `-Users-x-Documents-obsidian-07-homelab`
@@ -123,6 +138,17 @@ private struct RawEntry: Decodable {
 private struct RawMessage: Decodable {
     let role: String?
     let content: RawContent?
+    let model: String?
+    let usage: RawUsage?
+}
+
+/// Token accounting on an assistant turn (snake_case decoded via the shared
+/// decoder's key strategy).
+private struct RawUsage: Decodable {
+    let inputTokens: Int?
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
+    let outputTokens: Int?
 }
 
 private struct RawBlock: Decodable {

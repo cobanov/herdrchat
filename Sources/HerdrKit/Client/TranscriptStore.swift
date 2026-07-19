@@ -92,6 +92,24 @@ public struct TranscriptStore: Sendable {
         return (TranscriptParser.parse(text, agentLabel: agentLabel), start + data.count)
     }
 
+    /// Model + context size for the chat header: read the transcript tail and
+    /// take the newest assistant line's model and prompt-token total. One small
+    /// round-trip; nil when the tail holds no assistant turn with usage yet.
+    public func sessionMeta(atPath path: String, tailBytes: Int = 262_144) async throws -> SessionMeta? {
+        let data = try await transport.shell("tail -c \(tailBytes) \(ShellQuoting.quote(path)) 2>/dev/null")
+        let text = String(decoding: data, as: UTF8.self)
+        var model: String?
+        var context: Int?
+        for line in text.split(separator: "\n").reversed() {
+            guard let meta = TranscriptParser.assistantMeta(fromLine: line) else { continue }
+            if model == nil { model = meta.model }
+            if context == nil { context = meta.contextTokens }
+            if model != nil, context != nil { break }
+        }
+        guard model != nil || context != nil else { return nil }
+        return SessionMeta(model: model, contextTokens: context)
+    }
+
     /// Current file size in bytes, or -1 if unknown. Used to decide whether a
     /// cached byte offset is still valid (file grew) or the file rotated.
     public func fileSize(atPath path: String) async throws -> Int {

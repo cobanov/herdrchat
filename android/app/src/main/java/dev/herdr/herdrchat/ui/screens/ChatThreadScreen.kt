@@ -60,6 +60,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import dev.herdr.herdrchat.core.client.HerdrClient
@@ -114,16 +115,29 @@ fun ChatThreadScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { ThreadTitle(model.title, model.status) },
+                title = {
+                    ThreadTitle(model.title, model.status, model.sessionMeta?.modelDisplayName, model.workingDirName)
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    model.sessionMeta?.contextLabel?.let { ctx ->
+                        Text(
+                            ctx,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(end = 12.dp),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = HerdrColors.headerGreen,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
                 ),
             )
         },
@@ -295,22 +309,26 @@ private fun ErrorRow(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ThreadTitle(title: String, status: AgentStatus) {
+private fun ThreadTitle(title: String, status: AgentStatus, modelName: String?, dirName: String?) {
     Column {
         Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
-        val subtitle = when (status) {
+        val statusText = when (status) {
             AgentStatus.WORKING -> "typing"
             AgentStatus.BLOCKED -> "waiting for reply"
             AgentStatus.DONE -> "done"
             AgentStatus.IDLE -> "online"
             AgentStatus.UNKNOWN -> null
         }
-        if (subtitle != null) {
+        // "Opus 4.8 · apptest · online" — model, working-folder, and live status.
+        val parts = listOfNotNull(modelName, dirName, statusText)
+        if (parts.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
-                    subtitle,
+                    parts.joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (status == AgentStatus.WORKING) TypingDots(color = Color.White.copy(alpha = 0.85f), dotSize = 4.dp)
             }

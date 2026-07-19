@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -58,6 +59,24 @@ object TranscriptParser {
             agentLabel = agentLabel,
             isSidechain = (obj["isSidechain"] as? JsonPrimitive)?.booleanOrNull ?: false,
         )
+    }
+
+    /** Model + context size for one assistant line (chat header). contextTokens =
+     *  input + both cache tiers = how full the window is now. Null for
+     *  non-assistant lines or lines without model/usage. */
+    fun assistantMeta(line: String): SessionMeta? {
+        val obj = try { json.parseToJsonElement(line).jsonObject } catch (e: Exception) { return null }
+        if (obj.str("type") != "assistant") return null
+        val msg = obj["message"] as? JsonObject ?: return null
+        val model = msg.str("model")
+        val usage = msg["usage"] as? JsonObject
+        val ctx = usage?.let {
+            (it.int("input_tokens") ?: 0) +
+                (it.int("cache_creation_input_tokens") ?: 0) +
+                (it.int("cache_read_input_tokens") ?: 0)
+        }
+        if (model == null && ctx == null) return null
+        return SessionMeta(model, ctx)
     }
 
     /** Claude escapes a cwd into a project dir name by replacing every character
@@ -115,4 +134,6 @@ object TranscriptParser {
 
     private fun JsonObject.str(key: String): String? =
         (this[key] as? JsonPrimitive)?.let { if (it is JsonNull) null else it.contentOrNull }
+
+    private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
 }

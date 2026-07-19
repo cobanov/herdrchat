@@ -12,6 +12,7 @@ import dev.herdr.herdrchat.core.transcript.BlockedPrompt
 import dev.herdr.herdrchat.core.transcript.BlockedPromptParser
 import dev.herdr.herdrchat.core.transcript.ChatMessage
 import dev.herdr.herdrchat.core.transcript.MessageSegment
+import dev.herdr.herdrchat.core.transcript.SessionMeta
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -53,7 +54,14 @@ class ChatThreadViewModel(
      *  quick-reply bar can label each option. Null when not blocked or unparsable. */
     var blockedPrompt by mutableStateOf<BlockedPrompt?>(null)
         private set
+    /** Model + context size for the header, refreshed from the transcript tail. */
+    var sessionMeta by mutableStateOf<SessionMeta?>(null)
+        private set
 
+    /** Folder name of the agent's working directory, for the header. */
+    val workingDirName: String? get() = primaryPane?.cwd?.substringAfterLast('/')?.ifEmpty { null }
+
+    private var metaTick = 0
     private val seenIds = mutableSetOf<String>()
     private val arrival = mutableListOf<ChatMessage>()      // real transcript bubbles, in order
     private val localEchoes = mutableListOf<ChatMessage>()  // optimistic user sends, pre-transcript
@@ -274,10 +282,20 @@ class ChatThreadViewModel(
                         restartTails()
                     }
                     refreshBlockedPrompt()
+                    metaTick++
+                    if (metaTick % 5 == 1) refreshSessionMeta()
                 }
                 delay(2000)
             }
         }
+    }
+
+    /** Refresh the header's model + context readout from the primary transcript. */
+    private suspend fun refreshSessionMeta() {
+        val pane = primaryPane ?: return
+        val path = tailedPaths[pane.cwd] ?: return
+        val meta = runCatching { store.sessionMeta(path) }.getOrNull() ?: return
+        if (meta != sessionMeta) sessionMeta = meta
     }
 
     /** While an agent is blocked, read its pane and parse the choice menu so the

@@ -13,6 +13,7 @@ struct ChatThreadView: View {
     @State private var model: ChatThreadViewModel
     @State private var sendTrigger = 0
     @State private var atBottom = true
+    @State private var didInitialScroll = false
     private let bottomAnchor = "herdrchat.bottom"
 
     init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
@@ -54,6 +55,15 @@ struct ChatThreadView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .principal) { header }
+            #if os(iOS)
+            if let ctx = model.sessionMeta?.contextLabel {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Text(ctx)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            #endif
         }
         .task { model.startIfNeeded() }
         .onAppear {
@@ -80,21 +90,25 @@ struct ChatThreadView: View {
     @ViewBuilder
     private var statusSubtitle: some View {
         let status = model.status
-        let text: String? = switch status {
+        let statusText: String? = switch status {
         case .working: "typing"
         case .blocked: "waiting for reply"
         case .done: "done"
         case .idle: "online"
         case .unknown: nil
         }
-        if let text {
+        // "Opus 4.8 · apptest · online" — model, working-folder, and live status.
+        let parts = [model.sessionMeta?.modelDisplayName, model.workingDirName, statusText].compactMap { $0 }
+        if !parts.isEmpty {
             HStack(spacing: 4) {
                 Circle()
                     .fill(Theme.statusColor(status))
                     .frame(width: 6, height: 6)
-                Text(text)
+                Text(parts.joined(separator: " · "))
                     .font(.caption2)
                     .foregroundStyle(status == .blocked ? Theme.attention : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 if status == .working { TypingDots(color: Theme.tint, size: 3.5) }
             }
         }
@@ -168,6 +182,26 @@ struct ChatThreadView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: isWaiting)
             .defaultScrollAnchor(.bottom)
+            // Reliably open at the newest message: a long transcript loads in
+            // phases (cache seed → recent bulk load → live tail), and the default
+            // anchor doesn't always re-pin as content grows. Force the jump on the
+            // first load, then keep pinned only while already at the bottom (never
+            // yank a reader who scrolled up).
+            .onChange(of: model.messages.count) { _, _ in
+                if !didInitialScroll {
+                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    if !rows.isEmpty { didInitialScroll = true }
+                } else if atBottom {
+                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                }
+            }
+            .onAppear {
+                guard !rows.isEmpty else { return }
+                didInitialScroll = true
+                DispatchQueue.main.async {
+                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                }
+            }
             #if os(iOS)
             .scrollDismissesKeyboard(.immediately)
             #endif

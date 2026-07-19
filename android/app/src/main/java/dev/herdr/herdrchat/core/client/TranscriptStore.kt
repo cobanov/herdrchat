@@ -3,6 +3,7 @@ package dev.herdr.herdrchat.core.client
 import dev.herdr.herdrchat.core.net.HerdrTransport
 import dev.herdr.herdrchat.core.net.ShellQuoting
 import dev.herdr.herdrchat.core.transcript.ChatMessage
+import dev.herdr.herdrchat.core.transcript.SessionMeta
 import dev.herdr.herdrchat.core.transcript.TranscriptParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -61,6 +62,22 @@ class TranscriptStore(private val transport: HerdrTransport) {
         val text = transport.shell("tail -c +${start + 1} ${ShellQuoting.quote(path)}")
         val messages = TranscriptParser.parse(text, agentLabel)
         return RecentLoad(messages, start + text.toByteArray(Charsets.UTF_8).size)
+    }
+
+    /** Model + context size for the chat header: read the transcript tail and take
+     *  the newest assistant line's model and prompt-token total. One small
+     *  round-trip; null when the tail holds no assistant turn with usage yet. */
+    suspend fun sessionMeta(path: String, tailBytes: Int = 262_144): SessionMeta? {
+        val text = transport.shell("tail -c $tailBytes ${ShellQuoting.quote(path)} 2>/dev/null")
+        var model: String? = null
+        var ctx: Int? = null
+        for (line in text.split("\n").asReversed()) {
+            val meta = TranscriptParser.assistantMeta(line) ?: continue
+            if (model == null) model = meta.model
+            if (ctx == null) ctx = meta.contextTokens
+            if (model != null && ctx != null) break
+        }
+        return if (model == null && ctx == null) null else SessionMeta(model, ctx)
     }
 
     /** Current file size in bytes, or -1 if unknown. Used to decide whether a

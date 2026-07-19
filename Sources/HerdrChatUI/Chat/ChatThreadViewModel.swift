@@ -27,6 +27,13 @@ public final class ChatThreadViewModel {
     /// so the quick-reply bar shows what each option does. Nil when not blocked
     /// or when no menu could be parsed from the pane.
     public private(set) var blockedPrompt: BlockedPrompt?
+    /// Model + context size for the header, refreshed from the transcript tail.
+    public private(set) var sessionMeta: SessionMeta?
+
+    /// Folder name of the agent's working directory, for the header.
+    public var workingDirName: String? {
+        primaryPane?.cwd.split(separator: "/").last.map(String.init)
+    }
 
     private let client: HerdrClient
     private let store: TranscriptStore
@@ -44,6 +51,7 @@ public final class ChatThreadViewModel {
     /// (workspace reused by a new chat, or a live rotation) the old history is
     /// dropped instead of shown/appended-to.
     private var boundSig: String?
+    private var metaTick = 0
     private var tailsDead = false
     private var statusTask: Task<Void, Never>?
     private var started = false
@@ -274,9 +282,19 @@ public final class ChatThreadViewModel {
                         await self.restartTails()
                     }
                     await self.refreshBlockedPrompt()
+                    self.metaTick += 1
+                    if self.metaTick % 5 == 1 { await self.refreshSessionMeta() }
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// Refresh the header's model + context readout from the primary transcript.
+    private func refreshSessionMeta() async {
+        guard let pane = primaryPane, let path = tailedPaths[pane.cwd] else { return }
+        if let meta = try? await store.sessionMeta(atPath: path), meta != sessionMeta {
+            sessionMeta = meta
         }
     }
 
