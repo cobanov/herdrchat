@@ -57,7 +57,7 @@ public actor SSHTransport: HerdrTransport {
             if mismatch.tripped {
                 throw HerdrError(
                     code: "host_key_changed",
-                    message: "Sunucunun SSH anahtarı kayıtlı olandan FARKLI (olası MITM ya da sunucu yeniden kuruldu). Doğruladıysan sunucuyu düzenleyip kaydet; pin sıfırlanır."
+                    message: "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin."
                 )
             }
             throw error

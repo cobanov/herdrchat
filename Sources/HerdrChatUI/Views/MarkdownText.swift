@@ -48,9 +48,54 @@ struct MarkdownText: View {
             }
         case .code(let language, let content):
             codeBlock(language: language, content: content)
+        case .table(let headers, let rows):
+            tableBlockView(headers: headers, rows: rows)
         case .rule:
             Rectangle().fill(foreground.opacity(0.18)).frame(height: 1).padding(.vertical, 2)
         }
+    }
+
+    /// GFM table: a horizontally-scrollable grid with a bold header row and
+    /// hairline separators. Columns size to content within sensible bounds so a
+    /// wide table scrolls instead of squeezing the bubble.
+    private func tableBlockView(headers: [String], rows: [[String]]) -> some View {
+        let columns = max(headers.count, rows.map(\.count).max() ?? 0)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                tableRowView(headers, columns: columns, header: true)
+                Rectangle().fill(foreground.opacity(0.25)).frame(height: 1)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    tableRowView(row, columns: columns, header: false)
+                    if index < rows.count - 1 {
+                        Rectangle().fill(foreground.opacity(0.12)).frame(height: 1)
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .background(onTint ? Color.white.opacity(0.12) : Theme.fillSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(foreground.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func tableRowView(_ cells: [String], columns: Int, header: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columns, id: \.self) { c in
+                Text(inline(c < cells.count ? cells[c] : ""))
+                    .font(header ? .footnote.weight(.semibold) : .footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minWidth: 56, maxWidth: 220, alignment: .leading)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                if c < columns - 1 {
+                    Rectangle().fill(foreground.opacity(0.1)).frame(width: 1)
+                }
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func listRow(marker: String, _ text: String) -> some View {
@@ -121,6 +166,7 @@ enum MarkdownBlock {
     case numbered([String])
     case quote(String)
     case code(language: String?, content: String)
+    case table(headers: [String], rows: [[String]])
     case rule
 
     static func parse(_ text: String) -> [MarkdownBlock] {
@@ -151,6 +197,9 @@ enum MarkdownBlock {
                 i += 1   // skip closing fence
                 blocks.append(.code(language: lang.isEmpty ? nil : lang, content: code.joined(separator: "\n")))
                 continue
+            }
+            if let (table, next) = tableBlock(lines, from: i) {
+                flush(); blocks.append(table); i = next; continue
             }
             if isRule(trimmed) {
                 flush(); blocks.append(.rule); i += 1; continue
@@ -192,6 +241,44 @@ enum MarkdownBlock {
         guard s.count >= 3 else { return false }
         let chars = Set(s)
         return chars == ["-"] || chars == ["*"] || chars == ["_"]
+    }
+
+    /// GFM table starting at `start`: a header row of `|`-cells followed by a
+    /// `|---|---|` separator, then body rows. Returns the block and the index of
+    /// the first line after the table, or nil if it isn't a table.
+    private static func tableBlock(_ lines: [String], from start: Int) -> (MarkdownBlock, Int)? {
+        let header = lines[start].trimmingCharacters(in: .whitespaces)
+        guard header.contains("|"), start + 1 < lines.count,
+              isTableSeparator(lines[start + 1].trimmingCharacters(in: .whitespaces)) else { return nil }
+        let headers = tableCells(header)
+        guard !headers.isEmpty else { return nil }
+        var rows: [[String]] = []
+        var i = start + 2
+        while i < lines.count {
+            let t = lines[i].trimmingCharacters(in: .whitespaces)
+            guard !t.isEmpty, t.contains("|") else { break }
+            rows.append(tableCells(t))
+            i += 1
+        }
+        return (.table(headers: headers, rows: rows), i)
+    }
+
+    /// Split a `| a | b |` row into trimmed cells (outer pipes optional).
+    private static func tableCells(_ s: String) -> [String] {
+        var t = s.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("|") { t.removeFirst() }
+        if t.hasSuffix("|") { t.removeLast() }
+        return t.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// A `|---|:--:|` separator row: every cell is dashes with optional colons.
+    private static func isTableSeparator(_ s: String) -> Bool {
+        guard s.contains("-"), s.contains("|") else { return false }
+        let cells = tableCells(s)
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            !cell.isEmpty && cell.contains("-") && cell.allSatisfy { $0 == "-" || $0 == ":" }
+        }
     }
 
     private static func heading(_ s: String) -> (Int, String)? {

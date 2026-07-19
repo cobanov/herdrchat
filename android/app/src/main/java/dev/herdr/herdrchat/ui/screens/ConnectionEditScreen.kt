@@ -123,13 +123,13 @@ fun ConnectionEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (existing == null) "Yeni sunucu" else "Düzenle") },
+                title = { Text(if (existing == null) "New server" else "Edit") },
                 navigationIcon = {
-                    IconButton(onClick = onDone) { Icon(Icons.Filled.Close, contentDescription = "İptal") }
+                    IconButton(onClick = onDone) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
                 },
                 actions = {
                     TextButton(onClick = { save() }, enabled = valid && testState is TestState.Ok) {
-                        Text("Kaydet", color = if (valid && testState is TestState.Ok) Color.White else Color.White.copy(alpha = 0.5f))
+                        Text("Save", color = if (valid && testState is TestState.Ok) Color.White else Color.White.copy(alpha = 0.5f))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -148,33 +148,33 @@ fun ConnectionEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionLabel("Sunucu")
-            OutlinedTextField(name, { name = it }, label = { Text("Ad (örn. nuc)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(host, { host = it }, label = { Text("Host / Tailscale adresi") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            SectionLabel("Server")
+            OutlinedTextField(name, { name = it }, label = { Text("Name (e.g. nuc)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(host, { host = it }, label = { Text("Host / Tailscale address") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
                 port, { port = it }, label = { Text("Port") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(username, { username = it }, label = { Text("Kullanıcı adı") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
-            SectionLabel("Kimlik doğrulama")
+            SectionLabel("Authentication")
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = authKind == ServerConnection.AuthKind.PRIVATE_KEY,
                     onClick = { authKind = ServerConnection.AuthKind.PRIVATE_KEY },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("Özel anahtar") }
+                ) { Text("Private key") }
                 SegmentedButton(
                     selected = authKind == ServerConnection.AuthKind.PASSWORD,
                     onClick = { authKind = ServerConnection.AuthKind.PASSWORD },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("Parola") }
+                ) { Text("Password") }
             }
 
             if (authKind == ServerConnection.AuthKind.PRIVATE_KEY) {
                 Text(
-                    "OpenSSH özel anahtarını yapıştır (id_ed25519):",
+                    "Paste your OpenSSH private key (id_ed25519):",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -190,7 +190,7 @@ fun ConnectionEditScreen(
                 OutlinedTextField(
                     value = secret,
                     onValueChange = { secret = it },
-                    label = { Text("Parola") },
+                    label = { Text("Password") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -199,14 +199,14 @@ fun ConnectionEditScreen(
             }
             if (existing != null) {
                 Text(
-                    "Boş bırakılırsa mevcut sır korunur.",
+                    "Leave blank to keep the existing secret.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            SectionLabel("Gelişmiş")
-            OutlinedTextField(herdrPath, { herdrPath = it }, label = { Text("herdr yolu") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            SectionLabel("Advanced")
+            OutlinedTextField(herdrPath, { herdrPath = it }, label = { Text("herdr path") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
             // Test-before-save.
             OutlinedButton(
@@ -216,15 +216,15 @@ fun ConnectionEditScreen(
             ) {
                 if (testState is TestState.Testing) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("  Test ediliyor…")
+                    Text("  Testing…")
                 } else {
                     Icon(Icons.Filled.Bolt, contentDescription = null)
-                    Text("  Bağlantıyı test et")
+                    Text("  Test connection")
                 }
             }
             TestResult(testState)
             Text(
-                "Kaydetmeden önce bağlantının çalıştığını doğrula.",
+                "Verify the connection works before saving.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -237,12 +237,12 @@ private fun TestResult(state: TestState) {
     when (state) {
         is TestState.Ok -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = HerdrColors.accent)
-            Text("Bağlantı başarılı", color = HerdrColors.accent, style = MaterialTheme.typography.bodyMedium)
+            Text("Connection successful", color = HerdrColors.accent, style = MaterialTheme.typography.bodyMedium)
         }
         is TestState.Fail -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Filled.Error, contentDescription = null, tint = Color(0xFFF15C6D))
             Column {
-                Text("Bağlantı başarısız", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFFF15C6D))
+                Text("Connection failed", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFFF15C6D))
                 Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

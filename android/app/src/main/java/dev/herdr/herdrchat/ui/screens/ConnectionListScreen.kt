@@ -51,17 +51,17 @@ fun ConnectionListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sunucular") },
+                title = { Text("Servers") },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
                 actions = {
                     IconButton(onClick = onAddNew) {
-                        Icon(Icons.Filled.Add, contentDescription = "Ekle")
+                        Icon(Icons.Filled.Add, contentDescription = "Add")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -80,7 +80,7 @@ fun ConnectionListScreen(
         ) {
             item {
                 Text(
-                    "herdr sunucuları",
+                    "herdr servers",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -98,7 +98,7 @@ fun ConnectionListScreen(
             }
             item {
                 Text(
-                    "Tailscale adresi ve SSH ile bağlanır. Anahtar/parola cihazda şifreli saklanır.",
+                    "Connects over SSH using the Tailscale address. Keys/passwords are stored encrypted on the device.",
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -132,13 +132,13 @@ private fun ConnectionRow(
             )
         }
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = "Seçili", tint = HerdrColors.accent)
+            Icon(Icons.Filled.Check, contentDescription = "Selected", tint = HerdrColors.accent)
         }
         IconButton(onClick = onEdit) {
-            Icon(Icons.Filled.Edit, contentDescription = "Düzenle", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Sil", tint = Color(0xFFF15C6D))
+            Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color(0xFFF15C6D))
         }
     }
 }

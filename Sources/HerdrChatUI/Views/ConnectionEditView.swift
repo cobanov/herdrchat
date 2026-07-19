@@ -41,13 +41,13 @@ struct ConnectionEditView: View {
             advancedSection
             testSection
         }
-        .navigationTitle(existing == nil ? "Yeni sunucu" : "Düzenle")
+        .navigationTitle(existing == nil ? "New server" : "Edit")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Kaydet") { save() }.disabled(!isValid || testState != .ok)
+                Button("Save") { save() }.disabled(!isValid || testState != .ok)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button("İptal") { dismiss() }
+                Button("Cancel") { dismiss() }
             }
         }
         // Any change to connection-relevant fields invalidates a prior test.
@@ -60,45 +60,45 @@ struct ConnectionEditView: View {
     }
 
     @ViewBuilder private var serverSection: some View {
-        Section("Sunucu") {
-            TextField("Ad (örn. nuc)", text: $name)
-            TextField("Host / Tailscale adresi", text: $host)
+        Section("Server") {
+            TextField("Name (e.g. nuc)", text: $name)
+            TextField("Host / Tailscale address", text: $host)
                 .textContentType(.URL)
                 .autocorrectionDisabled()
             TextField("Port", text: $port)
-            TextField("Kullanıcı adı", text: $username)
+            TextField("Username", text: $username)
                 .autocorrectionDisabled()
         }
     }
 
     @ViewBuilder private var authSection: some View {
-        Section("Kimlik doğrulama") {
-            Picker("Yöntem", selection: $authKind) {
-                Text("Özel anahtar").tag(ServerConnection.AuthKind.privateKey)
-                Text("Parola").tag(ServerConnection.AuthKind.password)
+        Section("Authentication") {
+            Picker("Method", selection: $authKind) {
+                Text("Private key").tag(ServerConnection.AuthKind.privateKey)
+                Text("Password").tag(ServerConnection.AuthKind.password)
             }
             .pickerStyle(.segmented)
 
             if authKind == .privateKey {
-                Text("OpenSSH özel anahtarını yapıştır (id_ed25519):")
+                Text("Paste your OpenSSH private key (id_ed25519):")
                     .font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $secret)
                     .frame(minHeight: 120)
                     .font(.system(.footnote, design: .monospaced))
                     .autocorrectionDisabled()
             } else {
-                SecureField("Parola", text: $secret)
+                SecureField("Password", text: $secret)
             }
             if existing != nil {
-                Text("Boş bırakılırsa mevcut sır korunur.")
+                Text("Leave empty to keep the current secret.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
 
     @ViewBuilder private var advancedSection: some View {
-        Section("Gelişmiş") {
-            TextField("herdr yolu", text: $herdrPath)
+        Section("Advanced") {
+            TextField("herdr path", text: $herdrPath)
                 .autocorrectionDisabled()
         }
     }
@@ -107,29 +107,29 @@ struct ConnectionEditView: View {
         Section {
             Button(action: test) {
                 if testState == .testing {
-                    HStack { ProgressView().controlSize(.small); Text("Test ediliyor…") }
+                    HStack { ProgressView().controlSize(.small); Text("Testing…") }
                 } else {
-                    Label("Bağlantıyı test et", systemImage: "bolt.horizontal.circle")
+                    Label("Test connection", systemImage: "bolt.horizontal.circle")
                 }
             }
             .disabled(!isValid || testState == .testing)
 
             testResultRow
         } footer: {
-            Text("Kaydetmeden önce bağlantının çalıştığını doğrula.")
+            Text("Verify the connection works before saving.")
         }
     }
 
     @ViewBuilder private var testResultRow: some View {
         switch testState {
         case .ok:
-            Label("Bağlantı başarılı", systemImage: "checkmark.circle.fill")
+            Label("Connection successful", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.subheadline)
         case .fail(let message):
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Bağlantı başarısız").font(.subheadline.weight(.semibold))
+                    Text("Connection failed").font(.subheadline.weight(.semibold))
                     Text(message).font(.caption).foregroundStyle(.secondary)
                 }
             } icon: {

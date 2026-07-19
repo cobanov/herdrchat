@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.herdr.herdrchat.core.model.AgentStatus
+import dev.herdr.herdrchat.core.transcript.BlockedPrompt
 import dev.herdr.herdrchat.core.transcript.ChatMessage
 import dev.herdr.herdrchat.core.transcript.MessageSegment
 import dev.herdr.herdrchat.ui.theme.HerdrColors
@@ -172,13 +173,13 @@ private fun SegmentView(segment: MessageSegment, dark: Boolean) {
                 onTint = false,
             )
         }
-        is MessageSegment.Thinking -> Chip(Icons.Filled.Psychology, "düşündü", HerdrColors.secondaryText(dark))
+        is MessageSegment.Thinking -> Chip(Icons.Filled.Psychology, "thought", HerdrColors.secondaryText(dark))
         is MessageSegment.ToolUse -> Chip(
             Icons.Filled.Build,
             segment.input?.let { "${segment.name}: $it" } ?: segment.name,
             HerdrColors.headerGreen,
         )
-        is MessageSegment.ToolResult -> Chip(Icons.Filled.CheckCircle, "araç sonucu", HerdrColors.secondaryText(dark))
+        is MessageSegment.ToolResult -> Chip(Icons.Filled.CheckCircle, "tool result", HerdrColors.secondaryText(dark))
     }
 }
 
@@ -236,9 +237,12 @@ fun WaitingBar(modifier: Modifier = Modifier) {
     }
 }
 
-/** Quick-reply bar shown when an agent is blocked, waiting for input. */
+/** Quick-reply bar shown when an agent is blocked, waiting for input. When the
+ *  pane's choice menu could be parsed, it shows the actual question and one
+ *  full-width button per option labelled with its real text; otherwise it falls
+ *  back to generic chips. */
 @Composable
-fun BlockedReplyBar(onKeys: (List<String>) -> Unit) {
+fun BlockedReplyBar(prompt: BlockedPrompt?, onKeys: (List<String>) -> Unit) {
     val dark = isSystemInDarkTheme()
     val blocked = HerdrColors.statusColor(AgentStatus.BLOCKED)
     Column(
@@ -246,24 +250,59 @@ fun BlockedReplyBar(onKeys: (List<String>) -> Unit) {
             .fillMaxWidth()
             .background(blocked.copy(alpha = if (dark) 0.14f else 0.10f))
             .padding(vertical = 10.dp, horizontal = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TypingDots(color = blocked, dotSize = 4.dp)
             Text(
-                text = "Agent yanıt bekliyor",
+                text = prompt?.question ?: "Agent is waiting",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = blocked,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReplyButton("Onayla", listOf("Enter"), onKeys)
-            ReplyButton("1", listOf("1", "Enter"), onKeys)
-            ReplyButton("2", listOf("2", "Enter"), onKeys)
-            ReplyButton("Esc", listOf("Escape"), onKeys)
+        if (prompt != null && !prompt.isEmpty) {
+            prompt.options.forEach { option ->
+                OptionButton(option.number, option.label, blocked, dark) { onKeys(option.keys) }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReplyButton("Confirm", listOf("Enter"), onKeys)
+                ReplyButton("1", listOf("1", "Enter"), onKeys)
+                ReplyButton("2", listOf("2", "Enter"), onKeys)
+                ReplyButton("Esc", listOf("Escape"), onKeys)
+            }
         }
+    }
+}
+
+/** A full-width labelled option button ("2  Yes, allow all edits"). */
+@Composable
+private fun OptionButton(number: Int, label: String, tint: Color, dark: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressScale(interaction)
+            .clip(RoundedCornerShape(12.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .clickable(interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = "$number",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = tint,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = HerdrColors.primaryText(dark),
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

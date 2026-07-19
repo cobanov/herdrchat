@@ -44,11 +44,11 @@ public enum AgentNotifier {
 
             let content = UNMutableNotificationContent()
             if status == .blocked {
-                content.title = "\(workspace) seni bekliyor"
-                content.body = "\(name) bir yanıt bekliyor."
+                content.title = "\(workspace) is waiting for you"
+                content.body = "\(name) is waiting for a reply."
             } else {
-                content.title = "\(workspace) bitti"
-                content.body = "\(name) işini tamamladı."
+                content.title = "\(workspace) is done"
+                content.body = "\(name) finished its task."
             }
             content.sound = .default
             let request = UNNotificationRequest(

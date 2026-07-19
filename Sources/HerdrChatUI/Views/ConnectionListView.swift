@@ -29,17 +29,17 @@ struct ConnectionListView: View {
                         }
                     }
                     .swipeActions {
-                        Button("Sil", role: .destructive) { store.delete(connection) }
-                        Button("Düzenle") { editing = connection }.tint(.blue)
+                        Button("Delete", role: .destructive) { store.delete(connection) }
+                        Button("Edit") { editing = connection }.tint(.blue)
                     }
                 }
             } header: {
-                Text("herdr sunucuları")
+                Text("herdr servers")
             } footer: {
-                Text("Tailscale adresi ve SSH ile bağlanır. Anahtar/parola Keychain'de saklanır.")
+                Text("Connects over a Tailscale address via SSH. Keys/passwords are stored in the Keychain.")
             }
         }
-        .navigationTitle("Sunucular")
+        .navigationTitle("Servers")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { addingNew = true } label: { Image(systemName: "plus") }

@@ -83,8 +83,8 @@ class AgentWatchService : Service() {
 
     private fun notifyTransition(status: AgentStatus, workspace: String, agent: String, paneId: String) {
         val (title, body) = when (status) {
-            AgentStatus.BLOCKED -> "$workspace seni bekliyor" to "$agent bir yanıt bekliyor."
-            else -> "$workspace bitti" to "$agent işini tamamladı."
+            AgentStatus.BLOCKED -> "$workspace is waiting for you" to "$agent is waiting for a reply."
+            else -> "$workspace done" to "$agent finished its task."
         }
         val open = PendingIntent.getActivity(
             this, 0,
@@ -110,8 +110,8 @@ class AgentWatchService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_WATCH)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("HerdrChat agent'ları izliyor")
-            .setContentText("Bir agent seni beklediğinde ya da bitirdiğinde haber verilecek.")
+            .setContentTitle("HerdrChat is watching agents")
+            .setContentText("You'll be notified when an agent needs you or finishes.")
             .setContentIntent(open)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -122,10 +122,10 @@ class AgentWatchService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val m = manager()
         m.createNotificationChannel(
-            NotificationChannel(CHANNEL_AGENTS, "Agent bildirimleri", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CHANNEL_AGENTS, "Agent notifications", NotificationManager.IMPORTANCE_HIGH),
         )
         m.createNotificationChannel(
-            NotificationChannel(CHANNEL_WATCH, "Arka plan izleme", NotificationManager.IMPORTANCE_MIN),
+            NotificationChannel(CHANNEL_WATCH, "Background watching", NotificationManager.IMPORTANCE_MIN),
         )
     }
 

@@ -8,6 +8,8 @@ import dev.herdr.herdrchat.core.client.TranscriptStore
 import dev.herdr.herdrchat.core.model.AgentInfo
 import dev.herdr.herdrchat.core.model.AgentStatus
 import dev.herdr.herdrchat.core.model.HerdrException
+import dev.herdr.herdrchat.core.transcript.BlockedPrompt
+import dev.herdr.herdrchat.core.transcript.BlockedPromptParser
 import dev.herdr.herdrchat.core.transcript.ChatMessage
 import dev.herdr.herdrchat.core.transcript.MessageSegment
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +48,10 @@ class ChatThreadViewModel(
     var isSending by mutableStateOf(false)
         private set
     var failedEchoIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+    /** Parsed choice menu of a blocked agent (question + numbered options), so the
+     *  quick-reply bar can label each option. Null when not blocked or unparsable. */
+    var blockedPrompt by mutableStateOf<BlockedPrompt?>(null)
         private set
 
     private val seenIds = mutableSetOf<String>()
@@ -267,10 +273,24 @@ class ChatThreadViewModel(
                     } else if (rotationDetected() || unresolvedSession()) {
                         restartTails()
                     }
+                    refreshBlockedPrompt()
                 }
                 delay(2000)
             }
         }
+    }
+
+    /** While an agent is blocked, read its pane and parse the choice menu so the
+     *  quick-reply bar can label each option. Cleared when unblocked/unparsable. */
+    private suspend fun refreshBlockedPrompt() {
+        val pane = blockedPane
+        if (pane == null) {
+            if (blockedPrompt != null) blockedPrompt = null
+            return
+        }
+        val raw = runCatching { client.paneTail(pane.paneId, 30) }.getOrNull() ?: return
+        val parsed = BlockedPromptParser.parse(raw)
+        blockedPrompt = if (parsed.isEmpty) null else parsed
     }
 
     /** A conversation agent whose session id is known but whose transcript file
@@ -382,7 +402,7 @@ class ChatThreadViewModel(
                     }
                     if (!accepted) {
                         failedEchoIds = failedEchoIds + echoId
-                        error = "Gönderim doğrulanamadı — mesaj terminalde kalmış olabilir. Tekrar dene."
+                        error = "Couldn't confirm delivery — the message may be stuck in the terminal. Try again."
                     }
                 }
             } catch (e: Exception) {

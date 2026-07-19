@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,9 +48,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -58,6 +61,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import dev.herdr.herdrchat.core.client.HerdrClient
 import dev.herdr.herdrchat.core.model.AgentStatus
 import dev.herdr.herdrchat.core.transcript.ChatMessage
@@ -84,6 +88,7 @@ fun ChatThreadScreen(
     val dark = isSystemInDarkTheme()
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
 
     // Opening the thread clears its unread dot; leaving re-arms it.
     androidx.compose.runtime.DisposableEffect(model.unreadKey) {
@@ -112,7 +117,7 @@ fun ChatThreadScreen(
                 title = { ThreadTitle(model.title, model.status) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -131,10 +136,10 @@ fun ChatThreadScreen(
                 .imePadding(),
         ) {
             val reversed = visible.asReversed()
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .padding(horizontal = 10.dp),
                 state = listState,
                 reverseLayout = true,
@@ -179,13 +184,25 @@ fun ChatThreadScreen(
                     }
                 }
             }
+                // Jump-to-bottom (reverseLayout: offset 0 == newest at the bottom).
+                val atBottom by remember {
+                    derivedStateOf {
+                        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 48
+                    }
+                }
+                if (!atBottom) {
+                    JumpToBottomButton(
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
+                    ) { scope.launch { listState.animateScrollToItem(0) } }
+                }
+            }
 
             AnimatedVisibility(
                 visible = model.isBlocked,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                BlockedReplyBar { keys -> model.sendKeys(keys) }
+                BlockedReplyBar(prompt = model.blockedPrompt) { keys -> model.sendKeys(keys) }
             }
 
             model.error?.let { ErrorRow(it) { model.clearError() } }
@@ -198,6 +215,27 @@ fun ChatThreadScreen(
                 dark = dark,
             )
         }
+    }
+}
+
+/** WhatsApp-style floating "scroll to newest" button, shown only when scrolled up. */
+@Composable
+private fun JumpToBottomButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .shadow(3.dp, CircleShape)
+            .clip(CircleShape)
+            .background(HerdrColors.incomingBubble(dark))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = "Jump to latest",
+            tint = HerdrColors.accent,
+        )
     }
 }
 
@@ -224,7 +262,7 @@ private fun RetryRow(onRetry: () -> Unit) {
                 modifier = Modifier.size(13.dp),
             )
             Text(
-                "Gönderilemedi — tekrar dene",
+                "Failed to send — retry",
                 style = MaterialTheme.typography.labelSmall,
                 color = HerdrColors.statusColor(AgentStatus.BLOCKED),
             )
@@ -251,7 +289,7 @@ private fun ErrorRow(message: String, onDismiss: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-            Icon(Icons.Filled.Close, contentDescription = "Kapat", modifier = Modifier.size(14.dp))
+            Icon(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -261,10 +299,10 @@ private fun ThreadTitle(title: String, status: AgentStatus) {
     Column {
         Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
         val subtitle = when (status) {
-            AgentStatus.WORKING -> "yazıyor"
-            AgentStatus.BLOCKED -> "yanıt bekliyor"
-            AgentStatus.DONE -> "bitti"
-            AgentStatus.IDLE -> "çevrimiçi"
+            AgentStatus.WORKING -> "typing"
+            AgentStatus.BLOCKED -> "waiting for reply"
+            AgentStatus.DONE -> "done"
+            AgentStatus.IDLE -> "online"
             AgentStatus.UNKNOWN -> null
         }
         if (subtitle != null) {
@@ -315,7 +353,7 @@ private fun InputBar(
         ) {
             if (draft.isEmpty()) {
                 Text(
-                    "Mesaj",
+                    "Message",
                     style = MaterialTheme.typography.bodyLarge,
                     color = HerdrColors.secondaryText(dark),
                 )
@@ -344,7 +382,7 @@ private fun InputBar(
         ) {
             Icon(
                 Icons.Filled.ArrowUpward,
-                contentDescription = "Gönder",
+                contentDescription = "Send",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
             )

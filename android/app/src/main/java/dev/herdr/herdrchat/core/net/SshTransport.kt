@@ -48,7 +48,7 @@ class SshTransport(private val config: SshConfig) : HerdrTransport {
                 if (hostKeyMismatch) {
                     throw HerdrException(
                         "host_key_changed",
-                        "Sunucunun SSH anahtarı kayıtlı olandan FARKLI (olası MITM ya da sunucu yeniden kuruldu). Doğruladıysan sunucuyu düzenleyip kaydet; pin sıfırlanır.",
+                        "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin.",
                     )
                 }
                 throw e

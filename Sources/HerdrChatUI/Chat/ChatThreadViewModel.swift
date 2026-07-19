@@ -23,6 +23,10 @@ public final class ChatThreadViewModel {
     public private(set) var error: String?
     public private(set) var isSending = false
     public private(set) var failedEchoIDs: Set<String> = []
+    /// The parsed choice menu of a blocked agent (question + numbered options),
+    /// so the quick-reply bar shows what each option does. Nil when not blocked
+    /// or when no menu could be parsed from the pane.
+    public private(set) var blockedPrompt: BlockedPrompt?
 
     private let client: HerdrClient
     private let store: TranscriptStore
@@ -269,10 +273,24 @@ public final class ChatThreadViewModel {
                     } else if self.rotationDetected() || self.unresolvedSession() {
                         await self.restartTails()
                     }
+                    await self.refreshBlockedPrompt()
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+    }
+
+    /// While an agent is blocked, read its pane and parse the choice menu so the
+    /// quick-reply bar can label each option. Cleared as soon as it's unblocked
+    /// or when no menu can be parsed (the bar then shows its generic chips).
+    private func refreshBlockedPrompt() async {
+        guard let pane = blockedPane else {
+            if blockedPrompt != nil { blockedPrompt = nil }
+            return
+        }
+        guard let raw = try? await client.paneTail(pane: pane.paneId, lines: 30) else { return }
+        let parsed = BlockedPromptParser.parse(raw)
+        blockedPrompt = parsed.isEmpty ? nil : parsed
     }
 
     /// A conversation agent whose session id is known but whose transcript file
@@ -388,7 +406,7 @@ public final class ChatThreadViewModel {
                 }
                 if !accepted {
                     failedEchoIDs.insert(echoID)
-                    error = "Gönderim doğrulanamadı — mesaj terminalde kalmış olabilir. Tekrar dene."
+                    error = "Couldn't confirm delivery — the message may be stuck in the terminal. Try again."
                 }
             }
         } catch {

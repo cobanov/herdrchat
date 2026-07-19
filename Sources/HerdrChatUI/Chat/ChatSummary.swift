@@ -54,10 +54,10 @@ public struct ChatSummary: Identifiable, Sendable, Hashable {
     /// Presence fallback for rows with no preview yet.
     public var subtitle: String {
         switch status {
-        case .working: return "yazıyor…"
-        case .blocked: return "seni bekliyor"
-        case .done: return "bitti"
-        case .idle: return agents.isEmpty ? "boşta" : "çevrimiçi"
+        case .working: return "typing…"
+        case .blocked: return "waiting for you"
+        case .done: return "done"
+        case .idle: return agents.isEmpty ? "idle" : "online"
         case .unknown: return agents.first?.agent ?? "—"
         }
     }

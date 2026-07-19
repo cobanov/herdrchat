@@ -116,7 +116,55 @@ private fun MdBlockView(block: MdBlock, color: Color, codeBg: Color) {
             }
         }
 
+        is MdBlock.Table -> MdTableView(block, color, codeBg)
+
         MdBlock.Rule -> HorizontalDivider(color = color.copy(alpha = 0.18f))
+    }
+}
+
+/** GFM table: a horizontally-scrollable grid with a bold header row and hairline
+ *  separators. Columns are fixed-width so a wide table scrolls instead of
+ *  squeezing the bubble. */
+@Composable
+private fun MdTableView(table: MdBlock.Table, color: Color, codeBg: Color) {
+    val columns = maxOf(table.headers.size, table.rows.maxOfOrNull { it.size } ?: 0)
+    if (columns == 0) return
+    val cellWidth = 140.dp
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(codeBg)
+            .horizontalScroll(rememberScrollState()),
+    ) {
+        Column(Modifier.width(cellWidth * columns)) {
+            MdTableRow(table.headers, columns, cellWidth, color, codeBg, header = true)
+            HorizontalDivider(color = color.copy(alpha = 0.25f))
+            table.rows.forEachIndexed { idx, row ->
+                MdTableRow(row, columns, cellWidth, color, codeBg, header = false)
+                if (idx < table.rows.size - 1) HorizontalDivider(color = color.copy(alpha = 0.12f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MdTableRow(
+    cells: List<String>,
+    columns: Int,
+    cellWidth: androidx.compose.ui.unit.Dp,
+    color: Color,
+    codeBg: Color,
+    header: Boolean,
+) {
+    Row {
+        for (c in 0 until columns) {
+            Text(
+                inlineMarkdown(cells.getOrElse(c) { "" }, color, codeBg),
+                modifier = Modifier.width(cellWidth).padding(horizontal = 8.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (header) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
     }
 }
 
@@ -186,6 +234,7 @@ sealed interface MdBlock {
     data class Numbered(val items: List<String>) : MdBlock
     data class Quote(val text: String) : MdBlock
     data class Code(val language: String?, val content: String) : MdBlock
+    data class Table(val headers: List<String>, val rows: List<List<String>>) : MdBlock
     data object Rule : MdBlock
 }
 
@@ -217,6 +266,9 @@ object Markdown {
                 blocks.add(MdBlock.Code(lang.ifEmpty { null }, code.joinToString("\n")))
                 continue
             }
+            val table = tableBlock(lines, i)
+            if (table != null) { flush(); blocks.add(table.first); i = table.second; continue }
+
             if (isRule(trimmed)) { flush(); blocks.add(MdBlock.Rule); i++; continue }
 
             val h = heading(trimmed)
@@ -259,6 +311,38 @@ object Markdown {
         if (s.length < 3) return false
         val chars = s.toSet()
         return chars == setOf('-') || chars == setOf('*') || chars == setOf('_')
+    }
+
+    /** GFM table at [start]: header row of `|`-cells + a `|---|---|` separator,
+     *  then body rows. Returns the block and the index after the table, or null. */
+    private fun tableBlock(lines: List<String>, start: Int): Pair<MdBlock, Int>? {
+        val header = lines[start].trim()
+        if (!header.contains("|") || start + 1 >= lines.size) return null
+        if (!isTableSeparator(lines[start + 1].trim())) return null
+        val headers = tableCells(header)
+        if (headers.isEmpty()) return null
+        val rows = mutableListOf<List<String>>()
+        var i = start + 2
+        while (i < lines.size) {
+            val t = lines[i].trim()
+            if (t.isEmpty() || !t.contains("|")) break
+            rows.add(tableCells(t)); i++
+        }
+        return MdBlock.Table(headers, rows) to i
+    }
+
+    private fun tableCells(s: String): List<String> {
+        var t = s.trim()
+        if (t.startsWith("|")) t = t.drop(1)
+        if (t.endsWith("|")) t = t.dropLast(1)
+        return t.split("|").map { it.trim() }
+    }
+
+    private fun isTableSeparator(s: String): Boolean {
+        if (!s.contains("-") || !s.contains("|")) return false
+        val cells = tableCells(s)
+        if (cells.isEmpty()) return false
+        return cells.all { cell -> cell.isNotEmpty() && cell.contains("-") && cell.all { it == '-' || it == ':' } }
     }
 
     private fun heading(s: String): Pair<Int, String>? {

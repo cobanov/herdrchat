@@ -18,10 +18,10 @@ data class ChatSummary(
     /** WhatsApp-style presence subtitle. */
     val subtitle: String
         get() = when (status) {
-            AgentStatus.WORKING -> "yazıyor…"
-            AgentStatus.BLOCKED -> "seni bekliyor"
-            AgentStatus.DONE -> "bitti"
-            AgentStatus.IDLE -> if (agents.isEmpty()) "boşta" else "çevrimiçi"
+            AgentStatus.WORKING -> "typing…"
+            AgentStatus.BLOCKED -> "waiting for you"
+            AgentStatus.DONE -> "done"
+            AgentStatus.IDLE -> if (agents.isEmpty()) "idle" else "online"
             AgentStatus.UNKNOWN -> agents.firstOrNull()?.agent ?: "—"
         }
 

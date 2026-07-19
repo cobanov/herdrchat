@@ -12,6 +12,8 @@ import UIKit
 struct ChatThreadView: View {
     @State private var model: ChatThreadViewModel
     @State private var sendTrigger = 0
+    @State private var atBottom = true
+    private let bottomAnchor = "herdrchat.bottom"
 
     init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
         _model = State(initialValue: ThreadSessions.shared.model(
@@ -35,7 +37,7 @@ struct ChatThreadView: View {
         VStack(spacing: 0) {
             messageList
             if model.isBlocked {
-                BlockedReplyBar { keys in
+                BlockedReplyBar(prompt: model.blockedPrompt) { keys in
                     Task { await model.sendKeys(keys) }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -79,10 +81,10 @@ struct ChatThreadView: View {
     private var statusSubtitle: some View {
         let status = model.status
         let text: String? = switch status {
-        case .working: "yazıyor"
-        case .blocked: "yanıt bekliyor"
-        case .done: "bitti"
-        case .idle: "çevrimiçi"
+        case .working: "typing"
+        case .blocked: "waiting for reply"
+        case .done: "done"
+        case .idle: "online"
         case .unknown: nil
         }
         if let text {
@@ -127,39 +129,78 @@ struct ChatThreadView: View {
     /// readers are never yanked. No flipped-transform tricks: those broke
     /// scroll restoration and made iOS 26's scroll-edge blur cover the screen.
     private var messageList: some View {
-        ScrollView {
-            if rows.isEmpty && !isWaiting {
-                ContentUnavailableView(
-                    "Henüz mesaj yok",
-                    systemImage: "text.bubble",
-                    description: Text("İlk mesajını yaz — \(model.title) hazır.")
-                )
-                .padding(.vertical, 80)
-            } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(rows) { row in
-                        rowView(row)
-                            .padding(.top, row.startsGroup ? 10 : 2)
+        ScrollViewReader { proxy in
+            ScrollView {
+                if rows.isEmpty && !isWaiting {
+                    ContentUnavailableView(
+                        "No messages yet",
+                        systemImage: "text.bubble",
+                        description: Text("Send your first message — \(model.title) is ready.")
+                    )
+                    .padding(.vertical, 80)
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            rowView(row)
+                                .padding(.top, row.startsGroup ? 10 : 2)
+                        }
+                        // While waiting on the agent, a slim sweeping bar sits at the
+                        // very bottom, under the newest bubble.
+                        if isWaiting {
+                            WaitingBar()
+                                .padding(.horizontal, 44)
+                                .padding(.top, 16)
+                                .padding(.bottom, 4)
+                                .transition(.opacity)
+                        }
+                        // Bottom sentinel: its visibility (LazyVStack only renders
+                        // near-viewport items) tells us whether the reader is at the
+                        // bottom, which drives the jump-to-bottom button.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(bottomAnchor)
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
-                    // While waiting on the agent, a slim sweeping bar sits at the
-                    // very bottom, under the newest bubble.
-                    if isWaiting {
-                        WaitingBar()
-                            .padding(.horizontal, 44)
-                            .padding(.top, 16)
-                            .padding(.bottom, 4)
-                            .transition(.opacity)
-                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
             }
+            .animation(.easeInOut(duration: 0.2), value: isWaiting)
+            .defaultScrollAnchor(.bottom)
+            #if os(iOS)
+            .scrollDismissesKeyboard(.immediately)
+            #endif
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    jumpToBottomButton(proxy)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: atBottom)
         }
-        .animation(.easeInOut(duration: 0.2), value: isWaiting)
-        .defaultScrollAnchor(.bottom)
-        #if os(iOS)
-        .scrollDismissesKeyboard(.immediately)
-        #endif
+    }
+
+    /// WhatsApp-style floating "scroll to newest" affordance, shown only when the
+    /// reader has scrolled up away from the bottom.
+    private func jumpToBottomButton(_ proxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.tint)
+                .frame(width: 38, height: 38)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.separator.opacity(0.3), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+        }
+        .buttonStyle(PressableStyle())
+        .padding(.trailing, 14)
+        .padding(.bottom, 12)
+        .accessibilityLabel("Jump to latest")
     }
 
     @ViewBuilder
@@ -177,7 +218,7 @@ struct ChatThreadView: View {
                     Button {
                         copyToPasteboard(row.message.displayText)
                     } label: {
-                        Label("Kopyala", systemImage: "doc.on.doc")
+                        Label("Copy", systemImage: "doc.on.doc")
                     }
                 }
             if failed {
@@ -192,7 +233,7 @@ struct ChatThreadView: View {
             Button {
                 Task { await model.retry(echoID: echoID) }
             } label: {
-                Label("Gönderilemedi — tekrar dene", systemImage: "exclamationmark.arrow.circlepath")
+                Label("Failed to send — retry", systemImage: "exclamationmark.arrow.circlepath")
                     .font(.caption)
                     .foregroundStyle(Theme.attention)
             }
@@ -230,11 +271,15 @@ struct ChatThreadView: View {
     /// keyboard's rounded top.
     private var composer: some View {
         let canSend = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isSending
-        return HStack(alignment: .bottom, spacing: 6) {
-            TextField("Mesaj", text: $model.draft, axis: .vertical)
+        // .center keeps the send button vertically centered against the field for
+        // the common single-line case; the small min height stops a one-line pill
+        // from collapsing tighter than the 34pt button.
+        return HStack(alignment: .center, spacing: 6) {
+            TextField("Message", text: $model.draft, axis: .vertical)
                 .lineLimit(1...5)
                 .padding(.leading, 16)
-                .padding(.vertical, 9)
+                .padding(.vertical, 8)
+                .frame(minHeight: 36, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button {
                 sendTrigger += 1
@@ -248,17 +293,10 @@ struct ChatThreadView: View {
             .buttonStyle(PressableStyle())
             .disabled(!canSend)
             .padding(.trailing, 5)
-            .padding(.bottom, 4)
             .animation(.spring(response: 0.25, dampingFraction: 1), value: canSend)
             .sendHaptic(sendTrigger)
         }
-        .background(
-            ZStack {
-                Capsule(style: .continuous).fill(.regularMaterial)
-                Capsule(style: .continuous)
-                    .strokeBorder(Theme.separator.opacity(0.35), lineWidth: 0.5)
-            }
-        )
+        .composerGlass()
         .padding(.horizontal, 10)
         .padding(.top, 6)
         .padding(.bottom, 8)
@@ -279,5 +317,32 @@ private extension View {
         #else
         self
         #endif
+    }
+
+    /// The composer pill's surface. On iOS 26 this is real Liquid Glass — the
+    /// system's own translucent, refracting material for floating controls (the
+    /// "new glass design" the composer is meant to match). Applied AFTER layout
+    /// so glass wraps the finished capsule. Older OSes keep the frosted
+    /// `.regularMaterial` capsule with a hairline rim as the fallback.
+    @ViewBuilder func composerGlass() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular, in: Capsule(style: .continuous))
+        } else {
+            self.composerMaterialFallback()
+        }
+        #else
+        self.composerMaterialFallback()
+        #endif
+    }
+
+    func composerMaterialFallback() -> some View {
+        self.background(
+            ZStack {
+                Capsule(style: .continuous).fill(.regularMaterial)
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.35), lineWidth: 0.5)
+            }
+        )
     }
 }

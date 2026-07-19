@@ -37,7 +37,7 @@ struct DirectoryPickerView: View {
                         }
                     }
                     if entries.isEmpty && !loading {
-                        Text("Alt klasör yok")
+                        Text("No subfolders")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -51,24 +51,26 @@ struct DirectoryPickerView: View {
             }
             .listStyle(.plain)
             .overlay { if loading { ProgressView() } }
-            .navigationTitle("Klasör seç")
+            .navigationTitle("Choose folder")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 #if os(iOS)
-                ToolbarItem(placement: .topBarLeading) { upButton }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("İptal") { dismiss() }
+                // Cancel leftmost; the up-a-directory control is its own separate
+                // (round, glass on iOS 26) button right beside it — no overlap.
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarLeading) { upButton }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Seç") { onPick(path); dismiss() }
+                    Button("Select") { onPick(path); dismiss() }
                         .disabled(path.isEmpty || loading)
                 }
                 #else
                 ToolbarItem { upButton }
                 ToolbarItem {
-                    Button("Seç") { onPick(path); dismiss() }
+                    Button("Select") { onPick(path); dismiss() }
                         .disabled(path.isEmpty || loading)
                 }
                 #endif
@@ -80,13 +82,16 @@ struct DirectoryPickerView: View {
         }
     }
 
+    /// Icon-only "up a directory" control. In the iOS 26 toolbar this renders as
+    /// its own round glass button, visually distinct from the Cancel text button.
     private var upButton: some View {
         Button {
             navigate(to: parent(of: path))
         } label: {
-            Label("Üst klasör", systemImage: "chevron.up")
+            Image(systemName: "chevron.up")
         }
         .disabled(path == "/" || path.isEmpty || loading)
+        .accessibilityLabel("Parent folder")
     }
 
     private func navigate(to newPath: String) {

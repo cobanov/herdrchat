@@ -37,17 +37,17 @@ struct ChatListView: View {
                 }
                 if model.summaries.isEmpty && model.connectionError == nil {
                     ContentUnavailableView(
-                        model.isLoading ? "Bağlanılıyor…" : "Workspace yok",
+                        model.isLoading ? "Connecting…" : "No workspaces",
                         systemImage: model.isLoading ? "antenna.radiowaves.left.and.right" : "tray",
                         description: model.isLoading
-                            ? Text("\(connection.name) üzerindeki herdr'a bağlanılıyor.")
-                            : Text("herdr'da bir workspace açtığında burada görünür.")
+                            ? Text("Connecting to herdr on \(connection.name).")
+                            : Text("Workspaces you open in herdr appear here.")
                     )
                     .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Sohbetler")
+            .navigationTitle("Chats")
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) { serverButton }
@@ -94,7 +94,7 @@ struct ChatListView: View {
             }
             .font(.subheadline)
         }
-        .accessibilityLabel("Sunucu: \(connection.name). Sunucuları yönet.")
+        .accessibilityLabel("Server: \(connection.name). Manage servers.")
     }
 
     /// Start a fresh chat: create a workspace on the host and launch Claude in it.
@@ -104,7 +104,7 @@ struct ChatListView: View {
         } label: {
             Image(systemName: "square.and.pencil")
         }
-        .accessibilityLabel("Yeni sohbet")
+        .accessibilityLabel("New chat")
     }
 
     #if DEBUG
@@ -127,7 +127,7 @@ struct ChatListView: View {
 /// A single workspace row, Messages anatomy: leading dot à la Messages (orange =
 /// waiting for you, emerald = unread result), presence-ring avatar, then
 /// title + time and a two-line last-message preview. Live agent activity
-/// overrides the preview line ("yazıyor…" / "seni bekliyor"), WhatsApp-style.
+/// overrides the preview line ("typing…" / "waiting for you"), WhatsApp-style.
 private struct ChatRow: View {
     let summary: ChatSummary
     let connectionID: String
@@ -177,14 +177,14 @@ private struct ChatRow: View {
         switch summary.status {
         case .working:
             HStack(spacing: 6) {
-                Text("yazıyor…")
+                Text("typing…")
                     .font(.subheadline)
                     .foregroundStyle(Theme.tint)
                 TypingDots(color: Theme.tint, size: 4.5)
             }
             .frame(minHeight: 38, alignment: .top)
         case .blocked:
-            Text("seni bekliyor")
+            Text("waiting for you")
                 .font(.subheadline)
                 .foregroundStyle(Theme.attention)
                 .frame(minHeight: 38, alignment: .top)
@@ -198,25 +198,25 @@ private struct ChatRow: View {
 
     private var previewText: String {
         guard let preview = summary.preview else { return summary.subtitle }
-        return preview.fromUser ? "Sen: \(preview.text)" : preview.text
+        return preview.fromUser ? "You: \(preview.text)" : preview.text
     }
 }
 
-/// Messages-style row timestamp: time today, "Dün", weekday inside a week, date
+/// Messages-style row timestamp: time today, "Yesterday", weekday inside a week, date
 /// beyond that.
 func formatListTime(_ date: Date?) -> String? {
     guard let date else { return nil }
     let calendar = Calendar.current
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "tr_TR")
+    formatter.locale = Locale(identifier: "en_US")
     if calendar.isDateInToday(date) {
         formatter.dateFormat = "HH:mm"
     } else if calendar.isDateInYesterday(date) {
-        return "Dün"
+        return "Yesterday"
     } else if let days = calendar.dateComponents([.day], from: date, to: .now).day, days < 7 {
         formatter.dateFormat = "EEEE"
     } else {
-        formatter.dateFormat = "d.MM.yyyy"
+        formatter.dateFormat = "M/d/yyyy"
     }
     return formatter.string(from: date)
 }
@@ -242,7 +242,7 @@ private struct NewWorkspaceSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("/Users/…/proje", text: $cwd, axis: .vertical)
+                    TextField("/Users/…/project", text: $cwd, axis: .vertical)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
                         #if os(iOS)
@@ -251,16 +251,16 @@ private struct NewWorkspaceSheet: View {
                     Button {
                         showingPicker = true
                     } label: {
-                        Label("Cihazda klasör seç", systemImage: "folder")
+                        Label("Choose folder on device", systemImage: "folder")
                     }
                 } header: {
-                    Text("Çalışma dizini")
+                    Text("Working directory")
                 } footer: {
-                    Text("Claude bu dizinde başlar. Yolu yazabilir ya da cihazdaki klasörlere göz atıp seçebilirsin.")
+                    Text("Claude starts in this directory. Type a path, or browse the device's folders to pick one.")
                 }
 
                 if !model.knownCwds.isEmpty {
-                    Section("Son kullanılanlar") {
+                    Section("Recent") {
                         ForEach(model.knownCwds, id: \.self) { dir in
                             Button { cwd = dir } label: {
                                 Label(dir, systemImage: "folder")
@@ -273,19 +273,19 @@ private struct NewWorkspaceSheet: View {
                     }
                 }
 
-                Section("İsim (opsiyonel)") {
-                    TextField("Otomatik (klasör adı)", text: $label)
+                Section("Name (optional)") {
+                    TextField("Automatic (folder name)", text: $label)
                         .autocorrectionDisabled()
                 }
             }
-            .navigationTitle("Yeni sohbet")
+            .navigationTitle("New chat")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("İptal") { dismiss() }.disabled(creating)
+                    Button("Cancel") { dismiss() }.disabled(creating)
                 }
                 ToolbarItem(placement: .confirmationAction) { startControl }
                 #else
@@ -307,7 +307,7 @@ private struct NewWorkspaceSheet: View {
         if creating {
             ProgressView()
         } else {
-            Button("Başlat") { start() }.disabled(!canStart)
+            Button("Start") { start() }.disabled(!canStart)
         }
     }
 
@@ -333,7 +333,7 @@ struct ConnectionErrorRow: View {
     var body: some View {
         Label {
             VStack(alignment: .leading) {
-                Text("Bağlantı hatası").font(.subheadline.weight(.semibold))
+                Text("Connection error").font(.subheadline.weight(.semibold))
                 Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
         } icon: {

@@ -40,7 +40,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.herdr.HerdrChat
         PRODUCT_NAME: HerdrChat
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "15"
+        CURRENT_PROJECT_VERSION: "16"
         SWIFT_VERSION: "6.0"
         # iPhone-only (a phone-first chat app); avoids iPad multitasking orientation rules.
         TARGETED_DEVICE_FAMILY: "1"
@@ -55,7 +55,7 @@ targets:
         # herdr's SSH transport uses only standard/exempt encryption -> no CCATS filing.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         # Tailscale addresses are reached over the local network on iOS.
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "herdr sunucularina Tailscale uzerinden baglanmak icin yerel ag erisimi gerekir."
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Local network access is needed to reach herdr servers over Tailscale."
 
 schemes:
   HerdrChat:

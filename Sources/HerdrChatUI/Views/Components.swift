@@ -143,11 +143,11 @@ struct MessageBubble: View {
                 .font(.body)
                 .textSelection(.enabled)
         case .thinking:
-            terminalChip(glyph: "…", label: "düşündü", glyphColor: .secondary)
+            terminalChip(glyph: "…", label: "thought", glyphColor: .secondary)
         case .toolUse(let name, let input):
             terminalChip(glyph: "❯", label: input.map { "\(name) \($0)" } ?? name, glyphColor: Theme.tint)
         case .toolResult:
-            terminalChip(glyph: "✓", label: "araç sonucu", glyphColor: .secondary)
+            terminalChip(glyph: "✓", label: "tool result", glyphColor: .secondary)
         }
     }
 
@@ -198,35 +198,83 @@ struct WaitingBar: View {
         }
         .frame(height: height)
         .clipShape(Capsule())
-        .accessibilityLabel("Yanıt bekleniyor")
+        .accessibilityLabel("Waiting for reply")
     }
 }
 
 // MARK: - Blocked quick replies
 
-/// Shown when an agent is waiting for input: a QuickType-style row of capsule
-/// chips above the composer — the platform's own "suggested replies" pattern.
+/// Shown when an agent is waiting for input. When the pane's choice menu could
+/// be parsed, it shows the actual question and one full-width button per option
+/// labelled with its real text (e.g. "2. Yes, and don't ask again"), so you can
+/// see what you're picking. Otherwise it falls back to generic QuickType chips.
 struct BlockedReplyBar: View {
+    /// Parsed choice menu from the blocked pane, if any.
+    var prompt: BlockedPrompt?
     let onKeys: ([String]) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let prompt, !prompt.isEmpty {
+                labelledOptions(prompt)
+            } else {
+                genericChips
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func labelledOptions(_ prompt: BlockedPrompt) -> some View {
+        Label(prompt.question ?? "Agent is waiting", systemImage: "exclamationmark.bubble.fill")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.attention)
+            .fixedSize(horizontal: false, vertical: true)
+        ForEach(prompt.options) { option in
+            Button {
+                onKeys(option.keys)
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(option.number)")
+                        .font(.footnote.weight(.bold).monospacedDigit())
+                        .foregroundStyle(Theme.attention)
+                        .frame(minWidth: 16, alignment: .trailing)
+                    Text(option.label)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.attention.opacity(0.12))
+                )
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    private var genericChips: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("Agent yanıt bekliyor", systemImage: "exclamationmark.bubble.fill")
+            Label("Agent is waiting", systemImage: "exclamationmark.bubble.fill")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.attention)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    chip("Onayla", icon: "return", keys: ["Enter"])
+                    chip("Confirm", icon: "return", keys: ["Enter"])
                     chip("1", keys: ["1", "Enter"])
                     chip("2", keys: ["2", "Enter"])
                     chip("Esc", icon: "escape", keys: ["Escape"])
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
     }
 
     @ViewBuilder

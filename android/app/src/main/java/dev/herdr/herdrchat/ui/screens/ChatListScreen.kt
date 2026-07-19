@@ -118,16 +118,16 @@ fun ChatListScreen(
                 title = { Text(connection.name) },
                 actions = {
                     IconButton(onClick = { showNewWorkspace = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Yeni sohbet")
+                        Icon(Icons.Filled.Add, contentDescription = "New chat")
                     }
                     IconButton(onClick = { toggleWatch() }) {
                         Icon(
                             if (watchEnabled) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
-                            contentDescription = if (watchEnabled) "Bildirimler açık" else "Bildirimler kapalı",
+                            contentDescription = if (watchEnabled) "Notifications on" else "Notifications off",
                         )
                     }
                     IconButton(onClick = onOpenConnections) {
-                        Icon(Icons.Filled.Dns, contentDescription = "Sunucular")
+                        Icon(Icons.Filled.Dns, contentDescription = "Servers")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -202,17 +202,17 @@ private fun NewWorkspaceSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Yeni sohbet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("New chat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = cwd,
                 onValueChange = { cwd = it },
-                label = { Text("Çalışma dizini") },
-                placeholder = { Text("/Users/…/proje") },
+                label = { Text("Working directory") },
+                placeholder = { Text("/Users/…/project") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "Claude bu dizinde başlar. Yolu yazabilir ya da cihazdaki klasörlere göz atıp seçebilirsin.",
+                "Claude starts in this directory. Type a path, or browse the device's folders to pick one.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -221,12 +221,12 @@ private fun NewWorkspaceSheet(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp),
             ) {
                 Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Cihazda klasör seç")
+                Text("  Choose folder on device")
             }
             val known = model.knownCwds
             if (known.isNotEmpty()) {
                 Text(
-                    "Son kullanılanlar",
+                    "Recent",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -247,8 +247,8 @@ private fun NewWorkspaceSheet(
             OutlinedTextField(
                 value = label,
                 onValueChange = { label = it },
-                label = { Text("İsim (opsiyonel)") },
-                placeholder = { Text("Otomatik (klasör adı)") },
+                label = { Text("Name (optional)") },
+                placeholder = { Text("Automatic (folder name)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -270,7 +270,7 @@ private fun NewWorkspaceSheet(
                 if (creating) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                 } else {
-                    Text("Başlat")
+                    Text("Start")
                 }
             }
         }
@@ -327,7 +327,7 @@ private fun DirectoryPickerDialog(
         ) {
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Klasör seç", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Choose folder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         text = path.ifEmpty { " " },
                         style = MaterialTheme.typography.bodySmall,
@@ -357,7 +357,7 @@ private fun DirectoryPickerDialog(
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
                                         Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, tint = HerdrColors.accent)
-                                        Text("Üst klasör", style = MaterialTheme.typography.bodyLarge)
+                                        Text("Parent folder", style = MaterialTheme.typography.bodyLarge)
                                     }
                                 }
                             }
@@ -377,7 +377,7 @@ private fun DirectoryPickerDialog(
                             if (entries.isEmpty()) {
                                 item(key = "empty") {
                                     Text(
-                                        "Alt klasör yok",
+                                        "No subfolders",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(16.dp),
@@ -394,11 +394,11 @@ private fun DirectoryPickerDialog(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    TextButton(onClick = onDismiss) { Text("İptal") }
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
                     Button(
                         onClick = { onPick(path); onDismiss() },
                         enabled = path.isNotEmpty() && !loading,
-                    ) { Text("Seç") }
+                    ) { Text("Select") }
                 }
             }
         }
@@ -428,12 +428,12 @@ private fun EmptyState(loading: Boolean) {
         if (loading) {
             CircularProgressIndicator(color = HerdrColors.headerGreen)
             Text(
-                "Bağlanılıyor…",
+                "Connecting…",
                 modifier = Modifier.padding(top = 14.dp),
                 color = MaterialTheme.colorScheme.onBackground,
             )
         } else {
-            Text("Workspace yok", color = MaterialTheme.colorScheme.onBackground)
+            Text("No workspaces", color = MaterialTheme.colorScheme.onBackground)
         }
     }
 }
@@ -529,7 +529,7 @@ private fun ConnectionErrorRow(message: String) {
     ) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE8A33D))
         Column {
-            Text("Bağlantı hatası", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("Connection error", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
