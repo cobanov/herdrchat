@@ -67,6 +67,25 @@ xcodebuild -exportArchive \
 echo "==> Built: $IPA"
 ls -lh "$IPA"
 
+# Prove aps-environment=production survived into the SIGNED binary. A build whose
+# entitlement is 'development' emits a sandbox APNs token, which the host push
+# watcher (production, api.push.apple.com) would get rejected as BadDeviceToken.
+# Guards the class of regression where a config-level entitlement doesn't make it
+# into the signed app. (Lesson from the cmux review.)
+echo "==> Verifying signed aps-environment=production…"
+APS_WORK="$(mktemp -d)"
+unzip -q -o "$IPA" -d "$APS_WORK"
+APS_APP="$(/bin/ls -d "$APS_WORK"/Payload/*.app 2>/dev/null | head -1)"
+# Entitlements print as a single XML line, so parse the plist properly.
+APS_ENV="$(codesign -d --entitlements :- "$APS_APP" 2>/dev/null | plutil -extract aps-environment raw -o - - 2>/dev/null)"
+rm -rf "$APS_WORK"
+if [[ "$APS_ENV" != "production" ]]; then
+  echo "ERROR: signed aps-environment is '${APS_ENV:-<missing>}', expected 'production'." >&2
+  echo "       Push tokens from this build would be rejected by prod APNs. Check App/HerdrChat.entitlements + the profile." >&2
+  exit 1
+fi
+echo "   ✓ aps-environment=production confirmed in the signed binary"
+
 if [[ "${1:-}" == "--no-upload" ]]; then
   echo "==> --no-upload set; skipping TestFlight upload."
   exit 0
