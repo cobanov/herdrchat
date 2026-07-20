@@ -54,6 +54,7 @@ public final class ChatThreadViewModel {
     private var metaTick = 0
     private var cachedLabels: [String: String] = [:]
     private var tailsDead = false
+    private var tailGeneration = 0
     private var statusTask: Task<Void, Never>?
     private var started = false
     private var hostHome: String?
@@ -198,6 +199,12 @@ public final class ChatThreadViewModel {
     }
 
     private func startTails() async {
+        // Generation fence: bump on every (re)start so any late chunk or death
+        // signal from a superseded tail task is dropped instead of corrupting the
+        // fresh history (the root cause behind the occasional wrong/jumping
+        // last-messages the manual refresh was papering over). Lesson from cmux.
+        tailGeneration += 1
+        let generation = tailGeneration
         // One transcript tail per agent that owns a conversation.
         let agents = liveAgents.filter { $0.agent != nil }
         // Bind to the session(s) now in the workspace before loading anything —
@@ -231,20 +238,23 @@ public final class ChatThreadViewModel {
             let task = Task { [weak self] in
                 do {
                     for try await chunk in stream {
-                        await self?.ingestChunk(chunk, path: path)
+                        await self?.ingestChunk(chunk, path: path, generation: generation)
                     }
-                    await self?.markTailsDead()
+                    await self?.markTailsDead(generation: generation)
                 } catch is CancellationError {
                     // intentional stop
                 } catch {
-                    await self?.markTailsDead()
+                    await self?.markTailsDead(generation: generation)
                 }
             }
             tailTasks.append(task)
         }
     }
 
-    private func markTailsDead() { tailsDead = true }
+    private func markTailsDead(generation: Int) {
+        guard generation == tailGeneration else { return }   // superseded tail
+        tailsDead = true
+    }
 
     private func restartTails() async {
         tailTasks.forEach { $0.cancel() }
@@ -254,7 +264,8 @@ public final class ChatThreadViewModel {
         await startTails()
     }
 
-    private func ingestChunk(_ chunk: TailChunk, path: String) {
+    private func ingestChunk(_ chunk: TailChunk, path: String, generation: Int) {
+        guard generation == tailGeneration else { return }   // drop late chunks from a superseded tail
         if let message = chunk.message { ingest(message) }
         ThreadCache.shared.setBytes(connectionID, workspaceId, path: path, chunk.consumedBytes)
     }

@@ -74,6 +74,7 @@ class ChatThreadViewModel(
      *  dropped instead of shown/appended-to. */
     private var boundSig: String? = null
     private var tailsDead = false
+    private var tailGeneration = 0
     private var statusJob: Job? = null
     private var scope: CoroutineScope? = null
     private var started = false
@@ -202,6 +203,11 @@ class ChatThreadViewModel(
     }
 
     private suspend fun startTails(scope: CoroutineScope) {
+        // Generation fence: bump on every (re)start so a late chunk / death signal
+        // from a superseded tail is dropped instead of corrupting fresh history
+        // (root-fix for the occasional wrong/jumping last-messages). Lesson from cmux.
+        tailGeneration += 1
+        val generation = tailGeneration
         // One transcript tail per agent that owns a conversation.
         val agents = liveAgents.filter { it.agent != null }
         // Bind to the session(s) now in the workspace before loading anything —
@@ -239,14 +245,15 @@ class ChatThreadViewModel(
             val job = scope.launch {
                 try {
                     store.tail(path, label, followStart).collect { chunk ->
+                        if (generation != tailGeneration) return@collect   // superseded tail
                         chunk.message?.let { ingest(it) }
                         ThreadCache.setConsumedBytes(connectionId, workspaceId, path, chunk.consumedBytes)
                     }
-                    tailsDead = true
+                    if (generation == tailGeneration) tailsDead = true
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    tailsDead = true
+                    if (generation == tailGeneration) tailsDead = true
                 }
             }
             tailJobs.add(job)
