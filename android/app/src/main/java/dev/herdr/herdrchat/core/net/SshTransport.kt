@@ -104,10 +104,13 @@ class SshTransport(private val config: SshConfig) : HerdrTransport {
 
     // Non-interactive SSH shells don't load the user's profile, so herdr's
     // install dir (~/.local/bin, Homebrew) usually isn't on PATH and `herdr`
-    // resolves to command-not-found (exit 127). Prepend the common bin dirs so
-    // the default `herdr` just works without the user hard-coding a path.
+    // resolves to command-not-found (exit 127). We set a COMPLETE PATH with the
+    // standard system dirs spelled out rather than trusting the inherited $PATH:
+    // zsh sources .zshenv on every exec (full PATH), but a `sh` login shell
+    // sources nothing non-interactively and may inherit only a minimal PATH from
+    // sshd — which broke connecting for sh users (even ls/tail could be missing).
     private fun withPath(command: String): String =
-        "export PATH=\"\$HOME/.local/bin:\$HOME/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH\"; $command"
+        "export PATH=\"\$HOME/.local/bin:\$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:\$PATH\"; $command"
 
     private suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
         val c = connected()

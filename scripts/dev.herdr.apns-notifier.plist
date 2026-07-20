@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LaunchAgent for the HerdrChat APNs watcher. Install:
+       cp scripts/dev.herdr.apns-notifier.plist ~/Library/LaunchAgents/
+       launchctl load  ~/Library/LaunchAgents/dev.herdr.apns-notifier.plist
+     Config lives in ~/.config/herdrchat/apns.env (APNS_KEY_ID=..., etc.) and the
+     .p8 in ~/.config/herdrchat/. Logs: /tmp/herdr-apns.{log,err}.
+     Update the two absolute paths below if this repo lives elsewhere. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.herdr.apns-notifier</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/cobanov/Developer/herdrchat/scripts/herdr-apns-notifier.py</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/cobanov/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/herdr-apns.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/herdr-apns.err</string>
+</dict>
+</plist>
