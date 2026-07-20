@@ -157,6 +157,22 @@ public final class ChatThreadViewModel {
 
     public func clearError() { error = nil }
 
+    /// Manual refresh: drop the in-memory history and byte cursors and re-read the
+    /// transcript from disk. Recovers a thread whose live tail drifted into a bad
+    /// state (wrong/missing last messages) without touching other threads.
+    public func reload() async {
+        tailTasks.forEach { $0.cancel() }
+        tailTasks.removeAll()
+        for path in tailedPaths.values {
+            ThreadCache.shared.resetBytes(connectionID, workspaceId, path: path)
+        }
+        tailedPaths.removeAll()
+        tailedSessions.removeAll()
+        tailsDead = false
+        resetHistory()
+        await startTails()
+    }
+
     // MARK: - Reading
 
     /// Resolve the transcript to follow for an agent. When the integration

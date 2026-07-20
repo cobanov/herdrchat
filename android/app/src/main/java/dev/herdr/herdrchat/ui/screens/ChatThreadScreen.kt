@@ -123,10 +123,19 @@ fun ChatThreadScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = {
+                        model.reload()
+                        scope.launch { listState.scrollToItem(0) }
+                    }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = HerdrColors.headerGreen,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
                 ),
             )
         },

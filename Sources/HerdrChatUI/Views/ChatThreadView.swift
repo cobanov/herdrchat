@@ -55,6 +55,18 @@ struct ChatThreadView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .principal) { header }
+            #if os(iOS)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    didInitialScroll = false   // re-anchor to newest after reload
+                    Task { await model.reload() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .accessibilityLabel("Refresh")
+            }
+            #endif
         }
         .task { model.startIfNeeded() }
         .onAppear {

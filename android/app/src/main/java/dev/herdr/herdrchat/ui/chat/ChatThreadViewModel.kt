@@ -159,6 +159,25 @@ class ChatThreadViewModel(
 
     fun clearError() { error = null }
 
+    /** Manual refresh: drop in-memory history + byte cursors and re-read the
+     *  transcript from disk. Recovers a thread whose live tail drifted into a bad
+     *  state (wrong/missing last messages). */
+    fun reload() {
+        val s = scope ?: return
+        s.launch {
+            tailJobs.forEach { it.cancel() }
+            tailJobs.clear()
+            for (path in tailedPaths.values) {
+                ThreadCache.resetBytes(connectionId, workspaceId, path)
+            }
+            tailedPaths.clear()
+            tailedSessions.clear()
+            tailsDead = false
+            resetHistory()
+            startTails(s)
+        }
+    }
+
     // MARK: - Reading
 
     /** Resolve the transcript to follow for an agent. When the integration
