@@ -143,29 +143,50 @@ struct MessageBubble: View {
                 .font(.body)
                 .textSelection(.enabled)
         case .thinking:
-            terminalChip(glyph: "…", label: "thought", glyphColor: .secondary)
+            TerminalChip(glyph: "…", label: "thought", glyphColor: .secondary)
         case .toolUse(let name, let input):
-            terminalChip(glyph: "❯", label: input.map { "\(name) \($0)" } ?? name, glyphColor: Theme.tint)
+            TerminalChip(glyph: "❯", label: input.map { "\(name) \($0)" } ?? name, glyphColor: Theme.tint, expandable: input != nil)
         case .toolResult:
-            terminalChip(glyph: "✓", label: "tool result", glyphColor: .secondary)
+            TerminalChip(glyph: "✓", label: "tool result", glyphColor: .secondary)
         }
     }
+}
 
-    /// Tool activity as a terminal token: monospaced, quiet, unmistakably CLI.
-    private func terminalChip(glyph: String, label: String, glyphColor: Color) -> some View {
-        HStack(spacing: 5) {
+/// Tool activity as a terminal token: monospaced, quiet, unmistakably CLI. When
+/// `expandable`, tapping toggles between a one-line preview and the full text, so
+/// a long tool call can be read in place instead of staying truncated.
+private struct TerminalChip: View {
+    let glyph: String
+    let label: String
+    let glyphColor: Color
+    var expandable: Bool = false
+    @State private var expanded = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 5) {
             Text(glyph)
                 .font(.system(.caption2, design: .monospaced).weight(.bold))
                 .foregroundStyle(glyphColor)
             Text(label)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(expandable && expanded ? nil : 1)
+                .textSelection(.enabled)
+            if expandable {
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(Theme.fillSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard expandable else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+        }
     }
 }
 

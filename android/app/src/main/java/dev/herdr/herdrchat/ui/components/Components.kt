@@ -28,13 +28,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,34 +177,51 @@ private fun SegmentView(segment: MessageSegment, dark: Boolean) {
                 onTint = false,
             )
         }
-        is MessageSegment.Thinking -> Chip(Icons.Filled.Psychology, "thought", HerdrColors.secondaryText(dark))
+        is MessageSegment.Thinking -> Chip(Icons.Filled.Psychology, "thought", HerdrColors.secondaryText(dark), dark)
         is MessageSegment.ToolUse -> Chip(
             Icons.Filled.Build,
             segment.input?.let { "${segment.name}: $it" } ?: segment.name,
             HerdrColors.headerGreen,
+            dark,
+            expandable = segment.input != null,
         )
-        is MessageSegment.ToolResult -> Chip(Icons.Filled.CheckCircle, "tool result", HerdrColors.secondaryText(dark))
+        is MessageSegment.ToolResult -> Chip(Icons.Filled.CheckCircle, "tool result", HerdrColors.secondaryText(dark), dark)
     }
 }
 
+/// A tool-activity token: tinted icon, readable label. When [expandable], tapping
+/// toggles between a one-line preview and the full text (a long tool call can be
+/// read in place). The label uses the primary text colour so it stays legible on
+/// the faint tinted background in both light and dark themes.
 @Composable
-private fun Chip(icon: ImageVector, label: String, tint: Color) {
+private fun Chip(icon: ImageVector, label: String, tint: Color, dark: Boolean, expandable: Boolean = false) {
+    var expanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(8.dp))
             .background(tint.copy(alpha = 0.12f))
+            .then(if (expandable) Modifier.clickable { expanded = !expanded } else Modifier)
             .padding(horizontal = 9.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = tint,
-            maxLines = 1,
+            color = HerdrColors.primaryText(dark),
+            maxLines = if (expandable && expanded) Int.MAX_VALUE else 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
+        if (expandable) {
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = HerdrColors.secondaryText(dark),
+                modifier = Modifier.size(14.dp),
+            )
+        }
     }
 }
 

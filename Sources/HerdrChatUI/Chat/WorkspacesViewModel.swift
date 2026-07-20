@@ -118,9 +118,16 @@ public final class WorkspacesViewModel {
             markUnreadTransitions(rows)
             summaries = rows
             connectionError = nil
-            // Keep the notification baseline fresh: states the user is looking
-            // at right now shouldn't re-notify from the background task later.
-            AgentNotifier.record(agents)
+            // Live foreground notifications: fire on blocked/done transitions while
+            // the app is open (any screen but the thread you're viewing), and keep
+            // the baseline fresh for the background task. iOS otherwise only
+            // notified from the rare background refresh.
+            let labels = Dictionary(workspaces.map { ($0.workspaceId, $0.label) }, uniquingKeysWith: { first, _ in first })
+            let prefix = connectionID + "|"
+            let activeWorkspace = UnreadStore.shared.activeKey.flatMap {
+                $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil
+            }
+            AgentNotifier.diffAndNotify(agents: agents, workspaceLabels: labels, excludingWorkspace: activeWorkspace)
         } catch {
             connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
         }

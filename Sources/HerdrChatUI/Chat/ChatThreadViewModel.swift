@@ -52,6 +52,7 @@ public final class ChatThreadViewModel {
     /// dropped instead of shown/appended-to.
     private var boundSig: String?
     private var metaTick = 0
+    private var cachedLabels: [String: String] = [:]
     private var tailsDead = false
     private var statusTask: Task<Void, Never>?
     private var started = false
@@ -283,11 +284,31 @@ public final class ChatThreadViewModel {
                     }
                     await self.refreshBlockedPrompt()
                     self.metaTick += 1
-                    if self.metaTick % 5 == 1 { await self.refreshSessionMeta() }
+                    if self.metaTick % 5 == 1 {
+                        await self.refreshSessionMeta()
+                        await self.refreshWorkspaceLabels()
+                    }
+                    // Notify about OTHER workspaces while you're inside this thread
+                    // (the list poll is paused); never notify for the one you're on.
+                    AgentNotifier.diffAndNotify(
+                        agents: snapshot.agents,
+                        workspaceLabels: self.cachedLabels,
+                        excludingWorkspace: self.workspaceId
+                    )
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+    }
+
+    /// Cache workspace labels so cross-workspace notifications from the in-thread
+    /// poll read with the workspace name, not its id.
+    private func refreshWorkspaceLabels() async {
+        guard let workspaces = try? await client.workspaces() else { return }
+        cachedLabels = Dictionary(
+            workspaces.map { ($0.workspaceId, $0.label) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     /// Refresh the header's model + context readout from the primary transcript.

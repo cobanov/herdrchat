@@ -11,6 +11,13 @@ import UserNotifications
 public enum AgentNotifier {
     private static let defaultsKey = "herdrchat.agentStatuses"
 
+    /// Route foreground notifications to a delegate that presents them as banners.
+    /// Without this, iOS silently drops local notifications while the app is
+    /// active — so nothing shows when an agent finishes while you're in the app.
+    public static func configureForegroundPresentation() {
+        UNUserNotificationCenter.current().delegate = ForegroundNotificationPresenter.shared
+    }
+
     public static func requestAuthorizationIfNeeded() {
         #if DEBUG
         // Headless test runs can't tap the system alert; let them opt out.
@@ -29,8 +36,14 @@ public enum AgentNotifier {
     }
 
     /// Diff against the stored baseline and fire local notifications for
-    /// blocked/done transitions (used by the background refresh task).
-    public static func diffAndNotify(agents: [AgentInfo], workspaceLabels: [String: String]) {
+    /// blocked/done transitions. Used both by the background refresh task and by
+    /// the live foreground polls; `excludingWorkspace` suppresses a notification
+    /// for the thread you're currently looking at.
+    public static func diffAndNotify(
+        agents: [AgentInfo],
+        workspaceLabels: [String: String],
+        excludingWorkspace: String? = nil
+    ) {
         let was = load()
         defer { save(statuses(of: agents)) }
         guard !was.isEmpty else { return }   // first run: seed silently
@@ -38,7 +51,8 @@ public enum AgentNotifier {
         for agent in agents {
             let status = agent.agentStatus
             guard status == .blocked || status == .done,
-                  was[agent.paneId] != status.rawValue else { continue }
+                  was[agent.paneId] != status.rawValue,
+                  agent.workspaceId != excludingWorkspace else { continue }
             let workspace = workspaceLabels[agent.workspaceId] ?? agent.workspaceId
             let name = agent.agent ?? "agent"
 
@@ -70,5 +84,18 @@ public enum AgentNotifier {
 
     private static func save(_ statuses: [String: String]) {
         UserDefaults.standard.set(statuses, forKey: defaultsKey)
+    }
+}
+
+/// Presents agent notifications as banners even when the app is in the foreground
+/// (the default is to suppress them while active).
+public final class ForegroundNotificationPresenter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    public static let shared = ForegroundNotificationPresenter()
+
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
     }
 }

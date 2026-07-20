@@ -20,6 +20,7 @@ struct HerdrChatApp: App {
             switch phase {
             case .active:
                 AgentNotifier.requestAuthorizationIfNeeded()
+                AgentNotifier.configureForegroundPresentation()
             case .background:
                 // Arm the server-free notification check (blocked/done diffs).
                 BackgroundRefresh.schedule()
