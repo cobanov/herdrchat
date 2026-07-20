@@ -121,7 +121,15 @@ class SshTransport(private val config: SshConfig) : HerdrTransport {
             cmd.join()
             val code = cmd.exitStatus
             if (code != null && code != 0) {
-                throw HerdrException("ssh_command_failed", "exit status $code")
+                // Exit 127 = "command not found": for us that almost always means
+                // herdr isn't installed for this account (or isn't on PATH).
+                if (code == 127) {
+                    throw HerdrException(
+                        "herdr_not_found",
+                        "herdr wasn't found on this account (exit 127). It's likely not installed for this user, or not on PATH. Install herdr on the host, or set its full path in the connection's Advanced settings.",
+                    )
+                }
+                throw HerdrException("ssh_command_failed", "The command failed on the host (exit $code).")
             }
             out
         } finally {

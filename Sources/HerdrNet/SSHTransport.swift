@@ -152,7 +152,7 @@ public actor SSHTransport: HerdrTransport {
             return try await execOnce(command)
         } catch let error as SSHClient.CommandFailed {
             // The command ran and exited non-zero: a real result, don't retry.
-            throw HerdrError(code: "ssh_command_failed", message: "exit status \(error.exitCode)")
+            throw Self.commandError(exitCode: Int(error.exitCode))
         } catch let error as HerdrError {
             throw error   // host_key_changed etc. — retrying won't change it
         } catch {
@@ -162,9 +162,22 @@ public actor SSHTransport: HerdrTransport {
             do {
                 return try await execOnce(command)
             } catch let retryError as SSHClient.CommandFailed {
-                throw HerdrError(code: "ssh_command_failed", message: "exit status \(retryError.exitCode)")
+                throw Self.commandError(exitCode: Int(retryError.exitCode))
             }
         }
+    }
+
+    /// Turn a non-zero exit into a helpful message. Exit 127 = "command not
+    /// found", which for us almost always means `herdr` isn't installed on this
+    /// account (or isn't on PATH) — spell that out instead of a bare code.
+    private static func commandError(exitCode: Int) -> HerdrError {
+        if exitCode == 127 {
+            return HerdrError(
+                code: "herdr_not_found",
+                message: "herdr wasn't found on this account (exit 127). It's likely not installed for this user, or not on PATH. Install herdr on the host, or set its full path in the connection's Advanced settings."
+            )
+        }
+        return HerdrError(code: "ssh_command_failed", message: "The command failed on the host (exit \(exitCode)).")
     }
 
     public nonisolated func streamLines(_ command: String) -> AsyncThrowingStream<String, Error> {
