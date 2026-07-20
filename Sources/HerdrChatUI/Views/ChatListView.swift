@@ -28,7 +28,13 @@ struct ChatListView: View {
         NavigationStack(path: $path) {
             List {
                 if let error = model.connectionError {
-                    ConnectionErrorRow(message: error)
+                    ConnectionErrorRow(
+                        message: error,
+                        canInstallHerdr: model.herdrMissing,
+                        installing: model.isInstallingHerdr
+                    ) {
+                        Task { await model.installHerdr() }
+                    }
                 }
                 ForEach(model.summaries) { summary in
                     ChatRow(summary: summary, connectionID: connection.id.uuidString)
@@ -332,14 +338,36 @@ private struct NewWorkspaceSheet: View {
 
 struct ConnectionErrorRow: View {
     let message: String
+    var canInstallHerdr: Bool = false
+    var installing: Bool = false
+    var onInstall: (() -> Void)? = nil
+
     var body: some View {
-        Label {
-            VStack(alignment: .leading) {
-                Text("Connection error").font(.subheadline.weight(.semibold))
-                Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+        VStack(alignment: .leading, spacing: 10) {
+            Label {
+                VStack(alignment: .leading) {
+                    Text("Connection error").font(.subheadline.weight(.semibold))
+                    Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.attention)
             }
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.attention)
+            if canInstallHerdr, let onInstall {
+                Button(action: onInstall) {
+                    HStack(spacing: 6) {
+                        if installing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        Text(installing ? "Installing herdr…" : "Install herdr on the host")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(installing)
+                .padding(.leading, 28)
+            }
         }
     }
 }

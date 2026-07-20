@@ -29,6 +29,12 @@ class WorkspacesViewModel(
         private set
     var isLoading by mutableStateOf(false)
         private set
+    /** True when the last connect failed because herdr isn't installed on the
+     *  host account — drives the "Install herdr" recovery button. */
+    var herdrMissing by mutableStateOf(false)
+        private set
+    var isInstallingHerdr by mutableStateOf(false)
+        private set
     /** Last directory a workspace was created in, to prefill the new-chat sheet. */
     var lastCwd by mutableStateOf("")
         private set
@@ -62,10 +68,32 @@ class WorkspacesViewModel(
                 summaries = rows
             }
             connectionError = null
+            herdrMissing = false
         } catch (e: Exception) {
-            connectionError = (e as? HerdrException)?.message ?: e.message ?: e.toString()
+            val herdrError = e as? HerdrException
+            connectionError = herdrError?.message ?: e.message ?: e.toString()
+            herdrMissing = herdrError?.code == "herdr_not_found"
         }
         isLoading = false
+    }
+
+    /** Recovery for the herdr-not-installed case: run the official installer on
+     *  the host, then reconnect. */
+    fun installHerdr(scope: CoroutineScope) {
+        if (isInstallingHerdr) return
+        isInstallingHerdr = true
+        connectionError = "Installing herdr on the host…"
+        scope.launch {
+            try {
+                client.installHerdr()
+                herdrMissing = false
+                connectionError = null
+                refresh()
+            } catch (e: Exception) {
+                connectionError = (e as? HerdrException)?.message ?: e.message ?: e.toString()
+            }
+            isInstallingHerdr = false
+        }
     }
 
     /** working -> done/idle while the thread is off-screen = unread (herdr's

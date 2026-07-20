@@ -39,6 +39,13 @@ public struct HerdrClient: Sendable {
         _ = try await transport.run([herdr, "status", "server"])
     }
 
+    /// Install herdr on the host via the official one-liner (into ~/.local/bin,
+    /// which the transport's PATH already covers). The recovery action when a
+    /// connect fails because herdr isn't installed on that account.
+    public func installHerdr() async throws {
+        _ = try await transport.shell("curl -fsSL https://herdr.dev/install.sh | sh")
+    }
+
     /// The host user's home directory — the sensible starting point for browsing
     /// to a working directory in the new-chat folder picker.
     public func homeDirectory() async throws -> String {

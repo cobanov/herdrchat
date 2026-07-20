@@ -19,6 +19,10 @@ public final class WorkspacesViewModel {
     public private(set) var summaries: [ChatSummary] = []
     public private(set) var connectionError: String?
     public private(set) var isLoading = false
+    /// True when the last connect failed because herdr isn't installed on the
+    /// host account — drives the "Install herdr" recovery button.
+    public private(set) var herdrMissing = false
+    public private(set) var isInstallingHerdr = false
 
     private let client: HerdrClient
     private let store: TranscriptStore
@@ -119,6 +123,7 @@ public final class WorkspacesViewModel {
             markUnreadTransitions(rows)
             summaries = rows
             connectionError = nil
+            herdrMissing = false
             // Live foreground notifications: fire on blocked/done transitions while
             // the app is open (any screen but the thread you're viewing), and keep
             // the baseline fresh for the background task. iOS otherwise only
@@ -136,9 +141,28 @@ public final class WorkspacesViewModel {
                 Task { await PushRegistration.upload(using: client.transport) }
             }
         } catch {
-            connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
+            let herdrError = error as? HerdrError
+            connectionError = herdrError?.message ?? error.localizedDescription
+            herdrMissing = herdrError?.code == "herdr_not_found"
         }
         isLoading = false
+    }
+
+    /// Recovery for the herdr-not-installed case: run the official installer on
+    /// the host, then reconnect.
+    public func installHerdr() async {
+        guard !isInstallingHerdr else { return }
+        isInstallingHerdr = true
+        connectionError = "Installing herdr on the host…"
+        do {
+            try await client.installHerdr()
+            herdrMissing = false
+            connectionError = nil
+            await refresh()
+        } catch {
+            connectionError = (error as? HerdrError)?.message ?? error.localizedDescription
+        }
+        isInstallingHerdr = false
     }
 
     /// Refresh the last-message previews (one batched round-trip). Active or

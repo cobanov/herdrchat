@@ -153,7 +153,14 @@ fun ChatListScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     if (error != null) {
-                        item { ConnectionErrorRow(error) }
+                        item {
+                            ConnectionErrorRow(
+                                message = error,
+                                canInstallHerdr = model.herdrMissing,
+                                installing = model.isInstallingHerdr,
+                                onInstall = { model.installHerdr(scope) },
+                            )
+                        }
                     }
                     items(summaries, key = { it.workspaceId }) { summary ->
                         Column(Modifier.animateItem()) {
@@ -522,22 +529,39 @@ private fun Subtitle(summary: ChatSummary) {
 }
 
 @Composable
-private fun ConnectionErrorRow(message: String) {
-    Row(
+private fun ConnectionErrorRow(
+    message: String,
+    canInstallHerdr: Boolean = false,
+    installing: Boolean = false,
+    onInstall: () -> Unit = {},
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE8A33D))
-        Column {
-            Text("Connection error", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFE8A33D))
+            Column {
+                Text("Connection error", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 4,
+                )
+            }
+        }
+        if (canInstallHerdr) {
+            Button(onClick = onInstall, enabled = !installing, modifier = Modifier.padding(start = 34.dp)) {
+                if (installing) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                    Text("  Installing herdr…")
+                } else {
+                    Text("Install herdr on the host")
+                }
+            }
         }
     }
 }

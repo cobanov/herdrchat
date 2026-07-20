@@ -42,6 +42,13 @@ class HerdrClient(
         transport.run(listOf(herdr, "status", "server"))
     }
 
+    /** Install herdr on the host via the official one-liner (into ~/.local/bin,
+     *  which the transport's PATH already covers). Recovery when a connect fails
+     *  because herdr isn't installed on that account. */
+    suspend fun installHerdr() {
+        transport.shell("curl -fsSL https://herdr.dev/install.sh | sh")
+    }
+
     /** The host user's home directory — the sensible starting point for browsing
      *  to a working directory in the new-chat folder picker. */
     suspend fun homeDirectory(): String =
