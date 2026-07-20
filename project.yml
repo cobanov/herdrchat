@@ -40,13 +40,15 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.herdr.HerdrChat
         PRODUCT_NAME: HerdrChat
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "21"
+        CURRENT_PROJECT_VERSION: "22"
         SWIFT_VERSION: "6.0"
         # iPhone-only (a phone-first chat app); avoids iPad multitasking orientation rules.
         TARGETED_DEVICE_FAMILY: "1"
         # App Store distribution signing (managed automatically via the ASC API key).
         DEVELOPMENT_TEAM: "6U58AKY6F8"
         CODE_SIGN_STYLE: Automatic
+        # APNs push (background agent notifications from the herdr host).
+        CODE_SIGN_ENTITLEMENTS: App/HerdrChat.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

@@ -26,6 +26,7 @@ public final class WorkspacesViewModel {
     private let pollInterval: Duration
     private var pollTask: Task<Void, Never>?
     private var previousStatuses: [String: AgentStatus] = [:]
+    private var pushUploaded = false
     private var previews: [String: MessagePreview] = [:]
     private var previewSessions: [String: String] = [:]   // workspaceId -> session signature
     private var previewTick = 0
@@ -128,6 +129,12 @@ public final class WorkspacesViewModel {
                 $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil
             }
             AgentNotifier.diffAndNotify(agents: agents, workspaceLabels: labels, excludingWorkspace: activeWorkspace)
+            // Once APNs hands us a device token, register it with this host so its
+            // watcher can push to the phone in the background (one-time per session).
+            if !pushUploaded, PushRegistration.deviceTokenHex != nil {
+                pushUploaded = true
+                Task { await PushRegistration.upload(using: client.transport) }
+            }
         } catch {
             connectionError = (error as? HerdrError)?.description ?? error.localizedDescription
         }

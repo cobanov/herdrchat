@@ -262,6 +262,42 @@ func createProfile(certID: String) {
     catch { die("create profile failed: \(error)") }
 }
 
+// The team's distribution certificate id (for regenerating the profile).
+func distCertID() -> String {
+    do {
+        let json = try request("GET", "/v1/certificates?limit=200")
+        let cert = dataArray(json).first { (attrs($0)["certificateType"] as? String ?? "").contains("DISTRIBUTION") }
+        guard let id = cert?["id"] as? String else { die("no distribution certificate found (run dist-signing first)") }
+        return id
+    } catch { die("certificates query failed: \(error)") }
+}
+
+// Enable the Push Notifications capability on the bundle id, then regenerate the
+// App Store profile so it carries the entitlement (needed for APNs).
+func enablePush() {
+    var bid: String?
+    do {
+        let json = try request("GET", "/v1/bundleIds?limit=200")
+        bid = dataArray(json).first { (attrs($0)["identifier"] as? String) == BUNDLE_ID }?["id"] as? String
+    } catch { die("bundleIds query failed: \(error)") }
+    guard let bundle = bid else { die("bundle id \(BUNDLE_ID) not registered") }
+
+    let body: [String: Any] = ["data": [
+        "type": "bundleIdCapabilities",
+        "attributes": ["capabilityType": "PUSH_NOTIFICATIONS"],
+        "relationships": ["bundleId": ["data": ["type": "bundleIds", "id": bundle]]],
+    ]]
+    do {
+        _ = try request("POST", "/v1/bundleIdCapabilities", body: body)
+        print("✓ enabled PUSH_NOTIFICATIONS on \(BUNDLE_ID)")
+    } catch let e as APIError {
+        if e.status == 409 { print("✓ PUSH_NOTIFICATIONS already enabled") }
+        else { die("enable push failed (\(e.status)): \(e.body)") }
+    } catch { die("enable push failed: \(error)") }
+
+    createProfile(certID: distCertID())
+}
+
 // List HerdrChat's builds and their processing/testing state.
 func builds() {
     var appID: String?
@@ -297,5 +333,6 @@ case "create-dist-cert":
 case "create-profile":
     guard args.count >= 4 else { die("usage: create-profile <cert-id>") }
     createProfile(certID: args[3])
+case "enable-push": enablePush()
 default: die("unknown command: \(cmd)")
 }

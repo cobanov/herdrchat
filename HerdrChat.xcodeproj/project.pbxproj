@@ -14,6 +14,7 @@
 
 /* Begin PBXFileReference section */
 		6F036EBBDE84C8154859D080 /* HerdrChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrChatApp.swift; sourceTree = "<group>"; };
+		71B840A805A08B7B9B202311 /* HerdrChat.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HerdrChat.entitlements; sourceTree = "<group>"; };
 		8D3F48295589348B5D0FAEB7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B671616DBE19E7D0C1AA75AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F0C8B867DA2FC9C374152D18 /* HerdrChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HerdrChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -44,6 +45,7 @@
 			isa = PBXGroup;
 			children = (
 				8D3F48295589348B5D0FAEB7 /* Assets.xcassets */,
+				71B840A805A08B7B9B202311 /* HerdrChat.entitlements */,
 				6F036EBBDE84C8154859D080 /* HerdrChatApp.swift */,
 				B671616DBE19E7D0C1AA75AB /* Info.plist */,
 			);
@@ -273,9 +275,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/HerdrChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 6U58AKY6F8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = App/Info.plist;
@@ -301,9 +304,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/HerdrChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 6U58AKY6F8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = App/Info.plist;
