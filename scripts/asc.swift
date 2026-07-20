@@ -298,6 +298,51 @@ func enablePush() {
     createProfile(certID: distCertID())
 }
 
+// Create (or fetch) an EXTERNAL beta group with a public join link, so anyone
+// with the URL can install from TestFlight without being added by email. The
+// link only becomes live once a build passes Beta App Review.
+func createPublicGroup() {
+    var appID: String?
+    do {
+        let json = try request("GET", "/v1/apps?limit=200")
+        appID = dataArray(json).first { (attrs($0)["bundleId"] as? String) == BUNDLE_ID }?["id"] as? String
+    } catch { die("apps query failed: \(error)") }
+    guard let aid = appID else { die("app record for \(BUNDLE_ID) not found") }
+
+    // Reuse an existing public-link group if one already exists.
+    if let existing = try? request("GET", "/v1/apps/\(aid)/betaGroups?limit=200") {
+        for g in dataArray(existing) {
+            let a = attrs(g)
+            if (a["isInternalGroup"] as? Bool) != true, let link = a["publicLink"] as? String, !link.isEmpty {
+                print("✓ public group already exists")
+                print("PUBLIC_LINK=\(link)")
+                return
+            }
+        }
+    }
+
+    let body: [String: Any] = ["data": [
+        "type": "betaGroups",
+        "attributes": ["name": "Public Beta", "publicLinkEnabled": true],
+        "relationships": ["app": ["data": ["type": "apps", "id": aid]]],
+    ]]
+    let created: Any
+    do {
+        created = try request("POST", "/v1/betaGroups", body: body)
+    } catch let e as APIError { die("create group failed (\(e.status)): \(e.body)") }
+    catch { die("create group failed: \(error)") }
+
+    let data = (created as? [String: Any])?["data"] as? [String: Any] ?? [:]
+    let gid = data["id"] as? String
+    var link = attrs(data)["publicLink"] as? String
+    // The link is often minted a moment after creation — re-fetch once.
+    if (link ?? "").isEmpty, let gid, let refetched = try? request("GET", "/v1/betaGroups/\(gid)") {
+        link = attrs((refetched as? [String: Any])?["data"] as? [String: Any] ?? [:])["publicLink"] as? String
+    }
+    print("✓ created external public-link group 'Public Beta'")
+    print("PUBLIC_LINK=\(link ?? "(pending — re-run: swift scripts/asc.swift <issuer> public-link)")")
+}
+
 // List HerdrChat's builds and their processing/testing state.
 func builds() {
     var appID: String?
@@ -334,5 +379,6 @@ case "create-profile":
     guard args.count >= 4 else { die("usage: create-profile <cert-id>") }
     createProfile(certID: args[3])
 case "enable-push": enablePush()
+case "public-link", "create-public-group": createPublicGroup()
 default: die("unknown command: \(cmd)")
 }
