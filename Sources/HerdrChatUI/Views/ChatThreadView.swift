@@ -161,14 +161,22 @@ struct ChatThreadView: View {
                             rowView(row)
                                 .padding(.top, row.startsGroup ? 10 : 2)
                         }
-                        // While waiting on the agent, a slim sweeping bar sits at the
-                        // very bottom, under the newest bubble.
+                        // While waiting on the agent: show a live preview of the
+                        // answer it's writing if we could scrape clean prose,
+                        // otherwise a slim sweeping bar. Both sit under the newest
+                        // bubble and clear when the turn settles.
                         if isWaiting {
-                            WaitingBar()
-                                .padding(.horizontal, 44)
-                                .padding(.top, 16)
-                                .padding(.bottom, 4)
-                                .transition(.opacity)
+                            if let preview = model.livePreview {
+                                LivePreviewBubble(text: preview)
+                                    .padding(.top, 10)
+                                    .transition(.opacity)
+                            } else {
+                                WaitingBar()
+                                    .padding(.horizontal, 44)
+                                    .padding(.top, 16)
+                                    .padding(.bottom, 4)
+                                    .transition(.opacity)
+                            }
                         }
                         // Bottom sentinel: its visibility (LazyVStack only renders
                         // near-viewport items) tells us whether the reader is at the

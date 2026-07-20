@@ -258,6 +258,30 @@ fun WaitingBar(modifier: Modifier = Modifier) {
     }
 }
 
+/** A dim trailing bubble showing the agent's answer as it's being written
+ *  (scraped from the visible screen); superseded by the real bubble when the turn
+ *  settles. Only shown when clean prose was extracted, else the waiting bar. */
+@Composable
+fun LivePreviewBubble(text: String) {
+    val dark = isSystemInDarkTheme()
+    Row(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 328.dp)
+                .clip(RoundedCornerShape(5.dp, 17.dp, 17.dp, 17.dp))
+                .background(HerdrColors.incomingBubble(dark).copy(alpha = 0.7f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TypingDots(color = HerdrColors.accent, dotSize = 4.dp)
+                Text("live", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = HerdrColors.accent)
+            }
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = HerdrColors.secondaryText(dark))
+        }
+    }
+}
+
 /** Quick-reply bar shown when an agent is blocked, waiting for input. When the
  *  pane's choice menu could be parsed, it shows the actual question and one
  *  full-width button per option labelled with its real text; otherwise it falls

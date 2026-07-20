@@ -164,9 +164,19 @@ fun ChatThreadScreen(
                 val isWaiting = !model.isBlocked &&
                     (model.status == AgentStatus.WORKING || model.isSending)
                 if (isWaiting) {
+                    val preview = model.livePreview
                     item(key = "waiting-bar") {
-                        Box(Modifier.animateItem().padding(horizontal = 32.dp, vertical = 10.dp)) {
-                            dev.herdr.herdrchat.ui.components.WaitingBar()
+                        Box(
+                            Modifier.animateItem().padding(
+                                horizontal = if (preview != null) 0.dp else 32.dp,
+                                vertical = 10.dp,
+                            ),
+                        ) {
+                            if (preview != null) {
+                                dev.herdr.herdrchat.ui.components.LivePreviewBubble(preview)
+                            } else {
+                                dev.herdr.herdrchat.ui.components.WaitingBar()
+                            }
                         }
                     }
                 }

@@ -11,6 +11,7 @@ import dev.herdr.herdrchat.core.model.HerdrException
 import dev.herdr.herdrchat.core.transcript.BlockedPrompt
 import dev.herdr.herdrchat.core.transcript.BlockedPromptParser
 import dev.herdr.herdrchat.core.transcript.ChatMessage
+import dev.herdr.herdrchat.core.transcript.LivePreviewExtractor
 import dev.herdr.herdrchat.core.transcript.MessageSegment
 import dev.herdr.herdrchat.core.transcript.SessionMeta
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +57,10 @@ class ChatThreadViewModel(
         private set
     /** Model + context size for the header, refreshed from the transcript tail. */
     var sessionMeta by mutableStateOf<SessionMeta?>(null)
+        private set
+    /** Best-effort live preview of the agent's in-progress answer (scraped from the
+     *  visible screen while working); null falls back to the waiting bar. */
+    var livePreview by mutableStateOf<String?>(null)
         private set
 
     /** Folder name of the agent's working directory, for the header. */
@@ -308,6 +313,7 @@ class ChatThreadViewModel(
                         restartTails()
                     }
                     refreshBlockedPrompt()
+                    refreshLivePreview()
                     metaTick++
                     if (metaTick % 5 == 1) refreshSessionMeta()
                 }
@@ -322,6 +328,18 @@ class ChatThreadViewModel(
         val path = tailedPaths[pane.cwd] ?: return
         val meta = runCatching { store.sessionMeta(path) }.getOrNull() ?: return
         if (meta != sessionMeta) sessionMeta = meta
+    }
+
+    /** While the agent works, scrape its visible screen into a best-effort live
+     *  preview of the answer it's writing; cleared when it stops. */
+    private suspend fun refreshLivePreview() {
+        val pane = primaryPane
+        if (status != AgentStatus.WORKING || pane == null) {
+            if (livePreview != null) livePreview = null
+            return
+        }
+        val raw = runCatching { client.paneVisible(pane.paneId, 30) }.getOrNull() ?: return
+        livePreview = LivePreviewExtractor.extract(raw)
     }
 
     /** While an agent is blocked, read its pane and parse the choice menu so the

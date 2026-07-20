@@ -29,6 +29,10 @@ public final class ChatThreadViewModel {
     public private(set) var blockedPrompt: BlockedPrompt?
     /// Model + context size for the header, refreshed from the transcript tail.
     public private(set) var sessionMeta: SessionMeta?
+    /// Best-effort live preview of the agent's in-progress answer (scraped from
+    /// the pane's visible screen while it works); nil when idle or unparseable,
+    /// so the UI falls back to a plain waiting bar.
+    public private(set) var livePreview: String?
 
     /// Folder name of the agent's working directory, for the header.
     public var workingDirName: String? {
@@ -310,6 +314,7 @@ public final class ChatThreadViewModel {
                         await self.restartTails()
                     }
                     await self.refreshBlockedPrompt()
+                    await self.refreshLivePreview()
                     self.metaTick += 1
                     if self.metaTick % 5 == 1 {
                         await self.refreshSessionMeta()
@@ -326,6 +331,19 @@ public final class ChatThreadViewModel {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+    }
+
+    /// While the agent works, scrape its visible screen into a best-effort live
+    /// preview of the answer it's writing; cleared when it stops (the settled
+    /// transcript turn then shows the real bubble). Best-effort — nil falls back
+    /// to the waiting bar.
+    private func refreshLivePreview() async {
+        guard status == .working, let pane = primaryPane else {
+            if livePreview != nil { livePreview = nil }
+            return
+        }
+        guard let raw = try? await client.paneVisible(pane: pane.paneId, lines: 30) else { return }
+        livePreview = LivePreviewExtractor.extract(raw)
     }
 
     /// Cache workspace labels so cross-workspace notifications from the in-thread

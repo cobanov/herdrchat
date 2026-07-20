@@ -190,6 +190,41 @@ private struct TerminalChip: View {
     }
 }
 
+// MARK: - Live preview (agent's in-progress answer)
+
+/// A dim trailing bubble showing the agent's answer as it's being written
+/// (scraped from the pane's visible screen). Superseded by the real bubble when
+/// the turn settles. Only shown when clean prose was extracted — otherwise the
+/// waiting bar shows instead.
+struct LivePreviewBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    TypingDots(color: Theme.tint, size: 4)
+                    Text("live")
+                        .font(.system(.caption2, design: .rounded).weight(.semibold))
+                        .foregroundStyle(Theme.tint)
+                }
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.bubbleIncoming.opacity(0.6))
+            .clipShape(
+                UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
+            )
+            .frame(maxWidth: 300, alignment: .leading)
+            Spacer(minLength: 48)
+        }
+    }
+}
+
 // MARK: - Waiting indicator
 
 /// A slim, indeterminate "waiting for the reply" bar shown while the agent
