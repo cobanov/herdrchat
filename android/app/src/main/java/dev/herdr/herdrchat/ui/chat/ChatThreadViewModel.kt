@@ -306,7 +306,7 @@ class ChatThreadViewModel(
             if (blockedPrompt != null) blockedPrompt = null
             return
         }
-        val raw = runCatching { client.paneTail(pane.paneId, 30) }.getOrNull() ?: return
+        val raw = runCatching { client.paneVisible(pane.paneId, 40) }.getOrNull() ?: return
         val parsed = BlockedPromptParser.parse(raw)
         blockedPrompt = if (parsed.isEmpty) null else parsed
     }

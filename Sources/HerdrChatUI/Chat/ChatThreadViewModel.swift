@@ -327,7 +327,7 @@ public final class ChatThreadViewModel {
             if blockedPrompt != nil { blockedPrompt = nil }
             return
         }
-        guard let raw = try? await client.paneTail(pane: pane.paneId, lines: 30) else { return }
+        guard let raw = try? await client.paneVisible(pane: pane.paneId, lines: 40) else { return }
         let parsed = BlockedPromptParser.parse(raw)
         blockedPrompt = parsed.isEmpty ? nil : parsed
     }

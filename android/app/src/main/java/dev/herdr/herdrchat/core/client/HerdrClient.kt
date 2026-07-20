@@ -100,10 +100,12 @@ class HerdrClient(
             transport.run(listOf(herdr, "agent", "wait", paneId, "--status", status.raw, "--timeout", timeoutMs.toString()))
         }.isSuccess
 
-    /** Recent unwrapped terminal tail of a pane — the live "what is the agent
-     *  doing right now" view while it streams (transcripts are turn-granular). */
-    suspend fun paneTail(paneId: String, lines: Int): String =
-        transport.run(listOf(herdr, "pane", "read", paneId, "--source", "recent-unwrapped", "--lines", lines.toString()))
+    /** The pane's currently VISIBLE screen — needed to read Claude's on-screen
+     *  choice menus (permission prompts, AskUserQuestion). Claude runs on the
+     *  terminal's alternate screen, so scrollback sources come back empty; only
+     *  `visible` captures the live menu. */
+    suspend fun paneVisible(paneId: String, lines: Int): String =
+        transport.run(listOf(herdr, "pane", "read", paneId, "--source", "visible", "--lines", lines.toString()))
 
     // Surface a transported error if the CLI printed an envelope; commands like
     // `pane run` / `send-keys` print NOTHING on success, so empty output is OK.

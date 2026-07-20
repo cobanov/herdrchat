@@ -179,11 +179,13 @@ struct ChatThreadView: View {
             // first load, then keep pinned only while already at the bottom (never
             // yank a reader who scrolled up).
             .onChange(of: model.messages.count) { _, _ in
-                if !didInitialScroll {
+                // Always jump to your own just-sent message; for incoming messages,
+                // only stay pinned if you're already at the bottom (don't yank a
+                // reader who scrolled up); and force it once on first load.
+                let sentByMe = visibleMessages.last?.role == .user
+                if !didInitialScroll || sentByMe || atBottom {
                     proxy.scrollTo(bottomAnchor, anchor: .bottom)
                     if !rows.isEmpty { didInitialScroll = true }
-                } else if atBottom {
-                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
                 }
             }
             .onAppear {

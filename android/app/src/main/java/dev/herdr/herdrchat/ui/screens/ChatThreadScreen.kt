@@ -213,7 +213,10 @@ fun ChatThreadScreen(
             InputBar(
                 draft = model.draft,
                 onDraftChange = { model.draft = it },
-                onSend = { model.send() },
+                onSend = {
+                    model.send()
+                    scope.launch { listState.animateScrollToItem(0) }
+                },
                 sending = model.isSending,
                 dark = dark,
             )

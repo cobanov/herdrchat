@@ -111,12 +111,14 @@ public struct HerdrClient: Sendable {
         }
     }
 
-    /// Recent unwrapped terminal tail of a pane — the live "what is the agent
-    /// doing right now" view while it streams (transcripts are turn-granular).
-    public func paneTail(pane paneId: String, lines: Int) async throws -> String {
+    /// The pane's currently VISIBLE screen — needed to read Claude's on-screen
+    /// choice menus (permission prompts, AskUserQuestion). Claude runs on the
+    /// terminal's alternate screen, so `recent`/`recent-unwrapped` (scrollback)
+    /// come back empty; only `visible` captures the live menu.
+    public func paneVisible(pane paneId: String, lines: Int) async throws -> String {
         let data = try await transport.run([
             herdr, "pane", "read", paneId,
-            "--source", "recent-unwrapped",
+            "--source", "visible",
             "--lines", String(lines),
         ])
         return String(decoding: data, as: UTF8.self)

@@ -103,6 +103,8 @@ struct ChatListView: View {
             showingNewWorkspace = true
         } label: {
             Image(systemName: "square.and.pencil")
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 26, height: 26)
         }
         .accessibilityLabel("New chat")
     }
