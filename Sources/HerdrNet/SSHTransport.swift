@@ -2,6 +2,7 @@ import Foundation
 import Crypto
 import Citadel
 import HerdrKit
+import Network
 import NIOCore
 import NIOSSH
 
@@ -17,9 +18,35 @@ import NIOSSH
 public actor SSHTransport: HerdrTransport {
     private let config: SSHConfig
     private var client: SSHClient?
+    private let pathMonitor = NWPathMonitor()
+    private var pathMonitorStarted = false
+    private var pathSignature: String?
 
     public init(config: SSHConfig) {
         self.config = config
+    }
+
+    /// Watch the network path: when the interface set changes (wifi↔cellular,
+    /// Tailscale up/down), drop the cached SSH client so the next command dials
+    /// fresh on the new route instead of stalling on a now-dead socket. Lesson
+    /// from the cmux review.
+    private func startPathMonitorIfNeeded() {
+        guard !pathMonitorStarted else { return }
+        pathMonitorStarted = true
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let sig = "\(path.status)|" + path.availableInterfaces
+                .map { "\($0.type)" }.sorted().joined(separator: ",")
+            Task { await self?.pathChanged(to: sig) }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "dev.herdr.ssh.path"))
+    }
+
+    private func pathChanged(to sig: String) async {
+        let previous = pathSignature
+        pathSignature = sig
+        if let previous, previous != sig {
+            await resetClient()   // route moved; force a clean reconnect next command
+        }
     }
 
     public func disconnect() async {
@@ -33,6 +60,7 @@ public actor SSHTransport: HerdrTransport {
     }
 
     private func connected() async throws -> SSHClient {
+        startPathMonitorIfNeeded()
         // Liveness: a dead cached client (dropped TCP) must not be reused.
         if let client {
             if client.isConnected { return client }

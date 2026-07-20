@@ -14,6 +14,7 @@ struct ChatListView: View {
     @State private var showingConnections = false
     @State private var showingNewWorkspace = false
     @State private var path = NavigationPath()
+    @Environment(\.scenePhase) private var scenePhase
 
     init(store: ConnectionStore, connection: ServerConnection) {
         self.store = store
@@ -82,6 +83,11 @@ struct ChatListView: View {
         }
         .task { model.start() }
         .onDisappear { model.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            // Coming back to the app: re-sync now instead of waiting for the next
+            // poll (and the transport reconnects on demand if the link died).
+            if phase == .active { Task { await model.refresh() } }
+        }
         #if DEBUG
         .task { await autoOpenIfRequested() }
         #endif
