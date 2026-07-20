@@ -123,21 +123,10 @@ fun ChatThreadScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    model.sessionMeta?.contextLabel?.let { ctx ->
-                        Text(
-                            ctx,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.padding(end = 12.dp),
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = HerdrColors.headerGreen,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White,
                 ),
             )
         },

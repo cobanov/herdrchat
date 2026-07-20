@@ -55,15 +55,6 @@ struct ChatThreadView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .principal) { header }
-            #if os(iOS)
-            if let ctx = model.sessionMeta?.contextLabel {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text(ctx)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            #endif
         }
         .task { model.startIfNeeded() }
         .onAppear {
