@@ -17,6 +17,8 @@ struct ConnectionEditView: View {
     @State private var secret: String
     @State private var herdrPath: String
     @State private var testState: TestState = .idle
+    @State private var testHerdrMissing = false
+    @State private var installing = false
 
     enum TestState: Equatable {
         case idle, testing, ok, fail(String)
@@ -135,6 +137,20 @@ struct ConnectionEditView: View {
             } icon: {
                 Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
             }
+            if testHerdrMissing {
+                Button(action: installHerdr) {
+                    HStack(spacing: 6) {
+                        if installing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        Text(installing ? "Installing herdr…" : "Install herdr on the host")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(installing)
+            }
         case .idle, .testing:
             EmptyView()
         }
@@ -144,9 +160,8 @@ struct ConnectionEditView: View {
         !name.isEmpty && !host.isEmpty && !username.isEmpty && Int(port) != nil
     }
 
-    private func test() {
-        testState = .testing
-        let client = store.makeTestClient(
+    private func makeClient() -> HerdrClient {
+        store.makeTestClient(
             host: host,
             port: Int(port) ?? 22,
             username: username,
@@ -155,12 +170,36 @@ struct ConnectionEditView: View {
             herdrPath: herdrPath,
             fallbackId: existing?.id
         )
+    }
+
+    private func test() {
+        testState = .testing
+        testHerdrMissing = false
+        let client = makeClient()
         Task {
             do {
                 try await client.ping()
                 testState = .ok
             } catch {
-                testState = .fail((error as? HerdrError)?.description ?? error.localizedDescription)
+                let herdrError = error as? HerdrError
+                testHerdrMissing = herdrError?.code == "herdr_not_found"
+                testState = .fail(herdrError?.message ?? error.localizedDescription)
+            }
+        }
+    }
+
+    /// Install herdr on the host, then re-test so the connection can be saved.
+    private func installHerdr() {
+        installing = true
+        let client = makeClient()
+        Task {
+            do {
+                try await client.installHerdr()
+                installing = false
+                test()
+            } catch {
+                installing = false
+                testState = .fail((error as? HerdrError)?.message ?? error.localizedDescription)
             }
         }
     }

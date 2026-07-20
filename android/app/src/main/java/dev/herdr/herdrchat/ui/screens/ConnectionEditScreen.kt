@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -78,6 +79,8 @@ fun ConnectionEditScreen(
     var secret by remember { mutableStateOf("") }
     var herdrPath by remember { mutableStateOf(existing?.herdrPath ?: "herdr") }
     var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
+    var testHerdrMissing by remember { mutableStateOf(false) }
+    var installing by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val valid = name.isNotBlank() && host.isNotBlank() && username.isNotBlank() && port.toIntOrNull() != null
@@ -85,23 +88,44 @@ fun ConnectionEditScreen(
     // Any change to connection-relevant fields invalidates a prior test.
     LaunchedEffect(host, port, username, authKind, secret, herdrPath) { testState = TestState.Idle }
 
+    fun makeClient() = store.makeTestClient(
+        host = host.trim(),
+        port = port.toIntOrNull() ?: 22,
+        username = username.trim(),
+        authKind = authKind,
+        secret = secret,
+        herdrPath = herdrPath,
+        fallbackId = existing?.id,
+    )
+
     fun test() {
         testState = TestState.Testing
-        val client = store.makeTestClient(
-            host = host.trim(),
-            port = port.toIntOrNull() ?: 22,
-            username = username.trim(),
-            authKind = authKind,
-            secret = secret,
-            herdrPath = herdrPath,
-            fallbackId = existing?.id,
-        )
+        testHerdrMissing = false
+        val client = makeClient()
         scope.launch {
             testState = try {
                 client.ping()
                 TestState.Ok
             } catch (e: Exception) {
-                TestState.Fail((e as? HerdrException)?.message ?: e.message ?: e.toString())
+                val herdrError = e as? HerdrException
+                testHerdrMissing = herdrError?.code == "herdr_not_found"
+                TestState.Fail(herdrError?.message ?: e.message ?: e.toString())
+            }
+        }
+    }
+
+    // Install herdr on the host, then re-test so the connection can be saved.
+    fun installHerdr() {
+        installing = true
+        val client = makeClient()
+        scope.launch {
+            try {
+                client.installHerdr()
+                installing = false
+                test()
+            } catch (e: Exception) {
+                installing = false
+                testState = TestState.Fail((e as? HerdrException)?.message ?: e.message ?: e.toString())
             }
         }
     }
@@ -222,7 +246,12 @@ fun ConnectionEditScreen(
                     Text("  Test connection")
                 }
             }
-            TestResult(testState)
+            TestResult(
+                state = testState,
+                canInstallHerdr = testHerdrMissing,
+                installing = installing,
+                onInstall = { installHerdr() },
+            )
             Text(
                 "Verify the connection works before saving.",
                 style = MaterialTheme.typography.bodySmall,
@@ -233,17 +262,34 @@ fun ConnectionEditScreen(
 }
 
 @Composable
-private fun TestResult(state: TestState) {
+private fun TestResult(
+    state: TestState,
+    canInstallHerdr: Boolean = false,
+    installing: Boolean = false,
+    onInstall: () -> Unit = {},
+) {
     when (state) {
         is TestState.Ok -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = HerdrColors.accent)
             Text("Connection successful", color = HerdrColors.accent, style = MaterialTheme.typography.bodyMedium)
         }
-        is TestState.Fail -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(Icons.Filled.Error, contentDescription = null, tint = Color(0xFFF15C6D))
-            Column {
-                Text("Connection failed", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFFF15C6D))
-                Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        is TestState.Fail -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Filled.Error, contentDescription = null, tint = Color(0xFFF15C6D))
+                Column {
+                    Text("Connection failed", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFFF15C6D))
+                    Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (canInstallHerdr) {
+                Button(onClick = onInstall, enabled = !installing) {
+                    if (installing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        Text("  Installing herdr…")
+                    } else {
+                        Text("Install herdr on the host")
+                    }
+                }
             }
         }
         else -> {}
