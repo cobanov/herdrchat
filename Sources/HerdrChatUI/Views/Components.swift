@@ -294,15 +294,7 @@ struct WaitingBar: View {
 struct BlockedReplyBar: View {
     /// Parsed choice menu from the blocked pane, if any.
     var prompt: BlockedPrompt?
-    /// Extra keys the overlay's footer advertised, e.g. "s to use this session
-    /// only". Empty for a plain permission prompt.
-    var actions: [OverlayAction] = []
-    /// Icon + tint differ for a command menu (you opened it) versus a blocked
-    /// agent (it needs you).
-    var isCommandMenu: Bool = false
     let onKeys: ([String]) -> Void
-
-    private var accent: Color { isCommandMenu ? Theme.tint : Theme.attention }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -311,9 +303,6 @@ struct BlockedReplyBar: View {
             } else {
                 genericChips
             }
-            if !actions.isEmpty {
-                footerActions
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -321,42 +310,12 @@ struct BlockedReplyBar: View {
         .blockedBarGlass()
     }
 
-    /// The keys the overlay itself said it accepts, one chip each. Read off the
-    /// screen rather than assumed, so we never offer a key that does nothing.
-    private var footerActions: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(actions) { action in
-                    Button {
-                        onKeys(action.keys)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(action.key)
-                                .font(.caption2.weight(.bold).monospaced())
-                            Text(action.detail)
-                                .font(.caption)
-                                .lineLimit(1)
-                        }
-                    }
-                    .chipStyle()
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.small)
-                    .tint(accent)
-                }
-            }
-        }
-    }
-
     @ViewBuilder
     private func labelledOptions(_ prompt: BlockedPrompt) -> some View {
-        Label(
-            prompt.question ?? (isCommandMenu ? "Choose an option" : "Agent is waiting"),
-            systemImage: isCommandMenu ? "slider.horizontal.3" : "exclamationmark.bubble.fill"
-        )
-        .font(.footnote.weight(.medium))
-        .foregroundStyle(accent)
-        .lineLimit(isCommandMenu ? 3 : nil)
-        .fixedSize(horizontal: false, vertical: true)
+        Label(prompt.question ?? "Agent is waiting", systemImage: "exclamationmark.bubble.fill")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.attention)
+            .fixedSize(horizontal: false, vertical: true)
         ForEach(prompt.options) { option in
             Button {
                 onKeys(option.keys)
@@ -364,7 +323,7 @@ struct BlockedReplyBar: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("\(option.number)")
                         .font(.footnote.weight(.bold).monospacedDigit())
-                        .foregroundStyle(accent)
+                        .foregroundStyle(Theme.attention)
                         .frame(minWidth: 16, alignment: .trailing)
                     Text(option.label)
                         .font(.subheadline)
@@ -378,7 +337,7 @@ struct BlockedReplyBar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(accent.opacity(0.12))
+                        .fill(Theme.attention.opacity(0.12))
                 )
             }
             .buttonStyle(PressableStyle())
@@ -389,7 +348,7 @@ struct BlockedReplyBar: View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Agent is waiting", systemImage: "exclamationmark.bubble.fill")
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(accent)
+                .foregroundStyle(Theme.attention)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     chip("Confirm", icon: "return", keys: ["Enter"])
@@ -415,11 +374,11 @@ struct BlockedReplyBar: View {
         .chipStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.small)
-        .tint(accent)
+        .tint(Theme.attention)
     }
 }
 
-extension View {
+private extension View {
     /// The blocked-reply bar's surface. It is a control surface (a menu of real
     /// actions), so on iOS 26 it is Liquid Glass in a rounded rect, matching the
     /// composer it sits above — the two share a `GlassEffectContainer` in

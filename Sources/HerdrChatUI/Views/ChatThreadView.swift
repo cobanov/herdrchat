@@ -48,8 +48,6 @@ struct ChatThreadView: View {
         }
         .background(Theme.background)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: model.isBlocked)
-        .animation(.spring(response: 0.32, dampingFraction: 0.9), value: model.paneOverlay != nil)
-        .animation(.easeOut(duration: 0.18), value: matchedCommands.isEmpty)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -185,14 +183,6 @@ struct ChatThreadView: View {
                                     .transition(.opacity)
                             }
                         }
-                        // A slash command leaves NO transcript turn (measured), so
-                        // this receipt is the only trace in the conversation that
-                        // it ran and what it did.
-                        if let receipt = model.commandReceipt {
-                            commandReceiptRow(receipt)
-                                .padding(.top, 12)
-                                .transition(.opacity)
-                        }
                         // Bottom sentinel: always the `scrollTo` target. On systems
                         // without scroll geometry it also stands in for "at the
                         // bottom" via its lazy appearance — a coarse signal (a 1pt
@@ -250,29 +240,6 @@ struct ChatThreadView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: atBottom)
         }
-    }
-
-    /// A centred system-style note, the way Messages marks a non-message event.
-    /// Tappable to dismiss, because it describes something that already happened.
-    private func commandReceiptRow(_ text: String) -> some View {
-        Button {
-            model.clearCommandReceipt()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.caption2)
-                Text(text)
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(Theme.fillSubtle, in: Capsule(style: .continuous))
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(text). Tap to dismiss.")
     }
 
     /// WhatsApp-style floating "scroll to newest" affordance, shown only when the
@@ -367,11 +334,8 @@ struct ChatThreadView: View {
         if #available(iOS 26, macOS 26, *) {
             GlassEffectContainer(spacing: Self.controlSpacing) {
                 VStack(spacing: Self.controlSpacing) {
-                    palette
-                        .glassEffectID("palette", in: glassNamespace)
-                        .glassEffectTransition(.matchedGeometry)
-                    replyBar
-                        .glassEffectID("replyBar", in: glassNamespace)
+                    blockedBar
+                        .glassEffectID("blockedBar", in: glassNamespace)
                         .glassEffectTransition(.matchedGeometry)
                     composer
                         .glassEffectID("composer", in: glassNamespace)
@@ -382,8 +346,7 @@ struct ChatThreadView: View {
             }
         } else {
             VStack(spacing: Self.controlSpacing) {
-                palette
-                replyBar
+                blockedBar
                 composer
             }
             .padding(.horizontal, 10)
@@ -392,73 +355,17 @@ struct ChatThreadView: View {
         }
     }
 
-    // MARK: - Slash commands
-
-    /// The `/`-token being typed, or nil when the draft isn't a command lookup.
-    /// A space ends the lookup: past that point you're typing arguments, and the
-    /// palette would only be in the way.
-    private var commandQuery: String? {
-        let draft = model.draft
-        guard draft.hasPrefix("/") else { return nil }
-        let token = draft.dropFirst()
-        guard !token.contains(" "), !token.contains("\n") else { return nil }
-        return String(token)
-    }
-
-    private var matchedCommands: [SlashCommand] {
-        guard let query = commandQuery else { return [] }
-        return model.commands
-            .filter { $0.matches(query) }
-            .sorted {
-                let (a, b) = ($0.rank(for: query), $1.rank(for: query))
-                return a == b ? $0.name < $1.name : a < b
-            }
-    }
+    private static let controlSpacing: CGFloat = 8
 
     @ViewBuilder
-    private var palette: some View {
-        let matches = matchedCommands
-        if !matches.isEmpty {
-            SlashCommandPalette(commands: matches) { command in
-                // Insert, don't send — the same contract as the terminal palette,
-                // which leaves the command on the prompt so arguments can follow.
-                model.draft = command.invocation + " "
-            }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-
-    /// One slot, two sources: a blocked agent's permission menu, or the picker a
-    /// slash command just opened. They can't both be on screen (the view model
-    /// suppresses the overlay while blocked), so they share the row.
-    @ViewBuilder
-    private var replyBar: some View {
+    private var blockedBar: some View {
         if model.isBlocked {
             BlockedReplyBar(prompt: model.blockedPrompt) { keys in
                 Task { await model.sendKeys(keys) }
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
-        } else if let overlay = model.paneOverlay {
-            switch overlay.kind {
-            case .menu(let prompt):
-                BlockedReplyBar(
-                    prompt: prompt,
-                    actions: overlay.actions,
-                    isCommandMenu: true
-                ) { keys in
-                    Task { await model.sendOverlayKeys(keys, overlay: overlay) }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            case .raw(let screen, let title):
-                RawOverlayCard(screen: screen, title: title, actions: overlay.actions) { keys in
-                    Task { await model.sendOverlayKeys(keys, overlay: overlay) }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
     }
-
-    private static let controlSpacing: CGFloat = 8
 
     // MARK: - Composer (floating glass capsule, iMessage-style)
 

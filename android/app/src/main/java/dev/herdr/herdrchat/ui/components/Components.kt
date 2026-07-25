@@ -57,14 +57,6 @@ import dev.herdr.herdrchat.core.transcript.MessageSegment
 import dev.herdr.herdrchat.ui.theme.HerdrColors
 import dev.herdr.herdrchat.ui.theme.formatTime
 import dev.herdr.herdrchat.ui.theme.pressScale
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.text.font.FontFamily
-import dev.herdr.herdrchat.core.commands.OverlayAction
-import dev.herdr.herdrchat.core.commands.PaneOverlayDetector
-import dev.herdr.herdrchat.core.commands.SlashCommand
 
 /** Coloured presence dot; pulses a soft ring while the agent is working/blocked. */
 @Composable
@@ -295,39 +287,28 @@ fun LivePreviewBubble(text: String) {
  *  full-width button per option labelled with its real text; otherwise it falls
  *  back to generic chips. */
 @Composable
-fun BlockedReplyBar(
-    prompt: BlockedPrompt?,
-    /** Extra keys the overlay's footer advertised, e.g. "s to use this session only".
-     *  Empty for a plain permission prompt. */
-    actions: List<OverlayAction> = emptyList(),
-    /** Tint and wording differ for a command menu (you opened it) versus a blocked
-     *  agent (it needs you). */
-    isCommandMenu: Boolean = false,
-    // Last, so callers can use trailing-lambda syntax.
-    onKeys: (List<String>) -> Unit,
-) {
+fun BlockedReplyBar(prompt: BlockedPrompt?, onKeys: (List<String>) -> Unit) {
     val dark = isSystemInDarkTheme()
-    val accent = if (isCommandMenu) HerdrColors.accent else HerdrColors.statusColor(AgentStatus.BLOCKED)
+    val blocked = HerdrColors.statusColor(AgentStatus.BLOCKED)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(accent.copy(alpha = if (dark) 0.14f else 0.10f))
+            .background(blocked.copy(alpha = if (dark) 0.14f else 0.10f))
             .padding(vertical = 10.dp, horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (!isCommandMenu) TypingDots(color = accent, dotSize = 4.dp)
+            TypingDots(color = blocked, dotSize = 4.dp)
             Text(
-                text = prompt?.question ?: if (isCommandMenu) "Choose an option" else "Agent is waiting",
+                text = prompt?.question ?: "Agent is waiting",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = accent,
-                maxLines = if (isCommandMenu) 3 else Int.MAX_VALUE,
+                color = blocked,
             )
         }
         if (prompt != null && !prompt.isEmpty) {
             prompt.options.forEach { option ->
-                OptionButton(option.number, option.label, accent, dark) { onKeys(option.keys) }
+                OptionButton(option.number, option.label, blocked, dark) { onKeys(option.keys) }
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -335,155 +316,6 @@ fun BlockedReplyBar(
                 ReplyButton("1", listOf("1", "Enter"), onKeys)
                 ReplyButton("2", listOf("2", "Enter"), onKeys)
                 ReplyButton("Esc", listOf("Escape"), onKeys)
-            }
-        }
-        // The keys the overlay itself said it accepts, one chip each. Read off the
-        // screen rather than assumed, so we never offer a key that does nothing.
-        if (actions.isNotEmpty()) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                actions.forEach { action ->
-                    ReplyButton("${action.key} · ${action.detail}", action.keys, onKeys)
-                }
-            }
-        }
-    }
-}
-
-/**
- * The escape hatch for overlays with no rows to tap — `/resume` is a search box over
- * a list, driven by typing and arrow keys.
- *
- * Rather than pretend those can be turned into buttons, this shows the agent's screen
- * verbatim and gives you the keys to drive it. It is what keeps every command in the
- * palette completable instead of some of them being dead ends.
- */
-@Composable
-fun RawOverlayCard(
-    screen: String,
-    title: String?,
-    actions: List<OverlayAction>,
-    // Last, so callers can use trailing-lambda syntax.
-    onKeys: (List<String>) -> Unit,
-) {
-    val dark = isSystemInDarkTheme()
-    val accent = HerdrColors.accent
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(accent.copy(alpha = if (dark) 0.14f else 0.10f))
-            .padding(vertical = 10.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = title ?: "Terminal",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = accent,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "type to search",
-                style = MaterialTheme.typography.labelSmall,
-                color = HerdrColors.secondaryText(dark),
-            )
-        }
-        // The pane's own output. Monospaced and horizontally scrollable, because this
-        // is terminal text whose alignment carries meaning — reflowing it would make a
-        // list unreadable.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 190.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(HerdrColors.incomingBubble(dark))
-                .verticalScroll(rememberScrollState())
-                .padding(8.dp),
-        ) {
-            Text(
-                text = screen,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = HerdrColors.primaryText(dark),
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-            )
-        }
-        // Arrows, confirm and cancel. Always offered: `/resume` documents its Ctrl
-        // chords but never mentions the arrow keys it is actually navigated with, so
-        // reading the footer alone would leave the list unusable.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PaneOverlayDetector.navigationActions.forEach { action ->
-                ReplyButton(action.key, action.keys, onKeys)
-            }
-        }
-        if (actions.isNotEmpty()) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                actions.forEach { action ->
-                    ReplyButton("${action.key} · ${action.detail}", action.keys, onKeys)
-                }
-            }
-        }
-    }
-}
-
-/**
- * The command palette shown when a draft starts with `/`, mirroring what Claude Code
- * shows in the terminal.
- *
- * Tapping a row INSERTS the command and leaves it in the composer rather than sending
- * it — exactly what selecting from the terminal palette does. That keeps one
- * predictable rule instead of a per-command guess about whether it takes arguments,
- * and `/model sonnet` stays possible by typing on.
- */
-@Composable
-fun SlashCommandPalette(commands: List<SlashCommand>, onPick: (SlashCommand) -> Unit) {
-    val dark = isSystemInDarkTheme()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 232.dp)
-            .background(HerdrColors.incomingBubble(dark))
-            .verticalScroll(rememberScrollState()),
-    ) {
-        commands.forEach { command ->
-            val interaction = remember(command.id) { MutableInteractionSource() }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(interaction, indication = null) { onPick(command) }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = command.invocation,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = HerdrColors.accent,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = command.source.badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HerdrColors.secondaryText(dark),
-                    )
-                }
-                command.summary?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = HerdrColors.secondaryText(dark),
-                        maxLines = 2,
-                    )
-                }
             }
         }
     }

@@ -33,16 +33,6 @@ public final class ChatThreadViewModel {
     /// the pane's visible screen while it works); nil when idle or unparseable,
     /// so the UI falls back to a plain waiting bar.
     public private(set) var livePreview: String?
-    /// An interactive menu drawn over the pane that herdr does NOT report as
-    /// `blocked` — measured: opening `/model` leaves the agent `idle`, so the
-    /// status-driven path can't see these at all.
-    public private(set) var paneOverlay: PaneOverlay?
-    /// Slash commands available on the host for this workspace's directory.
-    public private(set) var commands: [SlashCommand] = SlashCommand.builtIns
-    /// What the last command did, shown as a receipt in the transcript. Slash
-    /// commands leave NO transcript turn (measured), so without this the chat
-    /// shows no trace that anything happened.
-    public private(set) var commandReceipt: String?
 
     /// Folder name of the agent's working directory, for the header.
     public var workingDirName: String? {
@@ -51,7 +41,6 @@ public final class ChatThreadViewModel {
 
     private let client: HerdrClient
     private let store: TranscriptStore
-    private let commandStore: SlashCommandStore
     private let connectionID: String
     private let workspaceId: String
 
@@ -79,9 +68,6 @@ public final class ChatThreadViewModel {
     private var statusTask: Task<Void, Never>?
     private var started = false
     private var hostHome: String?
-    /// The slash command whose menu is (or was just) on screen, so a receipt can
-    /// name what it belonged to.
-    private var lastCommand: String?
 
     /// Bytes of a fresh transcript to pull up front. A chat surface is about
     /// recency, so this is deliberately small: the old 3 MB window meant every
@@ -109,7 +95,6 @@ public final class ChatThreadViewModel {
     public init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
         self.client = client
         self.store = TranscriptStore(transport: client.transport)
-        self.commandStore = SlashCommandStore(transport: client.transport)
         self.connectionID = connectionID
         self.title = summary.title
         self.workspaceId = summary.workspaceId
@@ -188,7 +173,6 @@ public final class ChatThreadViewModel {
         started = true
         startStatusPolling()
         Task { await startTails() }
-        Task { await loadCommands() }
     }
 
     public func stop() {
@@ -387,16 +371,12 @@ public final class ChatThreadViewModel {
                     self.liveAgents = snapshot.agents.filter { $0.workspaceId == self.workspaceId }
                     if self.error?.contains("host_key") != true { self.error = nil }
                     await self.reconcileTails()
-                    await self.refreshPaneScreen()
+                    await self.refreshBlockedPrompt()
+                    await self.refreshLivePreview()
                     self.metaTick += 1
                     if self.metaTick % 5 == 1 {
                         await self.refreshSessionMeta()
                         await self.refreshWorkspaceLabels()
-                        // Retry discovery until it lands: at the first poll the
-                        // workspace may not have reported a pane cwd yet.
-                        if self.commands.count == SlashCommand.builtIns.count {
-                            await self.loadCommands()
-                        }
                     }
                     // Notify about OTHER workspaces while you're inside this thread
                     // (the list poll is paused); never notify for the one you're on.
@@ -411,48 +391,18 @@ public final class ChatThreadViewModel {
         }
     }
 
-    /// ONE read of the pane's visible screen per poll, feeding every consumer that
-    /// needs it: the blocked-prompt menu, the live answer preview, and the command
-    /// overlay. They used to read independently, so a pane that was both blocked
-    /// and working paid two round trips — while an `idle` pane, which is exactly
-    /// the state a slash-command menu sits in, was never read at all.
-    private func refreshPaneScreen() async {
-        // Prefer the blocked pane (that's where a permission menu is) and fall
-        // back to the pane a reply would go to.
-        guard let pane = blockedPane ?? primaryPane else {
-            clearScreenState()
+    /// While the agent works, scrape its visible screen into a best-effort live
+    /// preview of the answer it's writing; cleared when it stops (the settled
+    /// transcript turn then shows the real bubble). Best-effort — nil falls back
+    /// to the waiting bar.
+    private func refreshLivePreview() async {
+        guard status == .working, let pane = primaryPane else {
+            if livePreview != nil { livePreview = nil }
             return
         }
-        guard let raw = try? await client.paneVisible(pane: pane.paneId, lines: Self.screenLines) else { return }
-        ingest(screen: raw)
+        guard let raw = try? await client.paneVisible(pane: pane.paneId, lines: 30) else { return }
+        livePreview = LivePreviewExtractor.extract(raw)
     }
-
-    private func ingest(screen raw: String) {
-        // Blocked menu: status-driven, as before.
-        if isBlocked {
-            let parsed = BlockedPromptParser.parse(raw)
-            blockedPrompt = parsed.isEmpty ? nil : parsed
-        } else if blockedPrompt != nil {
-            blockedPrompt = nil
-        }
-        // Live preview only while the agent is actually working.
-        let preview = status == .working ? LivePreviewExtractor.extract(raw) : nil
-        if preview != livePreview { livePreview = preview }
-        // Command overlay. Suppressed while blocked, because the blocked path
-        // already renders that menu and two bars would fight for the same space.
-        let overlay = isBlocked ? nil : PaneOverlayDetector.detect(raw)
-        if overlay != paneOverlay { paneOverlay = overlay }
-    }
-
-    private func clearScreenState() {
-        if blockedPrompt != nil { blockedPrompt = nil }
-        if livePreview != nil { livePreview = nil }
-        if paneOverlay != nil { paneOverlay = nil }
-    }
-
-    /// Enough rows to hold a menu plus its footer without dragging the whole
-    /// scrollback across the wire.
-    private static let screenLines = 45
 
     /// Cache workspace labels so cross-workspace notifications from the in-thread
     /// poll read with the workspace name, not its id.
@@ -472,14 +422,17 @@ public final class ChatThreadViewModel {
         }
     }
 
-    /// Load the slash commands defined on the host for this workspace's directory.
-    /// Falls back to the built-in list, which is already the starting value, so a
-    /// failed discovery degrades to "fewer suggestions" rather than an empty
-    /// palette.
-    private func loadCommands() async {
-        guard let cwd = primaryPane?.cwd else { return }
-        guard let discovered = try? await commandStore.discover(cwd: cwd), !discovered.isEmpty else { return }
-        commands = discovered
+    /// While an agent is blocked, read its pane and parse the choice menu so the
+    /// quick-reply bar can label each option. Cleared as soon as it's unblocked
+    /// or when no menu can be parsed (the bar then shows its generic chips).
+    private func refreshBlockedPrompt() async {
+        guard let pane = blockedPane else {
+            if blockedPrompt != nil { blockedPrompt = nil }
+            return
+        }
+        guard let raw = try? await client.paneVisible(pane: pane.paneId, lines: 40) else { return }
+        let parsed = BlockedPromptParser.parse(raw)
+        blockedPrompt = parsed.isEmpty ? nil : parsed
     }
 
     /// Keep the tail set in sync with the workspace, per agent: retire tails that
@@ -556,24 +509,6 @@ public final class ChatThreadViewModel {
     public func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let pane = primaryPane else { return }
-        // While a driven overlay is up, the composer belongs to IT: `/resume`
-        // filters as you type, so text goes in without a submit. Sending a normal
-        // message here would instead pick whatever row happened to be selected.
-        if let overlay = paneOverlay, overlay.isRaw {
-            draft = ""
-            await sendOverlayText(text)
-            return
-        }
-        // A slash command is not a message. It gets no optimistic bubble (nothing
-        // will ever land in the transcript to reconcile it against) and — the part
-        // that matters — no delivery verification: `deliver` requires the agent to
-        // flip to `working`, but a command like `/model` leaves it `idle`, so the
-        // check would report a false "couldn't confirm delivery" every time.
-        if text.hasPrefix("/") {
-            draft = ""
-            await run(command: text, pane: pane)
-            return
-        }
         draft = ""
         // Optimistic echo (timestamped so it merges chronologically).
         let echo = ChatMessage(
@@ -631,85 +566,6 @@ public final class ChatThreadViewModel {
             setError(error)
         }
     }
-
-    /// Run a slash command in the agent pane and watch for the menu it may open.
-    private func run(command text: String, pane: AgentInfo) async {
-        commandReceipt = nil
-        lastCommand = text
-        do {
-            try await client.sendMessage(toPane: pane.paneId, text: text)
-        } catch {
-            setError(error)
-            return
-        }
-        // A picker appears within a beat. Poll faster than the 2 s status tick so
-        // it doesn't feel like the tap did nothing, and stop as soon as it shows.
-        for _ in 0..<Self.commandPollAttempts {
-            try? await Task.sleep(for: .milliseconds(350))
-            await refreshPaneScreen()
-            if paneOverlay != nil { return }
-        }
-        // No menu: the command did its work inline (`/clear`, `/compact`). Say so,
-        // because nothing will appear in the transcript to show it ran.
-        commandReceipt = "\(text) · sent"
-    }
-
-    /// Answer a command overlay. The receipt names what was actually picked: we
-    /// know which row the user tapped, so it can state the outcome instead of
-    /// guessing at it from a screen we'd have to re-read.
-    public func sendOverlayKeys(_ keys: [String], overlay: PaneOverlay) async {
-        let command = lastCommand
-        let choice = label(forKeys: keys, in: overlay)
-        await sendKeys(keys)
-        // A raw overlay is DRIVEN, not answered: arrows and search keys leave it
-        // open, so re-read rather than dismissing it and writing a receipt for
-        // something that hasn't happened yet.
-        if overlay.isRaw {
-            try? await Task.sleep(for: .milliseconds(250))
-            await refreshPaneScreen()
-            return
-        }
-        commandReceipt = receipt(command: command, choice: choice)
-        // Clear optimistically; the next screen poll re-detects it if the menu is
-        // somehow still up, so a mis-delivered key can't leave a dead bar behind.
-        paneOverlay = nil
-    }
-
-    /// Type into an overlay's own text field — `/resume`'s "Type to search" — WITHOUT
-    /// pressing Enter, which would submit the search instead of filtering it.
-    public func sendOverlayText(_ text: String) async {
-        guard let pane = blockedPane ?? primaryPane, !text.isEmpty else { return }
-        do {
-            try await client.sendText(toPane: pane.paneId, text: text)
-            try? await Task.sleep(for: .milliseconds(250))
-            await refreshPaneScreen()
-        } catch {
-            setError(error)
-        }
-    }
-
-    private func label(forKeys keys: [String], in overlay: PaneOverlay) -> String? {
-        if let option = overlay.prompt?.options.first(where: { $0.keys == keys }) {
-            return option.label
-        }
-        return overlay.actions.first { $0.keys == keys }?.detail
-    }
-
-    public func clearCommandReceipt() { commandReceipt = nil }
-
-    private func receipt(command: String?, choice: String?) -> String {
-        guard let choice else { return command.map { "\($0) · answered" } ?? "answered" }
-        // Menu labels carry the option's whole description; the first clause names
-        // the thing chosen, which is what a receipt should read as.
-        let short = choice
-            .split(separator: "·").first.map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? choice
-        guard let command else { return short }
-        return "\(command) · \(short)"
-    }
-
-    /// ~3.5 s of watching for a picker before concluding the command ran inline.
-    private static let commandPollAttempts = 10
 }
 
 private extension String {

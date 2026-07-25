@@ -81,15 +81,6 @@ class HerdrClient(
     }
 
     /** Send raw keys to a pane, e.g. quick-reply to a blocked prompt. */
-    /**
-     * Type text into a pane WITHOUT submitting it. Needed for overlays that filter as
-     * you type (`/resume`'s search box), where a trailing Enter would pick the current
-     * row instead of narrowing the list.
-     */
-    suspend fun sendText(paneId: String, text: String) {
-        ensureOk(transport.run(listOf(herdr, "pane", "send-text", paneId, text)))
-    }
-
     suspend fun sendKeys(paneId: String, keys: List<String>) {
         ensureOk(transport.run(listOf(herdr, "pane", "send-keys", paneId) + keys))
     }
