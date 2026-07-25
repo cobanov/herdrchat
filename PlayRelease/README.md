@@ -27,21 +27,38 @@ keytool -genkeypair -v \
   -dname "CN=HerdrChat, O=HerdrChat, C=TR"
 ```
 
-Then point the build at it, either via `android/keystore.properties` (gitignored)
-or the same names as environment variables:
+**This is already done on this machine.** The keystore is at
+`~/.herdrchat/upload-keystore.jks` (mode 600) and its password is in the macOS
+Keychain, not in any file:
 
-```properties
-HERDRCHAT_STORE_FILE=/Users/<you>/.herdrchat/upload-keystore.jks
-HERDRCHAT_STORE_PASSWORD=…
-HERDRCHAT_KEY_ALIAS=upload
-HERDRCHAT_KEY_PASSWORD=…
+```sh
+security find-generic-password -a herdrchat -s herdrchat-upload-key -w
 ```
 
-Without these, release builds stay unsigned — deliberately, so cloning the repo
-never fails on a missing key. **Back up the .jks and its password off this
-machine.** Enrol in Play App Signing when prompted (Google holds the release key,
-you hold this upload key); it is the default for new apps and it means a lost
-upload key is recoverable.
+`scripts/play.sh` reads it from there and passes it to Gradle through the
+environment. For CI or a non-mac machine, set the same names as environment
+variables or put them in `android/keystore.properties` (gitignored):
+
+```properties
+HERDRCHAT_STORE_FILE=/path/to/upload-keystore.jks
+HERDRCHAT_STORE_PASSWORD=…
+HERDRCHAT_KEY_ALIAS=upload
+```
+
+Without any of these, release builds stay unsigned — deliberately, so cloning the
+repo never fails on a missing key.
+
+**Back up both the .jks and the Keychain password somewhere off this machine.**
+Enrol in Play App Signing when prompted (Google holds the release key, you hold
+this upload key); it is the default for new apps and it makes a lost upload key
+recoverable.
+
+Certificate fingerprint of the current upload key, for reference when the Console
+asks:
+
+```
+SHA-256: CF:7A:E7:07:33:D7:6A:4E:17:37:92:ED:C3:55:76:17:B6:FE:1F:2A:F5:49:E8:C4:CC:59:A8:1C:4F:E1:2C:2D
+```
 
 ### 2. Create the app in the Play Console
 

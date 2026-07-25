@@ -25,7 +25,38 @@ export JAVA_HOME ANDROID_HOME
 TRACK="${PLAY_TRACK:-internal}"
 AAB="android/app/build/outputs/bundle/release/app-release.aab"
 
+# Upload-key credentials. The password lives in the macOS Keychain rather than any
+# file, so nothing secret sits on disk in or beside the repo; it is read here and
+# passed to Gradle through the environment. Anything already exported wins, which
+# is how CI (or a non-mac machine) supplies its own.
+: "${HERDRCHAT_STORE_FILE:=$HOME/.herdrchat/upload-keystore.jks}"
+: "${HERDRCHAT_KEY_ALIAS:=upload}"
+if [[ -z "${HERDRCHAT_STORE_PASSWORD:-}" ]] && command -v security >/dev/null 2>&1; then
+  HERDRCHAT_STORE_PASSWORD=$(
+    security find-generic-password -a herdrchat -s herdrchat-upload-key -w 2>/dev/null || true
+  )
+fi
+export HERDRCHAT_STORE_FILE HERDRCHAT_KEY_ALIAS HERDRCHAT_STORE_PASSWORD
+
+if [[ ! -f "$HERDRCHAT_STORE_FILE" ]]; then
+  echo "ERROR: no upload keystore at $HERDRCHAT_STORE_FILE" >&2
+  echo "       See PlayRelease/README.md → 'Upload key'." >&2
+  exit 1
+fi
+if [[ -z "${HERDRCHAT_STORE_PASSWORD:-}" ]]; then
+  echo "ERROR: the upload-key password isn't in the Keychain and isn't exported." >&2
+  echo "       Expected Keychain item: account 'herdrchat', service" >&2
+  echo "       'herdrchat-upload-key'. See PlayRelease/README.md." >&2
+  exit 1
+fi
+
 echo "==> Building the release App Bundle…"
+# Delete the previous bundle first. Gradle's up-to-date check does NOT notice that
+# the signing config changed, so an earlier UNSIGNED build gets reused verbatim and
+# the signing guard below then fails on a bundle that would sign fine — measured,
+# not hypothetical. Removing the output makes the task genuinely re-run, and also
+# guarantees we can never upload a stale bundle from an older versionCode.
+rm -f "$AAB"
 android/gradlew -p android :app:bundleRelease -q
 
 [[ -f "$AAB" ]] || { echo "ERROR: $AAB was not produced." >&2; exit 1; }
