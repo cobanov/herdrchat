@@ -73,6 +73,9 @@ import dev.herdr.herdrchat.ui.components.MessageBubble
 import dev.herdr.herdrchat.ui.components.TypingDots
 import dev.herdr.herdrchat.ui.theme.HerdrColors
 import dev.herdr.herdrchat.ui.theme.pressScale
+import dev.herdr.herdrchat.core.commands.PaneOverlayKind
+import dev.herdr.herdrchat.ui.components.RawOverlayCard
+import dev.herdr.herdrchat.ui.components.SlashCommandPalette
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -161,6 +164,16 @@ fun ChatThreadScreen(
                 // sweeping bar while we wait on the agent (working, or a send still
                 // being submitted/verified) — but not when it's blocked (the
                 // quick-reply bar covers that case).
+                // A slash command leaves NO transcript turn (measured), so this
+                // receipt is the only trace in the conversation that it ran and what
+                // it did. Item 0 territory: reversed list, so it sits at the bottom.
+                model.commandReceipt?.let { receipt ->
+                    item(key = "command-receipt") {
+                        Box(Modifier.animateItem().padding(vertical = 8.dp)) {
+                            CommandReceiptRow(receipt) { model.clearCommandReceipt() }
+                        }
+                    }
+                }
                 val isWaiting = !model.isBlocked &&
                     (model.status == AgentStatus.WORKING || model.isSending)
                 if (isWaiting) {
@@ -219,12 +232,56 @@ fun ChatThreadScreen(
                 }
             }
 
+            // The command palette, shown while the draft is a `/` lookup. A space ends
+            // the lookup: past that you're typing arguments and it would be in the way.
+            val commandQuery = model.draft
+                .takeIf { it.startsWith("/") }
+                ?.drop(1)
+                ?.takeIf { !it.contains(" ") && !it.contains("\n") }
+            val matchedCommands = remember(commandQuery, model.commands) {
+                commandQuery?.let { query ->
+                    model.commands
+                        .filter { it.matches(query) }
+                        .sortedWith(compareBy({ it.rank(query) }, { it.name }))
+                }.orEmpty()
+            }
             AnimatedVisibility(
-                visible = model.isBlocked,
+                visible = matchedCommands.isNotEmpty(),
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                BlockedReplyBar(prompt = model.blockedPrompt) { keys -> model.sendKeys(keys) }
+                SlashCommandPalette(matchedCommands) { command ->
+                    // Insert, don't send — the same contract as the terminal palette,
+                    // which leaves the command on the prompt so arguments can follow.
+                    model.draft = command.invocation + " "
+                }
+            }
+
+            // One slot, two sources: a blocked agent's permission menu, or the picker a
+            // slash command just opened. They can't both be on screen (the view model
+            // suppresses the overlay while blocked), so they share the row.
+            val overlay = model.paneOverlay
+            AnimatedVisibility(
+                visible = model.isBlocked || overlay != null,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+            ) {
+                when {
+                    model.isBlocked ->
+                        BlockedReplyBar(prompt = model.blockedPrompt) { keys -> model.sendKeys(keys) }
+                    overlay != null -> when (val kind = overlay.kind) {
+                        is PaneOverlayKind.Menu -> BlockedReplyBar(
+                            prompt = kind.prompt,
+                            actions = overlay.actions,
+                            isCommandMenu = true,
+                        ) { keys -> model.sendOverlayKeys(keys, overlay) }
+                        is PaneOverlayKind.Raw -> RawOverlayCard(
+                            screen = kind.screen,
+                            title = kind.title,
+                            actions = overlay.actions,
+                        ) { keys -> model.sendOverlayKeys(keys, overlay) }
+                    }
+                }
             }
 
             model.error?.let { ErrorRow(it) { model.clearError() } }
@@ -414,6 +471,34 @@ private fun InputBar(
                 contentDescription = "Send",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+/** A centred system-style note, the way Messages marks a non-message event. Tappable
+ *  to dismiss, because it describes something that already happened. */
+@Composable
+private fun CommandReceiptRow(text: String, onDismiss: () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(HerdrColors.incomingBubble(dark))
+                .clickable(interaction, indication = null, onClick = onDismiss)
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = HerdrColors.secondaryText(dark),
             )
         }
     }

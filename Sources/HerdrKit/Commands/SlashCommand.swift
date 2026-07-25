@@ -19,6 +19,8 @@ public struct SlashCommand: Sendable, Equatable, Hashable, Identifiable {
         case userSkill
         /// `<cwd>/.claude/skills/*/SKILL.md`
         case projectSkill
+        /// Provided by an installed plugin, namespaced `<plugin>:<name>`.
+        case plugin
 
         /// Short badge for the palette row.
         public var badge: String {
@@ -28,6 +30,7 @@ public struct SlashCommand: Sendable, Equatable, Hashable, Identifiable {
             case .projectCommand: return "project"
             case .userSkill: return "skill"
             case .projectSkill: return "project skill"
+            case .plugin: return "plugin"
             }
         }
     }
@@ -80,7 +83,9 @@ public extension SlashCommand {
         ("usage", "Show plan usage and limits"),
         ("resume", "Reopen an earlier conversation"),
         ("rewind", "Roll the conversation back to an earlier point"),
-        ("agents", "Manage subagents"),
+        // No /agents: its wizard was removed in Claude Code 2.1 and the command
+        // now only prints a note pointing at the docs. Verified on a live pane —
+        // a palette row whose only outcome is "this was removed" is noise.
         ("todos", "Show the current task list"),
         ("memory", "Edit CLAUDE.md memory files"),
         ("init", "Create a CLAUDE.md for this project"),

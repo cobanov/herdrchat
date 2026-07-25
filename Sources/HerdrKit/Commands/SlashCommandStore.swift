@@ -82,10 +82,37 @@ public struct SlashCommandStore: Sendable {
             emit "$1" "$(basename "$d")" "$d/SKILL.md"
           done
         }
+        # Plugins. The plugin's NAME comes from its manifest, never from the
+        # directory: on a live host the marketplace folder "addy-agent-skills"
+        # provides commands namespaced "agent-skills:", so a folder-derived name
+        # would list rows that do nothing when tapped. Depth isn't assumed either —
+        # the cache nests as <marketplace>/<plugin>/<version>/ while a checked-out
+        # marketplace doesn't — so definitions are found relative to each manifest.
+        # Both command layouts are covered: plugins put .md commands under
+        # commands/ or under .claude/commands/ (the latter alongside .toml copies
+        # meant for other tools).
+        plugins() {
+          [ -d "$1" ] || return 0
+          find "$1" -maxdepth 6 -name plugin.json -type f 2>/dev/null | while IFS= read -r manifest; do
+            root=$(dirname "$manifest")
+            case "$(basename "$root")" in .claude-plugin) root=$(dirname "$root");; esac
+            name=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$manifest" | head -1)
+            [ -n "$name" ] || continue
+            for f in "$root"/commands/*.md "$root"/.claude/commands/*.md; do
+              [ -f "$f" ] || continue
+              emit plugin "$name:$(basename "$f" .md)" "$f"
+            done
+            for d in "$root"/skills/*/; do
+              [ -f "$d/SKILL.md" ] || continue
+              emit plugin "$name:$(basename "$d")" "$d/SKILL.md"
+            done
+          done
+        }
         commands userCommand "$HOME/.claude/commands"
         skills userSkill "$HOME/.claude/skills"
         commands projectCommand \(quotedCwd)/.claude/commands
         skills projectSkill \(quotedCwd)/.claude/skills
+        plugins "$HOME/.claude/plugins"
         true
         """
     }

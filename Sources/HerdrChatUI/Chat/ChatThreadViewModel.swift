@@ -556,6 +556,14 @@ public final class ChatThreadViewModel {
     public func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let pane = primaryPane else { return }
+        // While a driven overlay is up, the composer belongs to IT: `/resume`
+        // filters as you type, so text goes in without a submit. Sending a normal
+        // message here would instead pick whatever row happened to be selected.
+        if let overlay = paneOverlay, overlay.isRaw {
+            draft = ""
+            await sendOverlayText(text)
+            return
+        }
         // A slash command is not a message. It gets no optimistic bubble (nothing
         // will ever land in the transcript to reconcile it against) and — the part
         // that matters — no delivery verification: `deliver` requires the agent to
@@ -653,14 +661,35 @@ public final class ChatThreadViewModel {
         let command = lastCommand
         let choice = label(forKeys: keys, in: overlay)
         await sendKeys(keys)
+        // A raw overlay is DRIVEN, not answered: arrows and search keys leave it
+        // open, so re-read rather than dismissing it and writing a receipt for
+        // something that hasn't happened yet.
+        if overlay.isRaw {
+            try? await Task.sleep(for: .milliseconds(250))
+            await refreshPaneScreen()
+            return
+        }
         commandReceipt = receipt(command: command, choice: choice)
         // Clear optimistically; the next screen poll re-detects it if the menu is
         // somehow still up, so a mis-delivered key can't leave a dead bar behind.
         paneOverlay = nil
     }
 
+    /// Type into an overlay's own text field — `/resume`'s "Type to search" — WITHOUT
+    /// pressing Enter, which would submit the search instead of filtering it.
+    public func sendOverlayText(_ text: String) async {
+        guard let pane = blockedPane ?? primaryPane, !text.isEmpty else { return }
+        do {
+            try await client.sendText(toPane: pane.paneId, text: text)
+            try? await Task.sleep(for: .milliseconds(250))
+            await refreshPaneScreen()
+        } catch {
+            setError(error)
+        }
+    }
+
     private func label(forKeys keys: [String], in overlay: PaneOverlay) -> String? {
-        if let option = overlay.prompt.options.first(where: { $0.keys == keys }) {
+        if let option = overlay.prompt?.options.first(where: { $0.keys == keys }) {
             return option.label
         }
         return overlay.actions.first { $0.keys == keys }?.detail

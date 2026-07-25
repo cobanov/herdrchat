@@ -439,14 +439,22 @@ struct ChatThreadView: View {
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let overlay = model.paneOverlay {
-            BlockedReplyBar(
-                prompt: overlay.prompt,
-                actions: overlay.actions,
-                isCommandMenu: true
-            ) { keys in
-                Task { await model.sendOverlayKeys(keys, overlay: overlay) }
+            switch overlay.kind {
+            case .menu(let prompt):
+                BlockedReplyBar(
+                    prompt: prompt,
+                    actions: overlay.actions,
+                    isCommandMenu: true
+                ) { keys in
+                    Task { await model.sendOverlayKeys(keys, overlay: overlay) }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            case .raw(let screen, let title):
+                RawOverlayCard(screen: screen, title: title, actions: overlay.actions) { keys in
+                    Task { await model.sendOverlayKeys(keys, overlay: overlay) }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 

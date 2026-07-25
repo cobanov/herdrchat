@@ -54,8 +54,8 @@ final class PaneOverlayTests: XCTestCase {
             "the real /model screen must be recognised as an overlay"
         )
 
-        XCTAssertEqual(overlay.prompt.options.count, 5)
-        XCTAssertTrue(overlay.prompt.options[0].label.contains("Default"))
+        XCTAssertEqual(overlay.prompt!.options.count, 5)
+        XCTAssertTrue(overlay.prompt!.options[0].label.contains("Default"))
         XCTAssertTrue(
             overlay.actions.contains { $0.keys == ["s"] },
             "the session-only shortcut is only knowable from the footer"
@@ -63,17 +63,68 @@ final class PaneOverlayTests: XCTestCase {
         XCTAssertTrue(overlay.actions.contains { $0.keys == ["Escape"] })
     }
 
+    /// `/resume` is the case the numbered-menu path cannot serve: a search box over
+    /// a list, with no rows to turn into buttons. It must come back as `.raw` so the
+    /// UI can show the screen and drive it — otherwise the command is a dead end.
+    /// Also an UNEDITED capture from a live pane.
+    func testResumePickerIsRawNotAMenu() throws {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "resume-picker-screen", withExtension: "txt", subdirectory: "Fixtures"),
+            "missing captured screen fixture"
+        )
+        let screen = try String(contentsOf: url, encoding: .utf8)
+        let overlay = try XCTUnwrap(
+            PaneOverlayDetector.detect(screen),
+            "the real /resume screen must still be recognised as an overlay"
+        )
+
+        XCTAssertTrue(overlay.isRaw, "no numbered rows here — must not be reported as a menu")
+        XCTAssertNil(overlay.prompt)
+        guard case .raw(let body, let title) = overlay.kind else {
+            return XCTFail("expected a raw overlay")
+        }
+        XCTAssertEqual(title, "Resume session")
+        XCTAssertTrue(body.contains("Search"), "the search box is the point of this overlay")
+        // The `▔▔▔` rule bounds the region, so the welcome banner above it is out.
+        XCTAssertFalse(body.contains("Welcome back"), "conversation chrome leaked into the card")
+
+        // Its Ctrl chords are deliverable; "Type to search" is not a key press.
+        XCTAssertTrue(overlay.actions.contains { $0.keys == ["ctrl+a"] })
+        XCTAssertTrue(overlay.actions.contains { $0.keys == ["ctrl+b"] })
+        XCTAssertFalse(overlay.actions.contains { $0.key.lowercased() == "type" })
+    }
+
+    /// Arrow keys are never advertised by `/resume`, yet they are how it is
+    /// navigated — so they are supplied unconditionally.
+    func testNavigationKeysAreAlwaysAvailable() {
+        let keys = PaneOverlayDetector.navigationActions.map(\.keys)
+
+        XCTAssertEqual(keys, [["Up"], ["Down"], ["Enter"], ["Escape"]])
+    }
+
+    func testControlChordMapping() {
+        // herdr rejects tmux-style "C-a" with `unsupported key` — verified on a live
+        // pane. `ctrl+<letter>` is the accepted form.
+        XCTAssertEqual(PaneOverlayDetector.sendKeys(for: "Ctrl+A"), ["ctrl+a"])
+        XCTAssertEqual(PaneOverlayDetector.sendKeys(for: "ctrl-b"), ["ctrl+b"])
+        XCTAssertEqual(PaneOverlayDetector.sendKeys(for: "Esc"), ["Escape"])
+        XCTAssertEqual(PaneOverlayDetector.sendKeys(for: "s"), ["s"])
+        // Not a discrete key press — must not become a button.
+        XCTAssertNil(PaneOverlayDetector.sendKeys(for: "↑/↓"))
+        XCTAssertNil(PaneOverlayDetector.sendKeys(for: "Type"))
+    }
+
     func testDetectsModelPicker() throws {
         let overlay = try XCTUnwrap(PaneOverlayDetector.detect(modelPicker))
 
-        XCTAssertEqual(overlay.prompt.options.count, 5)
-        XCTAssertEqual(overlay.prompt.options.first?.number, 1)
+        XCTAssertEqual(overlay.prompt!.options.count, 5)
+        XCTAssertEqual(overlay.prompt!.options.first?.number, 1)
         XCTAssertTrue(
-            overlay.prompt.options[3].label.hasPrefix("Sonnet"),
-            "unexpected label: \(overlay.prompt.options[3].label)"
+            overlay.prompt!.options[3].label.hasPrefix("Sonnet"),
+            "unexpected label: \(overlay.prompt!.options[3].label)"
         )
         // Picking option 4 means typing "4" then confirming.
-        XCTAssertEqual(overlay.prompt.options[3].keys, ["4", "Enter"])
+        XCTAssertEqual(overlay.prompt!.options[3].keys, ["4", "Enter"])
     }
 
     /// The footer is the contract for which keys exist. Reading it means we never
@@ -95,8 +146,8 @@ final class PaneOverlayTests: XCTestCase {
     func testDetectsTrustPrompt() throws {
         let overlay = try XCTUnwrap(PaneOverlayDetector.detect(trustPrompt))
 
-        XCTAssertEqual(overlay.prompt.options.count, 2)
-        XCTAssertEqual(overlay.prompt.options[1].label, "No, exit")
+        XCTAssertEqual(overlay.prompt!.options.count, 2)
+        XCTAssertEqual(overlay.prompt!.options[1].label, "No, exit")
         XCTAssertEqual(overlay.actions.count, 2)
     }
 
@@ -116,14 +167,21 @@ final class PaneOverlayTests: XCTestCase {
         XCTAssertNil(PaneOverlayDetector.detect(answer))
     }
 
-    /// A single option is too weak a signal to act on, footer or not.
-    func testSingleOptionIsIgnored() {
+    /// One numbered line is too weak a signal to render as a row-per-option menu.
+    /// It is NOT ignored though: the footer says the screen is waiting for a key,
+    /// so it falls through to the raw path where it can still be driven. Silently
+    /// dropping it would strand whatever asked the question.
+    func testSingleOptionFallsBackToRawRatherThanBeingIgnored() throws {
         let screen = """
         1. Continue
 
         Enter to confirm · Esc to cancel
         """
-        XCTAssertNil(PaneOverlayDetector.detect(screen))
+        let overlay = try XCTUnwrap(PaneOverlayDetector.detect(screen))
+
+        XCTAssertTrue(overlay.isRaw)
+        XCTAssertNil(overlay.prompt, "one row is not a menu")
+        XCTAssertEqual(overlay.actions.count, 2)
     }
 
     func testIdleScreenHasNoOverlay() {

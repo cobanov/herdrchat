@@ -419,7 +419,7 @@ struct BlockedReplyBar: View {
     }
 }
 
-private extension View {
+extension View {
     /// The blocked-reply bar's surface. It is a control surface (a menu of real
     /// actions), so on iOS 26 it is Liquid Glass in a rounded rect, matching the
     /// composer it sits above — the two share a `GlassEffectContainer` in

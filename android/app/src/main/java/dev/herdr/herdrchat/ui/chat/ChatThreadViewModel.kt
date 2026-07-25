@@ -5,6 +5,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.herdr.herdrchat.core.client.HerdrClient
 import dev.herdr.herdrchat.core.client.RecentLoad
+import dev.herdr.herdrchat.core.commands.PaneOverlay
+import dev.herdr.herdrchat.core.commands.PaneOverlayDetector
+import dev.herdr.herdrchat.core.commands.SlashCommand
+import dev.herdr.herdrchat.core.commands.SlashCommandStore
 import dev.herdr.herdrchat.core.client.TranscriptStore
 import dev.herdr.herdrchat.core.model.AgentInfo
 import dev.herdr.herdrchat.core.model.AgentStatus
@@ -40,6 +44,7 @@ class ChatThreadViewModel(
     val title: String = summary.title
     private val workspaceId: String = summary.workspaceId
     private val store = TranscriptStore(client.transport)
+    private val commandStore = SlashCommandStore(client.transport)
 
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
         private set
@@ -62,6 +67,19 @@ class ChatThreadViewModel(
     /** Best-effort live preview of the agent's in-progress answer (scraped from the
      *  visible screen while working); null falls back to the waiting bar. */
     var livePreview by mutableStateOf<String?>(null)
+        private set
+    /** An interactive menu drawn over the pane that herdr does NOT report as
+     *  `blocked` — measured: opening `/model` leaves the agent `idle`, so the
+     *  status-driven path can't see these at all. */
+    var paneOverlay by mutableStateOf<PaneOverlay?>(null)
+        private set
+    /** Slash commands available on the host for this workspace's directory. */
+    var commands by mutableStateOf(SlashCommand.builtIns)
+        private set
+    /** What the last command did, shown as a receipt in the transcript. Slash commands
+     *  leave NO transcript turn (measured), so without this the chat shows no trace
+     *  that anything happened. */
+    var commandReceipt by mutableStateOf<String?>(null)
         private set
 
     /** Folder name of the agent's working directory, for the header. */
@@ -91,6 +109,9 @@ class ChatThreadViewModel(
     private var scope: CoroutineScope? = null
     private var started = false
     private var hostHome: String? = null
+    /** The slash command whose menu is (or was just) on screen, so a receipt can
+     *  name what it belonged to. */
+    private var lastCommand: String? = null
 
     val unreadKey: String get() = UnreadStore.key(connectionId, workspaceId)
 
@@ -165,6 +186,7 @@ class ChatThreadViewModel(
         this.scope = scope
         startStatusPolling(scope)
         scope.launch { startTails(scope) }
+        scope.launch { loadCommands() }
     }
 
     fun stop() {
@@ -364,10 +386,14 @@ class ChatThreadViewModel(
                     liveAgents = snapshot.agents.filter { it.workspaceId == workspaceId }
                     if (error?.contains("host_key") != true) error = null
                     reconcileTails()
-                    refreshBlockedPrompt()
-                    refreshLivePreview()
+                    refreshPaneScreen()
                     metaTick++
-                    if (metaTick % 5 == 1) refreshSessionMeta()
+                    if (metaTick % 5 == 1) {
+                        refreshSessionMeta()
+                        // Retry discovery until it lands: at the first poll the
+                        // workspace may not have reported a pane cwd yet.
+                        if (commands.size == SlashCommand.builtIns.size) loadCommands()
+                    }
                 }
                 delay(2000)
             }
@@ -382,29 +408,57 @@ class ChatThreadViewModel(
         if (meta != sessionMeta) sessionMeta = meta
     }
 
-    /** While the agent works, scrape its visible screen into a best-effort live
-     *  preview of the answer it's writing; cleared when it stops. */
-    private suspend fun refreshLivePreview() {
-        val pane = primaryPane
-        if (status != AgentStatus.WORKING || pane == null) {
-            if (livePreview != null) livePreview = null
+    /**
+     * ONE read of the pane's visible screen per poll, feeding every consumer that
+     * needs it: the blocked-prompt menu, the live answer preview, and the command
+     * overlay. They used to read independently, so a pane that was both blocked and
+     * working paid two round trips — while an `idle` pane, which is exactly the state
+     * a slash-command menu sits in, was never read at all.
+     */
+    private suspend fun refreshPaneScreen() {
+        // Prefer the blocked pane (that's where a permission menu is) and fall back to
+        // the pane a reply would go to.
+        val pane = blockedPane ?: primaryPane
+        if (pane == null) {
+            clearScreenState()
             return
         }
-        val raw = runCatching { client.paneVisible(pane.paneId, 30) }.getOrNull() ?: return
-        livePreview = LivePreviewExtractor.extract(raw)
+        val raw = runCatching { client.paneVisible(pane.paneId, SCREEN_LINES) }.getOrNull() ?: return
+        ingestScreen(raw)
     }
 
-    /** While an agent is blocked, read its pane and parse the choice menu so the
-     *  quick-reply bar can label each option. Cleared when unblocked/unparsable. */
-    private suspend fun refreshBlockedPrompt() {
-        val pane = blockedPane
-        if (pane == null) {
-            if (blockedPrompt != null) blockedPrompt = null
-            return
+    private fun ingestScreen(raw: String) {
+        // Blocked menu: status-driven, as before.
+        if (isBlocked) {
+            val parsed = BlockedPromptParser.parse(raw)
+            blockedPrompt = if (parsed.isEmpty) null else parsed
+        } else if (blockedPrompt != null) {
+            blockedPrompt = null
         }
-        val raw = runCatching { client.paneVisible(pane.paneId, 40) }.getOrNull() ?: return
-        val parsed = BlockedPromptParser.parse(raw)
-        blockedPrompt = if (parsed.isEmpty) null else parsed
+        // Live preview only while the agent is actually working.
+        val preview = if (status == AgentStatus.WORKING) LivePreviewExtractor.extract(raw) else null
+        if (preview != livePreview) livePreview = preview
+        // Command overlay. Suppressed while blocked, because the blocked path already
+        // renders that menu and two bars would fight for the same space.
+        val overlay = if (isBlocked) null else PaneOverlayDetector.detect(raw)
+        if (overlay != paneOverlay) paneOverlay = overlay
+    }
+
+    private fun clearScreenState() {
+        if (blockedPrompt != null) blockedPrompt = null
+        if (livePreview != null) livePreview = null
+        if (paneOverlay != null) paneOverlay = null
+    }
+
+    /**
+     * Load the slash commands defined on the host for this workspace's directory.
+     * Falls back to the built-in list, which is already the starting value, so a failed
+     * discovery degrades to "fewer suggestions" rather than an empty palette.
+     */
+    private suspend fun loadCommands() {
+        val cwd = primaryPane?.cwd ?: return
+        val discovered = runCatching { commandStore.discover(cwd) }.getOrNull() ?: return
+        if (discovered.isNotEmpty()) commands = discovered
     }
 
     /** Agents whose session id changed since we started following them — the
@@ -465,6 +519,25 @@ class ChatThreadViewModel(
         val text = draft.trim()
         val pane = primaryPane
         if (text.isEmpty() || pane == null) return
+        // While a driven overlay is up, the composer belongs to IT: `/resume` filters
+        // as you type, so text goes in without a submit. Sending a normal message here
+        // would instead pick whatever row happened to be selected.
+        val overlay = paneOverlay
+        if (overlay != null && overlay.isRaw) {
+            draft = ""
+            scope?.launch { sendOverlayText(text) }
+            return
+        }
+        // A slash command is not a message. It gets no optimistic bubble (nothing will
+        // ever land in the transcript to reconcile it against) and — the part that
+        // matters — no delivery verification: `deliver` requires the agent to flip to
+        // `working`, but a command like `/model` leaves it `idle`, so the check would
+        // report a false "couldn't confirm delivery" every time.
+        if (text.startsWith("/")) {
+            draft = ""
+            scope?.launch { runCommand(text, pane) }
+            return
+        }
         draft = ""
         // Optimistic echo (timestamped so it merges chronologically).
         val echo = ChatMessage(
@@ -476,6 +549,81 @@ class ChatThreadViewModel(
         localEchoes.add(echo)
         rebuild()
         deliver(text, echo.id, pane)
+    }
+
+    /** Run a slash command in the agent pane and watch for the menu it may open. */
+    private suspend fun runCommand(text: String, pane: AgentInfo) {
+        commandReceipt = null
+        lastCommand = text
+        val sent = runCatching { client.sendMessage(pane.paneId, text) }
+        if (sent.isFailure) {
+            sent.exceptionOrNull()?.let { setError(it) }
+            return
+        }
+        // A picker appears within a beat. Poll faster than the 2 s status tick so it
+        // doesn't feel like the tap did nothing, and stop as soon as it shows.
+        repeat(COMMAND_POLL_ATTEMPTS) {
+            delay(350)
+            refreshPaneScreen()
+            if (paneOverlay != null) return
+        }
+        // No menu: the command did its work inline (`/clear`, `/compact`). Say so,
+        // because nothing will appear in the transcript to show it ran.
+        commandReceipt = "$text · sent"
+    }
+
+    /**
+     * Answer a command overlay. The receipt names what was actually picked: we know
+     * which row was tapped, so it can state the outcome instead of guessing at it.
+     */
+    fun sendOverlayKeys(keys: List<String>, overlay: PaneOverlay) {
+        val s = scope ?: return
+        s.launch {
+            val command = lastCommand
+            val choice = labelForKeys(keys, overlay)
+            sendKeys(keys)
+            // A raw overlay is DRIVEN, not answered: arrows and search keys leave it
+            // open, so re-read rather than dismissing it and writing a receipt for
+            // something that hasn't happened yet.
+            if (overlay.isRaw) {
+                delay(250)
+                refreshPaneScreen()
+                return@launch
+            }
+            commandReceipt = receipt(command, choice)
+            // Clear optimistically; the next screen poll re-detects it if the menu is
+            // somehow still up, so a mis-delivered key can't leave a dead bar behind.
+            paneOverlay = null
+        }
+    }
+
+    /**
+     * Type into an overlay's own text field — `/resume`'s "Type to search" — WITHOUT
+     * pressing Enter, which would submit the search instead of filtering it.
+     */
+    private suspend fun sendOverlayText(text: String) {
+        val pane = blockedPane ?: primaryPane ?: return
+        if (text.isEmpty()) return
+        runCatching { client.sendText(pane.paneId, text) }
+            .onFailure { setError(it) }
+            .onSuccess {
+                delay(250)
+                refreshPaneScreen()
+            }
+    }
+
+    fun clearCommandReceipt() { commandReceipt = null }
+
+    private fun labelForKeys(keys: List<String>, overlay: PaneOverlay): String? =
+        overlay.prompt?.options?.firstOrNull { it.keys == keys }?.label
+            ?: overlay.actions.firstOrNull { it.keys == keys }?.detail
+
+    private fun receipt(command: String?, choice: String?): String {
+        if (choice == null) return command?.let { "$it · answered" } ?: "answered"
+        // Menu labels carry the option's whole description; the first clause names the
+        // thing chosen, which is what a receipt should read as.
+        val short = choice.split("·").firstOrNull()?.trim() ?: choice
+        return command?.let { "$it · $short" } ?: short
     }
 
     /** Re-send a failed optimistic echo. */
@@ -556,5 +704,10 @@ class ChatThreadViewModel(
         // left the cursor mid-line, the boundary line is re-read in full (dedupe
         // drops anything already seen), so no message is lost at the seam.
         private const val RESUME_REWIND = 4_096L
+        /** Enough rows to hold a menu plus its footer without dragging the whole
+         *  scrollback across the wire. */
+        private const val SCREEN_LINES = 45
+        /** ~3.5 s of watching for a picker before concluding the command ran inline. */
+        private const val COMMAND_POLL_ATTEMPTS = 10
     }
 }

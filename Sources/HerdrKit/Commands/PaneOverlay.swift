@@ -20,20 +20,44 @@ public struct OverlayAction: Sendable, Equatable, Identifiable {
     }
 }
 
-/// An interactive menu currently drawn over an agent pane.
+/// What kind of interactive surface is on screen. Both shapes were observed on a
+/// live pane, and they need different UI: one can be answered with buttons, the
+/// other can only be driven.
+public enum PaneOverlayKind: Sendable, Equatable {
+    /// A numbered menu — `/model`, permission prompts. Answerable by tapping a row.
+    case menu(BlockedPrompt)
+    /// An overlay with no numbered rows: `/resume` is a search box over a list,
+    /// driven by typing plus arrows. There are no rows to turn into buttons, so
+    /// the app shows the screen itself and a keypad instead of pretending
+    /// otherwise. Without this, every such command would be a dead end.
+    case raw(screen: String, title: String?)
+}
+
+/// An interactive surface currently drawn over an agent pane.
 ///
 /// This exists because of a measured fact: when a slash command like `/model`
 /// opens its picker, herdr still reports the agent as `idle`, NOT `blocked`. So
-/// the blocked-status path can't see these menus at all — they have to be spotted
-/// on the screen itself.
+/// the blocked-status path can't see these at all — they have to be spotted on
+/// the screen itself.
 public struct PaneOverlay: Sendable, Equatable {
-    public let prompt: BlockedPrompt
+    public let kind: PaneOverlayKind
     /// Extra keys the footer offered, beyond picking a numbered option.
     public let actions: [OverlayAction]
 
-    public init(prompt: BlockedPrompt, actions: [OverlayAction]) {
-        self.prompt = prompt
+    public init(kind: PaneOverlayKind, actions: [OverlayAction]) {
+        self.kind = kind
         self.actions = actions
+    }
+
+    /// The numbered menu, when this overlay is one.
+    public var prompt: BlockedPrompt? {
+        guard case .menu(let prompt) = kind else { return nil }
+        return prompt
+    }
+
+    public var isRaw: Bool {
+        if case .raw = kind { return true }
+        return false
     }
 }
 
@@ -43,26 +67,57 @@ public enum PaneOverlayDetector {
     /// transcript prose that happens to look like one.
     private static let overlayWindow = 30
 
-    /// Look for an interactive menu in a pane's VISIBLE screen.
+    /// Look for an interactive surface in a pane's VISIBLE screen.
     ///
-    /// Returns nil unless the screen both parses as a numbered menu AND carries a
-    /// footer advertising keyboard affordances. That second requirement is what
-    /// keeps ordinary content out: an agent answering with a numbered list is
-    /// common, but only a real overlay tells you "Enter to confirm · Esc to
-    /// cancel". Requiring corroboration is the difference between a detector and
-    /// a guess.
+    /// The gate is the FOOTER, not the menu: nothing is reported unless the screen
+    /// advertises keyboard affordances ("Enter to confirm · Esc to cancel"). That
+    /// is what keeps ordinary content out — an agent answering with a numbered
+    /// list is routine, but only a real overlay tells you which keys it takes.
+    /// Requiring that corroboration is the difference between a detector and a
+    /// guess.
+    ///
+    /// With the footer present, a numbered menu becomes `.menu`; anything else
+    /// becomes `.raw` so it can still be driven rather than being a dead end.
     public static func detect(_ raw: String) -> PaneOverlay? {
         let lines = raw.components(separatedBy: "\n")
-        let window = lines.suffix(overlayWindow).joined(separator: "\n")
+        guard let footer = footerLine(in: lines) else { return nil }
+        let actions = actions(from: footer)
 
-        let prompt = BlockedPromptParser.parse(window)
-        // One "option" is far too weak a signal to act on.
-        guard prompt.options.count >= 2 else { return nil }
+        let region = overlayRegion(lines)
+        let prompt = BlockedPromptParser.parse(region.joined(separator: "\n"))
+        // One "option" is far too weak a signal to treat as a menu.
+        if prompt.options.count >= 2 {
+            return PaneOverlay(kind: .menu(prompt), actions: actions)
+        }
 
-        let footer = footerLine(in: lines)
-        guard let footer, isAffordanceFooter(footer) else { return nil }
+        // No rows to tap: hand back the screen so the UI can show it verbatim.
+        let body = region
+            .map(strip)
+            .drop { $0.isEmpty }
+            .reversed().drop { $0.isEmpty }.reversed()
+        let screen = body.joined(separator: "\n")
+        guard !screen.isEmpty else { return nil }
+        return PaneOverlay(
+            kind: .raw(screen: screen, title: body.first { !$0.isEmpty }),
+            actions: actions
+        )
+    }
 
-        return PaneOverlay(prompt: prompt, actions: actions(from: footer))
+    /// The overlay's own region of the screen. Claude draws a `▔▔▔` rule directly
+    /// above an overlay — observed on both `/model` and `/resume` — so that rule
+    /// bounds it exactly. Falling back to a fixed number of trailing lines would
+    /// otherwise drag conversation text into the card.
+    private static func overlayRegion(_ lines: [String]) -> [String] {
+        if let index = lines.lastIndex(where: isTopRule) {
+            return Array(lines[(index + 1)...])
+        }
+        return Array(lines.suffix(overlayWindow))
+    }
+
+    private static func isTopRule(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 8 else { return false }
+        return trimmed.allSatisfy { $0 == "▔" }
     }
 
     /// The last non-empty line that reads like a hint footer. Claude draws it
@@ -103,20 +158,40 @@ public enum PaneOverlayDetector {
     }
 
     /// Map a footer's key label onto `pane send-keys` tokens. Returns nil for
-    /// anything we can't send faithfully (arrow-driven adjustments, chords), so
-    /// the UI simply doesn't offer a button that wouldn't work.
-    private static func sendKeys(for label: String) -> [String]? {
-        switch label.lowercased() {
+    /// anything we can't send faithfully — "↑/↓", "Type to search" — so the UI
+    /// never offers a button that would do nothing.
+    static func sendKeys(for label: String) -> [String]? {
+        let lower = label.lowercased()
+        switch lower {
         case "enter", "return": return ["Enter"]
         case "esc", "escape": return ["Escape"]
         case "tab": return ["Tab"]
         case "space": return ["Space"]
-        default:
-            // A bare letter shortcut, e.g. "s to use this session only".
-            guard label.count == 1, let character = label.first, character.isLetter else { return nil }
-            return [String(character)]
+        default: break
         }
+        // Control chords, which `/resume` advertises as "Ctrl+A to show all
+        // projects". herdr wants `ctrl+<letter>`; it rejects the tmux-style `C-a`
+        // outright with `unsupported key` — verified against a live pane, which is
+        // the only reason this isn't shipped as a button that errors on tap.
+        for prefix in ["ctrl+", "ctrl-", "^"] where lower.hasPrefix(prefix) {
+            let rest = lower.dropFirst(prefix.count)
+            guard rest.count == 1, let character = rest.first, character.isLetter else { return nil }
+            return ["ctrl+\(character)"]
+        }
+        // A bare letter shortcut, e.g. "s to use this session only".
+        guard label.count == 1, let character = label.first, character.isLetter else { return nil }
+        return [String(character)]
     }
+
+    /// The keys every driven overlay accepts whether or not its footer spells them
+    /// out: move the selection, confirm, cancel. `/resume` documents Ctrl chords
+    /// and "Type to search" but never mentions the arrows it is navigated with.
+    public static let navigationActions: [OverlayAction] = [
+        OverlayAction(key: "↑", detail: "up", keys: ["Up"]),
+        OverlayAction(key: "↓", detail: "down", keys: ["Down"]),
+        OverlayAction(key: "Enter", detail: "select", keys: ["Enter"]),
+        OverlayAction(key: "Esc", detail: "cancel", keys: ["Escape"]),
+    ]
 
     /// Strip ANSI escapes and TUI border chrome from one line.
     private static func strip(_ line: String) -> String {

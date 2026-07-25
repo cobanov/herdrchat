@@ -13,7 +13,7 @@ android {
         applicationId = "dev.herdr.herdrchat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
+        versionCode = 29
         versionName = "0.1.0"
     }
 
@@ -61,6 +61,11 @@ android {
 }
 
 dependencies {
+    // JVM unit tests for the pure-Kotlin core (overlay detection, command
+    // discovery parsing). These mirror the Swift tests so the two ports can't
+    // silently drift apart.
+    testImplementation("junit:junit:4.13.2")
+
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
     implementation(composeBom)
 

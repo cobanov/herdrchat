@@ -86,6 +86,13 @@ public struct HerdrClient: Sendable {
         try check(await transport.run([herdr, "pane", "send-keys", paneId] + keys))
     }
 
+    /// Type text into a pane WITHOUT submitting it. Needed for overlays that filter
+    /// as you type (`/resume`'s search box), where a trailing Enter would pick the
+    /// current row instead of narrowing the list.
+    public func sendText(toPane paneId: String, text: String) async throws {
+        try check(await transport.run([herdr, "pane", "send-text", paneId, text]))
+    }
+
     /// Create a new workspace rooted at `cwd` (optional `label`) without stealing
     /// focus on the desktop, and return its ids. Follow with `startAgent` on the
     /// returned root pane to launch Claude in it.
