@@ -10,6 +10,17 @@ import UserNotifications
 @MainActor
 public enum AgentNotifier {
     private static let defaultsKey = "herdrchat.agentStatuses"
+    private static let notifiedKey = "herdrchat.agentNotifiedAt"
+    /// Never re-announce the same pane in the same state inside this window. A
+    /// backstop, not the primary defence: the baseline diff should already suppress
+    /// repeats, but anything that perturbs it (a pane id recycled by herdr — ids
+    /// compact when panes close — a snapshot that momentarily omits an agent, two
+    /// hosts polling in turn) used to produce a stream of identical "finished"
+    /// alerts. One alert per state change is the contract; this enforces it even
+    /// when the diff is fooled.
+    private static let repeatCooldown: TimeInterval = 30 * 60
+    /// Forget panes not seen for a day so the stores can't grow without bound.
+    private static let staleAfter: TimeInterval = 24 * 60 * 60
 
     /// Route foreground notifications to a delegate that presents them as banners.
     /// Without this, iOS silently drops local notifications while the app is
@@ -45,14 +56,27 @@ public enum AgentNotifier {
         excludingWorkspace: String? = nil
     ) {
         let was = load()
-        defer { save(statuses(of: agents)) }
+        // MERGE, don't replace. `statuses(of:)` only describes the agents in THIS
+        // snapshot, so overwriting dropped every pane missing from it — and each
+        // connection polls its own host, so two servers wiped each other's baseline
+        // on every tick and then re-announced every finished agent, forever.
+        defer { save(was.merging(statuses(of: agents)) { _, new in new }) }
         guard !was.isEmpty else { return }   // first run: seed silently
+
+        var notified = loadNotified()
+        defer { saveNotified(notified) }
+        let now = Date().timeIntervalSince1970
 
         for agent in agents {
             let status = agent.agentStatus
             guard status == .blocked || status == .done,
                   was[agent.paneId] != status.rawValue,
                   agent.workspaceId != excludingWorkspace else { continue }
+            // Second gate: even if the diff thinks this is new, don't repeat an
+            // identical alert for the same pane within the cooldown.
+            let key = "\(agent.paneId)|\(status.rawValue)"
+            if let last = notified[key], now - last < repeatCooldown { continue }
+            notified[key] = now
             let workspace = workspaceLabels[agent.workspaceId] ?? agent.workspaceId
             let name = agent.agent ?? "agent"
 
@@ -84,6 +108,23 @@ public enum AgentNotifier {
 
     private static func save(_ statuses: [String: String]) {
         UserDefaults.standard.set(statuses, forKey: defaultsKey)
+    }
+
+    /// When each (pane, status) pair was last announced.
+    private static func loadNotified() -> [String: TimeInterval] {
+        let stored = UserDefaults.standard.dictionary(forKey: notifiedKey) as? [String: Double] ?? [:]
+        let cutoff = Date().timeIntervalSince1970 - staleAfter
+        return stored.filter { $0.value >= cutoff }
+    }
+
+    private static func saveNotified(_ times: [String: TimeInterval]) {
+        UserDefaults.standard.set(times, forKey: notifiedKey)
+    }
+
+    /// Clear the "already announced" memory — for a Notifications settings toggle or
+    /// a manual reset, so a genuine re-announcement isn't blocked by the cooldown.
+    public static func resetNotificationHistory() {
+        UserDefaults.standard.removeObject(forKey: notifiedKey)
     }
 }
 
