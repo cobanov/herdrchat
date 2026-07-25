@@ -1,0 +1,100 @@
+
+╭─── Claude Code v2.1.220 ───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started                                              │
+│                 Welcome back Mert!                 │ Ask Claude to create a new app or clone a repository                  │
+│                                                    │ ───────────────────────────────────────────────────────────────────── │
+│                       ▐▛███▜▌                      │ What's new                                                            │
+│                      ▝▜█████▛▘                     │ Bug fixes and reliability improvements                                │
+│                        ▘▘ ▝▝                       │ Added Claude Opus 5 (`claude-opus-5`), now the default Opus model — … │
+│   Opus 4.8 (1M context) with hi… · Claude Team ·   │ Added `sandbox.network.strictAllowlist` setting to deny non-allowlis… │
+│   Refik Anadol Studio                              │ /release-notes for more                                               │
+│                /…/scratchpad/probe2                │                                                                       │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Select model
+   Switch between Claude models. Your pick becomes the default for new sessions. For other/previous model names, specify
+   with --model.
+
+   ❯ 1. Default (recommended) ✔  Opus 4.8 with 1M context · Best for everyday, complex tasks
+     2. Opus (1M context)        Opus 4.8 with 1M context · Best for everyday, complex tasks
+     3. Fable                    Fable 5 · Most capable for your hardest and longest-running tasks
+     4. Sonnet                   Sonnet 4.6 · Efficient for routine tasks
+     5. Haiku                    Haiku 4.5 · Fastest for quick answers
+
+   ● High effort (default) ←/→ to adjust
+
+   Enter to set as default · s to use this session only · Esc to cancel
