@@ -52,16 +52,34 @@ class TranscriptStore(private val transport: HerdrTransport) {
     suspend fun loadMessages(path: String, agentLabel: String?): List<ChatMessage> =
         TranscriptParser.parse(transport.shell("cat ${ShellQuoting.quote(path)}"), agentLabel)
 
-    /** Bulk-load only the most recent [maxBytes] of a transcript in one read and
-     *  parse, instead of streaming the whole (possibly multi-MB) file line by
-     *  line. A partial first line (window starts mid-file) fails to parse and is
-     *  dropped. Returns the bubbles + the byte offset consumed for the tail. */
-    suspend fun recent(path: String, agentLabel: String?, maxBytes: Long): RecentLoad {
+    /** Bulk-load only the most recent slice of a transcript in one read and parse,
+     *  instead of streaming the whole (possibly multi-MB) file line by line.
+     *
+     *  Two independent limits, because bytes are a poor proxy for conversation
+     *  length in either direction: one turn can be megabytes (image tool-results
+     *  embed base64), and a megabyte can hold thousands of terse turns. [maxBytes]
+     *  bounds the transfer; [maxMessages] bounds what the chat surface has to lay
+     *  out. Returns the bubbles + the byte offset consumed for the tail. */
+    suspend fun recent(
+        path: String,
+        agentLabel: String?,
+        maxBytes: Long,
+        maxMessages: Int? = null,
+    ): RecentLoad {
         val size = fileSize(path)
         val start = if (size > maxBytes) size - maxBytes else 0L
-        val text = transport.shell("tail -c +${start + 1} ${ShellQuoting.quote(path)}")
-        val messages = TranscriptParser.parse(text, agentLabel)
-        return RecentLoad(messages, start + text.toByteArray(Charsets.UTF_8).size)
+        val raw = transport.shell("tail -c +${start + 1} ${ShellQuoting.quote(path)}")
+        // A window that starts mid-file almost always starts mid-line. Drop that
+        // fragment explicitly rather than relying on it failing to parse — a
+        // truncated line can still decode into a half-formed bubble.
+        val text = if (start > 0L) raw.substringAfter('\n', missingDelimiterValue = "") else raw
+        var messages = TranscriptParser.parse(text, agentLabel)
+        if (maxMessages != null && messages.size > maxMessages) {
+            messages = messages.subList(messages.size - maxMessages, messages.size)
+        }
+        // Consumed is the whole window regardless of what we kept or dropped: the
+        // tail must resume at the real EOF, not at the first bubble shown.
+        return RecentLoad(messages, start + raw.toByteArray(Charsets.UTF_8).size)
     }
 
     /** Model + context size for the chat header: read the transcript tail and take

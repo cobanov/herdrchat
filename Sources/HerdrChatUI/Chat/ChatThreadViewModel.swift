@@ -47,7 +47,7 @@ public final class ChatThreadViewModel {
     private var seenIDs = Set<String>()
     private var arrival: [ChatMessage] = []          // real transcript bubbles, in order
     private var localEchoes: [ChatMessage] = []      // optimistic user sends, pre-transcript
-    private var tailTasks: [Task<Void, Never>] = []
+    private var tailTasks: [String: Task<Void, Never>] = [:]   // agent cwd -> follow task
     private var tailedPaths: [String: String] = [:]      // agent cwd -> transcript path
     private var tailedSessions: [String: String] = [:]   // agent cwd -> session id (when known)
     /// The session signature whose history is currently loaded. A chat's identity
@@ -57,19 +57,36 @@ public final class ChatThreadViewModel {
     private var boundSig: String?
     private var metaTick = 0
     private var cachedLabels: [String: String] = [:]
-    private var tailsDead = false
+    private var deadTails = Set<String>()                // agent cwds whose tail ended
+    /// Monotonic source of tail ids, and the generation currently live for each
+    /// agent. The fence is PER AGENT: a late chunk from a superseded tail is
+    /// dropped, but starting a tail for a newly-resolved agent must not fence off
+    /// the healthy tails already running alongside it (one shared counter did
+    /// exactly that, silently muting live threads).
     private var tailGeneration = 0
+    private var tailGenerations: [String: Int] = [:]      // agent cwd -> live generation
     private var statusTask: Task<Void, Never>?
     private var started = false
     private var hostHome: String?
 
-    /// Only bulk-load this many bytes of a fresh transcript up front; older
-    /// history stays on disk. Sized in megabytes because a single transcript
-    /// LINE can be one (image tool-results embed base64 payloads) — a smaller
-    /// window can land inside one giant line and open a rich session with just
-    /// a bubble or two of history. One-time cost per thread; reopens resume
-    /// from the cached byte offset.
-    private static let recentBytes = 3_000_000
+    /// Bytes of a fresh transcript to pull up front. A chat surface is about
+    /// recency, so this is deliberately small: the old 3 MB window meant every
+    /// thread open paid a multi-megabyte SSH read and then laid out thousands of
+    /// bubbles, which is what made long sessions open mid-history and stutter.
+    /// Older history stays on disk. Reopens resume from the cached byte offset
+    /// and pay nothing.
+    private static let recentBytes = 384_000
+    /// Widened window for the pathological case: a transcript whose tail is one
+    /// enormous line (image tool-results embed base64 payloads) can yield almost
+    /// no bubbles from the small window. Tried once, only when the first read
+    /// came back too thin to be a real conversation.
+    private static let recentBytesWide = 3_000_000
+    /// Bubbles to keep from the initial load, and to seed from the disk cache.
+    /// Bounds what the list has to lay out on open regardless of how dense the
+    /// byte window turned out to be.
+    private static let recentMessages = 150
+    /// Below this, the bulk load didn't find a real conversation — widen once.
+    private static let thinHistory = 10
     /// On resume, rewind this much before the stored offset: if a disconnect
     /// left the cursor mid-line, the boundary line is re-read in full (dedupe
     /// drops anything already seen), so no message is lost at the seam.
@@ -89,9 +106,17 @@ public final class ChatThreadViewModel {
         let initSig = summary.agents.sessionSignature
         let cachedSig = ThreadCache.shared.sessionSig(connectionID, summary.workspaceId)
         if initSig == nil || initSig == cachedSig {
-            let cached = ThreadCache.shared.messages(connectionID, summary.workspaceId)
+            var cached = ThreadCache.shared.messages(connectionID, summary.workspaceId)
             if !cached.isEmpty {
+                // Seed only the newest slice: the cache holds more than a chat
+                // surface should render on open, and a long seed is what the
+                // scroll anchor then has to fight its way to the end of.
+                if cached.count > Self.recentMessages {
+                    cached.removeFirst(cached.count - Self.recentMessages)
+                }
                 arrival = cached
+                // Keep the FULL seen set (not just the seeded slice) so the tail
+                // can't re-add the history we deliberately trimmed away.
                 seenIDs = ThreadCache.shared.seenIDs(connectionID, summary.workspaceId)
                 rebuild()
             }
@@ -151,13 +176,30 @@ public final class ChatThreadViewModel {
     }
 
     public func stop() {
-        tailTasks.forEach { $0.cancel() }
-        tailTasks.removeAll()
-        tailedPaths.removeAll()
-        tailedSessions.removeAll()
+        cancelTails()
         statusTask?.cancel()
         statusTask = nil
         started = false
+    }
+
+    /// Tear down every tail and forget what we were following.
+    private func cancelTails() {
+        tailTasks.values.forEach { $0.cancel() }
+        tailTasks.removeAll()
+        tailedPaths.removeAll()
+        tailedSessions.removeAll()
+        tailGenerations.removeAll()
+        deadTails.removeAll()
+    }
+
+    /// Tear down one agent's tail (rotation / death), leaving its siblings running.
+    private func cancelTail(cwd: String) {
+        tailTasks[cwd]?.cancel()
+        tailTasks[cwd] = nil
+        tailedPaths[cwd] = nil
+        tailedSessions[cwd] = nil
+        tailGenerations[cwd] = nil
+        deadTails.remove(cwd)
     }
 
     public func clearError() { error = nil }
@@ -166,14 +208,10 @@ public final class ChatThreadViewModel {
     /// transcript from disk. Recovers a thread whose live tail drifted into a bad
     /// state (wrong/missing last messages) without touching other threads.
     public func reload() async {
-        tailTasks.forEach { $0.cancel() }
-        tailTasks.removeAll()
         for path in tailedPaths.values {
             ThreadCache.shared.resetBytes(connectionID, workspaceId, path: path)
         }
-        tailedPaths.removeAll()
-        tailedSessions.removeAll()
-        tailsDead = false
+        cancelTails()
         resetHistory()
         await startTails()
     }
@@ -202,74 +240,99 @@ public final class ChatThreadViewModel {
         return try? await store.newestTranscriptPath(forCwd: agent.cwd)
     }
 
+    /// Ensure every conversation agent in this workspace has a live tail.
+    /// ADDITIVE by design: agents already being followed are left strictly alone.
+    /// The old version tore down and rebuilt every tail on each call, so a single
+    /// agent whose transcript file didn't exist yet (`unresolvedSession`) would,
+    /// on every 2 s poll, kill its healthy siblings' tails mid-stream and re-read
+    /// their history from scratch — dropping chunks and re-paying the bulk load.
     private func startTails() async {
-        // Generation fence: bump on every (re)start so any late chunk or death
-        // signal from a superseded tail task is dropped instead of corrupting the
-        // fresh history (the root cause behind the occasional wrong/jumping
-        // last-messages the manual refresh was papering over). Lesson from cmux.
-        tailGeneration += 1
-        let generation = tailGeneration
-        // One transcript tail per agent that owns a conversation.
         let agents = liveAgents.filter { $0.agent != nil }
         // Bind to the session(s) now in the workspace before loading anything —
         // if they changed (rotation, or a new chat reusing this slot), stale
         // history is dropped here so the reload starts clean.
         bindSession(agents.sessionSignature)
         for agent in agents {
-            guard let path = await transcriptPath(for: agent) else { continue }
-            let label = agents.count > 1 ? agent.agent : nil
-            tailedPaths[agent.cwd] = path
-
-            let cachedBytes = ThreadCache.shared.bytes(connectionID, workspaceId, path: path)
-            let size = (try? await store.fileSize(atPath: path)) ?? -1
-            let canResume = cachedBytes.map { size >= $0 } ?? false
-
-            let followStart: Int
-            if canResume {
-                followStart = max(0, cachedBytes! - Self.resumeRewind)
-            } else {
-                ThreadCache.shared.resetBytes(connectionID, workspaceId, path: path)
-                if let recent = try? await store.recent(atPath: path, agentLabel: label, maxBytes: Self.recentBytes) {
-                    ingestBatch(recent.messages)
-                    ThreadCache.shared.setBytes(connectionID, workspaceId, path: path, recent.consumedBytes)
-                    followStart = recent.consumedBytes
-                } else {
-                    followStart = 0
-                }
-            }
-
-            let stream = store.tail(atPath: path, agentLabel: label, startByte: followStart)
-            let task = Task { [weak self] in
-                do {
-                    for try await chunk in stream {
-                        await self?.ingestChunk(chunk, path: path, generation: generation)
-                    }
-                    await self?.markTailsDead(generation: generation)
-                } catch is CancellationError {
-                    // intentional stop
-                } catch {
-                    await self?.markTailsDead(generation: generation)
-                }
-            }
-            tailTasks.append(task)
+            guard tailTasks[agent.cwd] == nil else { continue }   // already following
+            await startTail(for: agent, multiAgent: agents.count > 1)
         }
     }
 
-    private func markTailsDead(generation: Int) {
-        guard generation == tailGeneration else { return }   // superseded tail
-        tailsDead = true
+    private func startTail(for agent: AgentInfo, multiAgent: Bool) async {
+        let cwd = agent.cwd
+        // Per-agent generation fence: any chunk or death signal arriving from a
+        // superseded tail of THIS agent is dropped, without touching the fences
+        // of the other agents' live tails. (Lesson from cmux, corrected.)
+        tailGeneration += 1
+        let generation = tailGeneration
+        tailGenerations[cwd] = generation
+
+        guard let path = await transcriptPath(for: agent) else { return }
+        guard tailGenerations[cwd] == generation else { return }   // superseded mid-resolve
+        let label = multiAgent ? agent.agent : nil
+        tailedPaths[cwd] = path
+
+        let cachedBytes = ThreadCache.shared.bytes(connectionID, workspaceId, path: path)
+        let size = (try? await store.fileSize(atPath: path)) ?? -1
+        guard tailGenerations[cwd] == generation else { return }
+        let canResume = cachedBytes.map { size >= $0 } ?? false
+
+        let followStart: Int
+        if canResume {
+            followStart = max(0, cachedBytes! - Self.resumeRewind)
+        } else {
+            ThreadCache.shared.resetBytes(connectionID, workspaceId, path: path)
+            if let recent = await loadRecent(path: path, label: label, size: size) {
+                guard tailGenerations[cwd] == generation else { return }
+                ingestBatch(recent.messages)
+                ThreadCache.shared.setBytes(connectionID, workspaceId, path: path, recent.consumedBytes)
+                followStart = recent.consumedBytes
+            } else {
+                followStart = 0
+            }
+        }
+
+        let stream = store.tail(atPath: path, agentLabel: label, startByte: followStart)
+        tailTasks[cwd] = Task { [weak self] in
+            do {
+                for try await chunk in stream {
+                    self?.ingestChunk(chunk, path: path, cwd: cwd, generation: generation)
+                }
+                self?.markTailDead(cwd: cwd, generation: generation)
+            } catch is CancellationError {
+                // intentional stop
+            } catch {
+                self?.markTailDead(cwd: cwd, generation: generation)
+            }
+        }
     }
 
-    private func restartTails() async {
-        tailTasks.forEach { $0.cancel() }
-        tailTasks.removeAll()
-        tailedPaths.removeAll()
-        tailedSessions.removeAll()
-        await startTails()
+    /// The up-front history read: a small recent window, widened once if it came
+    /// back too thin to be a real conversation (a tail made of one giant
+    /// base64 line yields almost no bubbles).
+    private func loadRecent(
+        path: String,
+        label: String?,
+        size: Int
+    ) async -> (messages: [ChatMessage], consumedBytes: Int)? {
+        guard let first = try? await store.recent(
+            atPath: path, agentLabel: label,
+            maxBytes: Self.recentBytes, maxMessages: Self.recentMessages
+        ) else { return nil }
+        guard first.messages.count < Self.thinHistory, size > Self.recentBytes else { return first }
+        return (try? await store.recent(
+            atPath: path, agentLabel: label,
+            maxBytes: Self.recentBytesWide, maxMessages: Self.recentMessages
+        )) ?? first
     }
 
-    private func ingestChunk(_ chunk: TailChunk, path: String, generation: Int) {
-        guard generation == tailGeneration else { return }   // drop late chunks from a superseded tail
+    private func markTailDead(cwd: String, generation: Int) {
+        guard tailGenerations[cwd] == generation else { return }   // superseded tail
+        deadTails.insert(cwd)
+    }
+
+    private func ingestChunk(_ chunk: TailChunk, path: String, cwd: String, generation: Int) {
+        guard tailGenerations[cwd] == generation else { return }   // late chunk, superseded tail
         if let message = chunk.message { ingest(message) }
         ThreadCache.shared.setBytes(connectionID, workspaceId, path: path, chunk.consumedBytes)
     }
@@ -307,12 +370,7 @@ public final class ChatThreadViewModel {
                 if let snapshot = try? await self.client.snapshot() {
                     self.liveAgents = snapshot.agents.filter { $0.workspaceId == self.workspaceId }
                     if self.error?.contains("host_key") != true { self.error = nil }
-                    if self.tailsDead {
-                        self.tailsDead = false
-                        await self.restartTails()
-                    } else if self.rotationDetected() || self.unresolvedSession() {
-                        await self.restartTails()
-                    }
+                    await self.reconcileTails()
                     await self.refreshBlockedPrompt()
                     await self.refreshLivePreview()
                     self.metaTick += 1
@@ -377,31 +435,31 @@ public final class ChatThreadViewModel {
         blockedPrompt = parsed.isEmpty ? nil : parsed
     }
 
-    /// A conversation agent whose session id is known but whose transcript file
-    /// isn't tailed yet (still being written at session start). Keeps the poll
-    /// retrying resolution so the new chat fills in — without ever tailing the
-    /// previous session's file in the meantime.
-    private func unresolvedSession() -> Bool {
-        liveAgents.contains { agent in
-            agent.agent != nil
-                && agent.agentSession?.kind == "id"
-                && agent.agentSession?.value?.isEmpty == false
-                && tailedPaths[agent.cwd] == nil
-        }
+    /// Keep the tail set in sync with the workspace, per agent: retire tails that
+    /// died or whose agent rotated to a new session, then make sure every
+    /// conversation agent has one. An agent whose transcript file doesn't exist
+    /// yet simply gets no task, so the next poll retries it — no whole-workspace
+    /// teardown, which is what used to interrupt the healthy tails.
+    private func reconcileTails() async {
+        for cwd in deadTails { cancelTail(cwd: cwd) }
+        for cwd in rotatedAgentCwds() { cancelTail(cwd: cwd) }
+        await startTails()
     }
 
-    /// Session-id change is the authoritative rotation signal (a new Claude
-    /// conversation = new transcript file). Agents without a session reference
-    /// fall back to being re-resolved on tail death only.
-    private func rotationDetected() -> Bool {
-        for agent in liveAgents where agent.agent != nil {
-            guard tailedPaths[agent.cwd] != nil else { continue }   // not tailed yet
-            if let sid = agent.agentSession?.value, agent.agentSession?.kind == "id",
-               let tailedSid = tailedSessions[agent.cwd], tailedSid != sid {
-                return true
-            }
+    /// Agents whose session id changed since we started following them — the
+    /// authoritative rotation signal (a new Claude conversation = new transcript
+    /// file). Agents without a session reference are re-resolved on tail death.
+    private func rotatedAgentCwds() -> [String] {
+        liveAgents.compactMap { agent in
+            guard agent.agent != nil,
+                  tailedPaths[agent.cwd] != nil,
+                  agent.agentSession?.kind == "id",
+                  let sid = agent.agentSession?.value,
+                  let tailedSid = tailedSessions[agent.cwd],
+                  tailedSid != sid
+            else { return nil }
+            return agent.cwd
         }
-        return false
     }
 
     /// Merge transcript arrivals with optimistic echoes chronologically, so an

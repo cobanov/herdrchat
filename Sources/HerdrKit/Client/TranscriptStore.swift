@@ -79,17 +79,39 @@ public struct TranscriptStore: Sendable {
         }
     }
 
-    /// Bulk-load only the most recent `maxBytes` of a transcript in one read and
-    /// parse, instead of streaming the whole (possibly multi-MB) file line by
-    /// line. Returns the parsed bubbles plus the byte offset consumed, so the
-    /// live tail can follow from exactly there. A partial first line (when the
-    /// window starts mid-file) simply fails to parse and is dropped.
-    public func recent(atPath path: String, agentLabel: String?, maxBytes: Int) async throws -> (messages: [ChatMessage], consumedBytes: Int) {
+    /// Bulk-load only the most recent slice of a transcript in one read and parse,
+    /// instead of streaming the whole (possibly multi-MB) file line by line.
+    /// Returns the parsed bubbles plus the byte offset consumed, so the live tail
+    /// can follow from exactly there.
+    ///
+    /// Two independent limits, because bytes are a poor proxy for conversation
+    /// length in either direction: one turn can be megabytes (image tool-results
+    /// embed base64), and a megabyte can hold thousands of terse turns.
+    /// `maxBytes` bounds the transfer; `maxMessages` bounds what the chat surface
+    /// has to lay out. Older history stays on disk untouched.
+    public func recent(
+        atPath path: String,
+        agentLabel: String?,
+        maxBytes: Int,
+        maxMessages: Int? = nil
+    ) async throws -> (messages: [ChatMessage], consumedBytes: Int) {
         let size = try await fileSize(atPath: path)
         let start = size > maxBytes ? size - maxBytes : 0
         let data = try await transport.shell("tail -c +\(start + 1) \(ShellQuoting.quote(path))")
-        let text = String(decoding: data, as: UTF8.self)
-        return (TranscriptParser.parse(text, agentLabel: agentLabel), start + data.count)
+        var text = String(decoding: data, as: UTF8.self)
+        // A window that starts mid-file almost always starts mid-line. Drop that
+        // fragment explicitly rather than relying on it failing to parse — a
+        // truncated line can still decode into a half-formed bubble.
+        if start > 0, let firstNewline = text.firstIndex(of: "\n") {
+            text = String(text[text.index(after: firstNewline)...])
+        }
+        var messages = TranscriptParser.parse(text, agentLabel: agentLabel)
+        if let maxMessages, messages.count > maxMessages {
+            messages.removeFirst(messages.count - maxMessages)
+        }
+        // Consumed is the whole window regardless of what we kept or dropped:
+        // the tail must resume at the real EOF, not at the first bubble shown.
+        return (messages, start + data.count)
     }
 
     /// Model + context size for the chat header: read the transcript tail and

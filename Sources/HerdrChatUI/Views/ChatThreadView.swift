@@ -12,9 +12,13 @@ import UIKit
 struct ChatThreadView: View {
     @State private var model: ChatThreadViewModel
     @State private var sendTrigger = 0
+    /// Is the viewport parked at the end of the list?
     @State private var atBottom = true
-    @State private var didInitialScroll = false
+    /// Did the READER move the list themselves? Only their gesture counts —
+    /// content growing must never be mistaken for "they scrolled up".
+    @State private var readerTookOver = false
     private let bottomAnchor = "herdrchat.bottom"
+    @Namespace private var glassNamespace
 
     init(client: HerdrClient, connectionID: String, summary: ChatSummary) {
         _model = State(initialValue: ThreadSessions.shared.model(
@@ -37,16 +41,10 @@ struct ChatThreadView: View {
     var body: some View {
         VStack(spacing: 0) {
             messageList
-            if model.isBlocked {
-                BlockedReplyBar(prompt: model.blockedPrompt) { keys in
-                    Task { await model.sendKeys(keys) }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
             if let error = model.error {
                 errorRow(error)
             }
-            composer
+            bottomControls
         }
         .background(Theme.background)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: model.isBlocked)
@@ -58,7 +56,7 @@ struct ChatThreadView: View {
             #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    didInitialScroll = false   // re-anchor to newest after reload
+                    readerTookOver = false   // re-arm the auto-pin after reload
                     Task { await model.reload() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -119,6 +117,13 @@ struct ChatThreadView: View {
 
     // MARK: - Messages
 
+    /// iOS 18+ reports real scroll geometry and phase, so "at the bottom" and
+    /// "the reader moved it" can be measured instead of inferred. Older systems
+    /// fall back to the bottom sentinel plus a drag gesture.
+    private static var tracksScrollGeometry: Bool {
+        if #available(iOS 18, macOS 15, *) { true } else { false }
+    }
+
     /// A chronological row, precomputed so the flipped list stays simple.
     private struct Row: Identifiable {
         let message: ChatMessage
@@ -178,42 +183,51 @@ struct ChatThreadView: View {
                                     .transition(.opacity)
                             }
                         }
-                        // Bottom sentinel: its visibility (LazyVStack only renders
-                        // near-viewport items) tells us whether the reader is at the
-                        // bottom, which drives the jump-to-bottom button.
+                        // Bottom sentinel: always the `scrollTo` target. On systems
+                        // without scroll geometry it also stands in for "at the
+                        // bottom" via its lazy appearance — a coarse signal (a 1pt
+                        // spacer realises before it is really visible), which is why
+                        // iOS 18+ measures the geometry instead.
                         Color.clear
                             .frame(height: 1)
                             .id(bottomAnchor)
-                            .onAppear { atBottom = true }
-                            .onDisappear { atBottom = false }
+                            .onAppear { if !Self.tracksScrollGeometry { atBottom = true } }
+                            .onDisappear { if !Self.tracksScrollGeometry { atBottom = false } }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: isWaiting)
-            .defaultScrollAnchor(.bottom)
-            // Reliably open at the newest message: a long transcript loads in
-            // phases (cache seed → recent bulk load → live tail), and the default
-            // anchor doesn't always re-pin as content grows. Force the jump on the
-            // first load, then keep pinned only while already at the bottom (never
-            // yank a reader who scrolled up).
-            .onChange(of: model.messages.count) { _, _ in
-                // Always jump to your own just-sent message; for incoming messages,
-                // only stay pinned if you're already at the bottom (don't yank a
-                // reader who scrolled up); and force it once on first load.
+            .chatBottomAnchor()
+            .chatScrollTracking(
+                atBottom: { isAtEnd in
+                    atBottom = isAtEnd
+                    // Back at the end — hand control back to the auto-pin.
+                    if isAtEnd { readerTookOver = false }
+                },
+                tookOver: { readerTookOver = true }
+            )
+            // Stay pinned to the newest message unless the READER scrolled away.
+            // A long transcript arrives in phases (cache seed → recent window →
+            // live tail); the previous version latched "we've scrolled once" on
+            // the very first frame, so every phase that landed afterwards left
+            // the list parked mid-history. Your own send always jumps.
+            //
+            // Runs on appear as well as on every change, and `id:` cancels the
+            // previous attempt, so bursts coalesce instead of piling up.
+            .task(id: model.messages.count) {
                 let sentByMe = visibleMessages.last?.role == .user
-                if !didInitialScroll || sentByMe || atBottom {
-                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                    if !rows.isEmpty { didInitialScroll = true }
-                }
-            }
-            .onAppear {
-                guard !rows.isEmpty else { return }
-                didInitialScroll = true
-                DispatchQueue.main.async {
-                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                }
+                guard !readerTookOver || atBottom || sentByMe else { return }
+                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                // A bulk insert into a LazyVStack is measured lazily: the first
+                // scrollTo resolves against ESTIMATED row heights and lands short
+                // of the end, which is what left a long transcript sitting a
+                // screenful above its newest message. Re-assert once the layout
+                // pass has replaced the estimates with real heights.
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(bottomAnchor, anchor: .bottom)
             }
             #if os(iOS)
             .scrollDismissesKeyboard(.immediately)
@@ -239,10 +253,8 @@ struct ChatThreadView: View {
             Image(systemName: "chevron.down")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.tint)
-                .frame(width: 38, height: 38)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.separator.opacity(0.3), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                .frame(width: 40, height: 40)
+                .jumpButtonGlass()
         }
         .buttonStyle(PressableStyle())
         .padding(.trailing, 14)
@@ -309,6 +321,52 @@ struct ChatThreadView: View {
         .background(.bar)
     }
 
+    // MARK: - Bottom controls
+
+    /// The floating control layer: quick replies for a blocked agent, then the
+    /// composer. Both are Liquid Glass on iOS 26 and share ONE
+    /// `GlassEffectContainer`, so the two shapes blend and morph into each other
+    /// as the reply bar animates in rather than reading as two unrelated slabs.
+    /// The container's spacing matches the stack's, which is what lets the shapes
+    /// merge mid-transition.
+    @ViewBuilder
+    private var bottomControls: some View {
+        if #available(iOS 26, macOS 26, *) {
+            GlassEffectContainer(spacing: Self.controlSpacing) {
+                VStack(spacing: Self.controlSpacing) {
+                    blockedBar
+                        .glassEffectID("blockedBar", in: glassNamespace)
+                        .glassEffectTransition(.matchedGeometry)
+                    composer
+                        .glassEffectID("composer", in: glassNamespace)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+            }
+        } else {
+            VStack(spacing: Self.controlSpacing) {
+                blockedBar
+                composer
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private static let controlSpacing: CGFloat = 8
+
+    @ViewBuilder
+    private var blockedBar: some View {
+        if model.isBlocked {
+            BlockedReplyBar(prompt: model.blockedPrompt) { keys in
+                Task { await model.sendKeys(keys) }
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     // MARK: - Composer (floating glass capsule, iMessage-style)
 
     /// A single floating pill that hovers above the keyboard: a frosted-glass
@@ -343,10 +401,7 @@ struct ChatThreadView: View {
             .animation(.spring(response: 0.25, dampingFraction: 1), value: canSend)
             .sendHaptic(sendTrigger)
         }
-        .composerGlass()
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .composerGlass()   // outer padding comes from `bottomControls`
     }
 
     private func copyToPasteboard(_ text: String) {
@@ -356,7 +411,82 @@ struct ChatThreadView: View {
     }
 }
 
+/// How close to the end still counts as "at the bottom" when measuring scroll
+/// geometry — enough slack to survive a rubber-band and sub-pixel rounding.
+private let bottomSlack: CGFloat = 28
+
 private extension View {
+    /// Keep the list's bottom edge stable. `.defaultScrollAnchor(.bottom)` on its
+    /// own only decides the FIRST offset; the `.sizeChanges` role is what
+    /// preserves the distance from the end as content grows — which is the entire
+    /// behaviour a transcript wants: pinned while you're at the newest message,
+    /// undisturbed while you're reading back through history. Without it, every
+    /// bulk insert shifted the viewport and the pin had to be chased in code.
+    @ViewBuilder
+    func chatBottomAnchor() -> some View {
+        if #available(iOS 18, macOS 15, *) {
+            self
+                .defaultScrollAnchor(.bottom)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        } else {
+            self.defaultScrollAnchor(.bottom)
+        }
+    }
+
+    /// Feed the chat list its two scroll facts: whether the viewport sits at the
+    /// end, and whether the READER moved it (as opposed to the content growing
+    /// under them). iOS 18+ measures real geometry and scroll phase; older
+    /// systems fall back to a drag gesture, with the bottom sentinel supplying
+    /// `atBottom`.
+    @ViewBuilder
+    func chatScrollTracking(
+        atBottom: @escaping (Bool) -> Void,
+        tookOver: @escaping () -> Void
+    ) -> some View {
+        if #available(iOS 18, macOS 15, *) {
+            self
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height
+                        >= geometry.contentSize.height - bottomSlack
+                } action: { _, isAtEnd in
+                    atBottom(isAtEnd)
+                }
+                .onScrollPhaseChange { _, phase in
+                    // `.interacting` is the reader's finger only — programmatic
+                    // scrolls report `.animating`, so the auto-pin can't
+                    // mistake its own work for a reader taking over.
+                    if phase == .interacting { tookOver() }
+                }
+        } else {
+            self.simultaneousGesture(
+                DragGesture(minimumDistance: 12).onChanged { _ in tookOver() }
+            )
+        }
+    }
+
+    /// The jump-to-bottom affordance's surface: a real floating control, so on
+    /// iOS 26 it gets interactive Liquid Glass (it reacts to touch) instead of a
+    /// hand-rolled material-plus-shadow imitation.
+    @ViewBuilder
+    func jumpButtonGlass() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            self.jumpButtonMaterialFallback()
+        }
+        #else
+        self.jumpButtonMaterialFallback()
+        #endif
+    }
+
+    func jumpButtonMaterialFallback() -> some View {
+        self
+            .background(.regularMaterial, in: Circle())
+            .overlay(Circle().strokeBorder(Theme.separator.opacity(0.3), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+    }
+
     /// Medium impact haptic on send (iOS only; no-op elsewhere).
     @ViewBuilder func sendHaptic(_ trigger: Int) -> some View {
         #if os(iOS)

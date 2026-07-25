@@ -79,6 +79,22 @@ struct TypingDots: View {
     }
 }
 
+// MARK: - Bubble geometry
+
+/// The empty channel opposite a bubble, which is what caps how wide a bubble can
+/// grow. Proportional to the list rather than a fixed 300pt ceiling: that hard
+/// cap left bubbles stranded in a sea of background on a large phone or iPad,
+/// and it never adapted to Dynamic Type. A share of the container reads the same
+/// on every device.
+struct BubbleGutter: View {
+    var body: some View {
+        Spacer(minLength: 0)
+            .containerRelativeFrame(.horizontal) { width, _ in
+                max(44, width * 0.18)
+            }
+    }
+}
+
 // MARK: - Message bubble
 
 /// A native-feeling chat bubble: 18pt continuous corners, no shadow, system
@@ -91,25 +107,33 @@ struct MessageBubble: View {
     private var isOutgoing: Bool { message.role == .user }
 
     var body: some View {
-        HStack {
-            if isOutgoing { Spacer(minLength: 48) }
+        HStack(spacing: 0) {
+            if isOutgoing { BubbleGutter() }
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(message.segments.enumerated()), id: \.offset) { _, segment in
                     segmentView(segment)
                 }
                 if isLastInGroup, let time = formatTime(message.timestamp) {
-                    Text(time)
-                        .font(.caption2)
-                        .foregroundStyle(isOutgoing ? Color.white.opacity(0.7) : Color.secondary.opacity(0.8))
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    // Trailing-aligned WITHOUT `maxWidth: .infinity`. That made the
+                    // timestamp greedy, which stretched every last-in-group bubble
+                    // to the full width cap — a two-word reply rendered as a wide,
+                    // mostly-empty box with the text stranded on the left.
+                    // `Spacer(minLength: 0)` contributes no ideal width, so the
+                    // bubble still hugs its content while the time sits at the edge.
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Text(time)
+                            .font(.caption2)
+                            .foregroundStyle(isOutgoing ? Color.white.opacity(0.7) : Color.secondary.opacity(0.8))
+                    }
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isOutgoing ? Theme.tint : Theme.bubbleIncoming)
             .clipShape(bubbleShape)
-            .frame(maxWidth: 300, alignment: isOutgoing ? .trailing : .leading)
-            if !isOutgoing { Spacer(minLength: 48) }
+            .frame(maxWidth: .infinity, alignment: isOutgoing ? .trailing : .leading)
+            if !isOutgoing { BubbleGutter() }
         }
     }
 
@@ -200,7 +224,7 @@ struct LivePreviewBubble: View {
     let text: String
 
     var body: some View {
-        HStack {
+        HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     TypingDots(color: Theme.tint, size: 4)
@@ -208,10 +232,13 @@ struct LivePreviewBubble: View {
                         .font(.system(.caption2, design: .rounded).weight(.semibold))
                         .foregroundStyle(Theme.tint)
                 }
+                // No `maxWidth: .infinity` here: it forced the preview to the full
+                // width cap even for three words, so the live bubble never matched
+                // the settled bubble it is replaced by — the swap read as a jump.
                 Text(text)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -219,8 +246,8 @@ struct LivePreviewBubble: View {
             .clipShape(
                 UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous)
             )
-            .frame(maxWidth: 300, alignment: .leading)
-            Spacer(minLength: 48)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            BubbleGutter()
         }
     }
 }
@@ -280,7 +307,7 @@ struct BlockedReplyBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
+        .blockedBarGlass()
     }
 
     @ViewBuilder
@@ -344,9 +371,44 @@ struct BlockedReplyBar: View {
                 Text(title)
             }
         }
-        .buttonStyle(.bordered)
+        .chipStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.small)
         .tint(Theme.attention)
+    }
+}
+
+private extension View {
+    /// The blocked-reply bar's surface. It is a control surface (a menu of real
+    /// actions), so on iOS 26 it is Liquid Glass in a rounded rect, matching the
+    /// composer it sits above — the two share a `GlassEffectContainer` in
+    /// `ChatThreadView` so they blend as the bar animates in. Older systems keep
+    /// the `.bar` material.
+    @ViewBuilder
+    func blockedBarGlass() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else {
+            self.background(.bar, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        #else
+        self.background(.bar, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        #endif
+    }
+
+    /// Quick-reply chips are buttons, so on iOS 26 they take the system glass
+    /// button style rather than a hand-rolled bordered look.
+    @ViewBuilder
+    func chipStyle() -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
+        }
+        #else
+        self.buttonStyle(.bordered)
+        #endif
     }
 }

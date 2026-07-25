@@ -186,8 +186,27 @@ private struct ChatRow: View {
     }
 
     /// Second line: live state wins (typing/blocked), last message otherwise.
+    ///
+    /// Every variant reserves the SAME height — two `subheadline` lines — because
+    /// they swap live as agents start and stop working. The old code mixed a
+    /// hardcoded 38pt for the live states with a two-line reservation for the
+    /// preview, so a row visibly changed height (and nudged every row under it)
+    /// each time an agent began typing. Reserving once, here, keeps the list still
+    /// and survives Dynamic Type, which a magic number can't.
     @ViewBuilder
     private var subtitle: some View {
+        ZStack(alignment: .topLeading) {
+            Text(verbatim: " \n ")
+                .font(.subheadline)
+                .lineLimit(2, reservesSpace: true)
+                .hidden()
+                .accessibilityHidden(true)
+            liveSubtitle
+        }
+    }
+
+    @ViewBuilder
+    private var liveSubtitle: some View {
         switch summary.status {
         case .working:
             HStack(spacing: 6) {
@@ -196,17 +215,15 @@ private struct ChatRow: View {
                     .foregroundStyle(Theme.tint)
                 TypingDots(color: Theme.tint, size: 4.5)
             }
-            .frame(minHeight: 38, alignment: .top)
         case .blocked:
             Text("waiting for you")
                 .font(.subheadline)
                 .foregroundStyle(Theme.attention)
-                .frame(minHeight: 38, alignment: .top)
         default:
             Text(previewText)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(2, reservesSpace: true)
+                .lineLimit(2)
         }
     }
 
