@@ -1,9 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+// Upload-key credentials for Play releases. Kept OUT of the repo: either
+// android/keystore.properties (gitignored) or the same names as environment
+// variables, so CI and a local machine use one code path. Absent = release builds
+// stay unsigned, which is the safe default for anyone who clones this.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun signingValue(key: String): String? =
+    (keystoreProperties.getProperty(key) ?: System.getenv(key))?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "dev.herdr.herdrchat"
@@ -17,10 +31,28 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        create("upload") {
+            val storePath = signingValue("HERDRCHAT_STORE_FILE")
+            if (storePath != null) {
+                storeFile = file(storePath)
+                storePassword = signingValue("HERDRCHAT_STORE_PASSWORD")
+                keyAlias = signingValue("HERDRCHAT_KEY_ALIAS") ?: "upload"
+                keyPassword = signingValue("HERDRCHAT_KEY_PASSWORD") ?: signingValue("HERDRCHAT_STORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Only attach the config when credentials actually resolved — a
+            // signingConfig with a null storeFile fails the build outright, which
+            // would break `assembleDebug` for anyone without the key.
+            if (signingValue("HERDRCHAT_STORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
         }
     }
 

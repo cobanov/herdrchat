@@ -10,3 +10,10 @@ DerivedData/
 secrets.plist
 __pycache__/
 *.pyc
+
+# Play upload key: the keystore and its passwords must never be committed.
+android/keystore.properties
+*.jks
+*.keystore
+# Google Play service-account key for automated uploads.
+play-service-account*.json
