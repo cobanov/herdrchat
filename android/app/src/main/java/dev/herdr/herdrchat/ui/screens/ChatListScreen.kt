@@ -75,6 +75,9 @@ import dev.herdr.herdrchat.ui.connection.ServerConnection
 import dev.herdr.herdrchat.ui.theme.HerdrColors
 import dev.herdr.herdrchat.ui.theme.avatarColor
 import dev.herdr.herdrchat.ui.theme.pressScale
+import dev.herdr.herdrchat.core.model.PermissionMode
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,6 +203,7 @@ private fun NewWorkspaceSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var cwd by remember { mutableStateOf(model.lastCwd) }
     var label by remember { mutableStateOf("") }
+    var permissionMode by remember { mutableStateOf(model.lastPermissionMode) }
     var creating by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
 
@@ -253,6 +257,34 @@ private fun NewWorkspaceSheet(
                     )
                 }
             }
+            Text(
+                "Permissions",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PermissionMode.entries.forEach { mode ->
+                    val selected = mode == permissionMode
+                    Text(
+                        text = mode.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) Color.White else HerdrColors.accent,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (selected) HerdrColors.accent else Color.Transparent)
+                            .clickable { permissionMode = mode }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    )
+                }
+            }
+            Text(
+                permissionMode.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(
                 value = label,
                 onValueChange = { label = it },
@@ -265,7 +297,7 @@ private fun NewWorkspaceSheet(
                 onClick = {
                     creating = true
                     scope.launch {
-                        val summary = model.createWorkspace(cwd, label.ifBlank { null })
+                        val summary = model.createWorkspace(cwd, label.ifBlank { null }, permissionMode)
                         creating = false
                         if (summary != null) {
                             onDismiss()

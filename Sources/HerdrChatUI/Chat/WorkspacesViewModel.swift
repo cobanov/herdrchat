@@ -67,6 +67,19 @@ public final class WorkspacesViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "herdrchat.lastCwd.\(connectionID)") }
     }
 
+    /// The permission mode the last chat was started with (per connection), so the
+    /// choice sticks instead of being re-made every time. Defaults to `.bypass`:
+    /// answering a confirmation per tool call from a phone defeats the point.
+    public var lastPermissionMode: PermissionMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "herdrchat.permissionMode.\(connectionID)")
+            return raw.flatMap(PermissionMode.init(rawValue:)) ?? .bypass
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "herdrchat.permissionMode.\(connectionID)")
+        }
+    }
+
     /// Distinct working directories already in use, offered as quick-fill
     /// suggestions in the new-chat sheet (start another agent in a known repo).
     public var knownCwds: [String] {
@@ -83,13 +96,21 @@ public final class WorkspacesViewModel {
     /// Create a workspace at `cwd` and start `command` (Claude) in it. Returns the
     /// new workspace's summary once the list refresh sees it, so the caller can
     /// navigate straight into the fresh chat. Nil on failure (error is published).
-    public func createWorkspace(cwd: String, label: String?, command: String = "claude") async -> ChatSummary? {
+    public func createWorkspace(
+        cwd: String,
+        label: String?,
+        permissionMode: PermissionMode = .bypass
+    ) async -> ChatSummary? {
         let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCwd.isEmpty else { return nil }
         do {
             let creation = try await client.createWorkspace(cwd: trimmedCwd, label: label?.trimmingCharacters(in: .whitespacesAndNewlines))
-            try await client.startAgent(inPane: creation.rootPane.paneId, command: command)
+            try await client.startAgent(
+                inPane: creation.rootPane.paneId,
+                command: permissionMode.launchCommand()
+            )
             lastCwd = trimmedCwd
+            lastPermissionMode = permissionMode
             await refresh()
             return summaries.first { $0.workspaceId == creation.workspace.workspaceId }
         } catch {

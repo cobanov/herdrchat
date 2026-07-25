@@ -267,6 +267,8 @@ private struct NewWorkspaceSheet: View {
     @State private var label = ""
     @State private var creating = false
     @State private var showingPicker = false
+    /// Seeded from the connection's remembered choice in `onAppear`.
+    @State private var permissionMode: PermissionMode = .bypass
 
     private var canStart: Bool {
         !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !creating
@@ -307,6 +309,18 @@ private struct NewWorkspaceSheet: View {
                     }
                 }
 
+                Section {
+                    Picker("Permissions", selection: $permissionMode) {
+                        ForEach(PermissionMode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.symbol).tag(mode)
+                        }
+                    }
+                } header: {
+                    Text("Permissions")
+                } footer: {
+                    Text(permissionMode.detail)
+                }
+
                 Section("Name (optional)") {
                     TextField("Automatic (folder name)", text: $label)
                         .autocorrectionDisabled()
@@ -327,7 +341,10 @@ private struct NewWorkspaceSheet: View {
                 #endif
             }
             .interactiveDismissDisabled(creating)
-            .onAppear { if cwd.isEmpty { cwd = model.lastCwd } }
+            .onAppear {
+                if cwd.isEmpty { cwd = model.lastCwd }
+                permissionMode = model.lastPermissionMode
+            }
             .sheet(isPresented: $showingPicker) {
                 DirectoryPickerView(model: model, start: cwd) { picked in
                     cwd = picked
@@ -350,7 +367,8 @@ private struct NewWorkspaceSheet: View {
         Task {
             let summary = await model.createWorkspace(
                 cwd: cwd,
-                label: label.isEmpty ? nil : label
+                label: label.isEmpty ? nil : label,
+                permissionMode: permissionMode
             )
             creating = false
             if let summary {

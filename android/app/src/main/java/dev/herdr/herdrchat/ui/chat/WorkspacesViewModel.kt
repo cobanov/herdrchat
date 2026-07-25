@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import dev.herdr.herdrchat.core.model.PermissionMode
 
 /**
  * Drives the chat list: polls the herdr host for workspaces + agent statuses and
@@ -37,6 +38,11 @@ class WorkspacesViewModel(
         private set
     /** Last directory a workspace was created in, to prefill the new-chat sheet. */
     var lastCwd by mutableStateOf("")
+        private set
+    /** Permission mode the last chat was started with, so the choice sticks. Defaults
+     *  to full access: answering a confirmation per tool call from a phone defeats
+     *  the point. */
+    var lastPermissionMode by mutableStateOf(PermissionMode.BYPASS)
         private set
 
     private var job: Job? = null
@@ -119,13 +125,18 @@ class WorkspacesViewModel(
     /** Create a workspace at [cwd] and start [command] (Claude) in it. Returns the
      *  new workspace's summary once the refresh sees it, so the caller can open the
      *  fresh chat. Null on failure (error is published to [connectionError]). */
-    suspend fun createWorkspace(cwd: String, label: String?, command: String = "claude"): ChatSummary? {
+    suspend fun createWorkspace(
+        cwd: String,
+        label: String?,
+        permissionMode: PermissionMode = PermissionMode.BYPASS,
+    ): ChatSummary? {
         val trimmed = cwd.trim()
         if (trimmed.isEmpty()) return null
         return try {
             val creation = client.createWorkspace(trimmed, label?.trim())
-            client.startAgent(creation.rootPane.paneId, command)
+            client.startAgent(creation.rootPane.paneId, permissionMode.launchCommand())
             lastCwd = trimmed
+            lastPermissionMode = permissionMode
             refresh()
             summaries.firstOrNull { it.workspaceId == creation.workspace.workspaceId }
         } catch (e: Exception) {
