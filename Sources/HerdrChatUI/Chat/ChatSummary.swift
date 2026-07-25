@@ -54,7 +54,7 @@ public struct ChatSummary: Identifiable, Sendable, Hashable {
     /// Presence fallback for rows with no preview yet.
     public var subtitle: String {
         switch status {
-        case .working: return "typing…"
+        case .working: return "working…"
         case .blocked: return "waiting for you"
         case .done: return "done"
         case .idle: return agents.isEmpty ? "idle" : "online"

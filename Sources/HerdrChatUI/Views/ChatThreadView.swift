@@ -92,7 +92,7 @@ struct ChatThreadView: View {
     private var statusSubtitle: some View {
         let status = model.status
         let statusText: String? = switch status {
-        case .working: "typing"
+        case .working: "working"
         case .blocked: "waiting for reply"
         case .done: "done"
         case .idle: "online"
@@ -369,22 +369,21 @@ struct ChatThreadView: View {
 
     // MARK: - Composer (floating glass capsule, iMessage-style)
 
-    /// A single floating pill that hovers above the keyboard: a frosted-glass
-    /// capsule with the send button inside on the trailing edge. No full-width
-    /// bar behind it — the pill sits on the chat background with breathing room
-    /// on every side, so there's no flat edge trying (and failing) to meet the
-    /// keyboard's rounded top.
+    /// A single floating pill that hovers above the keyboard, with the send button
+    /// inside on the trailing edge. No full-width bar behind it — the pill sits on
+    /// the chat background with breathing room on every side, so there's no flat
+    /// edge trying (and failing) to meet the keyboard's rounded top.
     private var composer: some View {
         let canSend = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isSending
-        // .center keeps the send button vertically centered against the field for
-        // the common single-line case; the small min height stops a one-line pill
-        // from collapsing tighter than the 34pt button.
-        return HStack(alignment: .center, spacing: 6) {
+        // `.bottom`, not `.center`: as the field grows the send button stays beside
+        // the LAST line, the way Messages does it. Centred, it drifted into the
+        // middle of a tall pill and looked unmoored from the text being sent.
+        return HStack(alignment: .bottom, spacing: 6) {
             TextField("Message", text: $model.draft, axis: .vertical)
-                .lineLimit(1...5)
+                .lineLimit(1...6)
                 .padding(.leading, 16)
                 .padding(.vertical, 8)
-                .frame(minHeight: 36, alignment: .leading)
+                .frame(minHeight: Self.composerLineHeight, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button {
                 sendTrigger += 1
@@ -398,11 +397,19 @@ struct ChatThreadView: View {
             .buttonStyle(PressableStyle())
             .disabled(!canSend)
             .padding(.trailing, 5)
+            .padding(.bottom, 3)
             .animation(.spring(response: 0.25, dampingFraction: 1), value: canSend)
             .sendHaptic(sendTrigger)
         }
         .composerGlass()   // outer padding comes from `bottomControls`
     }
+
+    /// Height of the composer at one line. The pill's corner radius is half of
+    /// this, which is the whole trick behind its shape: at one line the rounded
+    /// rect IS a capsule, and as the field grows it stays a rounded rect with the
+    /// same corners instead of inflating into a stadium — a real `Capsule` ties
+    /// its radius to its height, which is why a long draft used to distort it.
+    private static let composerLineHeight: CGFloat = 38
 
     private func copyToPasteboard(_ text: String) {
         #if canImport(UIKit)
@@ -499,12 +506,12 @@ private extension View {
     /// The composer pill's surface. On iOS 26 this is real Liquid Glass — the
     /// system's own translucent, refracting material for floating controls (the
     /// "new glass design" the composer is meant to match). Applied AFTER layout
-    /// so glass wraps the finished capsule. Older OSes keep the frosted
-    /// `.regularMaterial` capsule with a hairline rim as the fallback.
+    /// so glass wraps the finished pill. Older OSes keep the frosted
+    /// `.regularMaterial` pill with a hairline rim as the fallback.
     @ViewBuilder func composerGlass() -> some View {
         #if os(iOS)
         if #available(iOS 26, *) {
-            self.glassEffect(.regular, in: Capsule(style: .continuous))
+            self.glassEffect(.regular, in: composerShape)
         } else {
             self.composerMaterialFallback()
         }
@@ -516,10 +523,21 @@ private extension View {
     func composerMaterialFallback() -> some View {
         self.background(
             ZStack {
-                Capsule(style: .continuous).fill(.regularMaterial)
-                Capsule(style: .continuous)
-                    .strokeBorder(Theme.separator.opacity(0.35), lineWidth: 0.5)
+                composerShape.fill(.regularMaterial)
+                composerShape.strokeBorder(Theme.separator.opacity(0.35), lineWidth: 0.5)
             }
         )
     }
+}
+
+/// The composer's outline: a continuous rounded rect whose radius is half the
+/// one-line height. At one line that is visually identical to a capsule; when the
+/// draft wraps, the corners hold instead of stretching with the height the way a
+/// `Capsule` does. Continuous (not circular) corners are what make it read as
+/// system furniture rather than a hand-drawn pill.
+private var composerShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: 19, style: .continuous)
+}
+
+private extension View {
 }

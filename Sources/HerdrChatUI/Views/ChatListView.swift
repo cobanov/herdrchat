@@ -210,7 +210,10 @@ private struct ChatRow: View {
         switch summary.status {
         case .working:
             HStack(spacing: 6) {
-                Text("typing…")
+                // "working", not "typing": an agent isn't composing a message at a
+                // keyboard, it's running tools and thinking. Borrowing the
+                // messaging-app word oversold it and undersold what it does.
+                Text("working…")
                     .font(.subheadline)
                     .foregroundStyle(Theme.tint)
                 TypingDots(color: Theme.tint, size: 4.5)

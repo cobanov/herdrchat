@@ -18,7 +18,7 @@ data class ChatSummary(
     /** WhatsApp-style presence subtitle. */
     val subtitle: String
         get() = when (status) {
-            AgentStatus.WORKING -> "typing…"
+            AgentStatus.WORKING -> "working…"
             AgentStatus.BLOCKED -> "waiting for you"
             AgentStatus.DONE -> "done"
             AgentStatus.IDLE -> if (agents.isEmpty()) "idle" else "online"

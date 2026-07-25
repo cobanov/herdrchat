@@ -324,7 +324,7 @@ private fun ThreadTitle(title: String, status: AgentStatus, modelName: String?, 
     Column {
         Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
         val statusText = when (status) {
-            AgentStatus.WORKING -> "typing"
+            AgentStatus.WORKING -> "working"
             AgentStatus.BLOCKED -> "waiting for reply"
             AgentStatus.DONE -> "done"
             AgentStatus.IDLE -> "online"
