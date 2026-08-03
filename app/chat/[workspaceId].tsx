@@ -21,6 +21,7 @@ import { BlockedBar } from '@/features/thread/BlockedBar';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
+import { OlderHistory } from '@/features/thread/OlderHistory';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
 import { clientFor, useSelectedConnection } from '@/state/connections';
@@ -235,6 +236,15 @@ export default function ThreadScreen() {
             autoscrollToBottomThreshold: 0.2,
             animateAutoScrollToBottom: false,
           }}
+          // Reaching the top is a request for more history. Safe to fire more
+          // than once: loadOlder walks a single anchor, so a repeat call either
+          // finds the previous one still running or continues from where it
+          // left off — it cannot fetch the same page twice.
+          onStartReached={() => void thread.loadOlder()}
+          onStartReachedThreshold={0.5}
+          ListHeaderComponent={
+            <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
+          }
           onScroll={onScroll}
           scrollEventThrottle={64}
           renderItem={({ item }) => (

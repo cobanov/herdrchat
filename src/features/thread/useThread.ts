@@ -44,6 +44,19 @@ const THIN_HISTORY = 10;
  * what we've seen) while losing it costs a message.
  */
 const RESUME_REWIND = 4096;
+/**
+ * One page of scroll-up history. Smaller than the opening window: this is a
+ * deliberate reach for more, so it should land quickly rather than pull the
+ * largest slice it can justify.
+ */
+const OLDER_BYTES = 128_000;
+/**
+ * How many pages a single pull may consume while every one of them turns out to
+ * be entirely deduped. Resuming from cache anchors at the tail cursor, so the
+ * first page back is the cached window itself and yields nothing new; without
+ * this, that pull would appear to do nothing at all.
+ */
+const OLDER_EMPTY_PAGES = 3;
 
 const STATUS_POLL_MS = 2000;
 
@@ -58,6 +71,11 @@ export interface ThreadState {
   workingDirName: string | null;
   error: string | null;
   isSending: boolean;
+  /** Fetch one page of history above the oldest message on screen. */
+  loadOlder: () => Promise<void>;
+  loadingOlder: boolean;
+  /** True once the top of the transcript is on screen — nothing left to fetch. */
+  reachedStart: boolean;
   failedIds: Set<string>;
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
@@ -89,6 +107,8 @@ export function useThread(
   const [livePreview, setLivePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [reachedStart, setReachedStart] = useState(false);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
   // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
@@ -97,6 +117,12 @@ export function useThread(
   const arrivals = useRef<ChatMessage[]>([]);
   const echoes = useRef<ChatMessage[]>([]);
   const seen = useRef<Set<string>>(new Set());
+  /**
+   * Where scroll-up reads from, and how far back it has already gone. Recorded
+   * from the first tail only: a workspace with two agents has two transcripts,
+   * and paging the focused one is what "load older" means to a reader.
+   */
+  const olderSource = useRef<{ path: string; label: string | null; anchor: number } | null>(null);
   const boundSig = useRef<string | null>(null);
   const tails = useRef(new Map<string, AbortController>());
   const alive = useRef(true);
@@ -145,9 +171,58 @@ export function useThread(
     [db, connectionId, workspaceId, rebuild]
   );
 
+  /**
+   * Prepend a page of older history.
+   *
+   * Deliberately NOT written to the thread cache: `appendMessages` numbers rows
+   * with max(seq)+1, so persisting a page of old turns would file them after the
+   * newest ones and the thread would come back inverted on the next open. Pages
+   * live for this visit; reopening starts from the recent window again.
+   */
+  const loadOlder = useCallback(async () => {
+    if (client === null) return;
+    const source = olderSource.current;
+    if (source === null || source.anchor <= 0) return;
+
+    setLoadingOlder(true);
+    try {
+      const store = new TranscriptStore(client.transport);
+      for (let page = 0; page < OLDER_EMPTY_PAGES; page += 1) {
+        const current = olderSource.current;
+        if (current === null || current.anchor <= 0) break;
+
+        const older = await store.older(current.path, current.label, current.anchor, OLDER_BYTES);
+        if (!alive.current) return;
+        olderSource.current = { ...current, anchor: older.startByte };
+
+        const fresh = older.messages.filter((message) => !seen.current.has(message.id));
+        for (const message of fresh) seen.current.add(message.id);
+        if (fresh.length > 0) {
+          arrivals.current.unshift(...fresh);
+          rebuild();
+        }
+
+        if (older.reachedStart) {
+          setReachedStart(true);
+          break;
+        }
+        // Only keep paging while the reader has been given nothing.
+        if (fresh.length > 0) break;
+      }
+    } catch {
+      // A failed reach for more history leaves the thread exactly as it was.
+      // The reader can pull again; surfacing a banner for it would push the
+      // conversation down to report that nothing happened.
+    } finally {
+      if (alive.current) setLoadingOlder(false);
+    }
+  }, [client, rebuild]);
+
   const resetHistory = useCallback(() => {
     arrivals.current = [];
     echoes.current = [];
+    olderSource.current = null;
+    setReachedStart(false);
     seen.current = new Set();
     setMessages([]);
     setFailedIds(new Set());
@@ -218,8 +293,16 @@ export function useThread(
       const canResume = cached !== null && size >= cached;
 
       let followFrom: number;
+      let anchor: number | null = null;
       if (canResume) {
         followFrom = Math.max(0, cached - RESUME_REWIND);
+        // The cache does not record where its oldest message sat in the file,
+        // so scroll-up anchors at the cursor instead. That first page back is
+        // the cached window itself and dedupes to nothing, which is why
+        // loadOlder keeps going until a page yields something — an
+        // over-estimate wastes a read, an under-estimate would open a hole in
+        // the history that nothing later fills.
+        anchor = cached;
       } else {
         await resetTailCursor(db, connectionId, workspaceId, path);
         const recent = await loadRecent(store, path, label, size);
@@ -227,9 +310,15 @@ export function useThread(
           await ingest(recent.messages, sig);
           await setTailCursor(db, connectionId, workspaceId, path, recent.consumedBytes);
           followFrom = recent.consumedBytes;
+          anchor = recent.startByte;
         } else {
           followFrom = 0;
         }
+      }
+
+      if (olderSource.current === null && anchor !== null) {
+        olderSource.current = { path, label, anchor };
+        if (anchor <= 0) setReachedStart(true);
       }
 
       void (async () => {
@@ -439,6 +528,9 @@ export function useThread(
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
     error,
     isSending,
+    loadOlder,
+    loadingOlder,
+    reachedStart,
     failedIds,
     send,
     retry,
@@ -457,7 +549,7 @@ async function loadRecent(
   path: string,
   label: string | null,
   size: number
-): Promise<{ messages: ChatMessage[]; consumedBytes: number } | null> {
+): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number } | null> {
   try {
     const first = await store.recent(path, label, RECENT_BYTES, RECENT_MESSAGES);
     if (first.messages.length >= THIN_HISTORY || size <= RECENT_BYTES) return first;

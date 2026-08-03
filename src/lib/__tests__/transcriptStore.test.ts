@@ -25,7 +25,13 @@ class FakeTransport implements HerdrTransport {
     const window = /tail -c \+(\d+)/.exec(command);
     if (window !== null) {
       const oneBased = Number(window[1]);
-      return ok(bytes.subarray(Math.max(0, oneBased - 1)).toString('utf8'));
+      let slice = bytes.subarray(Math.max(0, oneBased - 1));
+      // `older()` bounds its range with `| head -c N`. Honouring it here is what
+      // makes the byte assertions mean anything — without it the fake serves the
+      // rest of the file and a paging bug would still look correct.
+      const bound = /head -c (\d+)/.exec(command);
+      if (bound !== null) slice = slice.subarray(0, Number(bound[1]));
+      return ok(slice.toString('utf8'));
     }
 
     const tail = /tail -c (\d+)/.exec(command);
@@ -53,6 +59,11 @@ function transcript(turns: number): string {
       `{"type":"user","uuid":"u${index}","message":{"role":"user","content":"turn ${index}"}}`
   );
   return `${lines.join('\n')}\n`;
+}
+
+/** "turn 42" -> 42, so paging can be asserted as a contiguous run. */
+function turnNumber(text: string): number {
+  return Number(text.replace('turn ', ''));
 }
 
 function store(file: string): { store: TranscriptStore; transport: FakeTransport } {
@@ -162,6 +173,77 @@ describe('list previews', () => {
         isSidechain: false,
       })
     ).toBeNull();
+  });
+});
+
+describe('older history', () => {
+  it('returns the page immediately before the anchor', async () => {
+    const file = transcript(200);
+    const { store: subject } = store(file);
+
+    const first = await subject.recent('/t.jsonl', null, 2_000);
+    const page = await subject.older('/t.jsonl', null, first.startByte, 2_000);
+
+    // The oldest thing on screen and the newest thing in the older page are
+    // adjacent turns — no gap between the two windows.
+    const lastOlder = displayText(page.messages[page.messages.length - 1]!);
+    const firstShown = displayText(first.messages[0]!);
+    expect(turnNumber(firstShown)).toBe(turnNumber(lastOlder) + 1);
+  });
+
+  // The invariant that matters: paging to the top must show every turn exactly
+  // once. An anchor off by one line either repeats a message or loses one, and
+  // both look like a rendering glitch rather than a byte-accounting bug.
+  it('pages to the start of the file with no gaps and no repeats', async () => {
+    const file = transcript(200);
+    const { store: subject } = store(file);
+
+    const first = await subject.recent('/t.jsonl', null, 2_000);
+    const seen = first.messages.map((message) => turnNumber(displayText(message)));
+
+    let anchor = first.startByte;
+    let guard = 0;
+    for (;;) {
+      const page = await subject.older('/t.jsonl', null, anchor, 700);
+      seen.unshift(...page.messages.map((message) => turnNumber(displayText(message))));
+      if (page.reachedStart) break;
+      expect(page.startByte).toBeLessThan(anchor); // must always make progress
+      anchor = page.startByte;
+      if ((guard += 1) > 100) throw new Error('older() never reached the start');
+    }
+
+    expect(seen).toEqual(Array.from({ length: 200 }, (_, index) => index));
+  });
+
+  it('reports reaching the start rather than paging forever', async () => {
+    const { store: subject } = store(transcript(5));
+    const page = await subject.older('/t.jsonl', null, 40, 10_000);
+
+    expect(page.reachedStart).toBe(true);
+    expect(page.startByte).toBe(0);
+  });
+
+  it('does nothing at the start of the file', async () => {
+    const { store: subject, transport } = store(transcript(5));
+    const page = await subject.older('/t.jsonl', null, 0, 10_000);
+
+    expect(page.messages).toEqual([]);
+    expect(page.reachedStart).toBe(true);
+    // Not even a round-trip: there is nothing before byte zero to ask for.
+    expect(transport.commands).toHaveLength(0);
+  });
+
+  it('counts the dropped partial line in UTF-8 bytes, not UTF-16 units', async () => {
+    // The host counts bytes. An emoji in the discarded fragment is 4 bytes but
+    // 2 String units, so a String.length anchor would drift and skip a message.
+    const file = `{"type":"user","uuid":"u0","message":{"role":"user","content":"🙂🙂🙂"}}\n${transcript(3)}`;
+    const { store: subject } = store(file);
+
+    const anchor = Buffer.from(file, 'utf8').length;
+    const page = await subject.older('/t.jsonl', null, anchor, anchor - 5);
+
+    const firstLineBytes = Buffer.from(file.slice(0, file.indexOf('\n') + 1), 'utf8').length;
+    expect(page.startByte).toBe(firstLineBytes);
   });
 });
 

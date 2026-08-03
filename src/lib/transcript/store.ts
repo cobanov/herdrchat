@@ -77,18 +77,22 @@ export class TranscriptStore {
     agentLabel: string | null,
     maxBytes: number,
     maxMessages?: number
-  ): Promise<{ messages: ChatMessage[]; consumedBytes: number }> {
+  ): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number }> {
     const size = await this.fileSize(path);
     const start = size > maxBytes ? size - maxBytes : 0;
     const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)}`);
 
     let text = body;
+    let startByte = start;
     // A window that starts mid-file almost always starts mid-line. Drop that
     // fragment explicitly rather than relying on it failing to parse — a
     // truncated line can still decode into a half-formed bubble.
     if (start > 0) {
       const firstNewline = text.indexOf('\n');
-      if (firstNewline >= 0) text = text.slice(firstNewline + 1);
+      if (firstNewline >= 0) {
+        startByte = start + byteLength(text.slice(0, firstNewline + 1));
+        text = text.slice(firstNewline + 1);
+      }
     }
 
     let messages = parseTranscript(text, agentLabel);
@@ -99,7 +103,65 @@ export class TranscriptStore {
     // Consumed is the whole WINDOW regardless of what we kept or dropped: the
     // tail must resume at the real end of file, not at the first bubble shown,
     // or every trimmed message is re-read and re-appended as if it were new.
-    return { messages, consumedBytes: start + byteLength(body) };
+    //
+    // `startByte` runs the other way — it is where this window BEGAN, which is
+    // the anchor `older()` reads backwards from. Note it is the window start,
+    // not the first kept message: anything `maxMessages` trimmed was never
+    // shown, so letting the first older page serve it again is correct.
+    return { messages, consumedBytes: start + byteLength(body), startByte };
+  }
+
+  /**
+   * The window of history immediately BEFORE `startByte` — what a reader gets
+   * by pulling down at the top of a thread.
+   *
+   * Bounded by bytes only, deliberately. `recent()` also caps messages because
+   * it decides how much a freshly-opened thread must lay out; here the reader
+   * has explicitly asked for more, and a message cap would force this to report
+   * an anchor somewhere inside the window it read. Getting that offset wrong by
+   * one line either repeats a message or silently drops one, and bytes are the
+   * only thing the host and this file agree on exactly.
+   */
+  async older(
+    path: string,
+    agentLabel: string | null,
+    beforeByte: number,
+    maxBytes: number
+  ): Promise<{ messages: ChatMessage[]; startByte: number; reachedStart: boolean }> {
+    if (beforeByte <= 0) return { messages: [], startByte: 0, reachedStart: true };
+
+    const start = beforeByte > maxBytes ? beforeByte - maxBytes : 0;
+    const length = beforeByte - start;
+
+    // A byte RANGE, not a suffix, so it takes two commands. The pipeline's exit
+    // status is `head`'s, which makes `tail` dying of SIGPIPE once head has had
+    // its fill invisible — true only while nothing sets `pipefail` in
+    // `withPath()`. If that ever changes, this starts returning 141 and every
+    // older-history read fails; the same inversion once rejected two good
+    // release builds before anyone spotted it.
+    const body = await this.shell(
+      `tail -c +${start + 1} ${shellQuote(path)} | head -c ${length}`
+    );
+
+    let text = body;
+    let startByte = start;
+    // A window opened mid-file almost always opens mid-line. Drop that fragment
+    // and move the anchor past it, so the next page ends exactly where this one
+    // begins: leaving the anchor at `start` would serve the partial line again,
+    // and advancing it further would lose whatever sits between the two pages.
+    if (start > 0) {
+      const firstNewline = text.indexOf('\n');
+      if (firstNewline >= 0) {
+        startByte = start + byteLength(text.slice(0, firstNewline + 1));
+        text = text.slice(firstNewline + 1);
+      }
+    }
+
+    return {
+      messages: parseTranscript(text, agentLabel),
+      startByte,
+      reachedStart: startByte <= 0,
+    };
   }
 
   /**
