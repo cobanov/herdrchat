@@ -1,37 +1,43 @@
 /*
  * Shared styling for herdrchat.cobanov.dev.
  *
- * Deliberately built in herdr.dev's visual language — the warm paper ground,
- * the monospace wordmark, hairline rules and near-square corners — because
- * HerdrChat is a client for herdr and should read as part of the same family.
- * The palette below is lifted from that site; the accent is not. Periwinkle is
- * the app's own, and it is the one place the two should differ.
+ * Structure is herdr.dev's — the monospace wordmark at -0.04em, hairline
+ * rules, near-square corners, the 1160px measure, the Inter / JetBrains Mono
+ * stack — because HerdrChat is a client for herdr and should read as family.
  *
- * Light only, like the reference. `color-scheme: light` is declared so a
- * browser in dark mode leaves it alone rather than force-inverting a palette
- * whose whole character is the paper tone.
+ * The ground is not. This is dark, and the palette comes from the app's own
+ * dark theme (src/theme/tokens.ts) rather than being invented here: the accent
+ * is `tint` on dark, a periwinkle brightened to hold up against a dark ground,
+ * and the greys are the same label opacities the app uses. The logo sits on a
+ * dark square, so on this ground it belongs instead of floating on a card.
+ *
+ * Dark only. `color-scheme: dark` is declared so form controls, scrollbars and
+ * the browser's own chrome follow, rather than a light widget appearing in the
+ * middle of a dark page.
  */
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  --bg: #f0eee9;
-  --bg-elevated: #f5f3ee;
-  --ink: #1a1a18;
-  --ink-soft: #3a3a36;
-  --muted: #6b6b66;
-  --muted-2: #8a8a84;
-  --line: #d8d6d0;
-  --line-strong: #c4c2bb;
+  --bg: #0e0e14;
+  --bg-elevated: #16161d;
+  --panel: #17171f;
 
-  /* Ours, not herdr's blue. Matches the app's outgoing bubbles and the logo. */
-  --accent: #6e74e6;
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  /* Not pure white: at body size on a dark ground it glares. */
+  --ink: #f2f2f7;
+  --ink-soft: rgba(235, 235, 245, 0.78);
+  --muted: rgba(235, 235, 245, 0.55);
+  --muted-2: rgba(235, 235, 245, 0.38);
+  --line: rgba(235, 235, 245, 0.12);
+  --line-strong: rgba(235, 235, 245, 0.22);
 
-  --term-bg: #1a1d22;
-  --term-border: #2b3038;
-  --term-text: #c8cdd4;
-  --term-dim: #6a7078;
+  /* The app's dark-mode tint. Plain #6E74E6 is the light-mode value and goes
+     muddy here; this is the same hue lifted to carry on a dark ground. */
+  --accent: #8288f0;
+  --accent-ink: #ffffff;
+
+  --term-text: #d4d6dd;
+  --term-dim: rgba(235, 235, 245, 0.42);
 
   --radius-lg: 6px;
   --radius-md: 4px;
@@ -84,8 +90,7 @@ body {
   gap: 0.55rem;
   font-family: var(--mono);
   font-weight: 700;
-  /* The reference sets this tight; the wordmark reads as one object rather
-     than as letters when it is this close. */
+  /* Tight, so the wordmark reads as one object rather than as letters. */
   letter-spacing: -0.04em;
   color: var(--ink);
   text-decoration: none;
@@ -175,10 +180,10 @@ body {
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
-.btn-primary:hover { border-color: var(--accent); opacity: 0.92; }
+.btn-primary:hover { opacity: 0.9; }
 
 /* ---------- sections ---------- */
 
@@ -200,9 +205,10 @@ h3 {
   letter-spacing: -0.03em;
   font-size: 1rem;
   margin: 0 0 0.4rem;
+  color: var(--ink);
 }
 
-p { margin: 0 0 1rem; max-width: var(--measure); }
+p { margin: 0 0 1rem; max-width: var(--measure); color: var(--ink-soft); }
 
 a { color: var(--accent); }
 
@@ -214,8 +220,9 @@ a { color: var(--accent); }
 
 .card p { color: var(--muted); margin: 0; font-size: 0.94rem; }
 
-ul { padding-left: 1.15rem; max-width: var(--measure); }
+ul { padding-left: 1.15rem; max-width: var(--measure); color: var(--ink-soft); }
 li { margin: 0.4rem 0; }
+strong { color: var(--ink); }
 
 code {
   font-family: var(--mono);
@@ -224,13 +231,14 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 0.1em 0.35em;
+  color: var(--ink);
 }
 
-/* ---------- terminal-style panel ---------- */
+/* ---------- transcript panel ---------- */
 
 .panel {
-  background: var(--term-bg);
-  border: 1px solid var(--term-border);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
   font-family: var(--mono);
@@ -256,7 +264,8 @@ code {
 }
 
 .transcript .turn:last-child { margin-bottom: 0; }
-
+.transcript .turn span:last-child { color: var(--term-text); }
+.transcript .turn .dim { color: var(--term-dim); }
 .transcript .who { white-space: nowrap; }
 
 @media (max-width: 520px) {
@@ -274,6 +283,7 @@ code {
   letter-spacing: -0.04em;
   font-size: clamp(1.8rem, 4vw, 2.4rem);
   margin: 0 0 0.35rem;
+  color: var(--ink);
 }
 .prose .stamp { color: var(--muted); font-size: 0.9rem; margin: 0 0 2.5rem; }
 .prose h2 { margin-top: 2.5rem; }
