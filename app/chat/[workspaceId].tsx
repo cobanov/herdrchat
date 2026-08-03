@@ -204,7 +204,11 @@ export default function ThreadScreen() {
           anchoring do its job instead of fighting it from JS.
         */}
         {rows.length === 0 ? (
-          <ThreadPlaceholder waiting={waiting} title={params.title ?? params.workspaceId} />
+          <ThreadPlaceholder
+            waiting={waiting}
+            title={params.title ?? params.workspaceId}
+            sessionState={thread.sessionState}
+          />
         ) : (
         <FlashList
           ref={listRef}
@@ -341,7 +345,15 @@ export default function ThreadScreen() {
  * working, and telling someone "no messages yet" while their agent is mid-task
  * would be wrong.
  */
-function ThreadPlaceholder({ waiting, title }: { waiting: boolean; title: string }) {
+function ThreadPlaceholder({
+  waiting,
+  title,
+  sessionState,
+}: {
+  waiting: boolean;
+  title: string;
+  sessionState: 'ok' | 'waiting' | 'missing';
+}) {
   return (
     <View
       style={{
@@ -356,6 +368,33 @@ function ThreadPlaceholder({ waiting, title }: { waiting: boolean; title: string
           <WaitingBar />
           <Text variant="subhead" color="secondary">
             Loading the conversation…
+          </Text>
+        </>
+      ) : sessionState === 'missing' ? (
+        // The app cannot read a transcript it cannot identify, and it will not
+        // guess — so this is the difference between a screen that looks broken
+        // and one that tells you which command fixes it.
+        <>
+          <Text variant="title3" style={{ textAlign: 'center' }}>
+            Can&apos;t identify this chat
+          </Text>
+          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+            The agent isn&apos;t reporting which Claude session it is, so this
+            thread can&apos;t be told apart from others in the same folder.
+          </Text>
+          <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
+            On the host, run{' '}
+            <Text variant="footnote" mono>
+              herdr integration install claude
+            </Text>{' '}
+            — then restart this agent, since it only reports at session start.
+          </Text>
+        </>
+      ) : sessionState === 'waiting' ? (
+        <>
+          <WaitingBar />
+          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+            Waiting for the agent to report its session…
           </Text>
         </>
       ) : (

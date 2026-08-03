@@ -59,6 +59,16 @@ const OLDER_BYTES = 128_000;
 const OLDER_EMPTY_PAGES = 3;
 
 const STATUS_POLL_MS = 2000;
+/**
+ * How long an agent may go without reporting a session id before the thread
+ * stops waiting and says the integration is probably missing.
+ *
+ * A freshly started Claude takes the better part of a minute to report — 48
+ * seconds, measured — so accusing the host too early is a false alarm shown to
+ * someone whose id is about to arrive. This is comfortably past that, and until
+ * it elapses the thread says it is waiting rather than showing nothing.
+ */
+const NO_SESSION_POLLS = 40; // × 2s ≈ 80 seconds
 
 export interface ThreadState {
   messages: ChatMessage[];
@@ -76,6 +86,15 @@ export interface ThreadState {
   loadingOlder: boolean;
   /** True once the top of the transcript is on screen — nothing left to fetch. */
   reachedStart: boolean;
+  /**
+   * Whether this thread can be read at all.
+   *
+   * `ok` — an agent has reported its session, so the transcript is targetable.
+   * `waiting` — an agent is here but has not reported yet; normal for a minute.
+   * `missing` — long enough that the host is probably missing herdr's Claude
+   *   integration, which is the only thing that reports the id.
+   */
+  sessionState: 'ok' | 'waiting' | 'missing';
   failedIds: Set<string>;
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
@@ -109,6 +128,8 @@ export function useThread(
   const [isSending, setIsSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
+  const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing'>('ok');
+  const noSessionPolls = useRef(0);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
   // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
@@ -354,6 +375,19 @@ export function useThread(
 
         const conversational = live.filter((agent) => agent.agent !== null);
         const sig = sessionSignature(conversational);
+
+        // An agent that never reports a session id is almost always a host
+        // without `herdr integration install claude`. The thread cannot target
+        // a transcript without it and refuses to guess, so without this it just
+        // stays empty and blames nothing. Setting the same value twice is a
+        // no-op in React, so this does not re-render on every poll.
+        if (conversational.length > 0 && sig === null) {
+          noSessionPolls.current += 1;
+          setSessionState(noSessionPolls.current >= NO_SESSION_POLLS ? 'missing' : 'waiting');
+        } else {
+          noSessionPolls.current = 0;
+          setSessionState('ok');
+        }
         if (sig !== null && sig !== boundSig.current) {
           // Rotation, or a new chat reusing this workspace. Drop the old
           // history rather than appending a different conversation to it.
@@ -531,6 +565,7 @@ export function useThread(
     loadOlder,
     loadingOlder,
     reachedStart,
+    sessionState,
     failedIds,
     send,
     retry,
