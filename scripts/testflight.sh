@@ -134,11 +134,15 @@ fi
 # only appears in one error branch, so a message is not an invariant. The class
 # name is: `expo-module.config.json` names it, and the module cannot resolve at
 # runtime without it.
-if ! strings -a "$APP/$SCHEME" | grep -qF "HerdrSshModule"; then
+# `grep -c`, not `grep -q`. Under `set -o pipefail`, `grep -q` exits the moment
+# it matches, `strings` then dies of SIGPIPE, and the pipeline reports 141 — so
+# `if ! ...` fires exactly when the string WAS found. That inverted guard failed
+# two good builds before the cause was spotted. `-c` consumes all input.
+if [ "$(strings -a "$APP/$SCHEME" | grep -cF "HerdrSshModule")" -eq 0 ]; then
   echo "ERROR: the native SSH module is not in the binary." >&2
   exit 1
 fi
-if ! strings -a "$APP/main.jsbundle" | grep -qF "HerdrSsh"; then
+if [ "$(strings -a "$APP/main.jsbundle" | grep -cF "HerdrSsh")" -eq 0 ]; then
   echo "ERROR: the JS bundle never references the HerdrSsh module." >&2
   exit 1
 fi
