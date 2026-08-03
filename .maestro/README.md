@@ -3,8 +3,22 @@
 Run against a booted simulator with the app installed and Metro running:
 
 ```bash
-maestro test .maestro/
+maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
+
+| Flow | Covers | Needs a host |
+|------|--------|--------------|
+| `smoke` | launch, all three tabs, the host switcher | no |
+| `new-chat` | the sheet's fields, permission mode, both exits | no |
+| `folder-picker` | opening over the sheet, abandon vs. commit | no |
+| `add-server` | that the connection test really connects | **yes** |
+
+`maestro test .maestro/` runs `add-server` too and fails without the credentials
+below — that is the flow doing its job, not a broken suite.
+
+**Not covered:** blocked quick-replies. Asserting them needs an agent actually
+sitting at a prompt, which is a live host plus a seeded conversation; the
+host-free flows here would only be able to prove the bar is absent.
 
 ## Credentials
 

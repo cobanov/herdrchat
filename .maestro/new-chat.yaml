@@ -1,0 +1,51 @@
+# The new-chat sheet: its fields, the permission-mode choice, and the two ways
+# out of it.
+#
+# Host-free on purpose. Everything asserted here is the sheet's own behaviour —
+# what it accepts, what it disables, how it dismisses. Actually STARTING a chat
+# needs a reachable machine and belongs in a flow that takes credentials, the
+# way add-server.yaml does.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- assertVisible: "Chats"
+
+# `header-action` is the compose button. Matched by id, not by glyph: it renders
+# an SF Symbol with a "+" text fallback, so the visible label depends on whether
+# the symbol resolved on this OS version.
+- tapOn:
+    id: "header-action"
+- assertVisible: "New chat"
+
+# The working directory decides where Claude starts, so it is the one field the
+# sheet cannot be useful without.
+- tapOn:
+    id: "field-cwd"
+- inputText: "/tmp/maestro-new-chat"
+- assertVisible: "/tmp/maestro-new-chat"
+
+# The permission mode is a deliberate choice rather than a hidden default: the
+# app once launched plain `claude`, and because the host default is `manual`
+# every tool call then stopped for approval. Assert the non-default is settable.
+- tapOn:
+    id: "permission-plan"
+
+- tapOn:
+    id: "field-label"
+- inputText: "Maestro"
+
+# Dismissed by the button, not by `back` (iOS has no hardware back) and not by a
+# swipe — the button is the path VoiceOver and Switch Control actually have.
+- tapOn:
+    id: "header-close"
+- assertVisible: "Chats"
+
+# Reopening must not resurrect what was typed into the sheet that was dismissed.
+- tapOn:
+    id: "header-action"
+- assertVisible: "New chat"
+- assertNotVisible: "/tmp/maestro-new-chat"
+- tapOn:
+    id: "header-close"
+- assertVisible: "Chats"

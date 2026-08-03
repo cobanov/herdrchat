@@ -1,0 +1,45 @@
+# The folder picker, reached from the new-chat sheet.
+#
+# Host-free: what is asserted here is that the picker opens over the sheet,
+# offers its two exits, and hands its result back. Listing real directories
+# needs a reachable machine, so this flow deliberately does not assert any
+# directory NAME — on an unreachable host the listing is empty by design
+# (an unreadable path yields an empty list rather than an error screen), and a
+# flow that demanded a folder would fail for a reason that is not a bug.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- assertVisible: "Chats"
+
+- tapOn:
+    id: "header-action"
+- assertVisible: "New chat"
+
+- tapOn:
+    id: "field-cwd"
+- inputText: "/tmp"
+
+- tapOn:
+    id: "choose-folder"
+- assertVisible: "Choose folder"
+
+# Both exits matter and they mean different things. `header-close` abandons the
+# pick; `folder-select` commits the directory currently open. A picker with only
+# one of them either cannot be escaped or cannot be used.
+- tapOn:
+    id: "header-close"
+- assertVisible: "New chat"
+
+- tapOn:
+    id: "choose-folder"
+- assertVisible: "Choose folder"
+- tapOn:
+    id: "folder-select"
+# Committing returns to the sheet rather than the chat list: the picked folder
+# is one field of a form that is not finished yet.
+- assertVisible: "New chat"
+
+- tapOn:
+    id: "header-close"
+- assertVisible: "Chats"
