@@ -26,7 +26,6 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"

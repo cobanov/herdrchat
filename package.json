@@ -52,5 +52,12 @@
   },
   "overrides": {
     "react-dom": "19.2.3"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "roots": ["<rootDir>/src", "<rootDir>/modules"],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    }
   }
 }

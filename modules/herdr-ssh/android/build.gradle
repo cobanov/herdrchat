@@ -1,0 +1,34 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.herdrssh'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.herdrssh"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+  packagingOptions {
+    // sshj pulls in BouncyCastle, which ships duplicate metadata across its jars.
+    exclude 'META-INF/BC*'
+    exclude 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+  }
+}
+
+dependencies {
+  // Same stack the Compose app shipped: sshj for the protocol, BouncyCastle and
+  // eddsa for the key formats it defers to (ed25519 keys are unreadable without
+  // them), and a no-op slf4j binding so sshj's logging doesn't pull in a backend.
+  implementation "com.hierynomus:sshj:0.38.0"
+  implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
+  implementation "org.bouncycastle:bcpkix-jdk18on:1.78.1"
+  implementation "net.i2p.crypto:eddsa:0.3.0"
+  implementation "org.slf4j:slf4j-nop:1.7.36"
+}
