@@ -47,18 +47,11 @@ export class TranscriptStore {
     return `${home}/.claude/projects/${projectDirName(cwd)}/${sessionId}.jsonl`;
   }
 
-  /**
-   * Path to the most recently modified transcript for a working directory, or
-   * null if the agent has no transcript there yet. Only used when the agent
-   * reports no session id — see `latestMessages` for why guessing is dangerous.
-   */
-  async newestTranscriptPath(cwd: string): Promise<string | null> {
-    const dir = projectDirName(cwd); // [A-Za-z0-9-] only, so safe to interpolate
-    const path = (
-      await this.shell(`ls -t "$HOME/.claude/projects/${dir}"/*.jsonl 2>/dev/null | head -1`)
-    ).trim();
-    return path.length > 0 ? path : null;
-  }
+  // There is deliberately no `newestTranscriptPath` here. Picking the newest
+  // .jsonl in a project dir is the one shortcut this file must never offer:
+  // every chat sharing a working directory shares that dir, so the newest file
+  // belongs to whichever conversation was touched last, not to the one being
+  // opened. Callers wait for the session id instead — see `sessionTranscriptPath`.
 
   /** Current file size in bytes, or -1 if unknown (missing file, no permission). */
   async fileSize(path: string): Promise<number> {
@@ -168,14 +161,14 @@ export class TranscriptStore {
       if (!/^[A-Za-z0-9:_-]+$/.test(request.workspaceId)) continue;
       const dir = projectDirName(request.cwd);
 
-      if (request.sessionId !== null && /^[A-Za-z0-9-]+$/.test(request.sessionId)) {
-        // Exact session file ONLY — never fall back to the newest transcript
-        // here. That guess previews a foreign session's last message under a
-        // reused or same-named workspace.
-        script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
-      } else {
-        script += `f=$(ls -t "$HOME/.claude/projects/${dir}"/*.jsonl 2>/dev/null | head -1); `;
-      }
+      // Exact session file ONLY. Falling back to the newest transcript in the
+      // project dir previews a foreign session's last message under a reused or
+      // same-named workspace — and two chats opened on one folder share that
+      // dir, so the guess is wrong exactly when it looks most plausible. A
+      // request without a usable session id is dropped rather than guessed; the
+      // row keeps its live status line until the id arrives.
+      if (request.sessionId === null || !/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
+      script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
       script += `printf '\\n${MARKER} %s\\n' '${request.workspaceId}'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
     }

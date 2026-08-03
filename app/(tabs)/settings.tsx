@@ -13,6 +13,7 @@ import { useGlassAvailable } from '@/components/Glass';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   deviceFileId,
+  errorDetail,
   removePushToken,
   requestPushToken,
   uploadPushToken,
@@ -40,7 +41,9 @@ export default function SettingsScreen() {
 
   const [cached, setCached] = useState<number | null>(null);
   const [pushBusy, setPushBusy] = useState(false);
-  const [pushNote, setPushNote] = useState<string | null>(null);
+  // `detail` carries the underlying error. A TestFlight build has no console,
+  // so the screen is the only place a failure can be read.
+  const [pushNote, setPushNote] = useState<{ message: string; detail?: string } | null>(null);
 
   const refreshCacheSize = useCallback(() => {
     void cachedMessageCount(db).then(setCached);
@@ -76,24 +79,34 @@ export default function SettingsScreen() {
 
       const status = await requestPushToken();
       if (status.state === 'unsupported') {
-        setPushNote(status.reason);
+        setPushNote({ message: status.reason, detail: status.detail });
         return;
       }
       if (status.state === 'denied') {
-        setPushNote('Notifications are turned off for HerdrChat in iOS Settings.');
+        setPushNote({ message: 'Notifications are turned off for HerdrChat in iOS Settings.' });
         return;
       }
       if (connection === null) {
-        setPushNote('Add a host first — the token is stored on your own machine.');
+        setPushNote({ message: 'Add a host first — the token is stored on your own machine.' });
         return;
       }
 
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
       await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId);
       update('notifications', true);
-      setPushNote(`Registered with ${connection.name}. Run the watcher on that machine.`);
+      setPushNote({ message: `Registered with ${connection.name}. Run the watcher on that machine.` });
     } catch (thrown) {
-      setPushNote(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      // A HerdrError already says something a person can act on. Anything else
+      // is a raw throw, so it goes in the detail line rather than becoming the
+      // headline.
+      setPushNote(
+        thrown instanceof HerdrError
+          ? { message: thrown.message }
+          : {
+              message: "Couldn't register this device with the host.",
+              detail: errorDetail(thrown),
+            }
+      );
     } finally {
       setPushBusy(false);
     }
@@ -175,9 +188,19 @@ export default function SettingsScreen() {
             testID="toggle-notifications"
           />
           {pushNote !== null && (
-            <Text variant="footnote" color="secondary" style={{ paddingTop: spacing.sm }}>
-              {pushNote}
-            </Text>
+            <View style={{ paddingTop: spacing.sm, gap: spacing.xs }}>
+              <Text variant="footnote" color="secondary">
+                {pushNote.message}
+              </Text>
+              {/* Smaller, not fainter: this is the line you read to diagnose a
+                  failed registration, so hierarchy comes from size rather than
+                  from an alpha that would undercut its contrast. */}
+              {pushNote.detail !== undefined && (
+                <Text variant="caption" color="secondary">
+                  {pushNote.detail}
+                </Text>
+              )}
+            </View>
           )}
         </Section>
 

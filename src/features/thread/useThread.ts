@@ -183,25 +183,34 @@ export function useThread(
 
   const startTail = useCallback(
     async (agent: AgentInfo, multiAgent: boolean) => {
-      if (client === null || tails.current.has(agent.cwd)) return;
+      if (client === null) return;
+
+      // Keyed by the Claude session id, because that is the only unique thing
+      // here — and both halves of this matter:
+      //
+      // No session id means there is nothing safe to open. "Newest .jsonl in
+      // the project dir" is a guess, and two chats sharing a folder — the same
+      // folder you would naturally give the same name — makes it a guess that
+      // shows the other conversation's history. Returning costs one poll; the
+      // status poll calls this again every couple of seconds.
+      //
+      // And the map was previously keyed by cwd, which collapsed two agents in
+      // one directory onto a single tail slot, so the second never streamed.
+      const sessionId = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
+      if (sessionId === null || tails.current.has(sessionId)) return;
+
       const store = new TranscriptStore(client.transport);
       const label = multiAgent ? agent.agent : null;
 
-      const sessionId = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
-      let path: string | null;
-      if (sessionId !== null) {
-        const home = await store.homeDirectory();
-        path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
-        // The session may be known a moment before its file exists; return
-        // rather than tailing a stale one, and let the next poll retry.
-        if (path !== null && (await store.fileSize(path)) < 0) path = null;
-      } else {
-        path = await store.newestTranscriptPath(agent.cwd);
-      }
+      const home = await store.homeDirectory();
+      let path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
+      // The session may be known a moment before its file exists; return
+      // rather than tailing a stale one, and let the next poll retry.
+      if (path !== null && (await store.fileSize(path)) < 0) path = null;
       if (path === null || !alive.current) return;
 
       const controller = new AbortController();
-      tails.current.set(agent.cwd, controller);
+      tails.current.set(sessionId, controller);
 
       const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
       const cached = await tailCursor(db, connectionId, workspaceId, path);
@@ -234,7 +243,7 @@ export function useThread(
           // The tail died (host slept, network moved). The status poll notices
           // the missing tail and restarts it.
         } finally {
-          tails.current.delete(agent.cwd);
+          tails.current.delete(sessionId);
         }
       })();
     },

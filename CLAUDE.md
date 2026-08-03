@@ -30,7 +30,8 @@ src/lib/                pure logic, no React — this is what tests cover
 src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
-legacy/                 the SwiftUI and Compose apps, kept as reference
+                        (the SwiftUI and Compose apps this replaced are not in
+                         the tree — they live in git history before the rewrite)
 .maestro/               UI flows
 ```
 
@@ -52,7 +53,15 @@ workspace opens showing the previous conversation.
 
 **Never guess a transcript file.** When an agent reports a session id, that id
 IS the filename. Falling back to "newest .jsonl in the project dir" previews a
-foreign session — a reported bug, not a theory.
+foreign session — a reported bug, not a theory. The trigger is two chats opened
+on ONE folder: they share a project dir, so the newest file belongs to whichever
+was touched last. Without a session id there is nothing safe to open — wait for
+it; the status poll retries every couple of seconds. `TranscriptStore` therefore
+offers no "newest transcript" call at all, deliberately.
+
+**Live tails are keyed by session id, never by cwd.** Two agents in one
+directory collapse onto a single map entry, and the second one silently never
+streams.
 
 **Byte offsets are UTF-8 bytes.** The host counts bytes; `String.length` counts
 UTF-16 units. The drift silently skips messages on any transcript with an emoji.
@@ -97,7 +106,11 @@ Fast Refresh does not reload native code.
 
 ## Not yet built
 
-Notifications (iOS background refresh, Android foreground service, APNs), and
-the release path — `scripts/testflight.sh` and `scripts/play.sh` still target the
-apps under `legacy/`, so this branch does not ship until an EAS-based path
-replaces them.
+Notifications work on iOS and ship with the push entitlement, but have not been
+confirmed against APNs on a real device — the Simulator cannot register at all.
+The host watcher (`scripts/herdr-apns-notifier.py`) is complete.
+
+Android compiles and the SSH module is implemented in Kotlin/sshj, but it has
+never been run and there is **no Android release path in this branch** — no
+`scripts/play.sh`, no EAS equivalent. iOS ships via `scripts/testflight.sh`,
+which targets the Expo app (see RELEASING.md).

@@ -178,6 +178,34 @@ describe('batched last-message lookup', () => {
     expect(script).not.toContain('ls -t');
   });
 
+  it('drops a workspace whose session is not known yet', async () => {
+    // The dangerous case is two chats on ONE folder: they share a project dir,
+    // so the newest .jsonl belongs to whichever was touched last. Dropping the
+    // request leaves the row on its live status line; guessing would show the
+    // other conversation's last message under this one's name.
+    const { store: subject, transport } = store('');
+    const result = await subject.latestMessages([
+      { workspaceId: 'w7', cwd: '/srv/app', sessionId: null },
+    ]);
+
+    expect(result.size).toBe(0);
+    expect(transport.commands).toHaveLength(0);
+  });
+
+  it('queries only the sessions it knows when a batch is mixed', async () => {
+    const { store: subject, transport } = store('');
+    await subject.latestMessages([
+      { workspaceId: 'w7', cwd: '/srv/app', sessionId: null },
+      { workspaceId: 'w8', cwd: '/srv/app', sessionId: 'sess-b' },
+    ]);
+
+    const script = transport.commands.join('\n');
+    expect(script).toContain('sess-b.jsonl');
+    expect(script).not.toContain('ls -t');
+    // No marker for the unknown workspace, so nothing can be attributed to it.
+    expect(script).not.toContain('w7');
+  });
+
   it('refuses a workspace id that could escape the script', async () => {
     const { store: subject, transport } = store('');
     const result = await subject.latestMessages([

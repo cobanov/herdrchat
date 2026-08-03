@@ -26,9 +26,26 @@ import type { HerdrTransport } from '@/lib/herdr/transport';
 const TOKEN_DIR = '"$HOME/.config/herdrchat/apns-tokens"';
 
 export type PushStatus =
-  | { state: 'unsupported'; reason: string }
+  | { state: 'unsupported'; reason: string; detail?: string }
   | { state: 'denied' }
   | { state: 'granted'; token: string };
+
+/**
+ * The underlying failure, as a line to show beneath `reason`.
+ *
+ * A TestFlight build has no console, so an error that isn't on screen cannot be
+ * read at all — and "could not register for push" alone is the same sentence
+ * whether the cause is the Simulator, a missing entitlement, or no network.
+ *
+ * Undefined rather than an empty string when there is nothing to say: the
+ * caller renders a second line only when this is set, and a blank one reads as
+ * a layout bug rather than as an absence.
+ */
+export function errorDetail(thrown: unknown): string | undefined {
+  if (thrown === undefined || thrown === null) return undefined;
+  const text = (thrown instanceof Error ? thrown.message : String(thrown)).trim();
+  return text.length > 0 ? text : undefined;
+}
 
 /**
  * Ask for permission and get this device's APNs token.
@@ -57,10 +74,16 @@ export async function requestPushToken(): Promise<PushStatus> {
     // expo-device just to pre-check that, let the real call be the check — it
     // is the same answer, one dependency cheaper, and it also covers the case
     // where a real device fails to register for some other reason.
+    //
+    // Which is exactly why the thrown value is carried out rather than dropped:
+    // this branch deliberately covers several unrelated causes, so the generic
+    // sentence below cannot tell them apart and the detail is the only thing
+    // that can.
     return {
       state: 'unsupported',
       reason:
         'This device could not register for push. The Simulator never can; on a real device, check that the build has the push entitlement.',
+      detail: errorDetail(thrown),
     };
   }
 }
