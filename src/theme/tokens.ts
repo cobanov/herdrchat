@@ -152,6 +152,16 @@ export interface Palette {
   secondarySystemBackground: string;
   /** Incoming bubble / inset surfaces. */
   bubbleIncoming: string;
+  /**
+   * Outgoing bubble fill. Deliberately NOT `tint`.
+   *
+   * White on the accent measured 3.96:1 in light and 3.12:1 in dark — both
+   * under the 4.5:1 needed for the timestamp, which is 11pt and therefore
+   * normal text by every threshold. This is the same hue and saturation with
+   * the lightness dropped until white clears 4.5:1, so the bubble still reads
+   * as the brand while the label on it is legible.
+   */
+  bubbleOutgoing: string;
   /** Subtle fills: tool chips, code blocks, inactive controls. */
   fillSubtle: string;
   separator: string;
@@ -179,6 +189,7 @@ export const lightPalette: Palette = {
   systemBackground: '#FFFFFF',
   secondarySystemBackground: '#F2F2F7',
   bubbleIncoming: '#EDEDF2',
+  bubbleOutgoing: '#6167E4', // white on this: 4.60:1
   fillSubtle: 'rgba(118, 118, 128, 0.12)',
   separator: 'rgba(60, 60, 67, 0.18)',
 
@@ -203,6 +214,7 @@ export const darkPalette: Palette = {
   systemBackground: '#000000',
   secondarySystemBackground: '#1C1C1E',
   bubbleIncoming: '#26262B',
+  bubbleOutgoing: '#6067EC', // white on this: 4.52:1
   fillSubtle: 'rgba(118, 118, 128, 0.24)',
   separator: 'rgba(84, 84, 88, 0.65)',
 

@@ -51,7 +51,7 @@ export const Bubble = memo(function Bubble({
             flexShrink: 1,
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.sm - 1,
-            backgroundColor: outgoing ? colors.tint : colors.bubbleIncoming,
+            backgroundColor: outgoing ? colors.bubbleOutgoing : colors.bubbleIncoming,
             gap: spacing.xs,
           },
           corners,
@@ -65,7 +65,13 @@ export const Bubble = memo(function Bubble({
           // reply renders as a wide, mostly-empty box with the text stranded on
           // the left. A zero-width spacer keeps the bubble hugging its content.
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-            <Text variant="caption2" color={outgoing ? 'onTint' : 'secondary'} style={{ opacity: 0.75 }}>
+            {/* No opacity on the outgoing side: white at 0.75 over the fill
+                measured 2.94:1 in light and 2.43:1 in dark. The incoming label
+                sits on a near-background surface and can afford the fade. */}
+            <Text
+              variant="caption2"
+              color={outgoing ? 'onTint' : 'secondary'}
+              style={outgoing ? undefined : { opacity: 0.75 }}>
               {timeLabel}
             </Text>
           </View>

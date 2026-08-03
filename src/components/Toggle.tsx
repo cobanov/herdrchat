@@ -35,6 +35,14 @@ export function Toggle({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
+        // Padding, not a centred minHeight. Rows sit directly against the
+        // dividers between them, so with a height floor the gap depended on how
+        // long the row's own explanation was: a two-line detail overflowed the
+        // floor and touched the rule, while a one-line one was centred inside it
+        // and sat well clear. Padding gives every row the same space above and
+        // below regardless of how much it has to say.
+        paddingVertical: spacing.sm,
+        // Still a floor, for a platform whose switch renders shorter than ours.
         minHeight: minTouchTarget,
         opacity: disabled ? 0.5 : 1,
       }}>
