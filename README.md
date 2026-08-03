@@ -1,118 +1,101 @@
 # HerdrChat
 
-> **This branch is being rewritten on React Native / Expo (SDK 57).** The two
-> native apps described below still build and ship, but they now live under
-> `legacy/ios/` (SwiftUI) and `legacy/android/` (Compose) and are kept as the
-> reference implementation, not the thing under development. The Expo app is at
-> the repo root. This README is rewritten when the rewrite lands.
+Drive [herdr](https://herdr.dev) agents from your phone like a messaging app.
+Each workspace is a chat, the agent's output arrives as clean message bubbles,
+and you reply from the composer. Connects to your machines over SSH on your
+tailnet — there is no server, no account, and no public network surface.
 
-A native iOS app that talks to [herdr](https://herdr.dev) like WhatsApp: each
-workspace is a chat, agents' output shows up as clean message bubbles, and you
-reply from your phone. Connects to your machines over SSH via Tailscale.
+## Why it works this way
 
-## Why this works
+herdr exposes a local newline-delimited JSON socket API with full
+workspace/agent/pane control, but no network transport and no auth. Rather than
+expose that, HerdrChat reaches herdr **over your existing SSH + Tailscale**,
+running `herdr` CLI commands and tailing agent transcripts.
 
-herdr exposes a local newline-delimited JSON socket API (protocol 16) with full
-workspace/agent/pane control and an event stream, but no network transport and
-no auth. Rather than expose it, HerdrChat reaches herdr **over your existing SSH
-+ Tailscale**, running `herdr` CLI commands and tailing agent transcripts.
-
-The key trick for clean chat bubbles: herdr's `pane.read` returns the raw TUI
-buffer (noisy). Instead we read Claude Code's own transcript at
-`~/.claude/projects/<escaped-cwd>/<session>.jsonl`, which holds clean
-user/assistant turns. Sending a message = `herdr pane send-text` into the agent.
-
-## Architecture
+The trick behind clean bubbles: herdr's `pane.read` returns the raw TUI buffer,
+which is noise. Instead the app reads Claude Code's own transcript at
+`~/.claude/projects/<escaped-cwd>/<session>.jsonl`, which holds structured
+user/assistant turns. Sending a message is `herdr pane run` into the agent.
 
 ```
-iPhone (SwiftUI)
-   │  SSH over Tailscale (existing keys, no public surface)
+iPhone (React Native / Expo)
+   │  SSH over Tailscale — existing keys, no public surface
    ▼
 remote machine (nuc / spark / mac …)
-   ├─ herdr server  ── CLI: snapshot, send-text, send-keys, agent list
-   └─ ~/.claude/projects/**/*.jsonl  ── tail -f for live chat messages
+   ├─ herdr  ── snapshot, workspace list, pane run/send-keys/read, agent wait
+   └─ ~/.claude/projects/**/*.jsonl  ── tail -f for live messages
 ```
 
-- **Chat list** ← `herdr workspace list` / `session.snapshot`. Status drives
-  presence: `working` = typing…, `blocked` = waiting for you (badge),
-  `idle`/`done` = quiet.
-- **Chat thread** ← parsed transcript bubbles (one workspace = one thread,
-  labelled by agent when several run in it).
-- **Send** ← `herdr pane send-text <pane> "…"` + Enter.
-- **Blocked** ← quick Yes/No via `herdr pane send-keys`.
-- **Alerts** ← `blocked` transitions pushed to homelab ntfy (no APNs needed).
+## Setup
 
-## Layout
-
-- `Sources/HerdrKit/` — pure, dependency-free core: models, protocol envelope,
-  transcript parser, and the transport-agnostic `HerdrClient` / `TranscriptStore`.
-  Builds and tests with the Swift toolchain, no Xcode.
-- `Sources/HerdrNet/` — `SSHTransport` (Citadel/SwiftNIO SSH) for reaching a
-  remote herdr host over Tailscale. Kept separate so the core stays dep-free.
-- `Sources/HerdrChatUI/` — SwiftUI views + view models (chat list, thread,
-  blocked quick-replies, connection setup). A library so it type-checks on macOS.
-- `App/` — the thin `@main` iOS shell that shows `RootView()`.
-- `Sources/HerdrSmoke/` — runnable assertion harness for machines without XCTest.
-- `Tests/HerdrKitTests/` — XCTest suite + JSON/JSONL fixtures (runs in Xcode/CI).
-- `scripts/herdr-ntfy-notifier.py` — host-side blocked→ntfy push.
-- `project.yml` / `HerdrChat.xcodeproj` — XcodeGen spec and generated project.
-- `android/` — native Android port (Kotlin + Jetpack Compose + sshj), feature
-  parity with the iOS app. See [`android/README.md`](android/README.md).
-
-## Verify the core (no Xcode needed)
+Requires Node 22+, Xcode 26+, and an iOS 26 simulator or device.
 
 ```bash
-swift build                          # builds HerdrKit + HerdrNet + HerdrChatUI
-swift run HerdrSmoke                 # 22 core assertions
-swift run HerdrSmoke --live          # exercises HerdrClient against local herdr
-swift run HerdrSmoke path/to/session.jsonl   # parse a real transcript
+npm install
+npx expo prebuild --clean
+npx expo run:ios --device "iPhone 17 Pro"
+npx expo start --dev-client
 ```
 
-## Build & run the iOS app (needs full Xcode)
+On first launch, add a server: name, Tailscale address, SSH username, and an
+OpenSSH private key (or password). The connection must pass a live test before
+it can be saved — a saved-but-broken server produces a chat list that fails with
+no obvious cause. Your phone must be on the same tailnet.
+
+If herdr isn't installed on that account, the failed test offers to install it.
+
+## What needs iOS 26, and what degrades
+
+| Feature | iOS 26+ | Below 26 | Android |
+|---|---|---|---|
+| Liquid Glass composer and quick-reply bar | real glass | `expo-blur` | solid surface |
+| SF Symbols | native | native | text fallback |
+| Everything else | ✓ | ✓ | ✓ |
+
+Reduce Transparency replaces every glass surface with a solid one, on every OS.
+Reduce Motion stops the presence ring, the typing dots and the waiting bar.
+
+Android compiles and the SSH module is implemented, but it has not been
+runtime-verified — this release is iOS-first.
+
+## Testing
 
 ```bash
-brew install xcodegen        # once
-xcodegen generate            # regenerate HerdrChat.xcodeproj from project.yml
-open HerdrChat.xcodeproj     # build & run on a device/simulator in Xcode
+npx tsc --noEmit
+npx expo lint
+npx jest                  # pure logic in src/lib
+maestro test .maestro/    # UI flows, see .maestro/README.md
 ```
 
-On first launch, add a server: name, Tailscale host, SSH username, and paste an
-OpenSSH private key (or password). The phone must be on the same tailnet
-(Tailscale app installed and logged in).
+`.maestro/add-server.yaml` needs a real host; it reads credentials from the
+environment so no key is ever committed.
 
-## Notifications (built in — no server, no account)
+## Repository layout
 
-The apps notify **from within the app itself** when an agent gets **blocked**
-(needs you) or **done** (finished). Nothing to host, nothing to sign up for:
-
-- **Android** — toggle the bell in the chat list: a foreground service keeps the
-  SSH watch alive and posts local notifications in real time, even with the UI
-  closed.
-- **iOS** — grant notification permission once; a Background App Refresh task
-  periodically checks agent states and posts local notifications. Timing is at
-  iOS's discretion (typically ≥15 min, and force-quitting the app pauses it —
-  platform rules). Instant iOS push would need a small APNs relay; not shipped.
-
-`scripts/herdr-ntfy-notifier.py` remains as an **optional self-hosted
-alternative** for ntfy users (instant push on both platforms, requires your own
-ntfy topic).
+- `app/` — routes (thin; screens compose, they don't implement)
+- `src/lib/` — pure core: herdr protocol and client, transcript parsing, the
+  byte-windowed transcript store, blocked-prompt and live-preview scraping. No
+  React, no SSH import, fully tested.
+- `src/features/`, `src/components/`, `src/theme/`, `src/state/`
+- `modules/herdr-ssh/` — the SSH transport as a local Expo module (Citadel on
+  iOS, sshj on Android). See its README for why it exists.
+- `legacy/ios`, `legacy/android` — the original SwiftUI and Jetpack Compose
+  apps. Still buildable, kept as the reference implementation.
+- `scripts/` — host-side helpers and the release scripts for the legacy apps.
 
 ## Status
 
-- [x] HerdrKit models decode real herdr `snapshot` / `workspace list` JSON
-- [x] Transcript parser → chat bubbles (verified on real Claude Code transcripts)
-- [x] `HerdrClient` + `TranscriptStore` (verified live against local herdr)
-- [x] SSH transport — verified end-to-end on device over Tailscale (send + tail)
-- [x] SwiftUI app: chat list, chat thread, blocked quick-replies (TestFlight)
-- [x] Android app (Kotlin + Compose + sshj), feature parity (`android/`)
-- [x] One persistent SSH connection per host; liveness check + retry-once heal
-- [x] TOFU host-key pinning (fingerprint stored on first connect)
-- [x] Disk-persisted per-workspace message cache; tail resumes by byte offset
-- [x] Transcript-file rotation handling (status poll follows new session files)
-- [x] In-app notifications, serverless: Android foreground watch (real-time),
-      iOS Background App Refresh (periodic); optional self-hosted ntfy script
-- [ ] Load older history on scroll-up (first open loads the last ~400 KB)
-- [ ] Multi-agent thread merge polish
-
-Building the app requires a full Xcode install (this repo's core only needs
-Command Line Tools).
+- [x] SSH transport as a native module, verified against a live host
+- [x] herdr protocol, models, client
+- [x] Transcript parsing → bubbles, with a bounded recent window and a resuming
+      live tail
+- [x] Chat list with live presence and batched last-message previews
+- [x] Thread: transcript bubbles, live preview, blocked quick-replies, send with
+      delivery verification
+- [x] Servers: add / edit / test / remove, keychain secrets, TOFU host-key pins
+- [x] New chat: folder browser on the host, permission mode
+- [ ] Notifications (background refresh, foreground service, APNs)
+- [ ] Release path — `scripts/testflight.sh` and `scripts/play.sh` still target
+      `legacy/`, so this branch doesn't ship until EAS replaces them
+- [ ] Load older history on scroll-up
+- [ ] Unread state persistence
