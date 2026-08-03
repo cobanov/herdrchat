@@ -3,84 +3,138 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HerdrChat — drive Claude Code from your phone</title>
-<meta name="description" content="HerdrChat is a phone client for the coding agents running on your own machine. SSH over your private network. No account, no server.">
-<style>
-  :root {
-    color-scheme: light dark;
-    --bg: #ffffff;
-    --fg: #1c1c1e;
-    --muted: rgba(60, 60, 67, 0.6);
-    --rule: rgba(60, 60, 67, 0.18);
-    --tint: #6E74E6;
-    --card: rgba(60, 60, 67, 0.05);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #000000;
-      --fg: #f2f2f7;
-      --muted: rgba(235, 235, 245, 0.6);
-      --rule: rgba(235, 235, 245, 0.18);
-      --tint: #C3C7F9;
-      --card: rgba(235, 235, 245, 0.06);
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 4.5rem 1.25rem 6rem;
-    background: var(--bg);
-    color: var(--fg);
-    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  main { max-width: 40rem; margin: 0 auto; }
-  h1 { font-size: 2.5rem; line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 .5rem; }
-  .tag { color: var(--muted); font-size: 1.1rem; margin: 0 0 2.5rem; }
-  h2 { font-size: 1.15rem; letter-spacing: -0.01em; margin: 2.25rem 0 .5rem; }
-  ul { padding-left: 1.15rem; }
-  li { margin: .45rem 0; }
-  a { color: var(--tint); }
-  footer {
-    margin-top: 3.5rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--rule);
-    color: var(--muted);
-    font-size: .9375rem;
-  }
-</style>
+<title>HerdrChat — your coding agents, as a chat on your phone</title>
+<meta name="description" content="A phone client for the Claude Code agents running on your own machine. SSH over your own network. No account, no server, nothing in the middle.">
+<link rel="icon" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/style.css?v=2">
+<meta property="og:title" content="HerdrChat">
+<meta property="og:description" content="Your coding agents, as a chat on your phone.">
+<meta property="og:image" content="/assets/logo.png">
 </head>
 <body>
-<main>
-  <h1>HerdrChat</h1>
-  <p class="tag">Your coding agents, as a chat on your phone.</p>
 
-  <p>
-    HerdrChat connects over SSH to a machine you own — normally across a private
-    network like Tailscale — and shows each
-    <a href="https://herdr.dev">herdr</a> workspace running Claude Code as a
-    conversation. You read what the agent did, answer when it is blocked, and
-    send it back to work.
-  </p>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <img src="/assets/logo.png" alt="" width="26" height="26">
+      <span>herdrchat</span>
+    </a>
+    <span class="nav-spacer"></span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="https://herdr.dev">herdr</a>
+      <a href="/privacy">Privacy</a>
+      <a href="https://github.com/cobanov/herdrchat">GitHub</a>
+    </nav>
+  </div>
+</header>
 
-  <h2>How it is built</h2>
-  <ul>
-    <li><strong>No account and no server.</strong> There is nothing to sign into
-      and no service of ours in the path.</li>
-    <li><strong>It reads the transcript, not the terminal.</strong> Bubbles come
-      from Claude Code's own session files, which is why they are clean.</li>
-    <li><strong>Credentials stay in the Keychain</strong>, and host keys are
-      pinned the first time you connect.</li>
-  </ul>
+<div class="wrap">
 
-  <h2>Status</h2>
-  <p>
-    In TestFlight, iOS only for now. Open source under the Apache License 2.0.
-  </p>
+  <div class="hero">
+    <img class="hero-mark" src="/assets/logo.png" alt="HerdrChat" width="72" height="72">
+    <p class="display">The herd,<br>in your pocket.</p>
+    <p class="lede">
+      HerdrChat connects over SSH to a machine you own and shows each
+      <a href="https://herdr.dev">herdr</a> workspace running Claude Code as a
+      conversation. Read what the agent did, answer it when it is blocked, send
+      it back to work.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/cobanov/herdrchat">Source</a>
+      <a class="btn" href="/privacy">Privacy policy</a>
+    </div>
+  </div>
 
-  <footer>
-    <a href="/privacy">Privacy policy</a>
-  </footer>
-</main>
+  <section>
+    <h2>What it looks like</h2>
+    <p>
+      Bubbles come from Claude Code's own transcript files on your machine, not
+      from scraping the terminal. That is why they are clean, and why a tool call
+      can be a chip instead of a wall of output.
+    </p>
+    <!-- A grid rather than counted &nbsp;: the speaker column is one track wide,
+         so every turn hangs from the same edge no matter how long the label is
+         or how the text wraps. -->
+    <div class="panel transcript">
+      <p class="meta">herdrchat · macmini · ~/Developer/herdrchat</p>
+      <div class="turn">
+        <span class="who dim">claude</span>
+        <span>Tests are green — 102 passing. The byte accounting was the risky
+          part, so it is pinned by a test that pages to the top of a 200-turn
+          transcript.</span>
+      </div>
+      <div class="turn">
+        <span class="who you">you</span>
+        <span>ship it</span>
+      </div>
+      <div class="turn">
+        <span class="who dim">claude</span>
+        <span class="dim">● working — uploading build 36</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it is built</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>No account, no server</h3>
+        <p>
+          There is nothing to sign into and no service of ours in the path. The
+          connection is your phone to your machine, over SSH.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Private by construction</h3>
+        <p>
+          Normally over a private network such as Tailscale, so nothing is
+          exposed publicly. Host keys are pinned the first time you connect.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Keys stay in the Keychain</h3>
+        <p>
+          Your SSH key or password lives in the device Keychain, never in the
+          app's database and never off the device.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Notifications from your own machine</h3>
+        <p>
+          A watcher you run on your host pushes straight to Apple with your own
+          key. Optional, and nothing of ours sits in the middle.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Status</h2>
+    <p>
+      In TestFlight, iOS only for now. Android compiles but has not been
+      runtime-verified and has no release path yet. Open source under the
+      Apache License 2.0 — the honest version of this list is in the
+      <a href="https://github.com/cobanov/herdrchat/issues">issues</a>.
+    </p>
+    <p>
+      You will need <a href="https://herdr.dev">herdr</a> and Claude Code on the
+      machine you want to reach, and <code>herdr integration install claude</code>
+      so the app can tell one session from another.
+    </p>
+  </section>
+
+</div>
+
+<footer class="site-footer">
+  <div class="wrap foot-row">
+    <span>HerdrChat · Apache-2.0</span>
+    <span class="nav-spacer"></span>
+    <a href="/privacy">Privacy</a>
+    <a href="https://github.com/cobanov/herdrchat">GitHub</a>
+    <a href="https://herdr.dev">herdr.dev</a>
+  </div>
+</footer>
+
 </body>
 </html>

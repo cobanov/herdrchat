@@ -1,0 +1,315 @@
+/*
+ * Shared styling for herdrchat.cobanov.dev.
+ *
+ * Deliberately built in herdr.dev's visual language — the warm paper ground,
+ * the monospace wordmark, hairline rules and near-square corners — because
+ * HerdrChat is a client for herdr and should read as part of the same family.
+ * The palette below is lifted from that site; the accent is not. Periwinkle is
+ * the app's own, and it is the one place the two should differ.
+ *
+ * Light only, like the reference. `color-scheme: light` is declared so a
+ * browser in dark mode leaves it alone rather than force-inverting a palette
+ * whose whole character is the paper tone.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f0eee9;
+  --bg-elevated: #f5f3ee;
+  --ink: #1a1a18;
+  --ink-soft: #3a3a36;
+  --muted: #6b6b66;
+  --muted-2: #8a8a84;
+  --line: #d8d6d0;
+  --line-strong: #c4c2bb;
+
+  /* Ours, not herdr's blue. Matches the app's outgoing bubbles and the logo. */
+  --accent: #6e74e6;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+
+  --term-bg: #1a1d22;
+  --term-border: #2b3038;
+  --term-text: #c8cdd4;
+  --term-dim: #6a7078;
+
+  --radius-lg: 6px;
+  --radius-md: 4px;
+  --radius-sm: 2px;
+
+  --max: 1160px;
+  --measure: 46rem;
+
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* ---------- header ---------- */
+
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: 60px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--mono);
+  font-weight: 700;
+  /* The reference sets this tight; the wordmark reads as one object rather
+     than as letters when it is this close. */
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.05rem;
+}
+
+.brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  display: block;
+}
+
+.nav-spacer { flex: 1; }
+
+.nav-links {
+  display: flex;
+  gap: 1.15rem;
+  font-size: 0.9rem;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.nav-links a:hover { color: var(--ink); }
+
+/* ---------- hero ---------- */
+
+.hero {
+  padding: 4.5rem 0 3.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-mark {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  display: block;
+  margin-bottom: 1.75rem;
+}
+
+.display {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  font-size: clamp(2.1rem, 5.2vw, 3.4rem);
+  margin: 0;
+  color: var(--ink);
+}
+
+.lede {
+  max-width: 560px;
+  margin: 1.25rem 0 0;
+  color: var(--ink-soft);
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+  line-height: 1.6;
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 2rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.btn:hover { border-color: var(--muted-2); }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover { border-color: var(--accent); opacity: 0.92; }
+
+/* ---------- sections ---------- */
+
+section { padding: 3.25rem 0; }
+
+section + section { border-top: 1px solid var(--line); }
+
+h2 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  font-size: 1.35rem;
+  margin: 0 0 1.25rem;
+}
+
+h3 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+}
+
+p { margin: 0 0 1rem; max-width: var(--measure); }
+
+a { color: var(--accent); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem 2rem;
+}
+
+.card p { color: var(--muted); margin: 0; font-size: 0.94rem; }
+
+ul { padding-left: 1.15rem; max-width: var(--measure); }
+li { margin: 0.4rem 0; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.875em;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+/* ---------- terminal-style panel ---------- */
+
+.panel {
+  background: var(--term-bg);
+  border: 1px solid var(--term-border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.75;
+  color: var(--term-text);
+  overflow-x: auto;
+  max-width: var(--measure);
+}
+
+.panel .dim { color: var(--term-dim); }
+.panel .you { color: var(--accent); }
+
+/* Speaker in its own track, so a wrapped line hangs under the text and not
+   under the name — the thing that makes a transcript readable at a glance. */
+.transcript .meta { margin: 0 0 1rem; color: var(--term-dim); }
+
+.transcript .turn {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.transcript .turn:last-child { margin-bottom: 0; }
+
+.transcript .who { white-space: nowrap; }
+
+@media (max-width: 520px) {
+  /* Below this the two columns leave too little for the text, so the speaker
+     becomes a line of its own rather than squeezing the turn into a gutter. */
+  .transcript .turn { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* ---------- prose (privacy) ---------- */
+
+.prose { padding: 3.25rem 0 5rem; }
+.prose h1 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  margin: 0 0 0.35rem;
+}
+.prose .stamp { color: var(--muted); font-size: 0.9rem; margin: 0 0 2.5rem; }
+.prose h2 { margin-top: 2.5rem; }
+
+.callout {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 1rem 1.15rem;
+  margin: 0 0 1.5rem;
+  max-width: var(--measure);
+}
+
+.callout p:last-child { margin-bottom: 0; }
+
+/* ---------- footer ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  padding: 2rem 0 3rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.site-footer a { color: var(--muted); }
+.site-footer a:hover { color: var(--ink); }
+
+.foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+@media (max-width: 620px) {
+  .nav-links { display: none; }
+  .hero { padding: 3rem 0 2.5rem; }
+}

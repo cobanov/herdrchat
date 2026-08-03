@@ -4,84 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HerdrChat — Privacy Policy</title>
-<style>
-  :root {
-    color-scheme: light dark;
-    --bg: #ffffff;
-    --fg: #1c1c1e;
-    --muted: rgba(60, 60, 67, 0.6);
-    --rule: rgba(60, 60, 67, 0.18);
-    --tint: #6E74E6;
-    --card: rgba(60, 60, 67, 0.05);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #000000;
-      --fg: #f2f2f7;
-      --muted: rgba(235, 235, 245, 0.6);
-      --rule: rgba(235, 235, 245, 0.18);
-      --tint: #C3C7F9;
-      --card: rgba(235, 235, 245, 0.06);
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 3rem 1.25rem 6rem;
-    background: var(--bg);
-    color: var(--fg);
-    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  main { max-width: 44rem; margin: 0 auto; }
-  h1 { font-size: 2.125rem; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 .35rem; }
-  h2 { font-size: 1.3rem; letter-spacing: -0.01em; margin: 2.75rem 0 .6rem; }
-  .sub { color: var(--muted); margin: 0 0 2.5rem; }
-  p, li { color: var(--fg); }
-  ul { padding-left: 1.15rem; }
-  li { margin: .4rem 0; }
-  a { color: var(--tint); }
-  code {
-    font: 500 .875em ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--card);
-    padding: .12em .38em;
-    border-radius: 5px;
-  }
-  .lede {
-    background: var(--card);
-    border-left: 3px solid var(--tint);
-    border-radius: 0 10px 10px 0;
-    padding: 1rem 1.15rem;
-    margin: 0 0 1rem;
-  }
-  footer {
-    margin-top: 3.5rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--rule);
-    color: var(--muted);
-    font-size: .9375rem;
-  }
-</style>
+<meta name="description" content="HerdrChat collects no personal data. It has no accounts and no back end; the app talks over SSH to a machine you own.">
+<link rel="icon" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/style.css?v=2">
 </head>
 <body>
-<main>
-  <h1>Privacy Policy</h1>
-  <p class="sub">HerdrChat · last updated 3 August 2026</p>
 
-  <p class="lede">
-    <strong>HerdrChat has no accounts, no back end, and no analytics.</strong>
-    We do not operate a server, so there is no system of ours for your data to
-    reach. The app talks over SSH to a computer you own and administer, using
-    credentials you supply.
-  </p>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <img src="/assets/logo.png" alt="" width="26" height="26">
+      <span>herdrchat</span>
+    </a>
+    <span class="nav-spacer"></span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="https://herdr.dev">herdr</a>
+      <a href="/privacy">Privacy</a>
+      <a href="https://github.com/cobanov/herdrchat">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap prose">
+
+  <h1>Privacy Policy</h1>
+  <p class="stamp">HerdrChat · last updated 3 August 2026</p>
+
+  <div class="callout">
+    <p>
+      <strong>HerdrChat has no accounts, no back end, and no analytics.</strong>
+      We do not operate a server, so there is no system of ours for your data to
+      reach. The app talks over SSH to a computer you own and administer, using
+      credentials you supply.
+    </p>
+  </div>
 
   <h2>What we collect</h2>
   <p>
     Nothing. HerdrChat collects no personal data, transmits nothing to us, and
     contains no analytics, advertising, tracking or crash-reporting SDKs. The
-    app's Apple privacy manifest declares
-    <code>NSPrivacyTracking = false</code> and an empty set of collected data
-    types, which matches the “Data Not Collected” label on the App Store.
+    app's Apple privacy manifest declares <code>NSPrivacyTracking = false</code>
+    and an empty set of collected data types, which matches the “Data Not
+    Collected” label on the App Store.
+  </p>
+  <p>
+    About this page itself: it loads no third-party fonts and none of our own
+    scripts. It is served through Cloudflare, which injects its own Web
+    Analytics script at the edge — that is page-view measurement without
+    cookies or fingerprinting, and it applies to this website only. It is not in
+    the app, and it has no connection to anything the app does.
   </p>
 
   <h2>What is stored on your device</h2>
@@ -132,17 +104,27 @@
   <h2>Changes</h2>
   <p>
     If this policy changes, the date above changes with it. The app is open
-    source, so the change is visible in the project's history as well.
+    source and this page lives in the same repository, so any change is visible
+    in the project's history alongside the code it describes.
   </p>
 
   <h2>Contact</h2>
   <p>
-    Questions about this policy: <a href="mailto:mertcobanov@gmail.com">mertcobanov@gmail.com</a>.
+    Questions about this policy:
+    <a href="mailto:mertcobanov@gmail.com">mertcobanov@gmail.com</a>.
   </p>
 
-  <footer>
-    HerdrChat is open source under the Apache License 2.0.
-  </footer>
-</main>
+</div>
+
+<footer class="site-footer">
+  <div class="wrap foot-row">
+    <span>HerdrChat · Apache-2.0</span>
+    <span class="nav-spacer"></span>
+    <a href="/">Home</a>
+    <a href="https://github.com/cobanov/herdrchat">GitHub</a>
+    <a href="https://herdr.dev">herdr.dev</a>
+  </div>
+</footer>
+
 </body>
 </html>
