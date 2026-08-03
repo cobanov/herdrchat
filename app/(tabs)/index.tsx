@@ -1,6 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, View } from 'react-native';
 
 import { EmptyState } from '@/components/EmptyState';
@@ -10,7 +11,9 @@ import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET, ChatRow } from '@/features/chats/ChatRow';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
+import { loadThreadReads } from '@/state/db';
 import { useTheme } from '@/theme/ThemeProvider';
 import { screenPadding, spacing } from '@/theme/tokens';
 
@@ -36,6 +39,18 @@ function ChatsForServer() {
 
   const { summaries, loading, error, herdrMissing, refresh } = useWorkspaces(client);
   const [installing, setInstalling] = useState(false);
+
+  const db = useSQLiteContext();
+  const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
+  // Re-read on focus rather than on an interval: the only thing that changes a
+  // read marker is opening a thread, and coming back from one is exactly this
+  // callback. A poll would just re-query the same rows every few seconds.
+  useFocusEffect(
+    useCallback(() => {
+      if (connection === null) return;
+      void loadThreadReads(db, connection.id).then(setReads);
+    }, [db, connection])
+  );
 
   const installHerdr = async () => {
     if (client === null) return;
@@ -100,7 +115,7 @@ function ChatsForServer() {
           renderItem={({ item }) => (
             <ChatRow
               summary={item}
-              unread={false}
+              unread={isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
               onPress={() =>
                 router.push({
                   pathname: '/chat/[workspaceId]',

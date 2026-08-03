@@ -20,6 +20,12 @@ export interface ChatSummary {
   status: AgentStatus;
   agents: AgentInfo[];
   preview: { text: string; timestamp: number | null; fromUser: boolean } | null;
+  /**
+   * Which conversation currently occupies this workspace slot. Null until an
+   * agent reports a session id. The unread dot needs it: a read marker left by
+   * the previous chat in a recycled workspace must not silence this one.
+   */
+  sessionSig: string | null;
 }
 
 export interface WorkspacesState {
@@ -128,6 +134,7 @@ export function buildSummaries(
       status: workspace.agentStatus,
       agents: byWorkspace.get(workspace.workspaceId) ?? [],
       preview: previews.get(workspace.workspaceId) ?? null,
+      sessionSig: sessionSignature(byWorkspace.get(workspace.workspaceId) ?? []),
     }));
 }
 

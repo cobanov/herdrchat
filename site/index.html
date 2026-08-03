@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HerdrChat — drive Claude Code from your phone</title>
+<meta name="description" content="HerdrChat is a phone client for the coding agents running on your own machine. SSH over your private network. No account, no server.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1c1e;
+    --muted: rgba(60, 60, 67, 0.6);
+    --rule: rgba(60, 60, 67, 0.18);
+    --tint: #6E74E6;
+    --card: rgba(60, 60, 67, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --fg: #f2f2f7;
+      --muted: rgba(235, 235, 245, 0.6);
+      --rule: rgba(235, 235, 245, 0.18);
+      --tint: #C3C7F9;
+      --card: rgba(235, 235, 245, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 4.5rem 1.25rem 6rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 40rem; margin: 0 auto; }
+  h1 { font-size: 2.5rem; line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 .5rem; }
+  .tag { color: var(--muted); font-size: 1.1rem; margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; letter-spacing: -0.01em; margin: 2.25rem 0 .5rem; }
+  ul { padding-left: 1.15rem; }
+  li { margin: .45rem 0; }
+  a { color: var(--tint); }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: .9375rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>HerdrChat</h1>
+  <p class="tag">Your coding agents, as a chat on your phone.</p>
+
+  <p>
+    HerdrChat connects over SSH to a machine you own — normally across a private
+    network like Tailscale — and shows each
+    <a href="https://herdr.dev">herdr</a> workspace running Claude Code as a
+    conversation. You read what the agent did, answer when it is blocked, and
+    send it back to work.
+  </p>
+
+  <h2>How it is built</h2>
+  <ul>
+    <li><strong>No account and no server.</strong> There is nothing to sign into
+      and no service of ours in the path.</li>
+    <li><strong>It reads the transcript, not the terminal.</strong> Bubbles come
+      from Claude Code's own session files, which is why they are clean.</li>
+    <li><strong>Credentials stay in the Keychain</strong>, and host keys are
+      pinned the first time you connect.</li>
+  </ul>
+
+  <h2>Status</h2>
+  <p>
+    In TestFlight, iOS only for now. Open source under the Apache License 2.0.
+  </p>
+
+  <footer>
+    <a href="/privacy">Privacy policy</a>
+  </footer>
+</main>
+</body>
+</html>

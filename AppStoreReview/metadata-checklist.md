@@ -6,11 +6,16 @@ Run through this before submitting for Beta App Review (public link) or App Stor
 - [ ] Demo host address + `appreview` username + SSH key/password pasted in the review fields
       (see `reviewer-setup.md`). Confirmed working from a clean device.
 - [ ] Notes = the "What the app is / How to test / Payments / Data" section of `review-notes.md`.
-- [ ] Contact: name, email (<your-contact-email>), phone. (Required for Beta App Review.)
+- [ ] Contact: Mert Cobanov, mertcobanov@gmail.com, **phone still needed** — Beta App Review
+      requires one and it is not recorded anywhere in this repo.
 - [ ] Export compliance: non-exempt encryption = No (matches `ITSAppUsesNonExemptEncryption=NO`).
 
 ## Privacy
-- [ ] `PrivacyInfo.xcprivacy` present and honest: no tracking, no data collected off-device.
+- [x] **Privacy policy URL: `https://herdrchat.cobanov.dev/privacy`** — required for a public
+      TestFlight link. Source is `site/privacy/index.html` in this repo.
+- [x] `PrivacyInfo.xcprivacy` present and honest — verified in `ios/HerdrChat/`:
+      `NSPrivacyTracking=false` and `NSPrivacyCollectedDataTypes` is an empty array, which is
+      what lets the ASC nutrition label say "Data Not Collected" truthfully.
 - [ ] Privacy "Nutrition Label" in ASC = Data Not Collected (connection info + keys stay on-device
       in the Keychain; nothing leaves except SSH to the user's own host).
 - [ ] Account deletion path documented (no account → covered; state it explicitly).
@@ -18,7 +23,8 @@ Run through this before submitting for Beta App Review (public link) or App Stor
 ## Metadata
 - [ ] Name / subtitle / description make clear it's a client for **your own** machine (avoids the
       "remote control / requires hardware we don't disclose" rejection).
-- [ ] Keywords, support URL, marketing URL.
+- [ ] Keywords, support URL, marketing URL — both URLs are
+      `https://herdrchat.cobanov.dev` (privacy policy at `/privacy`).
 - [ ] Usage strings tight and feature-specific: `NSLocalNetworkUsageDescription` (Tailscale reach),
       and only the ones actually used. No stale permission strings.
 

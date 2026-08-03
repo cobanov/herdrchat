@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import type { ThreadRead } from '@/lib/unread';
 import type { ServerConnection } from './connections';
 
 /**
@@ -73,11 +74,26 @@ export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       PRIMARY KEY (connection_id, workspace_id)
     );
 
-    CREATE TABLE IF NOT EXISTS unread (
+    -- When each thread was last opened. Unread is DERIVED from this against the
+    -- preview (see src/lib/unread.ts) rather than stored as a flag, so there is
+    -- no second source of truth to fall out of step.
+    --
+    -- session_sig for the same reason previews carries one: a workspace id is a
+    -- slot herdr reuses, and without it a new chat would inherit the previous
+    -- chat's read marker and never announce its first message.
+    CREATE TABLE IF NOT EXISTS thread_reads (
       connection_id TEXT NOT NULL,
       workspace_id  TEXT NOT NULL,
+      session_sig   TEXT NOT NULL,
+      opened_at     INTEGER NOT NULL,
       PRIMARY KEY (connection_id, workspace_id)
     );
+
+    -- Superseded by thread_reads. Safe to drop unconditionally: the old table
+    -- had no session_sig and nothing ever wrote to it, so there is no state to
+    -- migrate. Named differently on purpose, so this DROP cannot delete the new
+    -- one on a later launch.
+    DROP TABLE IF EXISTS unread;
   `);
 }
 
@@ -135,8 +151,53 @@ export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): P
     await db.runAsync('DELETE FROM messages WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM tail_cursors WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM previews WHERE connection_id = ?', id);
-    await db.runAsync('DELETE FROM unread WHERE connection_id = ?', id);
+    await db.runAsync('DELETE FROM thread_reads WHERE connection_id = ?', id);
   });
+}
+
+// MARK: - Read markers
+
+/**
+ * Record that this thread was just opened, so the chat list stops showing it as
+ * unread. Keyed per workspace but stamped with the session, so re-opening a
+ * recycled workspace overwrites the previous chat's marker rather than being
+ * silenced by it.
+ */
+export async function markThreadRead(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string,
+  openedAt: number
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO thread_reads (connection_id, workspace_id, session_sig, opened_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (connection_id, workspace_id)
+     DO UPDATE SET session_sig = excluded.session_sig, opened_at = excluded.opened_at`,
+    connectionId,
+    workspaceId,
+    sessionSig,
+    openedAt
+  );
+}
+
+/** Every read marker for one server, for the chat list to compare against. */
+export async function loadThreadReads(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string
+): Promise<Map<string, ThreadRead>> {
+  const rows = await db.getAllAsync<{
+    workspace_id: string;
+    session_sig: string;
+    opened_at: number;
+  }>(
+    'SELECT workspace_id, session_sig, opened_at FROM thread_reads WHERE connection_id = ?',
+    connectionId
+  );
+  return new Map(
+    rows.map((row) => [row.workspace_id, { sessionSig: row.session_sig, openedAt: row.opened_at }])
+  );
 }
 
 // MARK: - Settings

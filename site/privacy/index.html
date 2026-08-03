@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HerdrChat — Privacy Policy</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1c1e;
+    --muted: rgba(60, 60, 67, 0.6);
+    --rule: rgba(60, 60, 67, 0.18);
+    --tint: #6E74E6;
+    --card: rgba(60, 60, 67, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --fg: #f2f2f7;
+      --muted: rgba(235, 235, 245, 0.6);
+      --rule: rgba(235, 235, 245, 0.18);
+      --tint: #C3C7F9;
+      --card: rgba(235, 235, 245, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 3rem 1.25rem 6rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 44rem; margin: 0 auto; }
+  h1 { font-size: 2.125rem; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 .35rem; }
+  h2 { font-size: 1.3rem; letter-spacing: -0.01em; margin: 2.75rem 0 .6rem; }
+  .sub { color: var(--muted); margin: 0 0 2.5rem; }
+  p, li { color: var(--fg); }
+  ul { padding-left: 1.15rem; }
+  li { margin: .4rem 0; }
+  a { color: var(--tint); }
+  code {
+    font: 500 .875em ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--card);
+    padding: .12em .38em;
+    border-radius: 5px;
+  }
+  .lede {
+    background: var(--card);
+    border-left: 3px solid var(--tint);
+    border-radius: 0 10px 10px 0;
+    padding: 1rem 1.15rem;
+    margin: 0 0 1rem;
+  }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: .9375rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="sub">HerdrChat · last updated 3 August 2026</p>
+
+  <p class="lede">
+    <strong>HerdrChat has no accounts, no back end, and no analytics.</strong>
+    We do not operate a server, so there is no system of ours for your data to
+    reach. The app talks over SSH to a computer you own and administer, using
+    credentials you supply.
+  </p>
+
+  <h2>What we collect</h2>
+  <p>
+    Nothing. HerdrChat collects no personal data, transmits nothing to us, and
+    contains no analytics, advertising, tracking or crash-reporting SDKs. The
+    app's Apple privacy manifest declares
+    <code>NSPrivacyTracking = false</code> and an empty set of collected data
+    types, which matches the “Data Not Collected” label on the App Store.
+  </p>
+
+  <h2>What is stored on your device</h2>
+  <p>All of this stays on your phone and is never sent to us:</p>
+  <ul>
+    <li><strong>Host details</strong> — the name, address, port, username and
+      herdr path for each machine you add.</li>
+    <li><strong>Credentials</strong> — your SSH private key or password, and the
+      pinned fingerprint of each host key, held in the iOS Keychain rather than
+      in the app's database.</li>
+    <li><strong>A cache of your conversations</strong> — message bubbles read
+      from the transcripts on your own machine, plus the last-message previews
+      and read positions that let a thread reopen where you left it.</li>
+    <li><strong>Preferences</strong> — appearance, and which optional message
+      kinds to show.</li>
+  </ul>
+  <p>
+    Deleting the app removes all of it. Removing a host from the app deletes
+    that host's Keychain entries. <em>Settings → Clear cached messages</em>
+    clears the cached conversations without touching anything on your machines.
+  </p>
+
+  <h2>Where your data goes</h2>
+  <p>
+    Only to the machine you point the app at. The connection is a direct SSH
+    session from your phone to your host — in normal use across a private
+    network such as Tailscale, so it is not exposed to the internet at all.
+    Host keys are pinned the first time you connect, and a changed host key
+    refuses the connection rather than silently trusting it.
+  </p>
+
+  <h2>Notifications</h2>
+  <p>
+    If you turn notifications on, your device's Apple Push Notification token is
+    written to a file on <em>your own host</em> over the same SSH connection. A
+    watcher you run there signs a request with your own Apple push key and sends
+    it to Apple. The token identifies your installation of the app so Apple can
+    deliver to it; it does not identify you, and it never passes through any
+    service of ours, because none exists.
+  </p>
+
+  <h2>Children</h2>
+  <p>
+    HerdrChat is a developer tool and is not directed at children. It collects
+    no data from anyone, including children.
+  </p>
+
+  <h2>Changes</h2>
+  <p>
+    If this policy changes, the date above changes with it. The app is open
+    source, so the change is visible in the project's history as well.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy: <a href="mailto:mertcobanov@gmail.com">mertcobanov@gmail.com</a>.
+  </p>
+
+  <footer>
+    HerdrChat is open source under the Apache License 2.0.
+  </footer>
+</main>
+</body>
+</html>

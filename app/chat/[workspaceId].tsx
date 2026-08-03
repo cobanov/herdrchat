@@ -1,7 +1,7 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -22,7 +22,9 @@ import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { useThread } from '@/features/thread/useThread';
+import { sessionSignature } from '@/lib/herdr/models';
 import { clientFor, useSelectedConnection } from '@/state/connections';
+import { markThreadRead } from '@/state/db';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
@@ -56,6 +58,34 @@ export default function ThreadScreen() {
   const [controlsHeight, setControlsHeight] = useState(96);
 
   const thread = useThread(db, client, connection?.id ?? '', params.workspaceId, []);
+
+  // The agents array is rebuilt by every status poll, so it cannot go in the
+  // dependency list below — the effect would re-run every couple of seconds and
+  // write to SQLite each time. A ref gives the callback the current value while
+  // staying stable itself.
+  const agentsRef = useRef(thread.agents);
+  useEffect(() => {
+    agentsRef.current = thread.agents;
+  }, [thread.agents]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const connectionId = connection?.id;
+      if (connectionId === undefined || connectionId === '') return;
+      const stamp = () => {
+        // No session id yet means there is nothing to bind the marker to, and a
+        // marker under the wrong signature is worse than none: it would silence
+        // the chat that actually lands in this workspace slot.
+        const sig = sessionSignature(agentsRef.current);
+        if (sig === null) return;
+        void markThreadRead(db, connectionId, params.workspaceId, sig, Date.now());
+      };
+      stamp();
+      // Again on the way out, so a message that arrived while you were reading
+      // it counts as seen rather than re-lighting the row you just left.
+      return stamp;
+    }, [db, connection, params.workspaceId])
+  );
 
   const rows = useMemo(
     () => buildRows(thread.messages, { showToolActivity, showSidechain }),

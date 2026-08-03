@@ -44,9 +44,15 @@ unless the user enables it.
 `herdr` and Claude are the user's own separately-obtained tools.
 
 ## Account deletion & data (Guideline 5.1.1(v))
-There is no account. All user data (server list, SSH secrets, host-key pins) lives in the device
-Keychain/UserDefaults. Removing a server deletes its stored secret; deleting the app removes
-everything. No server-side data exists to delete.
+There is no account. SSH secrets and host-key pins live in the device **Keychain**; the host list,
+cached message bubbles and preferences live in a local **SQLite** database on the device. Removing
+a server deletes its Keychain entries; *Settings → Clear cached messages* clears the conversation
+cache; deleting the app removes everything. No server-side data exists to delete, because we run
+no server.
+
+## Privacy policy
+`https://herdrchat.cobanov.dev/privacy` — source in `site/privacy/index.html` in this repo, so the
+published page and the app's behaviour are reviewed together.
 
 ## Encryption
 Standard SSH only (exempt). `ITSAppUsesNonExemptEncryption = NO` in the Info.plist.
