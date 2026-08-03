@@ -70,6 +70,19 @@ body {
   padding: 0 1.5rem;
 }
 
+/*
+ * A page that is entirely prose narrows the CONTAINER rather than centring a
+ * column inside it. At the full 1160px the text sat against the left edge with
+ * a third of the page empty to its right, and the header and footer — which
+ * legitimately want the wide measure — made the gap look like a mistake rather
+ * than a margin. Narrowing `--max` moves header, text and footer together, so
+ * they share one left edge and the whole column is centred in the viewport.
+ *
+ * 49rem = the 46rem measure plus the 1.5rem gutters, so the text fills the
+ * container exactly instead of stopping short inside it.
+ */
+body.doc { --max: 49rem; }
+
 /* ---------- header ---------- */
 
 .site-header {
