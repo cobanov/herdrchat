@@ -15,12 +15,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# The SwiftUI app now lives under legacy/ios/ (the shipping stack is being
+# rewritten on the Expo branch); paths below are repo-root relative.
+LEGACY_IOS="legacy/ios"
 SCHEME="HerdrChat"
-PROJECT="HerdrChat.xcodeproj"
+PROJECT="$LEGACY_IOS/HerdrChat.xcodeproj"
 TEAM_ID="6U58AKY6F8"
 KEY_ID="${ASC_KEY_ID:-RQ96AFW6H2}"
 KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
-BUILD_DIR="build"
+BUILD_DIR="$LEGACY_IOS/build"
 ARCHIVE="$BUILD_DIR/HerdrChat.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
 IPA="$EXPORT_DIR/HerdrChat.ipa"
@@ -41,7 +44,7 @@ AUTH=(-allowProvisioningUpdates
 
 # Ensure the .xcodeproj matches project.yml.
 if command -v xcodegen >/dev/null 2>&1; then
-  xcodegen generate >/dev/null
+  (cd "$LEGACY_IOS" && xcodegen generate >/dev/null)
 fi
 
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
@@ -61,7 +64,7 @@ echo "==> Exporting signed .ipa…"
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE" \
   -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist ExportOptions.plist \
+  -exportOptionsPlist "$LEGACY_IOS/ExportOptions.plist" \
   "${AUTH[@]}"
 
 echo "==> Built: $IPA"
@@ -81,7 +84,7 @@ APS_ENV="$(codesign -d --entitlements :- "$APS_APP" 2>/dev/null | plutil -extrac
 rm -rf "$APS_WORK"
 if [[ "$APS_ENV" != "production" ]]; then
   echo "ERROR: signed aps-environment is '${APS_ENV:-<missing>}', expected 'production'." >&2
-  echo "       Push tokens from this build would be rejected by prod APNs. Check App/HerdrChat.entitlements + the profile." >&2
+  echo "       Push tokens from this build would be rejected by prod APNs. Check $LEGACY_IOS/App/HerdrChat.entitlements + the profile." >&2
   exit 1
 fi
 echo "   ✓ aps-environment=production confirmed in the signed binary"

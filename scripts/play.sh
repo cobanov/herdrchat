@@ -6,7 +6,7 @@
 # be published no matter which track you aim at.
 #
 # Prereqs (one-time; see PlayRelease/README.md):
-#   - upload keystore + HERDRCHAT_STORE_* credentials, via android/keystore.properties
+#   - upload keystore + HERDRCHAT_STORE_* credentials, via legacy/android/keystore.properties
 #     or the environment
 #   - the app created once by hand in the Play Console (the API cannot create it)
 #   - a service-account JSON key with "Release manager" on the app
@@ -23,7 +23,9 @@ cd "$(dirname "$0")/.."
 : "${ANDROID_HOME:=/opt/homebrew/share/android-commandlinetools}"
 export JAVA_HOME ANDROID_HOME
 TRACK="${PLAY_TRACK:-internal}"
-AAB="android/app/build/outputs/bundle/release/app-release.aab"
+# The Compose app lives under legacy/android/ since the Expo rewrite.
+ANDROID_DIR="legacy/android"
+AAB="$ANDROID_DIR/app/build/outputs/bundle/release/app-release.aab"
 
 # Upload-key credentials. The password lives in the macOS Keychain rather than any
 # file, so nothing secret sits on disk in or beside the repo; it is read here and
@@ -57,7 +59,7 @@ echo "==> Building the release App Bundle…"
 # not hypothetical. Removing the output makes the task genuinely re-run, and also
 # guarantees we can never upload a stale bundle from an older versionCode.
 rm -f "$AAB"
-android/gradlew -p android :app:bundleRelease -q
+"$ANDROID_DIR/gradlew" -p "$ANDROID_DIR" :app:bundleRelease -q
 
 [[ -f "$AAB" ]] || { echo "ERROR: $AAB was not produced." >&2; exit 1; }
 
@@ -75,8 +77,8 @@ if ! unzip -l "$AAB" | grep -qE 'META-INF/.*\.(RSA|DSA|EC)$'; then
 fi
 echo "   ✓ signed"
 
-VERSION_CODE=$(grep -oE 'versionCode = [0-9]+' android/app/build.gradle.kts | grep -oE '[0-9]+')
-VERSION_NAME=$(grep -oE 'versionName = "[^"]+"' android/app/build.gradle.kts | cut -d'"' -f2)
+VERSION_CODE=$(grep -oE 'versionCode = [0-9]+' "$ANDROID_DIR/app/build.gradle.kts" | grep -oE '[0-9]+')
+VERSION_NAME=$(grep -oE 'versionName = "[^"]+"' "$ANDROID_DIR/app/build.gradle.kts" | cut -d'"' -f2)
 ls -lh "$AAB"
 echo "==> Built $VERSION_NAME (versionCode $VERSION_CODE)"
 

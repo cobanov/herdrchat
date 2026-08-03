@@ -1,18 +1,35 @@
+# === React Native / Expo (the shipping stack) ===
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+# Continuous Native Generation: these are GENERATED from app.json and the config
+# plugins. Never hand-edit them, never commit them.
+/ios/
+/android/
+*.tsbuildinfo
+
+# === Legacy native apps (kept under legacy/ for reference) ===
 .build/
 .swiftpm/
 build/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
+
+# === Secrets / noise ===
 .DS_Store
 *.pem
 *.key
 secrets.plist
+.env
+.env.local
 __pycache__/
 *.pyc
 
 # Play upload key: the keystore and its passwords must never be committed.
-android/keystore.properties
+legacy/android/keystore.properties
 *.jks
 *.keystore
 # Google Play service-account key for automated uploads.

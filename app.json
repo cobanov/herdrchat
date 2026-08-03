@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "HerdrChat",
+    "slug": "herdrchat",
+    "scheme": "herdrchat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "ios": {
+      "bundleIdentifier": "dev.herdr.HerdrChat",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Local network access is needed to reach herdr servers over Tailscale."
+      }
+    },
+    "android": {
+      "package": "dev.herdr.herdrchat",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#151A34",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ],
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-image"
+    ]
+  }
+}

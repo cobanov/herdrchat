@@ -1,5 +1,11 @@
 # HerdrChat
 
+> **This branch is being rewritten on React Native / Expo (SDK 57).** The two
+> native apps described below still build and ship, but they now live under
+> `legacy/ios/` (SwiftUI) and `legacy/android/` (Compose) and are kept as the
+> reference implementation, not the thing under development. The Expo app is at
+> the repo root. This README is rewritten when the rewrite lands.
+
 A native iOS app that talks to [herdr](https://herdr.dev) like WhatsApp: each
 workspace is a chat, agents' output shows up as clean message bubbles, and you
 reply from your phone. Connects to your machines over SSH via Tailscale.

@@ -7,7 +7,7 @@
 # Usage:
 #   ASC_ISSUER_ID=<uuid> KC_PW=<login-pw> scripts/dist-signing.sh
 #
-# Produces build/export/HerdrChat.ipa. Secrets (key/p12) live in a temp dir and
+# Produces legacy/ios/build/export/HerdrChat.ipa. Secrets (key/p12) live in a temp dir and
 # are deleted on exit; only the cert/profile (safe) touch the system stores.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,9 +16,11 @@ cd "$(dirname "$0")/.."
 : "${KC_PW:?set KC_PW (login keychain password, for set-key-partition-list)}"
 TEAM_ID="6U58AKY6F8"
 KC="$HOME/Library/Keychains/login.keychain-db"
-ARCHIVE="build/HerdrChat.xcarchive"
-EXPORT_DIR="build/export"
-PLIST="build/ExportOptions-appstore.plist"
+# The SwiftUI app lives under legacy/ios/ since the Expo rewrite.
+LEGACY_IOS="legacy/ios"
+ARCHIVE="$LEGACY_IOS/build/HerdrChat.xcarchive"
+EXPORT_DIR="$LEGACY_IOS/build/export"
+PLIST="$LEGACY_IOS/build/ExportOptions-appstore.plist"
 
 [[ -d "$ARCHIVE" ]] || { echo "ERROR: $ARCHIVE not found; run the archive step first." >&2; exit 1; }
 
