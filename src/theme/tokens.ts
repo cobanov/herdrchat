@@ -58,6 +58,7 @@ export const composerLineHeight = 44;
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
 
+
 /**
  * The horizontal margin every screen's content starts at.
  *
@@ -104,6 +105,17 @@ export const typography = {
 } as const;
 
 export type TypographyToken = keyof typeof typography;
+
+/**
+ * The line the large title occupies in a screen header.
+ *
+ * Fixed, and equal to the largeTitle line height, so the title sits at the same
+ * y on every screen whether or not that screen has a subtitle under it. A
+ * heading that moves when you switch tabs is the most visible alignment error
+ * an app can have, because you see it as motion rather than as layout.
+ */
+export const headerTitleLine = typography.largeTitle.lineHeight;
+
 
 /**
  * Brand ink: a mid periwinkle drawn from the app logo's indigo-navy and

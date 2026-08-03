@@ -4,13 +4,22 @@ import { Platform, Pressable, View } from 'react-native';
 import { Text } from './Text';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
+import { headerTitleLine, minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
 
 /**
- * The screen header. A large title with the current server underneath it, so
- * "which machine am I driving" is answered without opening anything — the single
- * most important piece of context in a multi-host app, and the one a plain
- * navigation title hides.
+ * The screen header: a large title, an optional server line under it, and at
+ * most one trailing control.
+ *
+ * The title sits at the SAME y on every screen. That is the whole reason this
+ * is one component rather than per-screen markup — the previous version
+ * bottom-aligned the row, so a screen with a subtitle (Chats) and one without
+ * (Settings, Hosts) put their titles at different heights, and switching tabs
+ * made the heading jump. Here the title is pinned to the top of a fixed-height
+ * line and the subtitle hangs beneath it, so adding or removing a subtitle
+ * changes what is under the title, never where the title is.
+ *
+ * Trailing controls are centred on that same line, so they align with the title
+ * rather than with whatever happens to be the tallest thing in the row.
  */
 export function Header({
   title,
@@ -37,89 +46,92 @@ export function Header({
   const { colors } = useTheme();
 
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        justifyContent: 'space-between',
-        paddingHorizontal: screenPadding,
-        paddingTop: spacing.sm,
-        paddingBottom: spacing.md,
-        gap: spacing.sm,
-        // The trailing controls are 44pt boxes around smaller glyphs, so the
-        // glyph would otherwise sit ~14pt inside the margin the title starts at.
-        // Pulling the row back by that difference optically aligns them.
-        marginRight: -spacing.md,
-      }}>
-      <View style={{ flexShrink: 1 }}>
-        <Text variant="largeTitle">{title}</Text>
-        {subtitle != null && (
+    <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: headerTitleLine }}>
+        <Text variant="largeTitle" numberOfLines={1} style={{ flexShrink: 1 }}>
+          {title}
+        </Text>
+        <View style={{ flex: 1 }} />
+
+        {onClose !== undefined && (
           <Pressable
-            onPress={onSubtitlePress}
+            onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel={`Server: ${subtitle}. Manage servers.`}
-            testID="server-switcher"
+            accessibilityLabel="Close"
+            testID="header-close"
             hitSlop={spacing.sm}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <Icon
-              name="server.rack"
-              size={13}
-              tintColor={colors.secondaryLabel}
-              fallback={<Text variant="caption">•</Text>}
-            />
-            <Text variant="subhead" color="secondary" weight="600">
-              {subtitle}
+            style={({ pressed }) => ({
+              minWidth: minTouchTarget,
+              height: minTouchTarget,
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              opacity: pressed ? 0.5 : 1,
+            })}>
+            <Text variant="headline" color="tint">
+              Done
             </Text>
+          </Pressable>
+        )}
+
+        {actionSymbol !== undefined && onAction !== undefined && (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === 'ios') void Haptics.selectionAsync();
+              onAction();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={actionLabel ?? 'Action'}
+            testID="header-action"
+            // The 44pt target is met with hitSlop rather than a 44pt box, so the
+            // glyph itself can sit flush with the screen margin the title uses.
+            // A padded box would inset it by 11pt and break that alignment.
+            hitSlop={spacing.md}
+            style={({ pressed }) => ({
+              height: minTouchTarget,
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              opacity: pressed ? 0.5 : 1,
+            })}>
             <Icon
-              name="chevron.down"
-              size={10}
-              tintColor={colors.tertiaryLabel}
-              fallback={<Text variant="caption2" color="tertiary">▾</Text>}
+              name={actionSymbol}
+              size={24}
+              tintColor={colors.tint}
+              fallback={
+                <Text variant="title3" color="tint">
+                  +
+                </Text>
+              }
             />
           </Pressable>
         )}
       </View>
 
-      {onClose !== undefined && (
+      {subtitle != null && (
         <Pressable
-          onPress={onClose}
+          onPress={onSubtitlePress}
           accessibilityRole="button"
-          accessibilityLabel="Close"
-          testID="header-close"
-          style={({ pressed }) => ({
-            minWidth: minTouchTarget,
-            height: minTouchTarget,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.5 : 1,
-          })}>
-          <Text variant="headline" color="tint">
-            Done
-          </Text>
-        </Pressable>
-      )}
-
-      {actionSymbol !== undefined && onAction !== undefined && (
-        <Pressable
-          onPress={() => {
-            if (Platform.OS === 'ios') void Haptics.selectionAsync();
-            onAction();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={actionLabel ?? 'Action'}
-          testID="header-action"
-          style={({ pressed }) => ({
-            width: minTouchTarget,
-            height: minTouchTarget,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.5 : 1,
-          })}>
+          accessibilityLabel={`Host: ${subtitle}. Switch hosts.`}
+          testID="server-switcher"
+          hitSlop={spacing.sm}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, alignSelf: 'flex-start' }}>
           <Icon
-            name={actionSymbol}
-            size={22}
-            tintColor={colors.tint}
-            fallback={<Text variant="title3" color="tint">+</Text>}
+            name="server.rack"
+            size={13}
+            tintColor={colors.secondaryLabel}
+            fallback={<Text variant="caption">•</Text>}
+          />
+          <Text variant="subhead" color="secondary" weight="600">
+            {subtitle}
+          </Text>
+          <Icon
+            name="chevron.down"
+            size={10}
+            tintColor={colors.tertiaryLabel}
+            fallback={
+              <Text variant="caption2" color="tertiary">
+                ▾
+              </Text>
+            }
           />
         </Pressable>
       )}

@@ -1,10 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -40,7 +40,7 @@ export default function ServersScreen() {
   const confirmDelete = (connection: ServerConnection) => {
     Alert.alert(
       `Remove ${connection.name}?`,
-      'The saved key and cached chats for this server are deleted from this device. Nothing on the server changes.',
+      'The saved key and cached chats for this host are deleted from this device. Nothing on the machine itself changes.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -60,11 +60,11 @@ export default function ServersScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+    <Screen>
       <Header
-        title="Servers"
+        title="Hosts"
         actionSymbol="plus"
-        actionLabel="Add a server"
+        actionLabel="Add a host"
         onAction={() =>
           router.push({ pathname: '/server/[id]', params: { id: newConnection().id, mode: 'new' } })
         }
@@ -73,9 +73,9 @@ export default function ServersScreen() {
       {connections.length === 0 ? (
         <EmptyState
           symbol="server.rack"
-          title="No servers yet"
-          body="Add the machine that runs herdr. Connections go over SSH on your tailnet, so nothing is exposed publicly."
-          actionLabel="Add a server"
+          title="No hosts yet"
+          body="Add a machine that runs herdr. Connections go over SSH on your tailnet, so nothing is exposed publicly."
+          actionLabel="Add a host"
           onAction={() =>
             router.push({ pathname: '/server/[id]', params: { id: newConnection().id, mode: 'new' } })
           }
@@ -134,12 +134,12 @@ export default function ServersScreen() {
 
           <Text variant="footnote" color="secondary" style={{ padding: spacing.md }}>
             Keys and passwords are stored in the device keychain, never in the database. The first
-            time you connect, the server’s host key is pinned; if it ever changes, the connection is
-            refused until you save the server again.
+            time you connect, the host key is pinned; if it ever changes, the connection is
+            refused until you save the host again.
           </Text>
         </ScrollView>
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

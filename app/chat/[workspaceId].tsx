@@ -91,22 +91,29 @@ export default function ThreadScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+      {/* A conversation header, not a screen header: a centred title with a
+          back affordance, so it reads as "inside something" rather than as
+          another top-level page. It still starts at the same screen margin as
+          every other page — the back chevron's optical left edge lines up with
+          the large titles elsewhere. */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: spacing.sm,
+          paddingHorizontal: screenPadding,
           paddingBottom: spacing.sm,
+          minHeight: minTouchTarget,
         }}>
         <Pressable
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Back to chats"
           testID="thread-back"
+          hitSlop={spacing.md}
           style={{
-            width: minTouchTarget,
+            width: minTouchTarget - spacing.md,
             height: minTouchTarget,
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
           }}>
           <Icon
@@ -142,8 +149,8 @@ export default function ThreadScreen() {
           )}
         </View>
 
-        {/* Balances the back button so the title is optically centred. */}
-        <View style={{ width: minTouchTarget }} />
+        {/* Balances the back control so the title is optically centred. */}
+        <View style={{ width: minTouchTarget - spacing.md }} />
       </View>
 
       <View style={{ flex: 1 }}>

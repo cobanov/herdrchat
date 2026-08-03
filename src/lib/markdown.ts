@@ -10,7 +10,8 @@
  * This is parsing only, with no React in it, so the fiddly line-based rules are
  * unit-testable. Rendering lives in `src/components/Markdown.tsx`.
  *
- * Ported from `legacy/ios/Sources/HerdrChatUI/Views/MarkdownText.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 
 export type MarkdownBlock =

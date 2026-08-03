@@ -6,7 +6,8 @@
  * quick-reply bar show what each option actually does instead of bare "1 / 2"
  * chips.
  *
- * Ported from `legacy/ios/Sources/HerdrKit/Transcript/BlockedPrompt.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 
 /** One selectable choice: the keys to send and the label to show. */

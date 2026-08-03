@@ -6,6 +6,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
@@ -111,7 +112,7 @@ export default function NewChatScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+    <Screen presentation="sheet">
       <Header title="New chat" onClose={() => router.back()} />
 
       <ScrollView
@@ -198,6 +199,6 @@ export default function NewChatScreen() {
           testID="start-chat"
         />
       </ScrollView>
-    </View>
+    </Screen>
   );
 }

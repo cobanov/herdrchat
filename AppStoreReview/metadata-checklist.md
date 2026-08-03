@@ -6,7 +6,7 @@ Run through this before submitting for Beta App Review (public link) or App Stor
 - [ ] Demo host address + `appreview` username + SSH key/password pasted in the review fields
       (see `reviewer-setup.md`). Confirmed working from a clean device.
 - [ ] Notes = the "What the app is / How to test / Payments / Data" section of `review-notes.md`.
-- [ ] Contact: name, email (cobanov@refikanadolstudio.com), phone. (Required for Beta App Review.)
+- [ ] Contact: name, email (<your-contact-email>), phone. (Required for Beta App Review.)
 - [ ] Export compliance: non-exempt encryption = No (matches `ITSAppUsesNonExemptEncryption=NO`).
 
 ## Privacy

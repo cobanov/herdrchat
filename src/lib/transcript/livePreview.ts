@@ -8,7 +8,8 @@
  * a plain waiting bar rather than show noise — a wrong preview is worse than
  * none, because it reads as the agent's actual answer.
  *
- * Ported from `legacy/ios/Sources/HerdrKit/Transcript/LivePreview.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 export function extractLivePreview(raw: string): string | null {
   const lines = raw.split('\n').map(clean);
@@ -107,7 +108,7 @@ function isChrome(line: string): boolean {
     lower.includes('resume this session') ||
     lower.includes('? for shortcuts') ||
     // A status bar with pipe-separated fields, e.g. herdr's own footer
-    // ("cobanov@macmini | herdrchat | expo-rewrite | Opus 5 | ctx:47%") or a
+    // ("dev@mac-mini | herdrchat | main | Opus 5 | ctx:47%") or a
     // shell prompt ("user@host | ~/projects"). Two bars plus an @ is a field
     // list, not a sentence — prose almost never contains either.
     (line.includes('@') && line.split('|').length >= 3) ||

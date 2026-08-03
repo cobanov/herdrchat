@@ -5,7 +5,7 @@
 //   swift scripts/asc.swift <ISSUER_ID> probe          # report apps / bundleIds / certs
 //   swift scripts/asc.swift <ISSUER_ID> ensure-app     # register bundleId + create app if missing
 //
-// Env overrides: ASC_KEY_ID (default RQ96AFW6H2).
+// Env: APPLE_TEAM_ID (required), ASC_KEY_ID (required).
 import Foundation
 import CryptoKit
 
@@ -13,7 +13,7 @@ let BUNDLE_ID = "dev.herdr.HerdrChat"
 let APP_NAME = "HerdrChat"
 let APP_SKU = "herdrchat"
 let PRIMARY_LOCALE = "en-US"
-let TEAM_ID = "6U58AKY6F8"
+let TEAM_ID = ProcessInfo.processInfo.environment["APPLE_TEAM_ID"] ?? ""
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
@@ -22,7 +22,7 @@ guard args.count >= 3 else {
 }
 let issuerID = args[1]
 let cmd = args[2]
-let keyID = ProcessInfo.processInfo.environment["ASC_KEY_ID"] ?? "RQ96AFW6H2"
+let keyID = ProcessInfo.processInfo.environment["ASC_KEY_ID"] ?? ""
 let keyPath = ("~/.appstoreconnect/private_keys/AuthKey_\(keyID).p8" as NSString).expandingTildeInPath
 
 func die(_ msg: String) -> Never {

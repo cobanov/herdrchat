@@ -1,5 +1,6 @@
 /**
- * The herdr wire model. Ported from `legacy/ios/Sources/HerdrKit/Models`.
+ * The herdr wire model. Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  *
  * Everything here decodes defensively: a newer herdr must not be able to break
  * the app by adding a status or a field, so unknown values degrade rather than

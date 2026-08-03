@@ -56,7 +56,7 @@ Reduce Transparency replaces every glass surface with a solid one, on every OS.
 Reduce Motion stops the presence ring, the typing dots and the waiting bar.
 
 Android compiles and the SSH module is implemented, but it has not been
-runtime-verified — this release is iOS-first.
+runtime-verified — this release is iOS-first. Help there is very welcome.
 
 ## Testing
 
@@ -79,9 +79,11 @@ environment so no key is ever committed.
 - `src/features/`, `src/components/`, `src/theme/`, `src/state/`
 - `modules/herdr-ssh/` — the SSH transport as a local Expo module (Citadel on
   iOS, sshj on Android). See its README for why it exists.
-- `legacy/ios`, `legacy/android` — the original SwiftUI and Jetpack Compose
-  apps. Still buildable, kept as the reference implementation.
-- `scripts/` — host-side helpers and the release scripts for the legacy apps.
+- `scripts/` — release and host-side helpers. See [RELEASING.md](RELEASING.md).
+
+HerdrChat was originally two native apps, in SwiftUI and Jetpack Compose. Both
+are in the git history before the Expo rewrite if you want to compare the same
+product across three stacks.
 
 ## Status
 
@@ -95,8 +97,26 @@ environment so no key is ever committed.
 - [x] Servers: add / edit / test / remove, keychain secrets, TOFU host-key pins
 - [x] New chat: folder browser on the host, permission mode
 - [ ] Notifications (background refresh, foreground service, APNs)
-- [x] iOS release path — `scripts/testflight.sh` archives, signs and uploads the
-      Expo app (0.2.0 build 33 is live on TestFlight)
-- [ ] Android release path — `scripts/play.sh` still targets `legacy/android/`
+- [x] iOS release path — `scripts/testflight.sh`, see [RELEASING.md](RELEASING.md)
+- [ ] Android: compiles and the SSH module is implemented, but not
+      runtime-verified, and there is no release path
 - [ ] Load older history on scroll-up
 - [ ] Unread state persistence
+
+## Contributing
+
+Issues and pull requests are welcome. `CLAUDE.md` records the conventions and,
+more usefully, the handful of rules that were learned by running the thing —
+session identity versus workspace slot, byte-versus-character offsets, why
+glass is confined to one file. Reading it will save you a review round.
+
+Before opening a PR:
+
+```bash
+npx tsc --noEmit && npx expo lint && npx jest
+```
+
+## License
+
+[Apache-2.0](LICENSE). Third-party components and their licenses are listed in
+[NOTICE](NOTICE).

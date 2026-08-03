@@ -6,7 +6,8 @@ import type { ChatMessage, MessageRole, MessageSegment } from './message';
  * TUI buffer: Claude writes every turn to
  * `~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl`.
  *
- * Ported from `legacy/ios/Sources/HerdrKit/Transcript/TranscriptParser.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 
 /** Parse a whole transcript file's contents. */

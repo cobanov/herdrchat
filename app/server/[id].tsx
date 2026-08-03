@@ -6,6 +6,7 @@ import { ScrollView, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -140,8 +141,8 @@ export default function ServerEditScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
-      <Header title={isNew ? 'New server' : 'Edit server'} onClose={() => router.back()} />
+    <Screen presentation="sheet">
+      <Header title={isNew ? 'New host' : 'Edit host'} onClose={() => router.back()} />
 
       <ScrollView
         contentContainerStyle={{ padding: screenPadding, gap: spacing.lg, paddingBottom: spacing.xxxl }}
@@ -284,6 +285,6 @@ export default function ServerEditScreen() {
           )}
         </View>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }

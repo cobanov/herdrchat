@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { clientFor, useSelectedConnection } from '@/state/connections';
@@ -66,7 +67,7 @@ export default function FolderPickerScreen() {
   const child = (name: string) => (path === '/' ? `/${name}` : `${path}/${name}`);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+    <Screen presentation="sheet">
       <Header title="Choose folder" onClose={() => router.back()} />
 
       <View
@@ -152,6 +153,6 @@ export default function FolderPickerScreen() {
           testID="folder-select"
         />
       </View>
-    </View>
+    </Screen>
   );
 }

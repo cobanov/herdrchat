@@ -10,13 +10,12 @@ expo-env.d.ts
 /android/
 *.tsbuildinfo
 
-# === Legacy native apps (kept under legacy/ for reference) ===
+# === Native build output ===
+build/
+DerivedData/
+# Swift Package Manager, if anyone builds the module's deps standalone.
 .build/
 .swiftpm/
-build/
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
-DerivedData/
 
 # === Secrets / noise ===
 .DS_Store
@@ -29,7 +28,6 @@ __pycache__/
 *.pyc
 
 # Play upload key: the keystore and its passwords must never be committed.
-legacy/android/keystore.properties
 *.jks
 *.keystore
 # Google Play service-account key for automated uploads.

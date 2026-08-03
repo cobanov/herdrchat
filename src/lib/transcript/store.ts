@@ -15,7 +15,8 @@ import type { SessionMeta } from './sessionMeta';
  * `~/.claude/projects/<escaped-cwd>/` and either loads a bounded recent window
  * or follows it live.
  *
- * Ported from `legacy/ios/Sources/HerdrKit/Client/TranscriptStore.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 export class TranscriptStore {
   private readonly transport: HerdrTransport;

@@ -1,7 +1,0 @@
-{"type":"mode","mode":"default","sessionId":"s1"}
-{"parentUuid":null,"isSidechain":false,"type":"user","uuid":"u1","timestamp":"2026-07-16T16:22:32.273Z","cwd":"/Users/cobanov/Developer/capsarsiv","message":{"role":"user","content":"testleri calistir"}}
-{"parentUuid":"u1","isSidechain":false,"type":"assistant","uuid":"a1","timestamp":"2026-07-16T16:22:44.999Z","cwd":"/Users/cobanov/Developer/capsarsiv","message":{"role":"assistant","content":[{"type":"thinking","thinking":"kullanici testleri calistirmami istiyor"},{"type":"text","text":"Tamam, testleri calistiriyorum."},{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"swift test","description":"run tests"}}]}}
-{"parentUuid":"a1","isSidechain":false,"type":"user","uuid":"u2","timestamp":"2026-07-16T16:22:50.000Z","cwd":"/Users/cobanov/Developer/capsarsiv","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"3 passed, 0 failed"}]}}
-{"parentUuid":"u2","isSidechain":false,"type":"assistant","uuid":"a2","timestamp":"2026-07-16T16:22:55.000Z","cwd":"/Users/cobanov/Developer/capsarsiv","message":{"role":"assistant","content":[{"type":"text","text":"Hepsi gecti."}]}}
-{"parentUuid":"a2","isSidechain":true,"type":"assistant","uuid":"sc1","timestamp":"2026-07-16T16:23:00.000Z","cwd":"/Users/cobanov/Developer/capsarsiv","message":{"role":"assistant","content":[{"type":"text","text":"subagent internal chatter"}]}}
-{"parentUuid":"a2","isSidechain":false,"type":"attachment","uuid":"att1","timestamp":"2026-07-16T16:23:01.000Z","attachment":{"type":"file"}}

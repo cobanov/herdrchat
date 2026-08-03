@@ -19,7 +19,8 @@ import type { HerdrTransport } from './transport';
  * High-level herdr operations over any transport. Command shapes mirror the
  * `herdr` CLI helpers, which wrap the socket API and print `{id, result}` JSON.
  *
- * Ported from `legacy/ios/Sources/HerdrKit/Client/HerdrClient.swift`.
+ * Behaviour ported from the original SwiftUI implementation (see git
+ * history before the Expo rewrite).
  */
 export class HerdrClient {
   /**

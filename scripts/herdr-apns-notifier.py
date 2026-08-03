@@ -16,7 +16,7 @@ every token it finds there.
 
 Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
     APNS_KEY_ID     10-char Key ID of your APNs auth key (required).
-    APNS_TEAM_ID    Apple Team ID (default 6U58AKY6F8).
+    APNS_TEAM_ID    Apple Team ID (required).
     APNS_KEY_PATH   Path to the AuthKey_XXXX.p8 (default: first .p8 under
                     ~/.config/herdrchat/ or ~/.appstoreconnect/private_keys/).
     APNS_BUNDLE_ID  App bundle id / apns-topic (default dev.herdr.HerdrChat).
@@ -64,7 +64,7 @@ def _find_key_path():
 
 _load_env_file()
 KEY_ID = os.environ.get("APNS_KEY_ID")
-TEAM_ID = os.environ.get("APNS_TEAM_ID", "6U58AKY6F8")
+TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
 KEY_PATH = os.environ.get("APNS_KEY_PATH") or _find_key_path()
 BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "dev.herdr.HerdrChat")
 APNS_HOST = "api.sandbox.push.apple.com" if os.environ.get("APNS_ENV") == "sandbox" else "api.push.apple.com"

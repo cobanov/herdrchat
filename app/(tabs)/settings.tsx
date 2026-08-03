@@ -1,8 +1,8 @@
 import Constants from 'expo-constants';
 import { ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { SegmentedField } from '@/components/Field';
 import { Text } from '@/components/Text';
 import { useGlassAvailable } from '@/components/Glass';
@@ -23,7 +23,7 @@ export default function SettingsScreen() {
   const glass = useGlassAvailable();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+    <Screen>
       <Header title="Settings" />
 
       <ScrollView
@@ -70,7 +70,7 @@ export default function SettingsScreen() {
           one.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

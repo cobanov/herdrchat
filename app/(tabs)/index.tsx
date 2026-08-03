@@ -2,10 +2,10 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET, ChatRow } from '@/features/chats/ChatRow';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
@@ -49,7 +49,7 @@ function ChatsForServer() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+    <Screen>
       <Header
         title="Chats"
         subtitle={connection?.name ?? null}
@@ -70,9 +70,9 @@ function ChatsForServer() {
       {connection === null ? (
         <EmptyState
           symbol="server.rack"
-          title="No servers yet"
-          body="Add the machine that runs herdr. HerdrChat reaches it over SSH on your tailnet — nothing is exposed publicly."
-          actionLabel="Add a server"
+          title="No hosts yet"
+          body="Add a machine that runs herdr. HerdrChat reaches it over SSH on your tailnet — nothing is exposed publicly."
+          actionLabel="Add a host"
           // Straight to the editor, not to the server list: with no servers the
           // list is just this same empty state again, and making someone tap
           // through two identical screens to reach a form is not a step, it's a
@@ -125,7 +125,7 @@ function ChatsForServer() {
           }
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
 

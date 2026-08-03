@@ -1,0 +1,39 @@
+HerdrChat
+Copyright 2026 HerdrChat contributors
+
+This product includes software developed by third parties, listed below with
+their licenses. Full license texts ship with each dependency in node_modules
+and in the resolved Swift/Gradle packages.
+
+Bundled at build time into the iOS app
+--------------------------------------
+Citadel (https://github.com/orlandos-nl/Citadel)                   MIT
+  and its dependencies:
+  SwiftNIO, SwiftNIO SSH, swift-crypto, swift-collections,
+  swift-atomics, swift-log, swift-system, swift-asn1               Apache-2.0
+  BigInt                                                           MIT
+
+Bundled at build time into the Android app
+------------------------------------------
+sshj (https://github.com/hierynomus/sshj)                          Apache-2.0
+Bouncy Castle (bcprov-jdk18on, bcpkix-jdk18on)                      MIT
+net.i2p.crypto:eddsa                                               CC0-1.0
+SLF4J (slf4j-nop)                                                  MIT
+
+JavaScript / React Native
+-------------------------
+React Native, React                                                MIT
+Expo SDK and Expo Modules (expo-router, expo-glass-effect,
+  expo-sqlite, expo-secure-store, expo-symbols, expo-blur,
+  expo-haptics, expo-image, expo-constants)                        MIT
+react-native-reanimated, react-native-gesture-handler,
+  react-native-screens, react-native-safe-area-context             MIT
+@shopify/flash-list                                                MIT
+zustand                                                            MIT
+@tanstack/react-query                                              MIT
+
+Interoperates with (not bundled)
+--------------------------------
+herdr (https://herdr.dev) — reached over SSH on the user's own machine.
+Claude Code — its transcript files are read on the user's own machine.
+Neither is redistributed with this app.

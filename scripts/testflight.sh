@@ -8,11 +8,13 @@
 #
 # Prereqs (already true on this machine):
 #   - Full Xcode, ASC API key at ~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8
-#   - Bundle id dev.herdr.HerdrChat; team 6U58AKY6F8
+#   - An App Store Connect app record for the bundle id in app.json
 #
 # Usage:
-#   ASC_ISSUER_ID=<uuid> scripts/testflight.sh
-#   ASC_ISSUER_ID=<uuid> scripts/testflight.sh --no-upload   # stop at the .ipa
+#   APPLE_TEAM_ID=<team> ASC_KEY_ID=<key> ASC_ISSUER_ID=<uuid> scripts/testflight.sh
+#   ... scripts/testflight.sh --no-upload   # stop at the .ipa
+#
+# See RELEASING.md.
 #
 # NOTE: TestFlight rate-limits uploads per app per day (altool 90382). Bump the
 # build number on every change so commits stay honest, but batch the uploads.
@@ -21,8 +23,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SCHEME="HerdrChat"
-TEAM_ID="6U58AKY6F8"
-KEY_ID="${ASC_KEY_ID:-RQ96AFW6H2}"
+# Account-specific, so they come from the environment. A fork must not silently
+# try to sign against someone else's Apple team.
+TEAM_ID="${APPLE_TEAM_ID:?set APPLE_TEAM_ID (Apple Developer > Membership)}"
+KEY_ID="${ASC_KEY_ID:?set ASC_KEY_ID (App Store Connect API key id)}"
+PROFILE_NAME="${ASC_PROFILE_NAME:-HerdrChat App Store}"
 KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/HerdrChat.xcarchive"
@@ -44,6 +49,7 @@ AUTH=(-allowProvisioningUpdates
       -authenticationKeyID "$KEY_ID"
       -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
+BUNDLE_ID=$(node -p "require('./app.json').expo.ios.bundleIdentifier")
 VERSION=$(node -p "require('./app.json').expo.version")
 BUILD_NUMBER=$(node -p "require('./app.json').expo.ios.buildNumber")
 
@@ -84,7 +90,7 @@ cat > "$PLIST" <<EOF
     <key>signingCertificate</key><string>Apple Distribution</string>
     <key>provisioningProfiles</key>
     <dict>
-        <key>dev.herdr.HerdrChat</key><string>HerdrChat App Store</string>
+        <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
     </dict>
     <key>destination</key><string>export</string>
     <key>uploadSymbols</key><true/>
@@ -121,7 +127,14 @@ fi
 # is an error state. Autolinking is silent when it doesn't happen, so prove the
 # native side AND the JS side both made it in. (Hermes bytecode keeps its string
 # table as one blob, so this must be a substring search, not a line match.)
-if ! strings -a "$APP/HerdrChat" | grep -qF "host key fingerprint mismatch"; then
+#
+# The needle is the registered CLASS name, not a message. An earlier version of
+# this check looked for an error string from the host-key path and started
+# failing on a clean build — the Swift optimiser is free to fold a literal that
+# only appears in one error branch, so a message is not an invariant. The class
+# name is: `expo-module.config.json` names it, and the module cannot resolve at
+# runtime without it.
+if ! strings -a "$APP/$SCHEME" | grep -qF "HerdrSshModule"; then
   echo "ERROR: the native SSH module is not in the binary." >&2
   exit 1
 fi

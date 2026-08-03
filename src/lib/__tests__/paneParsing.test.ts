@@ -104,7 +104,7 @@ describe('live preview extraction', () => {
    */
   it('drops a status bar whose fields are separated by box-drawing bars', () => {
     const screen = [
-      'cobanov@macmini │ herdrchat │ expo-rewrite │ Opus 5 (1M context) │ ctx:47%',
+      'dev@mac-mini │ herdrchat │ main │ Opus 5 (1M context) │ ctx:47%',
       '✳ Working…',
     ].join('\n');
     expect(extractLivePreview(screen)).toBeNull();
