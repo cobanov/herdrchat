@@ -1,0 +1,25 @@
+# Launch, reach every top-level destination, assert a key element on each.
+#
+# Deliberately does NOT need a server: it covers the shape of the app, not its
+# connection. `add-server.yaml` is the one that proves SSH really works.
+appId: dev.herdr.HerdrChat
+---
+# stopApp first: launchApp on its own RESUMES, so a previous flow can leave the
+# app deep in a thread and every assertion here would be about the wrong screen.
+# (clearState would restart cleanly but also wipes the dev client's bundler URL.)
+- stopApp
+- launchApp
+- assertVisible: "Chats"
+
+# The server switcher is the only way to change hosts, so it has to be reachable
+# from the primary screen at all times.
+- tapOn:
+    id: "server-switcher"
+- assertVisible: "Servers"
+
+# Dismissed by the button, not by `back` (iOS has no hardware back) and not by a
+# swipe — the button is the path VoiceOver and Switch Control actually have.
+- tapOn:
+    id: "header-close"
+
+- assertVisible: "Chats"

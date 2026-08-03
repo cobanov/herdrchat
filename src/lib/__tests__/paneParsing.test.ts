@@ -97,6 +97,19 @@ describe('live preview extraction', () => {
     expect(extractLivePreview('')).toBeNull();
   });
 
+  /**
+   * Caught in the running app: herdr's own footer was rendering as the agent's
+   * in-progress answer. The chrome check missed it because the fields are
+   * separated by box-drawing bars, not ASCII pipes.
+   */
+  it('drops a status bar whose fields are separated by box-drawing bars', () => {
+    const screen = [
+      'cobanov@macmini │ herdrchat │ expo-rewrite │ Opus 5 (1M context) │ ctx:47%',
+      '✳ Working…',
+    ].join('\n');
+    expect(extractLivePreview(screen)).toBeNull();
+  });
+
   it('drops the composer, mode hints and shortcut footers', () => {
     const screen = [
       'This is the real answer text, long enough to count as prose.',

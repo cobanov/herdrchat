@@ -1,0 +1,61 @@
+# Add a server and prove the connection test really connects.
+#
+# The Save button stays disabled until the live test passes, so landing on the
+# chat list at the end is itself the assertion that SSH, the host key pin, and
+# `herdr status server` all worked end to end.
+#
+# Needs HOST, USERNAME and SSH_KEY in the environment — see .maestro/README.md.
+appId: dev.herdr.HerdrChat
+env:
+  HOST: 127.0.0.1
+  PORT: "22"
+  USERNAME: ""
+  SSH_KEY: ""
+---
+- launchApp
+- assertVisible: "Chats"
+
+- tapOn:
+    id: "server-switcher"
+- tapOn: "Add a server"
+
+- tapOn:
+    id: "field-name"
+- inputText: "test-host"
+- tapOn:
+    id: "field-host"
+- inputText: ${HOST}
+- tapOn:
+    id: "field-username"
+- inputText: ${USERNAME}
+
+# Scroll first: tapOn does not scroll, and tapping a field that is below the
+# fold leaves focus where it was, so the key ends up appended to the username.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "field-secret"
+    direction: DOWN
+- tapOn:
+    id: "field-secret"
+- inputText: ${SSH_KEY}
+- hideKeyboard
+
+- scrollUntilVisible:
+    element:
+      id: "test-connection"
+    direction: DOWN
+- tapOn:
+    id: "test-connection"
+- extendedWaitUntil:
+    visible:
+      id: "test-ok"
+    timeout: 40000
+
+- scrollUntilVisible:
+    element:
+      id: "save-server"
+    direction: DOWN
+- tapOn:
+    id: "save-server"
+- assertVisible: "Chats"

@@ -1,164 +1,155 @@
-import { useEffect, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { FlashList } from '@shopify/flash-list';
+import { useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { RefreshControl, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { connect, exec, streamLines, type SshConfig } from '../modules/herdr-ssh/src';
-import { runtimeReport } from '@/lib/runtimeReport';
-import { shellQuote, withPath } from '@/lib/herdr/shell';
+import { EmptyState } from '@/components/EmptyState';
+import { Header } from '@/components/Header';
+import { Text } from '@/components/Text';
+import { ChatRow } from '@/features/chats/ChatRow';
+import { useWorkspaces } from '@/features/chats/useWorkspaces';
+import { ErrorBanner } from '@/components/ErrorBanner';
+import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
+import { useTheme } from '@/theme/ThemeProvider';
+import { spacing } from '@/theme/tokens';
 
 /**
- * Temporary build-spine + SSH probe.
+ * Chats — the primary destination. One row per workspace, with live presence.
  *
- * The whole rewrite rests on two things being true, and neither may be assumed:
- * that the New Architecture is actually on, and that the hand-written SSH
- * TurboModule really talks to a host. This screen answers both from the running
- * app. It self-runs on mount so it can be verified headlessly, and it is
- * replaced by the chat list in phase 6.
- *
- * Credentials come from EXPO_PUBLIC_DEV_SSH_* in a gitignored .env.local, so no
- * private key ever lands in a committed file.
+ * Thin by design: everything it knows comes from `useWorkspaces`, and everything
+ * it draws comes from `ChatRow`.
  */
-export default function Probe() {
-  const report = runtimeReport();
-  const [log, setLog] = useState<string[]>([]);
-  const [tailLines, setTailLines] = useState<string[]>([]);
-  const started = useRef(false);
+export default function ChatsScreen() {
+  const connection = useSelectedConnection();
+  // Keyed by server: switching hosts is a different conversation list, not an
+  // update to this one, so the whole thing remounts rather than being reset
+  // field by field.
+  return <ChatsForServer key={connection?.id ?? 'none'} />;
+}
 
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
+function ChatsForServer() {
+  const router = useRouter();
+  const { colors } = useTheme();
+  const connection = useSelectedConnection();
+  const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-    const say = (line: string) => setLog((previous) => [...previous, line]);
-    const host = process.env.EXPO_PUBLIC_DEV_SSH_HOST ?? '';
-    const username = process.env.EXPO_PUBLIC_DEV_SSH_USER ?? '';
-    const tailPath = process.env.EXPO_PUBLIC_DEV_SSH_TAIL ?? '';
-    const config: SshConfig = {
-      host,
-      port: Number(process.env.EXPO_PUBLIC_DEV_SSH_PORT ?? '22') || 22,
-      username,
-      auth: {
-        kind: 'privateKey',
-        // A PEM is multi-line and a dotenv value is not, so .env.local stores it
-        // with escaped newlines and they are restored here.
-        pem: (process.env.EXPO_PUBLIC_DEV_SSH_KEY ?? '').replaceAll('\\n', '\n'),
-      },
-      hostKeyFingerprint: null,
-    };
+  const { summaries, loading, error, herdrMissing, refresh } = useWorkspaces(client);
+  const [installing, setInstalling] = useState(false);
 
-    let cancelled = false;
-
-    const run = async () => {
-      if (!host || !username) {
-        say('no EXPO_PUBLIC_DEV_SSH_* config — skipping SSH probe');
-        return;
-      }
-
-      say(`connect ${username}@${host}:${config.port}`);
-      const connected = await connect('probe', config);
-      if (!connected.ok) {
-        say(`FAILED ${connected.code}: ${connected.message}`);
-        return;
-      }
-      say(`OK pinned ${connected.fingerprint.slice(0, 24)}…`);
-
-      for (const command of ['uname -sm', 'herdr status server']) {
-        const result = await exec('probe', withPath(command));
-        if (!result.ok) {
-          say(`${command} -> FAILED ${result.code}`);
-          continue;
-        }
-        const body = (result.stdout || result.stderr).trim().split('\n')[0] ?? '';
-        say(`${command} -> exit ${result.exitCode} ${body.slice(0, 60)}`);
-      }
-
-      // Reconnect with the fingerprint we just pinned, then present a WRONG one:
-      // TOFU is only worth having if the mismatch path actually refuses.
-      const wrongPin = await connect('pin-check', {
-        ...config,
-        hostKeyFingerprint: 'AAAAdefinitelyNotThisHostsKeyAAAAAAAAAAAAAA=',
-      });
-      say(
-        wrongPin.ok
-          ? 'pin check -> ACCEPTED A BAD KEY (bug)'
-          : `pin check -> refused (${wrongPin.code})`
-      );
-
-      if (!tailPath) return;
-      say(`tail -f ${tailPath}`);
-      try {
-        for await (const line of streamLines(
-          'probe',
-          withPath(`tail -n +1 -f ${shellQuote(tailPath)}`)
-        )) {
-          if (cancelled) break;
-          setTailLines((previous) => [...previous.slice(-6), line]);
-        }
-      } catch (error) {
-        say(`tail FAILED: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const installHerdr = async () => {
+    if (client === null) return;
+    setInstalling(true);
+    try {
+      await client.installHerdr();
+      await refresh();
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.title}>HerdrChat</Text>
-      <Text style={styles.subtitle}>build spine + ssh probe</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+      <Header
+        title="Chats"
+        subtitle={connection?.name ?? null}
+        onSubtitlePress={() => router.push('/servers')}
+        actionSymbol="square.and.pencil"
+        actionLabel="New chat"
+        onAction={connection === null ? undefined : () => router.push('/new-chat')}
+      />
 
-      <Row label="Platform" value={`${Platform.OS} ${String(Platform.Version)}`} />
-      <Row label="Fabric (New Arch)" value={yesNo(report.fabric)} />
-      <Row label="Bridgeless" value={yesNo(report.bridgeless)} />
-      <Row label="Hermes" value={yesNo(report.hermes)} />
-      <Row label="TurboModules" value={yesNo(report.turboModules)} />
-      <Row label="Liquid Glass" value={yesNo(isLiquidGlassAvailable())} />
-      <Row label="Glass effect API" value={yesNo(isGlassEffectAPIAvailable())} />
+      {error !== null && (
+        <ErrorBanner
+          message={error}
+          actionLabel={herdrMissing ? (installing ? 'Installing…' : 'Install herdr on the host') : null}
+          onAction={herdrMissing && !installing ? () => void installHerdr() : undefined}
+        />
+      )}
 
-      <Text style={styles.section}>SSH</Text>
-      <View style={styles.logBox} testID="ssh-log">
-        {log.map((line, index) => (
-          <Text key={index} style={styles.mono}>
-            {line}
-          </Text>
-        ))}
-      </View>
-
-      <Text style={styles.section}>tail ({tailLines.length} shown)</Text>
-      <View style={styles.logBox} testID="ssh-tail">
-        {tailLines.map((line, index) => (
-          <Text key={index} style={styles.mono} numberOfLines={1}>
-            ⟩ {line}
-          </Text>
-        ))}
-      </View>
-    </ScrollView>
+      {connection === null ? (
+        <EmptyState
+          symbol="server.rack"
+          title="No servers yet"
+          body="Add the machine that runs herdr. HerdrChat reaches it over SSH on your tailnet — nothing is exposed publicly."
+          actionLabel="Add a server"
+          // Straight to the editor, not to the server list: with no servers the
+          // list is just this same empty state again, and making someone tap
+          // through two identical screens to reach a form is not a step, it's a
+          // toll.
+          onAction={() =>
+            router.push({ pathname: '/server/[id]', params: { id: newConnection().id } })
+          }
+        />
+      ) : summaries.length === 0 ? (
+        loading ? (
+          <SkeletonRows />
+        ) : (
+          <EmptyState
+            symbol="tray"
+            title="No workspaces"
+            body={`Workspaces you open in herdr on ${connection.name} appear here.`}
+            actionLabel="Start a chat"
+            onAction={() => router.push('/new-chat')}
+          />
+        )
+      ) : (
+        <FlashList
+          data={summaries}
+          keyExtractor={(item) => item.workspaceId}
+          renderItem={({ item }) => (
+            <ChatRow
+              summary={item}
+              unread={false}
+              onPress={() =>
+                router.push({
+                  pathname: '/chat/[workspaceId]',
+                  params: { workspaceId: item.workspaceId, title: item.title },
+                })
+              }
+            />
+          )}
+          ItemSeparatorComponent={() => (
+            <View
+              style={{
+                height: 1,
+                marginLeft: 84,
+                backgroundColor: colors.separator,
+                opacity: 0.5,
+              }}
+            />
+          )}
+          refreshControl={
+            <RefreshControl refreshing={false} onRefresh={() => void refresh()} tintColor={colors.tint} />
+          }
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+/**
+ * A shaped skeleton rather than a bare spinner: the row layout is known, so
+ * showing it stops the list from jumping when data lands.
+ */
+function SkeletonRows() {
+  const { colors } = useTheme();
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+    <View style={{ padding: spacing.md, gap: spacing.lg }}>
+      {[0, 1, 2, 3].map((index) => (
+        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <View
+            style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.fillSubtle }}
+          />
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ height: 14, width: '45%', borderRadius: 7, backgroundColor: colors.fillSubtle }} />
+            <View style={{ height: 12, width: '75%', borderRadius: 6, backgroundColor: colors.fillSubtle }} />
+          </View>
+        </View>
+      ))}
+      <Text variant="footnote" color="tertiary" style={{ textAlign: 'center' }}>
+        Connecting…
+      </Text>
     </View>
   );
 }
-
-function yesNo(value: boolean): string {
-  return value ? 'yes' : 'NO';
-}
-
-const styles = StyleSheet.create({
-  content: { padding: 20, gap: 2, paddingBottom: 60 },
-  title: { fontSize: 30, fontWeight: '700' },
-  subtitle: { fontSize: 14, opacity: 0.6, marginBottom: 14 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
-  rowLabel: { fontSize: 15 },
-  rowValue: { fontSize: 15, fontWeight: '600' },
-  section: { fontSize: 13, fontWeight: '700', marginTop: 18, marginBottom: 4, opacity: 0.5 },
-  logBox: { gap: 3 },
-  mono: { fontFamily: 'Menlo', fontSize: 11 },
-});

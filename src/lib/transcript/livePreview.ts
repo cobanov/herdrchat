@@ -62,7 +62,12 @@ function clean(line: string): string {
   let end = withoutAnsi.length;
   while (start < end && BORDER_CHARS.includes(withoutAnsi[start] ?? '')) start += 1;
   while (end > start && BORDER_CHARS.includes(withoutAnsi[end - 1] ?? '')) end -= 1;
-  return withoutAnsi.slice(start, end);
+  // Box-drawing bars survive in the MIDDLE of a line (only the ends are
+  // trimmed), and a status bar's fields are separated by them. Normalising to
+  // an ASCII pipe is what lets the chrome checks below see one shape instead of
+  // two — without it, herdr's own footer reads as prose and gets shown as the
+  // agent's answer.
+  return withoutAnsi.slice(start, end).replaceAll('│', '|').replaceAll('┃', '|');
 }
 
 /**
@@ -101,8 +106,12 @@ function isChrome(line: string): boolean {
     lower.includes('⏸') ||
     lower.includes('resume this session') ||
     lower.includes('? for shortcuts') ||
-    // A shell prompt line, e.g. "user@host | ~/projects".
-    (line.includes('|') && line.includes('@') && (line.includes('~') || line.includes('/')))
+    // A status bar with pipe-separated fields, e.g. herdr's own footer
+    // ("cobanov@macmini | herdrchat | expo-rewrite | Opus 5 | ctx:47%") or a
+    // shell prompt ("user@host | ~/projects"). Two bars plus an @ is a field
+    // list, not a sentence — prose almost never contains either.
+    (line.includes('@') && line.split('|').length >= 3) ||
+    lower.includes('ctx:')
   );
 }
 

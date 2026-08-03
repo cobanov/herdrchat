@@ -1,0 +1,287 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+
+import { Button } from '@/components/Button';
+import { Field, SegmentedField } from '@/components/Field';
+import { Header } from '@/components/Header';
+import { Text } from '@/components/Text';
+import { HerdrError } from '@/lib/herdr/protocol';
+import { useTheme } from '@/theme/ThemeProvider';
+import { radius, spacing } from '@/theme/tokens';
+import {
+  clearSecrets,
+  invalidateClient,
+  loadSecret,
+  saveSecret,
+  testClient,
+  useConnections,
+  type ServerConnection,
+} from '@/state/connections';
+import { saveConnection, setSetting } from '@/state/db';
+import { SELECTED_KEY } from '@/state/Hydrate';
+
+type TestState =
+  | { kind: 'idle' }
+  | { kind: 'testing' }
+  | { kind: 'ok' }
+  | { kind: 'failed'; message: string; herdrMissing: boolean };
+
+/**
+ * Add or edit a herdr host.
+ *
+ * A connection must pass a LIVE test before it can be saved. That is not
+ * ceremony: a saved-but-broken server produces a chat list that fails to load
+ * with no obvious cause, and the fix (a typo'd host, the wrong user, herdr not
+ * installed) is only discoverable by actually trying.
+ */
+export default function ServerEditScreen() {
+  const router = useRouter();
+  const db = useSQLiteContext();
+  const { colors } = useTheme();
+  const params = useLocalSearchParams<{ id: string; mode?: string }>();
+  const connections = useConnections((state) => state.connections);
+  const upsert = useConnections((state) => state.upsert);
+
+  const existing = connections.find((connection) => connection.id === params.id) ?? null;
+  const isNew = existing === null;
+
+  const [name, setName] = useState(existing?.name ?? '');
+  const [host, setHost] = useState(existing?.host ?? '');
+  const [port, setPort] = useState(String(existing?.port ?? 22));
+  const [username, setUsername] = useState(existing?.username ?? '');
+  const [authKind, setAuthKind] = useState<ServerConnection['authKind']>(
+    existing?.authKind ?? 'privateKey'
+  );
+  const [secret, setSecret] = useState('');
+  const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
+  const [test, setTest] = useState<TestState>({ kind: 'idle' });
+  const [installing, setInstalling] = useState(false);
+
+  const valid =
+    name.trim().length > 0 &&
+    host.trim().length > 0 &&
+    username.trim().length > 0 &&
+    Number.isFinite(Number(port));
+
+  // Any change to a connection-relevant field invalidates a prior pass.
+  const invalidate = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value);
+    setTest({ kind: 'idle' });
+  };
+
+  const draft = (): ServerConnection => ({
+    id: params.id,
+    name: name.trim(),
+    host: host.trim(),
+    port: Number(port) || 22,
+    username: username.trim(),
+    authKind,
+    herdrPath: herdrPath.trim().length === 0 ? 'herdr' : herdrPath.trim(),
+  });
+
+  const resolveSecret = async (): Promise<string> => {
+    if (secret.length > 0) return secret;
+    // Editing with the field left blank keeps the stored secret.
+    return (await loadSecret(params.id)) ?? '';
+  };
+
+  const runTest = async () => {
+    setTest({ kind: 'testing' });
+    const connection = draft();
+    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath);
+    try {
+      await client.ping();
+      setTest({ kind: 'ok' });
+    } catch (thrown) {
+      const failure = thrown instanceof HerdrError ? thrown : null;
+      setTest({
+        kind: 'failed',
+        message: failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)),
+        herdrMissing: failure?.code === 'herdr_not_found',
+      });
+    } finally {
+      await dispose();
+    }
+  };
+
+  const installHerdr = async () => {
+    setInstalling(true);
+    const connection = draft();
+    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath);
+    try {
+      await client.installHerdr();
+      await dispose();
+      setInstalling(false);
+      await runTest();
+    } catch (thrown) {
+      await dispose();
+      setInstalling(false);
+      setTest({
+        kind: 'failed',
+        message: thrown instanceof HerdrError ? thrown.message : String(thrown),
+        herdrMissing: false,
+      });
+    }
+  };
+
+  const save = async () => {
+    const connection = draft();
+    if (secret.length > 0) await saveSecret(connection.id, secret);
+    // Editing resets the host-key pin: the next connect re-pins, which is the
+    // only way to recover from a server that was legitimately reinstalled.
+    await clearSecrets(connection.id, { keepSecret: true });
+    await invalidateClient(connection.id);
+    await saveConnection(db, connection);
+    await setSetting(db, SELECTED_KEY, connection.id);
+    upsert(connection);
+    router.dismissAll();
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+      <Header title={isNew ? 'New server' : 'Edit server'} onClose={() => router.back()} />
+
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.md, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+        keyboardShouldPersistTaps="handled">
+        <View style={{ gap: spacing.sm }}>
+          <Field label="Name" placeholder="nuc" value={name} onChangeText={invalidate(setName)} testID="field-name" />
+          <Field
+            label="Host"
+            placeholder="100.x.y.z or a Tailscale name"
+            value={host}
+            onChangeText={invalidate(setHost)}
+            autoCapitalize="none"
+            testID="field-host"
+          />
+          <Field
+            label="Port"
+            value={port}
+            onChangeText={invalidate(setPort)}
+            keyboardType="number-pad"
+            testID="field-port"
+          />
+          <Field
+            label="Username"
+            value={username}
+            onChangeText={invalidate(setUsername)}
+            autoCapitalize="none"
+            testID="field-username"
+          />
+        </View>
+
+        <View style={{ gap: spacing.sm }}>
+          <SegmentedField
+            label="Authentication"
+            options={[
+              { value: 'privateKey', label: 'Private key' },
+              { value: 'password', label: 'Password' },
+            ]}
+            value={authKind}
+            onChange={invalidate(setAuthKind)}
+          />
+          {authKind === 'privateKey' ? (
+            <Field
+              label="OpenSSH private key"
+              placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…'}
+              value={secret}
+              onChangeText={invalidate(setSecret)}
+              multiline
+              mono
+              autoCapitalize="none"
+              testID="field-secret"
+            />
+          ) : (
+            <Field
+              label="Password"
+              value={secret}
+              onChangeText={invalidate(setSecret)}
+              secureTextEntry
+              autoCapitalize="none"
+              testID="field-secret"
+            />
+          )}
+          <Text variant="caption" color="secondary">
+            {isNew
+              ? 'Stored in the device keychain, never in the database.'
+              : 'Leave empty to keep the current secret.'}
+          </Text>
+        </View>
+
+        <Field
+          label="herdr path"
+          value={herdrPath}
+          onChangeText={invalidate(setHerdrPath)}
+          autoCapitalize="none"
+          testID="field-herdr-path"
+        />
+
+        <View style={{ gap: spacing.md }}>
+          <Button
+            title={test.kind === 'testing' ? 'Testing…' : 'Test connection'}
+            variant="tinted"
+            loading={test.kind === 'testing'}
+            disabled={!valid}
+            onPress={() => void runTest()}
+            testID="test-connection"
+          />
+
+          {test.kind === 'ok' && (
+            <View
+              style={{
+                padding: spacing.md,
+                borderRadius: radius.card,
+                backgroundColor: colors.tintMuted,
+              }}>
+              <Text variant="subhead" color="tint" weight="600" testID="test-ok">
+                Connected — herdr is answering.
+              </Text>
+            </View>
+          )}
+
+          {test.kind === 'failed' && (
+            <View
+              style={{
+                padding: spacing.md,
+                borderRadius: radius.card,
+                backgroundColor: colors.fillSubtle,
+                gap: spacing.sm,
+              }}>
+              <Text variant="subhead" weight="600">
+                Couldn’t connect
+              </Text>
+              <Text variant="footnote" color="secondary">
+                {test.message}
+              </Text>
+              {test.herdrMissing && (
+                <Button
+                  title={installing ? 'Installing…' : 'Install herdr on the host'}
+                  variant="tinted"
+                  loading={installing}
+                  onPress={() => void installHerdr()}
+                />
+              )}
+            </View>
+          )}
+
+          <Button
+            title="Save"
+            onPress={() => void save()}
+            disabled={test.kind !== 'ok'}
+            testID="save-server"
+          />
+          {test.kind !== 'ok' && (
+            <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+              Test the connection before saving, so a typo doesn’t become a chat list that
+              silently fails to load.
+            </Text>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}

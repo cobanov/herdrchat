@@ -22,7 +22,13 @@ import type { HerdrTransport } from './transport';
  * Ported from `legacy/ios/Sources/HerdrKit/Client/HerdrClient.swift`.
  */
 export class HerdrClient {
-  private readonly transport: HerdrTransport;
+  /**
+   * Public so a `TranscriptStore` can share the same connection. Reading
+   * transcripts and driving herdr are the same conversation with the same host;
+   * giving the store its own transport would open a second SSH connection to
+   * say the same things.
+   */
+  readonly transport: HerdrTransport;
   /** The `herdr` executable name/path on the host (overridable if not on PATH). */
   private readonly herdr: string;
 
