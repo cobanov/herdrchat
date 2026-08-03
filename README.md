@@ -38,21 +38,19 @@ call can be a chip rather than a wall of output.
  Chats            Hosts            Settings
 ```
 
-- **No account and no server.** There is nothing to sign into and no service of
-  ours in the path. Your phone talks to your machine and to nothing else.
-- **Nothing is exposed.** In normal use the connection rides your existing
-  Tailscale network. Host keys are pinned on first use, and a changed key is
-  refused rather than warned about.
+- **No account and no server.** Your phone talks to your machine and to nothing
+  else. In normal use it rides your existing Tailscale network, so nothing is
+  exposed publicly.
 - **Keys stay in the Keychain**, never in the app's database and never off the
-  device.
+  device. Host keys are pinned on first use, and a changed key is refused rather
+  than warned about.
 - **Answer a blocked agent in two taps.** A prompt's options are parsed into
   labelled buttons, so choosing one is a tap rather than a guess at which number
   to type.
 - **Notifications come from your own machine.** A watcher you run signs with
   your own Apple push key and talks to APNs directly.
 
-Verified on **iPhone 17 Pro, iOS 26.5** against a real host. Android compiles
-and its SSH module is written, but it has never been run — see [Status](#status).
+Verified on **iPhone 17 Pro, iOS 26.5** against a real host.
 
 ## Install
 
@@ -74,47 +72,18 @@ herdr integration install claude
 
 Without it herdr never learns Claude Code's session id, and the app cannot tell
 one conversation in a directory from another. It refuses to guess, so threads
-open empty. The hook fires on session start, so **agents already running when
-you install it must be restarted** before they report anything.
+open empty and say so. The hook fires at session start, so **agents already
+running when you install it must be restarted** before they report anything.
 
-Then add a host in the app: name, address, username, and an OpenSSH private key
-or password. The connection has to pass a live test before it can be saved — a
-saved-but-broken host produces a chat list that fails with no visible cause.
+Then add a host in the app. The connection has to pass a live test before it can
+be saved — a saved-but-broken host produces a chat list that fails with no
+visible cause.
 
-## Use
-
-**The chat list**
-
-| | |
-|---|---|
-| **tap a row** | open the thread |
-| **the host name under the title** | switch machines |
-| **compose** | new chat — pick a folder on the host, and a permission mode |
-| **● ○ !** | working · idle · blocked, polled live |
-
-A row shows an unread dot when the agent has spoken since you last opened it.
-Read state is keyed to the conversation rather than to the workspace, so a new
-chat in a recycled slot announces itself instead of inheriting the last one's
-dot.
-
-**A thread**
-
-| | |
-|---|---|
-| **pull down at the top** | load older history, a page at a time |
-| **the bar above the composer** | a blocked agent's options, as buttons |
-| **send** | delivery is verified — a message that did not land says so |
-
-Tool calls, results and thinking collapse into chips; subagent turns are hidden.
-Both are switches in Settings.
-
-**Notifications**
-
-Opt-in. Your device's APNs token is written to a file on your own host over the
-same SSH connection, and `scripts/herdr-apns-notifier.py` there pushes to Apple
-with your own key. It needs an **APNs auth key** from Apple Developer — the Keys
-section, which is not the same thing as an App Store Connect API key. Nothing of
-ours is in the path, because nothing of ours exists.
+**Notifications** are opt-in and need one more thing: an **APNs auth key** from
+Apple Developer → Keys, which is not the same as an App Store Connect API key.
+Your device's token is written to a file on your own host over the same SSH
+connection, and `scripts/herdr-apns-notifier.py` there pushes to Apple with your
+key. Nothing of ours is in the path, because nothing of ours exists.
 
 ## Build
 
@@ -127,10 +96,8 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 
 `.maestro/add-server.yaml` needs a real host and reads its credentials from the
 environment, so no key is ever committed. Shipping is `scripts/testflight.sh` —
-see [RELEASING.md](RELEASING.md).
-
-`ios/` and `android/` are generated and gitignored. Change `app.json` or a config
-plugin and re-run prebuild; never edit the generated project.
+see [RELEASING.md](RELEASING.md). `ios/` and `android/` are generated: change
+`app.json` or a config plugin and re-run prebuild, never the generated project.
 
 ## How it is built
 
@@ -143,21 +110,18 @@ your machine
    └─ ~/.claude/projects/<escaped-cwd>/<session>.jsonl ─── tailed for messages
 ```
 
-- `app/` — routes, thin: screens compose, they do not implement.
-- `src/lib/` — the core, and the reason it is testable: herdr protocol and
-  client, transcript parsing, the byte-windowed store, blocked-prompt and
-  live-preview scraping. It imports neither React nor the SSH module, so all of
-  it runs against a canned transport.
-- `src/features/`, `src/components/`, `src/state/`, `src/theme/`
-- `modules/herdr-ssh/` — the transport as a local Expo module: Citadel on iOS,
-  sshj on Android. Its README explains what it deliberately does not do.
-- `site/` — [herdrchat.cobanov.dev][site], privacy policy included, so the
-  published page and the behaviour it describes are reviewed together.
+`src/lib/` is the core and the reason the thing is testable: herdr protocol and
+client, transcript parsing, the byte-windowed store, blocked-prompt scraping. It
+imports neither React nor the SSH module, so all of it runs against a canned
+transport. Routes in `app/` stay thin, the SSH transport is a local Expo module
+under `modules/herdr-ssh/`, and `site/` is [herdrchat.cobanov.dev][site] —
+privacy policy included, so the published page and the behaviour it describes
+are reviewed together.
 
-[`CLAUDE.md`](CLAUDE.md) records the conventions and, more usefully, the rules
-that were learned by running the thing: why a chat's identity is its session and
-not its workspace slot, why offsets are UTF-8 bytes and not string length, why
-glass lives in exactly one file. Reading it will save you a review round.
+[`CLAUDE.md`](CLAUDE.md) has the conventions and, more usefully, the rules that
+were learned by running the thing: why a chat's identity is its session and not
+its workspace slot, why offsets are UTF-8 bytes and not string length, why glass
+lives in exactly one file. Reading it will save you a review round.
 
 HerdrChat was two native apps first, in SwiftUI and Jetpack Compose. Both are in
 the git history before the Expo rewrite, if you want the same product across
@@ -165,20 +129,13 @@ three stacks.
 
 ## Status
 
-- [x] SSH transport as a native module, verified against a live host
-- [x] herdr protocol, models, client
-- [x] Transcript → bubbles, bounded recent window, resuming live tail
-- [x] Chat list with live presence and batched previews
-- [x] Thread: bubbles, live preview, blocked quick-replies, verified send
-- [x] Load older history on pull-up
-- [x] Unread state, keyed to the session
-- [x] Hosts: add / edit / test / remove, Keychain secrets, TOFU pins
-- [x] New chat: folder browser on the host, permission mode
-- [x] iOS release path — [RELEASING.md](RELEASING.md)
-- [ ] Notifications end to end. The app registers and the entitlement ships; the
-      host-side sender has never been set up ([#2][i2])
-- [ ] Android runtime verification and a release path ([#4][i4])
-- [ ] Public TestFlight — blocked on a demo host for review ([#3][i3])
+Everything described above works on iOS. What does not, yet:
+
+- **Notifications end to end** — the app registers and the entitlement ships,
+  but the host-side sender has never been set up ([#2][i2]).
+- **Android** — it compiles and the SSH module is written in Kotlin, but it has
+  never been run and there is no release path ([#4][i4]).
+- **Public TestFlight** — blocked on a demo host for review ([#3][i3]).
 
 Open [issues][issues] are the honest version of this list.
 
