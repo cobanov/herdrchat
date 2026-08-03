@@ -53,7 +53,7 @@ function ChatsForServer() {
       <Header
         title="Chats"
         subtitle={connection?.name ?? null}
-        onSubtitlePress={() => router.push('/servers')}
+        onSubtitlePress={() => router.push('/hosts')}
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}

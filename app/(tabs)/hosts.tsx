@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
@@ -31,7 +32,9 @@ export default function ServersScreen() {
   const choose = async (connection: ServerConnection) => {
     select(connection.id);
     await setSetting(db, SELECTED_KEY, connection.id);
-    router.back();
+    // Straight back to the conversations on the host you just picked — choosing
+    // a server is always in service of reading its chats.
+    router.push('/');
   };
 
   const confirmDelete = (connection: ServerConnection) => {
@@ -57,10 +60,9 @@ export default function ServersScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
       <Header
         title="Servers"
-        onClose={() => router.back()}
         actionSymbol="plus"
         actionLabel="Add a server"
         onAction={() =>
@@ -137,7 +139,7 @@ export default function ServersScreen() {
           </Text>
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
