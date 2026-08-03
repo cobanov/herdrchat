@@ -95,7 +95,8 @@ environment so no key is ever committed.
 - [x] Servers: add / edit / test / remove, keychain secrets, TOFU host-key pins
 - [x] New chat: folder browser on the host, permission mode
 - [ ] Notifications (background refresh, foreground service, APNs)
-- [ ] Release path — `scripts/testflight.sh` and `scripts/play.sh` still target
-      `legacy/`, so this branch doesn't ship until EAS replaces them
+- [x] iOS release path — `scripts/testflight.sh` archives, signs and uploads the
+      Expo app (0.2.0 build 33 is live on TestFlight)
+- [ ] Android release path — `scripts/play.sh` still targets `legacy/android/`
 - [ ] Load older history on scroll-up
 - [ ] Unread state persistence
