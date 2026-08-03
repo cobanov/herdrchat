@@ -1,0 +1,16 @@
+# Cloudflare Pages serves assets with a four-hour cache by default, which is
+# how a redeploy became invisible to anyone who had already loaded the page —
+# the HTML revalidated and asked for the new stylesheet, but the browser kept
+# serving the old one from cache.
+#
+# The rule here: HTML always revalidates, assets are cached but every asset that
+# can change carries a version. style.css is versioned by query string
+# (?v=N — bump it when you edit the file); the icons are versioned by filename.
+# Changing an asset without changing how it is addressed will strand returning
+# visitors on the old one for a day.
+
+/assets/*
+  Cache-Control: public, max-age=86400
+
+/*
+  Cache-Control: public, max-age=0, must-revalidate
