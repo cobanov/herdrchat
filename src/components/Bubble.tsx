@@ -6,6 +6,7 @@ import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
+import { useSettings } from '@/state/settings';
 
 /**
  * A chat bubble: 18pt continuous corners, no shadow, system surfaces.
@@ -24,7 +25,15 @@ export const Bubble = memo(function Bubble({
   timeLabel?: string | null;
 }) {
   const { colors } = useTheme();
+  const showToolActivity = useSettings((state) => state.showToolActivity);
   const outgoing = message.role === 'user';
+
+  // With tool activity off, a turn that was ONLY machinery would render as an
+  // empty bubble — so the thread filters those out entirely (see buildRows) and
+  // this only has to drop the chips from mixed turns.
+  const visibleSegments = showToolActivity
+    ? message.segments
+    : message.segments.filter((segment) => segment.kind === 'text');
 
   const corners = {
     borderTopLeftRadius: radius.md,
@@ -47,7 +56,7 @@ export const Bubble = memo(function Bubble({
           },
           corners,
         ]}>
-        {message.segments.map((segment, index) => (
+        {visibleSegments.map((segment, index) => (
           <Segment key={index} segment={segment} onTint={outgoing} />
         ))}
         {isLastInGroup && timeLabel !== null && timeLabel !== undefined && (

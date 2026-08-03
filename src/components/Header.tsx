@@ -1,7 +1,7 @@
-import * as Haptics from 'expo-haptics';
-import { Platform, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { Text } from './Text';
+import { haptics } from '@/lib/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { headerTitleLine, minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
@@ -76,7 +76,7 @@ export function Header({
         {actionSymbol !== undefined && onAction !== undefined && (
           <Pressable
             onPress={() => {
-              if (Platform.OS === 'ios') void Haptics.selectionAsync();
+              haptics.selection();
               onAction();
             }}
             accessibilityRole="button"

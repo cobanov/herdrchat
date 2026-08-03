@@ -1,9 +1,9 @@
-import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { Platform, Pressable, TextInput } from 'react-native';
+import { Pressable, TextInput } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
+import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -51,7 +51,7 @@ export function Composer({
 
   const send = () => {
     if (!canSend) return;
-    if (Platform.OS === 'ios') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.light();
     onSend(draft);
     setDraft('');
   };

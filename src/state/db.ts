@@ -163,3 +163,24 @@ export async function setSetting(
     value
   );
 }
+
+// MARK: - Cache maintenance
+
+/** How many cached bubbles are on disk, across every host. */
+export async function cachedMessageCount(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM messages');
+  return row?.n ?? 0;
+}
+
+/**
+ * Drop every cached bubble and tail cursor.
+ *
+ * Cursors go with the messages: a cursor without its history would make the
+ * next tail resume mid-conversation and silently skip everything before it.
+ */
+export async function clearCachedMessages(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM messages');
+    await db.runAsync('DELETE FROM tail_cursors');
+  });
+}

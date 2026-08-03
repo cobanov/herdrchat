@@ -1,5 +1,4 @@
-import * as Haptics from 'expo-haptics';
-import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,6 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Text } from './Text';
+import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, spacing } from '@/theme/tokens';
 
@@ -64,13 +64,8 @@ export function Button({
         scale.set(withSpring(1, motion.press));
       }}
       onPress={() => {
-        if (Platform.OS === 'ios') {
-          void Haptics.impactAsync(
-            variant === 'destructive'
-              ? Haptics.ImpactFeedbackStyle.Medium
-              : Haptics.ImpactFeedbackStyle.Light
-          );
-        }
+        if (variant === 'destructive') haptics.medium();
+        else haptics.light();
         onPress();
       }}
       style={[

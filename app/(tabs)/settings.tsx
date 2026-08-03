@@ -1,33 +1,131 @@
 import Constants from 'expo-constants';
-import { ScrollView, View } from 'react-native';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Alert, ScrollView, View } from 'react-native';
 
+import { Button } from '@/components/Button';
+import { SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { SegmentedField } from '@/components/Field';
 import { Text } from '@/components/Text';
+import { Toggle } from '@/components/Toggle';
 import { useGlassAvailable } from '@/components/Glass';
-import { useTheme, useThemePreference, type ThemePreference } from '@/theme/ThemeProvider';
+import { HerdrError } from '@/lib/herdr/protocol';
+import {
+  deviceFileId,
+  removePushToken,
+  requestPushToken,
+  uploadPushToken,
+} from '@/features/notifications/push';
+import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
+import { cachedMessageCount, clearCachedMessages, setSetting } from '@/state/db';
+import { encodeBool, useSettings, type Settings } from '@/state/settings';
+import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
 import { radius, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Settings.
  *
- * Deliberately short: everything that could live here and doesn't is either a
- * per-server setting (which belongs on the server) or a preference the system
- * already owns. The appearance override exists because "follow the system" is
- * not always what someone wants from a chat app they read in bed.
+ * Deliberately short. Everything that could live here and doesn't is either a
+ * per-host setting (which belongs on the host) or a preference the system
+ * already owns.
  */
 export default function SettingsScreen() {
-  const { colors, reduceMotion, reduceTransparency } = useTheme();
-  const { preference, setPreference } = useThemePreference();
+  const db = useSQLiteContext();
+  const { reduceMotion, reduceTransparency } = useTheme();
   const glass = useGlassAvailable();
+  const settings = useSettings();
+  const connection = useSelectedConnection();
+  const connections = useConnections((state) => state.connections);
+
+  const [cached, setCached] = useState<number | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushNote, setPushNote] = useState<string | null>(null);
+
+  const refreshCacheSize = useCallback(() => {
+    void cachedMessageCount(db).then(setCached);
+  }, [db]);
+  useEffect(refreshCacheSize, [refreshCacheSize]);
+
+  /** Persist alongside the store, so the mirror never drifts from the source. */
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    settings.set(key, value);
+    void setSetting(db, key, typeof value === 'boolean' ? encodeBool(value) : String(value));
+  };
+
+  const toggleNotifications = async (next: boolean) => {
+    setPushBusy(true);
+    setPushNote(null);
+    try {
+      const id = deviceFileId(Constants.sessionId ?? 'device');
+
+      if (!next) {
+        // Best-effort removal: if a host is unreachable the local switch still
+        // turns off, and a stale token there is harmless — APNs reports it as
+        // unregistered and the watcher drops it.
+        for (const target of connections) {
+          try {
+            await removePushToken(clientFor(target).transport, id);
+          } catch {
+            /* unreachable host */
+          }
+        }
+        update('notifications', false);
+        return;
+      }
+
+      const status = await requestPushToken();
+      if (status.state === 'unsupported') {
+        setPushNote(status.reason);
+        return;
+      }
+      if (status.state === 'denied') {
+        setPushNote('Notifications are turned off for HerdrChat in iOS Settings.');
+        return;
+      }
+      if (connection === null) {
+        setPushNote('Add a host first — the token is stored on your own machine.');
+        return;
+      }
+
+      const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
+      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId);
+      update('notifications', true);
+      setPushNote(`Registered with ${connection.name}. Run the watcher on that machine.`);
+    } catch (thrown) {
+      setPushNote(thrown instanceof HerdrError ? thrown.message : String(thrown));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const confirmClearCache = () => {
+    Alert.alert(
+      'Clear cached messages?',
+      'Threads reload from each host next time you open them. Nothing on your machines changes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            void clearCachedMessages(db).then(refreshCacheSize);
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <Screen>
       <Header title="Settings" />
 
       <ScrollView
-        contentContainerStyle={{ padding: screenPadding, gap: spacing.xl, paddingBottom: spacing.xxxl }}>
+        contentContainerStyle={{
+          padding: screenPadding,
+          gap: spacing.xl,
+          paddingBottom: spacing.xxxl * 2,
+        }}>
         <SegmentedField<ThemePreference>
           label="Appearance"
           options={[
@@ -35,34 +133,82 @@ export default function SettingsScreen() {
             { value: 'light', label: 'Light' },
             { value: 'dark', label: 'Dark' },
           ]}
-          value={preference}
-          onChange={setPreference}
+          value={settings.themePreference}
+          onChange={(next) => update('themePreference', next)}
         />
 
-        <View style={{ gap: spacing.sm }}>
-          <Text variant="footnote" color="secondary">
-            About
-          </Text>
-          <View
-            style={{
-              borderRadius: radius.sm,
-              backgroundColor: colors.secondarySystemBackground,
-              padding: spacing.md,
-              gap: spacing.sm,
-            }}>
-            <Row label="Version" value={Constants.expoConfig?.version ?? '—'} />
-            <Row
-              label="Build"
-              value={String(Constants.expoConfig?.ios?.buildNumber ?? '—')}
+        <Section title="Conversations">
+          <Toggle
+            label="Tool activity"
+            detail="Show tool calls, results and thinking as chips inside messages."
+            value={settings.showToolActivity}
+            onChange={(next) => update('showToolActivity', next)}
+            testID="toggle-tool-activity"
+          />
+          <Divider />
+          <Toggle
+            label="Subagent messages"
+            detail="Include sidechain turns from subagents the main agent spawned."
+            value={settings.showSidechain}
+            onChange={(next) => update('showSidechain', next)}
+            testID="toggle-sidechain"
+          />
+          <Divider />
+          <Toggle
+            label="Haptics"
+            detail="Feedback on sends, quick replies and toggles."
+            value={settings.haptics}
+            onChange={(next) => update('haptics', next)}
+            testID="toggle-haptics"
+          />
+        </Section>
+
+        <Section
+          title="Notifications"
+          footer="Your phone registers its push token on the host over SSH, and a watcher there notifies you when an agent blocks or finishes. Nothing passes through a server of ours — you run the watcher yourself. See scripts/herdr-apns-notifier.py.">
+          <Toggle
+            label="Notify when an agent needs me"
+            detail="Blocked or finished agents, pushed from your own machine."
+            value={settings.notifications}
+            onChange={(next) => void toggleNotifications(next)}
+            disabled={pushBusy}
+            testID="toggle-notifications"
+          />
+          {pushNote !== null && (
+            <Text variant="footnote" color="secondary" style={{ paddingTop: spacing.sm }}>
+              {pushNote}
+            </Text>
+          )}
+        </Section>
+
+        <Section title="Storage">
+          <View style={{ gap: spacing.md, paddingVertical: spacing.xs }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="body">Cached messages</Text>
+              <Text variant="body" color="secondary">
+                {cached === null ? '—' : cached.toLocaleString()}
+              </Text>
+            </View>
+            <Button
+              title="Clear cache"
+              variant="tinted"
+              onPress={confirmClearCache}
+              disabled={cached === 0}
+              testID="clear-cache"
             />
-            {/* Surfaced rather than hidden: whether the OS actually granted the
-                glass API is the difference between the design people were shown
-                and the one they got, and it varies by build. */}
-            <Row label="Liquid Glass" value={glass ? 'on' : 'unavailable'} />
-            <Row label="Reduce Motion" value={reduceMotion ? 'on' : 'off'} />
-            <Row label="Reduce Transparency" value={reduceTransparency ? 'on' : 'off'} />
           </View>
-        </View>
+        </Section>
+
+        <Section title="About">
+          <Row label="Version" value={Constants.expoConfig?.version ?? '—'} />
+          <Row label="Build" value={String(Constants.expoConfig?.ios?.buildNumber ?? '—')} />
+          {/* Surfaced rather than hidden: whether the OS actually granted the
+              glass API is the difference between the design people were shown
+              and the one they got, and it varies by build. */}
+          <Row label="Liquid Glass" value={glass ? 'on' : 'unavailable'} />
+          <Row label="Reduce Motion" value={reduceMotion ? 'on' : 'off'} />
+          <Row label="Reduce Transparency" value={reduceTransparency ? 'on' : 'off'} />
+        </Section>
 
         <Text variant="caption" color="secondary">
           HerdrChat reaches your machines over SSH on your tailnet. Keys are stored in the device
@@ -74,9 +220,53 @@ export default function SettingsScreen() {
   );
 }
 
+function Section({
+  title,
+  footer,
+  children,
+}: {
+  title: string;
+  footer?: string;
+  children: ReactNode;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Text variant="footnote" color="secondary">
+        {title}
+      </Text>
+      <View
+        style={{
+          borderRadius: radius.sm,
+          backgroundColor: colors.secondarySystemBackground,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+        }}>
+        {children}
+      </View>
+      {footer !== undefined && (
+        <Text variant="caption" color="secondary">
+          {footer}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function Divider() {
+  const { colors } = useTheme();
+  return <View style={{ height: 1, backgroundColor: colors.separator, opacity: 0.6 }} />;
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.xs,
+      }}>
       <Text variant="subhead" color="secondary">
         {label}
       </Text>

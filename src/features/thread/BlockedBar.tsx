@@ -1,7 +1,7 @@
-import * as Haptics from 'expo-haptics';
-import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
+import { haptics } from '@/lib/haptics';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -30,7 +30,7 @@ export function BlockedBar({
   const { colors } = useTheme();
 
   const press = (keys: readonly string[]) => {
-    if (Platform.OS === 'ios') void Haptics.selectionAsync();
+    haptics.selection();
     onKeys(keys);
   };
 

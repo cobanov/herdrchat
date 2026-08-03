@@ -25,6 +25,7 @@ import { useThread } from '@/features/thread/useThread';
 import { clientFor, useSelectedConnection } from '@/state/connections';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
+import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
 
@@ -46,6 +47,9 @@ export default function ThreadScreen() {
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
   const listRef = useRef<FlashListRef<Row>>(null);
 
+  const showToolActivity = useSettings((state) => state.showToolActivity);
+  const showSidechain = useSettings((state) => state.showSidechain);
+
   const [atBottom, setAtBottom] = useState(true);
   // Measured height of the floating control stack, so the list can reserve
   // exactly that much room underneath its content.
@@ -53,7 +57,10 @@ export default function ThreadScreen() {
 
   const thread = useThread(db, client, connection?.id ?? '', params.workspaceId, []);
 
-  const rows = useMemo(() => buildRows(thread.messages), [thread.messages]);
+  const rows = useMemo(
+    () => buildRows(thread.messages, { showToolActivity, showSidechain }),
+    [thread.messages, showToolActivity, showSidechain]
+  );
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 
   /**
@@ -336,10 +343,20 @@ interface Row {
  * a tool result arrives as a "user" turn, and rendering it as something the
  * person typed would be actively wrong.
  */
-function buildRows(messages: readonly ChatMessage[]): Row[] {
-  const visible = messages.filter(
-    (message) => !message.isSidechain && !(message.role === 'user' && isToolOnly(message))
-  );
+function buildRows(
+  messages: readonly ChatMessage[],
+  options: { showToolActivity: boolean; showSidechain: boolean }
+): Row[] {
+  const visible = messages.filter((message) => {
+    if (message.isSidechain && !options.showSidechain) return false;
+    // A tool result arrives as a "user" turn; rendering it as something the
+    // person typed would be actively wrong, so it never shows.
+    if (message.role === 'user' && isToolOnly(message)) return false;
+    // With chips hidden, an assistant turn that was pure machinery has nothing
+    // left to draw — an empty bubble is worse than no bubble.
+    if (!options.showToolActivity && isToolOnly(message)) return false;
+    return true;
+  });
   return visible.map((message, index) => {
     const previous = index > 0 ? visible[index - 1] : undefined;
     const next = index + 1 < visible.length ? visible[index + 1] : undefined;

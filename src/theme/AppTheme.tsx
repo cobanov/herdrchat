@@ -14,14 +14,14 @@ import { useSettings } from '@/state/settings';
 export function AppTheme({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const preference = useSettings((state) => state.themePreference);
-  const setPreference = useSettings((state) => state.setThemePreference);
+  const set = useSettings((state) => state.set);
 
   const change = useCallback(
     (next: ThemePreference) => {
-      setPreference(next);
+      set('themePreference', next);
       void setSetting(db, 'themePreference', next);
     },
-    [db, setPreference]
+    [db, set]
   );
 
   return (

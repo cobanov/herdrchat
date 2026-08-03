@@ -1,8 +1,8 @@
-import * as Haptics from 'expo-haptics';
-import { Platform, Pressable } from 'react-native';
+import { Pressable } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
+import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -47,7 +47,7 @@ export function JumpToBottom({
       }}>
       <Pressable
         onPress={() => {
-          if (Platform.OS === 'ios') void Haptics.selectionAsync();
+          haptics.selection();
           onPress();
         }}
         accessibilityRole="button"

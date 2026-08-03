@@ -3,10 +3,9 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
-import { isThemePreference, useSettings } from './settings';
+import { SETTINGS_DEFAULTS, decodeBool, isThemePreference, useSettings } from './settings';
 
 const SELECTED_KEY = 'selectedConnectionId';
-const THEME_KEY = 'themePreference';
 
 /**
  * Loads persisted state into the stores before the tree below it renders
@@ -19,19 +18,30 @@ const THEME_KEY = 'themePreference';
 export function Hydrate({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const setAll = useConnections((state) => state.setAll);
-  const setThemePreference = useSettings((state) => state.setThemePreference);
+  const hydrateSettings = useSettings((state) => state.hydrate);
 
   useEffect(() => {
     void (async () => {
-      const [connections, selected, theme] = await Promise.all([
-        loadConnections(db),
-        getSetting(db, SELECTED_KEY),
-        getSetting(db, THEME_KEY),
-      ]);
+      const [connections, selected, theme, toolActivity, sidechain, haptics, notifications] =
+        await Promise.all([
+          loadConnections(db),
+          getSetting(db, SELECTED_KEY),
+          getSetting(db, 'themePreference'),
+          getSetting(db, 'showToolActivity'),
+          getSetting(db, 'showSidechain'),
+          getSetting(db, 'haptics'),
+          getSetting(db, 'notifications'),
+        ]);
       setAll(connections, selected);
-      if (isThemePreference(theme)) setThemePreference(theme);
+      hydrateSettings({
+        themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,
+        showToolActivity: decodeBool(toolActivity, SETTINGS_DEFAULTS.showToolActivity),
+        showSidechain: decodeBool(sidechain, SETTINGS_DEFAULTS.showSidechain),
+        haptics: decodeBool(haptics, SETTINGS_DEFAULTS.haptics),
+        notifications: decodeBool(notifications, SETTINGS_DEFAULTS.notifications),
+      });
     })();
-  }, [db, setAll, setThemePreference]);
+  }, [db, setAll, hydrateSettings]);
 
   return <>{children}</>;
 }
