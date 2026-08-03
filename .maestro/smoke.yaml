@@ -11,15 +11,23 @@ appId: dev.herdr.HerdrChat
 - launchApp
 - assertVisible: "Chats"
 
-# The server switcher is the only way to change hosts, so it has to be reachable
-# from the primary screen at all times.
+# The host switcher sits under the title and is the only way to change hosts from
+# the primary screen. It pushes the Hosts TAB — not a sheet, so there is no close
+# button afterwards and the tab bar is the way back. This flow asserted a
+# "Servers" screen dismissed by `header-close` until the tab redesign, and went
+# on failing quietly because nobody re-ran it.
 - tapOn:
     id: "server-switcher"
-- assertVisible: "Servers"
+- assertVisible: "Hosts"
 
-# Dismissed by the button, not by `back` (iOS has no hardware back) and not by a
-# swipe — the button is the path VoiceOver and Switch Control actually have.
-- tapOn:
-    id: "header-close"
+# Each tap below is unambiguous BECAUSE OF WHERE IT IS MADE: a destination's name
+# is on screen only in the tab bar while you are somewhere else. Tapping
+# "Settings" from Hosts matches one element; tapping it from Settings would also
+# match the large title. Reordering these steps reintroduces that ambiguity.
+- tapOn: "Settings"
+# A row only Settings renders, rather than the word "Settings" — the tab bar
+# shows that from anywhere, so it would pass against a screen that never loaded.
+- assertVisible: "Cached messages"
 
+- tapOn: "Chats"
 - assertVisible: "Chats"

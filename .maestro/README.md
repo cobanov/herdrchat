@@ -33,3 +33,14 @@ multi-line value.
 - **Chat rows are matched by `testID`, not by their label.** Each row is one
   accessibility element with a composed label (title, state, preview), which is
   correct for VoiceOver and means the title is not separately matchable.
+- **A green run can mean nothing on a development build.** The dev-client menu
+  is a separate window that Maestro's hierarchy cannot see, so a `runFlow: when:
+  visible:` guard for it reports SKIPPED — while the window sits over the app
+  swallowing every tap. Maestro then logs each `tapOn` as COMPLETED because it
+  found the element in the hierarchy behind the menu. `launchApp` and scroll
+  gestures both raise it. **If a flow passes but a screenshot shows the dev
+  menu, the run proved nothing.** Screenshot the end state and look at it.
+- **The bundler URL is not project-scoped.** `expo run:ios` points the dev
+  client at whatever is on :8081, which may be a different project's Metro — the
+  app then loads a foreign JS bundle and dies on a native module it has no
+  reason to contain. Check `lsof -a -p <pid> -d cwd` before believing the crash.
