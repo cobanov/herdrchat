@@ -25,7 +25,7 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
         autoCorrect={false}
         style={{
           minHeight: multiline === true ? 120 : minTouchTarget,
-          borderRadius: radius.card,
+          borderRadius: radius.sm,
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm + 2,
           backgroundColor: colors.secondarySystemBackground,
@@ -64,7 +64,7 @@ export function SegmentedField<T extends string>({
         style={{
           flexDirection: 'row',
           padding: 3,
-          borderRadius: radius.card,
+          borderRadius: radius.sm,
           backgroundColor: colors.secondarySystemBackground,
           gap: 3,
         }}>
@@ -83,7 +83,7 @@ export function SegmentedField<T extends string>({
                 minHeight: minTouchTarget - 8,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: radius.card - 3,
+                borderRadius: radius.sm - 3,
                 backgroundColor: selected ? colors.systemBackground : 'transparent',
               }}>
               <Text variant="subhead" weight={selected ? '600' : '400'} color={selected ? 'label' : 'secondary'}>

@@ -22,32 +22,51 @@ export const spacing = {
 } as const;
 
 /**
- * Radii. `bubble` is the iMessage 18pt continuous corner; `tail` is the small
- * corner the last bubble of a run gets, which is what makes a run read as one
- * utterance rather than a stack of boxes.
+ * Radii, one scale rather than a value per component.
+ *
+ * Five steps, each visibly different from the next. The previous set had 6/9/12
+ * and 18/19/22, differences no one can see but that every new component had to
+ * choose between — which is how a codebase ends up with eleven corner radii and
+ * no rule.
  */
 export const radius = {
-  chip: 6,
-  code: 9,
-  card: 12,
-  bubble: 18,
-  tail: 5,
-  /**
-   * The composer pill. Half the one-line composer height, which is the whole
-   * trick behind its shape: at one line the rounded rect IS a capsule, and as
-   * the field grows it keeps the same corners instead of inflating into a
-   * stadium the way a real capsule (radius tied to height) would.
-   */
-  composer: 19,
-  control: 22,
+  /** Inline chips and code blocks — small enough to read as inline. */
+  xs: 8,
+  /** Cards, list rows, form fields. */
+  sm: 12,
+  /** Message bubbles. The iMessage corner. */
+  md: 18,
+  /** Floating controls: the composer, the blocked bar, the jump button. */
+  lg: 22,
   full: 999,
+  /**
+   * The small corner the LAST bubble of a run gets. Not part of the scale — it
+   * is a deliberate notch, and what makes a run read as one utterance instead of
+   * a stack of boxes.
+   */
+  bubbleTail: 6,
 } as const;
 
-/** One-line composer height. `radius.composer` is exactly half of this. */
-export const composerLineHeight = 38;
+/**
+ * One-line composer height. `radius.lg` is deliberately just under half of this:
+ * at one line the rounded rect reads as a capsule, and as the field grows it
+ * keeps the same corners instead of inflating into a stadium the way a real
+ * capsule (radius tied to height) would.
+ */
+export const composerLineHeight = 44;
 
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
+
+/**
+ * The horizontal margin every screen's content starts at.
+ *
+ * One value, used by headers, list rows, forms and the composer alike. Mixing
+ * 12 and 16 across screens is the single most visible alignment error in an app
+ * like this: a title and the rows under it not sharing a left edge reads as
+ * sloppiness even to someone who can't name what's wrong.
+ */
+export const screenPadding = spacing.lg;
 
 /**
  * Motion. Springs, not timing curves — a linear ease reads as a web page.

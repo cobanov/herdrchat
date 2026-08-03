@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { SymbolView } from 'expo-symbols';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
 import { Text } from '@/components/Text';
+import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
@@ -79,12 +79,12 @@ export default function ServersScreen() {
           }
         />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.sm }}>
+        <ScrollView contentContainerStyle={{ padding: screenPadding, gap: spacing.sm }}>
           {connections.map((connection) => (
             <View
               key={connection.id}
               style={{
-                borderRadius: radius.card,
+                borderRadius: radius.sm,
                 backgroundColor: colors.secondarySystemBackground,
                 overflow: 'hidden',
               }}>
@@ -108,7 +108,7 @@ export default function ServersScreen() {
                   </Text>
                 </View>
                 {connection.id === selectedId && (
-                  <SymbolView
+                  <Icon
                     name="checkmark"
                     size={16}
                     tintColor={colors.tint}

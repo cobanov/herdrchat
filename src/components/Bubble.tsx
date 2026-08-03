@@ -27,10 +27,10 @@ export const Bubble = memo(function Bubble({
   const outgoing = message.role === 'user';
 
   const corners = {
-    borderTopLeftRadius: radius.bubble,
-    borderTopRightRadius: radius.bubble,
-    borderBottomLeftRadius: outgoing || !isLastInGroup ? radius.bubble : radius.tail,
-    borderBottomRightRadius: outgoing && isLastInGroup ? radius.tail : radius.bubble,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
+    borderBottomLeftRadius: outgoing || !isLastInGroup ? radius.md : radius.bubbleTail,
+    borderBottomRightRadius: outgoing && isLastInGroup ? radius.bubbleTail : radius.md,
   };
 
   return (
@@ -133,7 +133,7 @@ export function ToolChip({
         alignSelf: 'flex-start',
         paddingHorizontal: spacing.sm - 1,
         paddingVertical: spacing.xxs + 1,
-        borderRadius: radius.chip,
+        borderRadius: radius.xs,
         backgroundColor: colors.fillSubtle,
       }}>
       <Text variant="caption2" mono weight="700" color={accent ? 'tint' : 'secondary'}>

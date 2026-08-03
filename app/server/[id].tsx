@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Field, SegmentedField } from '@/components/Field';
@@ -9,7 +9,7 @@ import { Header } from '@/components/Header';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
@@ -140,14 +140,16 @@ export default function ServerEditScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
       <Header title={isNew ? 'New server' : 'Edit server'} onClose={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={{ padding: spacing.md, gap: spacing.lg, paddingBottom: spacing.xxxl }}
-        keyboardShouldPersistTaps="handled">
+        contentContainerStyle={{ padding: screenPadding, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        // Without this the keyboard covers the submit button at the end of the
+        // form, which is the one control the whole screen exists to reach.
+        automaticallyAdjustKeyboardInsets>
         <View style={{ gap: spacing.sm }}>
           <Field label="Name" placeholder="nuc" value={name} onChangeText={invalidate(setName)} testID="field-name" />
           <Field
@@ -234,7 +236,7 @@ export default function ServerEditScreen() {
             <View
               style={{
                 padding: spacing.md,
-                borderRadius: radius.card,
+                borderRadius: radius.sm,
                 backgroundColor: colors.tintMuted,
               }}>
               <Text variant="subhead" color="tint" weight="600" testID="test-ok">
@@ -247,7 +249,7 @@ export default function ServerEditScreen() {
             <View
               style={{
                 padding: spacing.md,
-                borderRadius: radius.card,
+                borderRadius: radius.sm,
                 backgroundColor: colors.fillSubtle,
                 gap: spacing.sm,
               }}>
@@ -282,6 +284,6 @@ export default function ServerEditScreen() {
           )}
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

@@ -1,15 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { Text } from '@/components/Text';
+import { Icon } from '@/components/Icon';
 import { clientFor, useSelectedConnection } from '@/state/connections';
 import { useNewChatDraft } from '@/state/newChatDraft';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Browse the host's filesystem to pick a working directory, instead of typing an
@@ -74,7 +74,7 @@ export default function FolderPickerScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           gap: spacing.sm,
-          paddingHorizontal: spacing.md,
+          paddingHorizontal: screenPadding,
           paddingBottom: spacing.sm,
         }}>
         <Pressable
@@ -85,11 +85,11 @@ export default function FolderPickerScreen() {
           testID="folder-up"
           style={{
             padding: spacing.sm,
-            borderRadius: radius.card,
+            borderRadius: radius.sm,
             backgroundColor: colors.secondarySystemBackground,
             opacity: path === '/' || loading ? 0.4 : 1,
           }}>
-          <SymbolView
+          <Icon
             name="chevron.up"
             size={14}
             tintColor={colors.tint}
@@ -106,7 +106,7 @@ export default function FolderPickerScreen() {
           <ActivityIndicator color={colors.tint} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.md }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: screenPadding }}>
           {entries.length === 0 ? (
             <Text variant="callout" color="secondary" style={{ padding: spacing.lg }}>
               No subfolders here.
@@ -126,7 +126,7 @@ export default function FolderPickerScreen() {
                   paddingVertical: spacing.md,
                   opacity: pressed ? 0.5 : 1,
                 })}>
-                <SymbolView
+                <Icon
                   name="folder.fill"
                   size={18}
                   tintColor={colors.tint}
@@ -141,7 +141,7 @@ export default function FolderPickerScreen() {
         </ScrollView>
       )}
 
-      <View style={{ padding: spacing.md, gap: spacing.sm }}>
+      <View style={{ padding: screenPadding, gap: spacing.sm }}>
         <Button
           title="Use this folder"
           onPress={() => {

@@ -1,7 +1,7 @@
-import { SymbolView } from 'expo-symbols';
 import { Pressable, View } from 'react-native';
 
 import { Text } from './Text';
+import { Icon } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
 
@@ -33,12 +33,12 @@ export function ErrorBanner({
         marginHorizontal: spacing.md,
         marginBottom: spacing.sm,
         padding: spacing.md,
-        borderRadius: radius.card,
+        borderRadius: radius.sm,
         backgroundColor: colors.fillSubtle,
         gap: spacing.sm,
       }}>
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <SymbolView
+        <Icon
           name="exclamationmark.triangle.fill"
           size={16}
           tintColor={colors.attention}
@@ -49,7 +49,7 @@ export function ErrorBanner({
         </Text>
         {onDismiss !== undefined && (
           <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={spacing.sm}>
-            <SymbolView
+            <Icon
               name="xmark.circle.fill"
               size={16}
               tintColor={colors.tertiaryLabel}

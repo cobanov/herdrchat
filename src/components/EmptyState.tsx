@@ -1,9 +1,8 @@
-import { SymbolView } from 'expo-symbols';
 import { View } from 'react-native';
 
 import { Button } from './Button';
 import { Text } from './Text';
-import type { SymbolName } from './Symbol';
+import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 
@@ -21,7 +20,7 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: {
-  symbol: SymbolName;
+  symbol: IconName;
   title: string;
   body: string;
   actionLabel?: string;
@@ -38,7 +37,7 @@ export function EmptyState({
         paddingHorizontal: spacing.xxl,
         gap: spacing.md,
       }}>
-      <SymbolView
+      <Icon
         name={symbol}
         size={44}
         tintColor={colors.tertiaryLabel}

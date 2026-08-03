@@ -77,7 +77,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
 
     case 'code':
       return (
-        <View style={{ backgroundColor: fill, borderRadius: radius.code, padding: spacing.sm + 1 }}>
+        <View style={{ backgroundColor: fill, borderRadius: radius.xs, padding: spacing.sm + 1 }}>
           {block.language !== null && (
             <Text variant="caption2" color={onTint ? 'onTint' : 'secondary'} mono>
               {block.language.toLowerCase()}
@@ -154,7 +154,7 @@ function Table({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={{ backgroundColor: fill, borderRadius: radius.code }}>
+      style={{ backgroundColor: fill, borderRadius: radius.xs }}>
       <View style={{ padding: spacing.sm }}>
         <TableRow cells={headers} columns={columns} header onTint={onTint} line={line} />
         <View style={{ height: 1, backgroundColor: line }} />

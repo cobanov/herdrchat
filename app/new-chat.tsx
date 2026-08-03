@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
@@ -20,7 +20,7 @@ import { clientFor, useSelectedConnection } from '@/state/connections';
 import { getSetting, setSetting } from '@/state/db';
 import { useNewChatDraft } from '@/state/newChatDraft';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Start a new conversation: create a workspace on the host at a chosen working
@@ -111,14 +111,16 @@ export default function NewChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: colors.systemBackground }}>
+    <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>
       <Header title="New chat" onClose={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={{ padding: spacing.md, gap: spacing.lg, paddingBottom: spacing.xxxl }}
-        keyboardShouldPersistTaps="handled">
+        contentContainerStyle={{ padding: screenPadding, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        // Without this the keyboard covers the submit button at the end of the
+        // form, which is the one control the whole screen exists to reach.
+        automaticallyAdjustKeyboardInsets>
         <View style={{ gap: spacing.sm }}>
           <Field
             label="Working directory"
@@ -157,7 +159,7 @@ export default function NewChatScreen() {
                 testID={`permission-${option}`}
                 style={{
                   padding: spacing.md,
-                  borderRadius: radius.card,
+                  borderRadius: radius.sm,
                   gap: 2,
                   backgroundColor: selected ? colors.tintMuted : colors.secondarySystemBackground,
                 }}>
@@ -181,7 +183,7 @@ export default function NewChatScreen() {
         />
 
         {error !== null && (
-          <View style={{ padding: spacing.md, borderRadius: radius.card, backgroundColor: colors.fillSubtle }}>
+          <View style={{ padding: spacing.md, borderRadius: radius.sm, backgroundColor: colors.fillSubtle }}>
             <Text variant="footnote" color="secondary">
               {error}
             </Text>
@@ -196,6 +198,6 @@ export default function NewChatScreen() {
           testID="start-chat"
         />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

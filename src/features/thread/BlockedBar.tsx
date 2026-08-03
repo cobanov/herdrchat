@@ -1,9 +1,9 @@
 import * as Haptics from 'expo-haptics';
-import { SymbolView } from 'expo-symbols';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
 import { Text } from '@/components/Text';
+import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
 import { optionKeys, type BlockedPrompt } from '@/lib/transcript/blockedPrompt';
@@ -38,13 +38,13 @@ export function BlockedBar({
     <Glass
       testID="blocked-bar"
       style={{
-        borderRadius: radius.control,
+        borderRadius: radius.lg,
         overflow: 'hidden',
         padding: spacing.md,
         gap: spacing.sm,
       }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 }}>
-        <SymbolView
+        <Icon
           name="exclamationmark.bubble.fill"
           size={14}
           tintColor={colors.attention}
@@ -69,7 +69,7 @@ export function BlockedBar({
               gap: spacing.sm,
               paddingHorizontal: spacing.md,
               paddingVertical: spacing.sm + 1,
-              borderRadius: radius.card,
+              borderRadius: radius.sm,
               backgroundColor: pressed ? colors.fillSubtle : `${colors.attention}1F`,
             })}>
             <Text

@@ -1,11 +1,10 @@
 import * as Haptics from 'expo-haptics';
-import { SymbolView } from 'expo-symbols';
 import { Platform, Pressable, View } from 'react-native';
 
 import { Text } from './Text';
-import type { SymbolName } from './Symbol';
+import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, spacing } from '@/theme/tokens';
+import { minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * The screen header. A large title with the current server underneath it, so
@@ -25,7 +24,7 @@ export function Header({
   title: string;
   subtitle?: string | null;
   onSubtitlePress?: () => void;
-  actionSymbol?: SymbolName;
+  actionSymbol?: IconName;
   actionLabel?: string;
   onAction?: () => void;
   /**
@@ -43,10 +42,14 @@ export function Header({
         flexDirection: 'row',
         alignItems: 'flex-end',
         justifyContent: 'space-between',
-        paddingHorizontal: spacing.lg,
+        paddingHorizontal: screenPadding,
         paddingTop: spacing.sm,
         paddingBottom: spacing.md,
-        gap: spacing.md,
+        gap: spacing.sm,
+        // The trailing controls are 44pt boxes around smaller glyphs, so the
+        // glyph would otherwise sit ~14pt inside the margin the title starts at.
+        // Pulling the row back by that difference optically aligns them.
+        marginRight: -spacing.md,
       }}>
       <View style={{ flexShrink: 1 }}>
         <Text variant="largeTitle">{title}</Text>
@@ -58,7 +61,7 @@ export function Header({
             testID="server-switcher"
             hitSlop={spacing.sm}
             style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <SymbolView
+            <Icon
               name="server.rack"
               size={13}
               tintColor={colors.secondaryLabel}
@@ -67,7 +70,7 @@ export function Header({
             <Text variant="subhead" color="secondary" weight="600">
               {subtitle}
             </Text>
-            <SymbolView
+            <Icon
               name="chevron.down"
               size={10}
               tintColor={colors.tertiaryLabel}
@@ -112,7 +115,7 @@ export function Header({
             justifyContent: 'center',
             opacity: pressed ? 0.5 : 1,
           })}>
-          <SymbolView
+          <Icon
             name={actionSymbol}
             size={22}
             tintColor={colors.tint}

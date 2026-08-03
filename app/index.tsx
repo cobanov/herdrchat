@@ -7,12 +7,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
 import { Text } from '@/components/Text';
-import { ChatRow } from '@/features/chats/ChatRow';
+import { CHAT_ROW_TEXT_INSET, ChatRow } from '@/features/chats/ChatRow';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
 import { useTheme } from '@/theme/ThemeProvider';
-import { spacing } from '@/theme/tokens';
+import { screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Chats — the primary destination. One row per workspace, with live presence.
@@ -110,12 +110,13 @@ function ChatsForServer() {
             />
           )}
           ItemSeparatorComponent={() => (
+            // Starts where the row's text starts, not at an arbitrary offset.
             <View
               style={{
                 height: 1,
-                marginLeft: 84,
+                marginLeft: CHAT_ROW_TEXT_INSET,
                 backgroundColor: colors.separator,
-                opacity: 0.5,
+                opacity: 0.6,
               }}
             />
           )}
@@ -135,7 +136,7 @@ function ChatsForServer() {
 function SkeletonRows() {
   const { colors } = useTheme();
   return (
-    <View style={{ padding: spacing.md, gap: spacing.lg }}>
+    <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, gap: spacing.lg }}>
       {[0, 1, 2, 3].map((index) => (
         <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <View

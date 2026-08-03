@@ -1,20 +1,34 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { PresenceAvatar } from '@/components/PresenceAvatar';
 import { Text } from '@/components/Text';
 import { TypingDots } from '@/components/Activity';
 import { useTheme } from '@/theme/ThemeProvider';
-import { spacing } from '@/theme/tokens';
+import { screenPadding, spacing } from '@/theme/tokens';
 import type { ChatSummary } from './useWorkspaces';
 
+const AVATAR_SIZE = 52;
+/** The avatar's ring adds 4pt on each side. */
+const AVATAR_BOX = AVATAR_SIZE + 8;
+const GAP = spacing.md;
+
 /**
- * One workspace row, Messages anatomy: a leading attention dot, a presence-ring
- * avatar, then title plus time on the first line and the last message beneath.
+ * Where a row's TEXT begins, measured from the screen edge.
+ *
+ * Exported so the list separator can start at exactly the same x. A separator
+ * that stops short of, or overshoots, the text it divides is the kind of
+ * misalignment nobody can name but everybody sees.
+ */
+export const CHAT_ROW_TEXT_INSET = screenPadding + AVATAR_BOX + GAP;
+
+/**
+ * One workspace row, Messages anatomy: a presence-ring avatar, then title plus
+ * time on the first line and the last message beneath.
  *
  * Live agent activity OVERRIDES the preview line — "working…" or "waiting for
- * you" — because when an agent is mid-task, what it last said is less useful
- * than what it is doing.
+ * you" — because when an agent is mid-task, what it last said matters less than
+ * what it is doing.
  */
 export const ChatRow = memo(function ChatRow({
   summary,
@@ -27,7 +41,6 @@ export const ChatRow = memo(function ChatRow({
 }) {
   const { colors } = useTheme();
   const attention = summary.status === 'blocked';
-  const dotColor = attention ? colors.attention : unread ? colors.tint : 'transparent';
 
   return (
     <Pressable
@@ -38,18 +51,37 @@ export const ChatRow = memo(function ChatRow({
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm + 2,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        gap: GAP,
+        paddingHorizontal: screenPadding,
+        paddingVertical: spacing.sm + 2,
         backgroundColor: pressed ? colors.fillSubtle : 'transparent',
       })}>
-      <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: dotColor }} />
-
-      <PresenceAvatar
-        title={summary.title}
-        colorKey={summary.title.length > 0 ? summary.title : summary.workspaceId}
-        status={summary.status}
-      />
+      <View>
+        <PresenceAvatar
+          title={summary.title}
+          colorKey={summary.title.length > 0 ? summary.title : summary.workspaceId}
+          status={summary.status}
+          size={AVATAR_SIZE}
+        />
+        {/* A badge on the avatar rather than a separate leading column. The old
+            column reserved space on every row for a dot almost none of them
+            have, which pushed all the content right and left a ragged gutter. */}
+        {(attention || unread) && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              borderWidth: 2,
+              borderColor: colors.systemBackground,
+              backgroundColor: attention ? colors.attention : colors.tint,
+            }}
+          />
+        )}
+      </View>
 
       <View style={{ flex: 1, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
@@ -72,41 +104,53 @@ export const ChatRow = memo(function ChatRow({
 /**
  * Every variant reserves the SAME height — two subhead lines — because they swap
  * live as agents start and stop working. Without a fixed reservation a row
- * visibly changes height (and nudges every row under it) each time an agent
+ * visibly changes height, and nudges every row under it, each time an agent
  * begins working.
  */
 function Subtitle({ summary }: { summary: ChatSummary }) {
   const { colors } = useTheme();
-  const twoLines = { minHeight: 40 } as const;
 
-  if (summary.status === 'working') {
-    return (
-      <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 }, twoLines]}>
-        {/* "working", not "typing": an agent isn't composing at a keyboard, it's
-            running tools and thinking. The messaging-app word oversold it. */}
-        <Text variant="subhead" color="tint">
-          working…
-        </Text>
-        <TypingDots color={colors.tint} size={4.5} />
-      </View>
-    );
-  }
-
-  if (summary.status === 'blocked') {
-    return (
-      <View style={twoLines}>
+  return (
+    <Reserved>
+      {summary.status === 'working' ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {/* "working", not "typing": an agent isn't composing at a keyboard,
+              it's running tools and thinking. The messaging word oversold it. */}
+          <Text variant="subhead" color="tint">
+            working…
+          </Text>
+          <TypingDots color={colors.tint} size={4.5} />
+        </View>
+      ) : summary.status === 'blocked' ? (
         <Text variant="subhead" color="attention">
           waiting for you
         </Text>
-      </View>
-    );
-  }
+      ) : (
+        <Text variant="subhead" color="secondary" numberOfLines={2}>
+          {previewLine(summary)}
+        </Text>
+      )}
+    </Reserved>
+  );
+}
 
+/**
+ * Reserves two subhead lines and centres its child vertically inside them.
+ *
+ * A column wrapper specifically: the previous version put `justifyContent:
+ * 'center'` on the row that holds "working…" and its dots, where it centres
+ * HORIZONTALLY — which shoved the live state into the middle of the row while
+ * every other variant stayed left. Separating the two axes makes that
+ * impossible.
+ *
+ * The reservation matters because these variants swap live as agents start and
+ * stop working; without it a row changes height, and nudges every row under it,
+ * each time an agent begins.
+ */
+function Reserved({ children }: { children: ReactNode }) {
   return (
-    <View style={twoLines}>
-      <Text variant="subhead" color="secondary" numberOfLines={2}>
-        {previewLine(summary)}
-      </Text>
+    <View style={{ minHeight: 38, justifyContent: 'center', alignItems: 'flex-start' }}>
+      {children}
     </View>
   );
 }

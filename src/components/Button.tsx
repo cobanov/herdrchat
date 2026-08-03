@@ -77,7 +77,7 @@ export function Button({
         {
           minHeight: minTouchTarget,
           paddingHorizontal: spacing.xl,
-          borderRadius: radius.control,
+          borderRadius: radius.lg,
           backgroundColor: background,
           alignItems: 'center',
           justifyContent: 'center',
