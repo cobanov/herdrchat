@@ -9,9 +9,9 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="stylesheet" href="/assets/style.css?v=5">
+<link rel="stylesheet" href="/assets/style.css?v=7">
 </head>
-<body class="doc">
+<body>
 
 <header class="site-header">
   <div class="wrap nav">
@@ -21,9 +21,13 @@
     </a>
     <span class="nav-spacer"></span>
     <nav class="nav-links" aria-label="Primary">
-      <a href="https://herdr.dev">herdr</a>
+      <a href="/">HerdrChat</a>
       <a href="/privacy">Privacy</a>
       <a href="https://github.com/cobanov/herdrchat">GitHub</a>
+      <!-- The rule marks a boundary, not a gap: everything to its left is this
+           project, and what follows is the tool it is a client for. -->
+      <span class="nav-rule" aria-hidden="true"></span>
+      <a href="https://herdr.dev">herdr</a>
     </nav>
   </div>
 </header>

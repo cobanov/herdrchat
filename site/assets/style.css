@@ -71,17 +71,18 @@ body {
 }
 
 /*
- * A page that is entirely prose narrows the CONTAINER rather than centring a
- * column inside it. At the full 1160px the text sat against the left edge with
- * a third of the page empty to its right, and the header and footer — which
- * legitimately want the wide measure — made the gap look like a mistake rather
- * than a margin. Narrowing `--max` moves header, text and footer together, so
- * they share one left edge and the whole column is centred in the viewport.
+ * A page that is entirely prose centres its own column. At the full 1160px the
+ * text sat against the left edge with a third of the page empty beside it.
+ *
+ * Only the ARTICLE narrows — not `--max`, which the header and footer also read.
+ * Narrowing the variable moved the masthead too, so the logo sat further in on
+ * this page than on the home page and jumped as you moved between them. Chrome
+ * that shifts when the content changes reads as a rendering fault, not layout.
  *
  * 49rem = the 46rem measure plus the 1.5rem gutters, so the text fills the
- * container exactly instead of stopping short inside it.
+ * column exactly rather than stopping short inside it.
  */
-body.doc { --max: 49rem; }
+.wrap.prose { max-width: 49rem; }
 
 /* ---------- header ---------- */
 
@@ -131,6 +132,16 @@ body.doc { --max: 49rem; }
 }
 
 .nav-links a:hover { color: var(--ink); }
+
+/* A hairline rather than a "|" glyph: a pipe inherits the link colour and font
+   metrics and reads as a sixth item you cannot click. This is the same weight
+   as every other rule on the page and sits at text height. */
+.nav-rule {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.35rem -0.25rem;
+  background: var(--line-strong);
+}
 
 /* ---------- hero ---------- */
 
