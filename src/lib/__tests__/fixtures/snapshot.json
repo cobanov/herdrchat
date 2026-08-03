@@ -1,0 +1,64 @@
+{
+  "id": "cli:api:snapshot",
+  "result": {
+    "snapshot": {
+      "agents": [
+        {
+          "agent": "claude",
+          "agent_status": "working",
+          "cwd": "/Users/cobanov/Developer/capsarsiv",
+          "focused": true,
+          "foreground_cwd": "/Users/cobanov/Developer/capsarsiv",
+          "pane_id": "w7:p1",
+          "revision": 3,
+          "tab_id": "w7:t1",
+          "terminal_id": "term_6568fff4d99912",
+          "workspace_id": "w7"
+        },
+        {
+          "agent": "claude",
+          "agent_status": "blocked",
+          "cwd": "/Users/cobanov/Developer/other",
+          "focused": false,
+          "foreground_cwd": "/Users/cobanov/Developer/other",
+          "pane_id": "w8:p1",
+          "revision": 0,
+          "tab_id": "w8:t1",
+          "terminal_id": "term_656bcd5a68b715",
+          "workspace_id": "w8"
+        },
+        {
+          "agent": "codex",
+          "agent_status": "vibing",
+          "cwd": "/Users/cobanov",
+          "focused": false,
+          "foreground_cwd": "/Users/cobanov",
+          "pane_id": "wA:p1",
+          "revision": 0,
+          "tab_id": "wA:t1",
+          "terminal_id": "term_656bd15dfe14da",
+          "workspace_id": "wA"
+        }
+      ],
+      "focused_pane_id": "w7:p1",
+      "focused_tab_id": "w7:t1",
+      "focused_workspace_id": "w7",
+      "layouts": [
+        {
+          "area": { "height": 61, "width": 186, "x": 26, "y": 1 },
+          "focused_pane_id": "w7:p1",
+          "zoomed": false,
+          "tab_id": "w7:t1",
+          "workspace_id": "w7",
+          "panes": [
+            { "focused": true, "pane_id": "w7:p1", "rect": { "height": 61, "width": 111, "x": 26, "y": 1 } },
+            { "focused": false, "pane_id": "w7:p2", "rect": { "height": 31, "width": 75, "x": 137, "y": 1 } }
+          ],
+          "splits": [
+            { "direction": "right", "id": "split_0_root", "ratio": 0.5967742, "rect": { "height": 61, "width": 186, "x": 26, "y": 1 } }
+          ]
+        }
+      ]
+    }
+  }
+}
