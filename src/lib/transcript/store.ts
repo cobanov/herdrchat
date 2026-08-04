@@ -4,7 +4,12 @@ import { shellQuote, withPath } from '../herdr/shell';
 import type { HerdrTransport } from '../herdr/transport';
 import type { ChatMessage } from './message';
 import { displayText, isToolOnly } from './message';
-import { assistantMeta, parseTranscript, parseTranscriptLine, projectDirName } from './parser';
+import {
+  assistantMeta,
+  parseTranscript,
+  parseTranscriptEntry,
+  projectDirName,
+} from './parser';
 import type { SessionMeta } from './sessionMeta';
 
 /**
@@ -168,24 +173,41 @@ export class TranscriptStore {
    * Stream transcript lines from `startByte` to end, then follow appends. Each
    * chunk carries the running byte offset so the caller can persist it and
    * resume later without re-reading.
+   *
+   * `meta` rides along because this is the only reader that sees every line the
+   * moment it lands. The header's model and context size used to come from a
+   * separate `tail -c 262144` on a timer — a quarter of a megabyte over SSH
+   * every ten seconds, re-reading lines that had already streamed through here
+   * and been thrown away. One parse per line now feeds both.
    */
   async *tail(
     path: string,
     agentLabel: string | null,
     startByte: number
-  ): AsyncGenerator<{ message: ChatMessage | null; consumedBytes: number }, void, void> {
+  ): AsyncGenerator<
+    { message: ChatMessage | null; meta: SessionMeta | null; consumedBytes: number },
+    void,
+    void
+  > {
     let consumed = startByte;
     const command = withPath(`tail -c +${startByte + 1} -f ${shellQuote(path)}`);
     for await (const line of this.transport.streamLines(command)) {
       consumed += byteLength(line) + 1; // + the newline the framing stripped
-      yield { message: parseTranscriptLine(line, agentLabel), consumedBytes: consumed };
+      const entry = parseTranscriptEntry(line, agentLabel);
+      yield { message: entry.message, meta: entry.meta, consumedBytes: consumed };
     }
   }
 
   /**
-   * Model and context size for the chat header: read the transcript tail and
-   * take the newest assistant line's model and prompt-token total. One small
-   * round-trip; null when the tail holds no assistant turn with usage yet.
+   * Model and context size for the chat header, seeded ONCE when a thread binds
+   * its transcript.
+   *
+   * After that the live tail keeps it current for free, so this must not go on a
+   * timer. It exists only because a thread resuming from its cached cursor may
+   * not see an assistant line for minutes, and a header that stayed blank until
+   * the agent next spoke would look broken.
+   *
+   * Null when the tail holds no assistant turn with usage yet.
    */
   async sessionMeta(path: string, tailBytes = 262_144): Promise<SessionMeta | null> {
     const text = await this.shell(`tail -c ${tailBytes} ${shellQuote(path)} 2>/dev/null`);

@@ -22,6 +22,39 @@ export function parseTranscript(contents: string, agentLabel: string | null = nu
 }
 
 /**
+ * Everything one transcript line has to say: the bubble, if it is one, and the
+ * header metadata, if it carries any. Either half can be null — most lines are
+ * one or the other, never both.
+ */
+export interface TranscriptEntry {
+  message: ChatMessage | null;
+  meta: AssistantMeta | null;
+}
+
+export interface AssistantMeta {
+  model: string | null;
+  contextTokens: number | null;
+}
+
+/**
+ * Parse a line ONCE and return both of the things callers want from it.
+ *
+ * The tail is the only reader that sees every line as it lands, so it is the
+ * cheapest possible place to learn the current model and context size — the
+ * alternative was re-reading the end of the file on a timer to find out
+ * something that had already streamed past. Doing it in one pass matters
+ * because the live tail runs this on every appended line.
+ */
+export function parseTranscriptEntry(
+  line: string,
+  agentLabel: string | null = null
+): TranscriptEntry {
+  const raw = parseJson(line);
+  if (raw === null) return EMPTY_ENTRY;
+  return { message: messageFrom(raw, line, agentLabel), meta: metaFrom(raw) };
+}
+
+/**
  * Parse a single JSONL line. Returns null for non-conversational entries (mode,
  * permission-mode, hook system output, snapshots, attachments) and for turns
  * that carry no segments — and for anything unparseable, since a transcript
@@ -32,23 +65,7 @@ export function parseTranscriptLine(
   agentLabel: string | null = null
 ): ChatMessage | null {
   const raw = parseJson(line);
-  if (raw === null) return null;
-
-  const role = roleOf(raw.type);
-  if (role === null) return null;
-
-  const message = asRecord(raw.message);
-  const segments = segmentsFrom(message?.content);
-  if (segments.length === 0) return null;
-
-  return {
-    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
-    role,
-    segments,
-    timestamp: parseTimestamp(raw.timestamp),
-    agentLabel,
-    isSidechain: raw.isSidechain === true,
-  };
+  return raw === null ? null : messageFrom(raw, line, agentLabel);
 }
 
 /**
@@ -58,25 +75,9 @@ export function parseTranscriptLine(
  * tiers) — i.e. how full the context window is right now. Null for non-assistant
  * lines or lines without usage.
  */
-export function assistantMeta(
-  line: string
-): { model: string | null; contextTokens: number | null } | null {
+export function assistantMeta(line: string): AssistantMeta | null {
   const raw = parseJson(line);
-  if (raw === null || raw.type !== 'assistant') return null;
-  const message = asRecord(raw.message);
-  if (message === null) return null;
-
-  const usage = asRecord(message.usage);
-  const contextTokens =
-    usage === null
-      ? null
-      : numberOr(usage.input_tokens, 0) +
-        numberOr(usage.cache_creation_input_tokens, 0) +
-        numberOr(usage.cache_read_input_tokens, 0);
-  const model = typeof message.model === 'string' ? message.model : null;
-
-  if (model === null && contextTokens === null) return null;
-  return { model, contextTokens };
+  return raw === null ? null : metaFrom(raw);
 }
 
 /**
@@ -97,6 +98,48 @@ export function projectDirName(cwd: string): string {
 }
 
 // MARK: - Internals
+
+const EMPTY_ENTRY: TranscriptEntry = { message: null, meta: null };
+
+function messageFrom(
+  raw: Record<string, unknown>,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const role = roleOf(raw.type);
+  if (role === null) return null;
+
+  const message = asRecord(raw.message);
+  const segments = segmentsFrom(message?.content);
+  if (segments.length === 0) return null;
+
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role,
+    segments,
+    timestamp: parseTimestamp(raw.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
+function metaFrom(raw: Record<string, unknown>): AssistantMeta | null {
+  if (raw.type !== 'assistant') return null;
+  const message = asRecord(raw.message);
+  if (message === null) return null;
+
+  const usage = asRecord(message.usage);
+  const contextTokens =
+    usage === null
+      ? null
+      : numberOr(usage.input_tokens, 0) +
+        numberOr(usage.cache_creation_input_tokens, 0) +
+        numberOr(usage.cache_read_input_tokens, 0);
+  const model = typeof message.model === 'string' ? message.model : null;
+
+  if (model === null && contextTokens === null) return null;
+  return { model, contextTokens };
+}
 
 function roleOf(type: unknown): MessageRole | null {
   if (type === 'user') return 'user';

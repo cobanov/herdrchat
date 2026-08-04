@@ -60,6 +60,16 @@ const OLDER_EMPTY_PAGES = 3;
 
 const STATUS_POLL_MS = 2000;
 /**
+ * How long a tail may produce nothing while its agent is WORKING before it is
+ * assumed dead and restarted.
+ *
+ * Generous on purpose. A working agent can genuinely go quiet for a while — a
+ * long build, a slow test run, one tool call that takes a minute — and the cost
+ * of waiting is a late restart, while the cost of firing early is a stream
+ * needlessly torn down and re-established over SSH.
+ */
+const TAIL_SILENCE_MS = 90_000;
+/**
  * How long an agent may go without reporting a session id before the thread
  * stops waiting and says the integration is probably missing.
  *
@@ -146,7 +156,28 @@ export function useThread(
   const olderSource = useRef<{ path: string; label: string | null; anchor: number } | null>(null);
   const boundSig = useRef<string | null>(null);
   const tails = useRef(new Map<string, AbortController>());
+  /**
+   * When each tail last produced anything, so the poll can tell a wedged stream
+   * from a quiet agent. See `TAIL_SILENCE_MS`.
+   */
+  const tailBeats = useRef(new Map<string, number>());
+  /** The header is seeded from disk once per bound session; the tail does the rest. */
+  const metaSeeded = useRef(false);
   const alive = useRef(true);
+
+  /**
+   * Fold one assistant line's metadata into the header.
+   *
+   * Merged rather than replaced: a turn can report a model with no usage yet, or
+   * usage on a line whose model field is absent, and blanking the other half
+   * each time would make the header flicker between complete and half-empty.
+   */
+  const applyMeta = useCallback((next: SessionMeta) => {
+    setSessionMeta((prev) => ({
+      model: next.model ?? prev?.model ?? null,
+      contextTokens: next.contextTokens ?? prev?.contextTokens ?? null,
+    }));
+  }, []);
 
   const rebuild = useCallback(() => {
     // Drop echoes the transcript has now confirmed.
@@ -247,6 +278,10 @@ export function useThread(
     seen.current = new Set();
     setMessages([]);
     setFailedIds(new Set());
+    // A different session means a different model and a different context; the
+    // old header would otherwise persist over the new conversation.
+    metaSeeded.current = false;
+    setSessionMeta(null);
   }, []);
 
   // Seed from the disk cache so reopening is instant, then let the tails correct
@@ -307,6 +342,9 @@ export function useThread(
 
       const controller = new AbortController();
       tails.current.set(sessionId, controller);
+      // Starting counts as a beat, so a tail that never yields a single line is
+      // still measured from when it began rather than from never.
+      tailBeats.current.set(sessionId, Date.now());
 
       const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
       const cached = await tailCursor(db, connectionId, workspaceId, path);
@@ -342,10 +380,29 @@ export function useThread(
         if (anchor <= 0) setReachedStart(true);
       }
 
+      // Seed the header once. The tail keeps it current from here, but a thread
+      // resuming from its cached cursor can sit for minutes before the agent
+      // next speaks, and a blank model line for that long reads as broken.
+      // `prev ?? seeded` because this read raced the tail the moment it started:
+      // if a live line already answered the question, it is the newer answer.
+      if (!metaSeeded.current) {
+        metaSeeded.current = true;
+        void store
+          .sessionMeta(path)
+          .then((seeded) => {
+            if (seeded !== null && alive.current) setSessionMeta((prev) => prev ?? seeded);
+          })
+          .catch(() => {
+            /* the header simply stays blank until the agent's next turn */
+          });
+      }
+
       void (async () => {
         try {
           for await (const chunk of store.tail(path, label, followFrom)) {
             if (controller.signal.aborted || !alive.current) break;
+            tailBeats.current.set(sessionId, Date.now());
+            if (chunk.meta !== null) applyMeta(chunk.meta);
             if (chunk.message !== null) await ingest([chunk.message], sig);
             await setTailCursor(db, connectionId, workspaceId, path, chunk.consumedBytes);
           }
@@ -354,17 +411,17 @@ export function useThread(
           // the missing tail and restarts it.
         } finally {
           tails.current.delete(sessionId);
+          tailBeats.current.delete(sessionId);
         }
       })();
     },
-    [client, db, connectionId, workspaceId, ingest]
+    [client, db, connectionId, workspaceId, ingest, applyMeta]
   );
 
   // Status poll, which doubles as the tail watchdog.
   useEffect(() => {
     if (client === null) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let metaTick = 0;
 
     const poll = async () => {
       try {
@@ -393,6 +450,7 @@ export function useThread(
           // history rather than appending a different conversation to it.
           for (const controller of tails.current.values()) controller.abort();
           tails.current.clear();
+          tailBeats.current.clear();
           if (await rebind(db, connectionId, workspaceId, sig)) resetHistory();
           boundSig.current = sig;
         }
@@ -419,14 +477,32 @@ export function useThread(
           setLivePreview(null);
         }
 
-        metaTick += 1;
-        if (metaTick % 5 === 1 && primary !== undefined) {
-          const store = new TranscriptStore(client.transport);
-          const sessionId = hasSessionId(primary) ? (primary.agentSession?.value ?? null) : null;
-          if (sessionId !== null) {
-            const home = await store.homeDirectory();
-            const path = store.sessionTranscriptPath(home, primary.cwd, sessionId);
-            if (path !== null) setSessionMeta(await store.sessionMeta(path));
+        /*
+          Tail watchdog.
+
+          `startTail` returns early for a session already in `tails`, and that
+          entry is removed only when the generator finishes or throws. A stream
+          that dies WITHOUT throwing — a half-open TCP after the host sleeps or
+          the phone changes network — therefore leaves the entry in place
+          forever, and the restart the catch block promises can never happen.
+          The thread just stops receiving messages and looks idle.
+
+          Silence on its own proves nothing: a quiet agent writes no transcript
+          lines for hours, legitimately. Silence *while working* does, because a
+          working agent is by definition appending turns. A false positive costs
+          one restarted tail, which resumes from the persisted cursor and dedupes
+          whatever it re-reads — so the check is allowed to be wrong.
+        */
+        if (working) {
+          const now = Date.now();
+          for (const agent of conversational) {
+            const id = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
+            if (id === null || !tails.current.has(id)) continue;
+            const beat = tailBeats.current.get(id) ?? now;
+            if (now - beat < TAIL_SILENCE_MS) continue;
+            tails.current.get(id)?.abort();
+            tails.current.delete(id);
+            tailBeats.current.delete(id);
           }
         }
         setError(null);

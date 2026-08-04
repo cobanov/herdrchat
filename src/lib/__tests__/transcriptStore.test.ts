@@ -298,3 +298,79 @@ describe('batched last-message lookup', () => {
     expect(transport.commands).toHaveLength(0);
   });
 });
+
+/**
+ * Serves a fixed set of lines to `streamLines`, the way a live `tail -f` would.
+ * `exec` is unused here — `tail()` never issues one.
+ */
+class StreamingTransport implements HerdrTransport {
+  readonly commands: string[] = [];
+
+  constructor(private readonly lines: readonly string[]) {}
+
+  async exec(command: string): Promise<ExecResult> {
+    this.commands.push(command);
+    return ok('');
+  }
+
+  async *streamLines(command: string): AsyncIterable<string> {
+    this.commands.push(command);
+    for (const line of this.lines) yield line;
+  }
+}
+
+describe('TranscriptStore.tail', () => {
+  it('carries header metadata alongside the bubbles', async () => {
+    // The model and context size used to come from a separate `tail -c 262144`
+    // every ten seconds, re-reading lines that had already streamed through
+    // here. If the tail stops reporting `meta` there is no poll to fall back on
+    // — the header just freezes at whatever it was seeded with.
+    const subject = new TranscriptStore(
+      new StreamingTransport([
+        '{"type":"user","uuid":"u1","message":{"content":"hi"}}',
+        JSON.stringify({
+          type: 'assistant',
+          uuid: 'a1',
+          message: {
+            model: 'claude-opus-4-8',
+            content: [{ type: 'text', text: 'hello' }],
+            usage: { input_tokens: 1000, cache_read_input_tokens: 24_000 },
+          },
+        }),
+      ])
+    );
+
+    const chunks = [];
+    for await (const chunk of subject.tail('/t.jsonl', null, 0)) chunks.push(chunk);
+
+    expect(chunks[0]?.message?.role).toBe('user');
+    expect(chunks[0]?.meta).toBeNull();
+    expect(chunks[1]?.message?.role).toBe('assistant');
+    expect(chunks[1]?.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 25_000 });
+  });
+
+  it('advances the cursor by UTF-8 bytes, not UTF-16 units', async () => {
+    // The host counts bytes. An emoji is one UTF-16 surrogate pair (length 2)
+    // and four bytes, so a cursor built from `String.length` drifts short and
+    // the next resume re-reads — or, once the drift compounds, skips.
+    const line = '{"type":"user","uuid":"u1","message":{"content":"🎉 done"}}';
+    const subject = new TranscriptStore(new StreamingTransport([line]));
+
+    const chunks = [];
+    for await (const chunk of subject.tail('/t.jsonl', null, 0)) chunks.push(chunk);
+
+    expect(chunks[0]?.consumedBytes).toBe(Buffer.byteLength(line, 'utf8') + 1);
+    expect(chunks[0]?.consumedBytes).not.toBe(line.length + 1);
+  });
+
+  it('resumes from the byte offset it is given', async () => {
+    const subject = new StreamingTransport(['{"type":"user","uuid":"u1","message":{"content":"x"}}']);
+    const store = new TranscriptStore(subject);
+
+    for await (const chunk of store.tail('/t.jsonl', null, 4096)) {
+      // The first chunk's offset must continue from the resume point, not restart.
+      expect(chunk.consumedBytes).toBeGreaterThan(4096);
+    }
+    expect(subject.commands.join('\n')).toContain('tail -c +4097');
+  });
+});

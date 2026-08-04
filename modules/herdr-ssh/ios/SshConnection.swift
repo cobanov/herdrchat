@@ -42,6 +42,15 @@ struct SshFailure: Error {
 /// NAT timeout) drops the client and retries once, and the network path is
 /// watched so a route change (wifi↔cellular, Tailscale up/down) invalidates the
 /// socket instead of stalling on a dead one.
+///
+/// There is deliberately no SSH-level keepalive here, unlike the Kotlin side
+/// which sets `keepAliveInterval = 20`: Citadel exposes no equivalent on
+/// `SSHClientSettings`, so there is nothing to set. The path monitor above
+/// covers a route change, and `isConnected` covers a client that noticed its own
+/// death — but neither catches a `tail -f` channel silently dropped by a NAT
+/// idle timeout on an unchanged route. That case is handled a layer up, by the
+/// tail watchdog in `useThread`, which restarts a stream that has gone quiet
+/// while its agent is working.
 actor SshConnection {
   private let config: SshConfigRecord
   private var client: SSHClient?

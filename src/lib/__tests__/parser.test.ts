@@ -2,7 +2,13 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { displayText, isToolOnly } from '../transcript/message';
-import { assistantMeta, parseTranscript, parseTranscriptLine, projectDirName } from '../transcript/parser';
+import {
+  assistantMeta,
+  parseTranscript,
+  parseTranscriptEntry,
+  parseTranscriptLine,
+  projectDirName,
+} from '../transcript/parser';
 import { contextLabel, modelDisplayName } from '../transcript/sessionMeta';
 
 const transcript = readFileSync(join(__dirname, 'fixtures/transcript.jsonl'), 'utf8');
@@ -148,5 +154,68 @@ describe('project directory escaping', () => {
 
   it('never emits a character that could escape a shell word', () => {
     expect(projectDirName("/tmp/'; rm -rf /")).toMatch(/^[A-Za-z0-9-]+$/);
+  });
+});
+
+describe('one-pass entry parsing', () => {
+  // The live tail runs this on every appended line, and it is now the only
+  // source of the chat header's model and context size. Both halves have to come
+  // out of the same parse — the alternative was a second read of the file.
+  it('returns the bubble and the metadata together', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      uuid: 'a1',
+      message: {
+        model: 'claude-opus-4-8',
+        content: [{ type: 'text', text: 'done' }],
+        usage: { input_tokens: 10, cache_read_input_tokens: 90 },
+      },
+    });
+
+    const entry = parseTranscriptEntry(line);
+    expect(entry.message?.id).toBe('a1');
+    expect(entry.message?.role).toBe('assistant');
+    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 100 });
+  });
+
+  it('still reports metadata for a turn that draws no bubble', () => {
+    // An assistant line with nothing renderable is not a bubble, but it is
+    // still evidence of which model is running and how full the context is.
+    // Dropping it would leave the header stale through a run of such turns.
+    const line = JSON.stringify({
+      type: 'assistant',
+      uuid: 'a2',
+      message: { model: 'claude-opus-4-8', content: [], usage: { input_tokens: 5 } },
+    });
+
+    const entry = parseTranscriptEntry(line);
+    expect(entry.message).toBeNull();
+    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 5 });
+  });
+
+  it('has no metadata to report for a user turn', () => {
+    const entry = parseTranscriptEntry('{"type":"user","uuid":"u1","message":{"content":"hi"}}');
+    expect(entry.message?.role).toBe('user');
+    expect(entry.meta).toBeNull();
+  });
+
+  it('survives the truncated line a live tail can hand it mid-append', () => {
+    expect(parseTranscriptEntry('{"type":"assist')).toEqual({ message: null, meta: null });
+  });
+
+  it('agrees with the single-purpose parsers it replaces', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      uuid: 'a3',
+      message: {
+        model: 'claude-sonnet-5',
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 7 },
+      },
+    });
+
+    const entry = parseTranscriptEntry(line, 'worker');
+    expect(entry.message).toEqual(parseTranscriptLine(line, 'worker'));
+    expect(entry.meta).toEqual(assistantMeta(line));
   });
 });
