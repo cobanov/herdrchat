@@ -118,11 +118,16 @@ export const headerTitleLine = typography.largeTitle.lineHeight;
 
 
 /**
- * Brand ink: a mid periwinkle drawn from the app logo's indigo-navy and
- * lavender. One accent, used sparingly — outgoing bubbles, the send control,
+ * Brand ink: a mid periwinkle, `#6E74E6`, drawn from the app logo's indigo-navy
+ * and lavender. One accent, used sparingly — outgoing bubbles, the send control,
  * working presence.
+ *
+ * It is not a token, because neither scheme can use it as-is: on the light
+ * canvas it measures 3.6:1 and on black it is muddy. Each palette carries its
+ * own step along that hue instead, chosen so the accent clears 4.5:1 where it
+ * lands. The hue is the brand; the lightness belongs to the scheme.
  */
-const PERIWINKLE = '#6E74E6';
+
 /** The logo's light periwinkle, for accents sitting on dark surfaces. */
 const LAVENDER = '#C3C7F9';
 
@@ -173,29 +178,57 @@ export interface Palette {
   backdropBottom: string;
 }
 
+/**
+ * Light scheme.
+ *
+ * Three things this is built around, all of them corrections to the flat
+ * white-on-white it replaces.
+ *
+ * **No pure white, no pure black.** `#FFFFFF` under a `#000000` label measures
+ * 21:1, which is not a target — it is glare. The canvas drops to a soft off-white
+ * and the ink lifts off black; the pair still measures 16.87:1, far past any
+ * threshold, while the page stops being the brightest thing in the room.
+ *
+ * **The greys carry the brand hue.** Every surface and every ink here is the
+ * periwinkle's hue at very low saturation rather than a neutral or a warm grey.
+ * That is what makes the accent look like it belongs to the palette instead of
+ * being dropped onto it, and it is the same cool cast the dark scheme's backdrop
+ * already had.
+ *
+ * **The accents are re-measured for a light background, not reused from dark.**
+ * The old orange measured 2.2:1 on white and was used as body text; every colour
+ * below clears 4.5:1 against the canvas AND against the two surfaces that sit on
+ * it. Ratios in the comments are against `systemBackground`.
+ */
 export const lightPalette: Palette = {
-  tint: PERIWINKLE,
-  tintMuted: 'rgba(110, 116, 230, 0.14)',
+  // Deeper than the brand periwinkle: `PERIWINKLE` itself measures 3.6:1 on this
+  // canvas, and this token draws the back chevron, links and focused rims — all
+  // things you have to see, not just notice.
+  tint: '#5459D4', // 5.23:1
+  tintMuted: 'rgba(84, 89, 212, 0.12)',
   lavender: LAVENDER,
-  attention: '#F08C1E',
-  destructive: '#D7373F',
-  positive: '#2A9D6B',
+  attention: '#A05C08', // 4.87:1
+  destructive: '#C22B2A', // 5.34:1
+  positive: '#1B7A4F', // 4.98:1
 
-  label: '#000000',
-  secondaryLabel: 'rgba(60, 60, 67, 0.6)',
-  tertiaryLabel: 'rgba(60, 60, 67, 0.3)',
+  label: '#15161C', // 16.87:1
+  // Solid, not an alpha. The app has three light surfaces and an alpha ink
+  // renders a different contrast on each; a fixed value means "secondary" means
+  // the same thing on a card as it does on the canvas.
+  secondaryLabel: '#555766', // 6.67:1
+  tertiaryLabel: '#7B7D92', // 3.78:1 — placeholders and disabled glyphs only
   onTint: '#FFFFFF',
 
-  systemBackground: '#FFFFFF',
-  secondarySystemBackground: '#F2F2F7',
-  bubbleIncoming: '#EDEDF2',
+  systemBackground: '#F6F7FC',
+  secondarySystemBackground: '#EBEDF7',
+  bubbleIncoming: '#E6E9F5',
   bubbleOutgoing: '#6167E4', // white on this: 4.60:1
-  fillSubtle: 'rgba(118, 118, 128, 0.12)',
-  separator: 'rgba(60, 60, 67, 0.18)',
+  fillSubtle: 'rgba(84, 89, 212, 0.10)',
+  separator: '#CDD1E2',
 
-  glassFallback: 'rgba(247, 247, 250, 0.94)',
-  backdropTop: '#F6F6FB',
-  backdropBottom: '#EDEEF7',
+  glassFallback: 'rgba(246, 247, 252, 0.94)',
+  backdropTop: '#F0F2FB',
+  backdropBottom: '#E4E7F4',
 };
 
 export const darkPalette: Palette = {

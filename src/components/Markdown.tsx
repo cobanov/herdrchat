@@ -264,7 +264,14 @@ function Span({
     case 'link':
       return (
         <Text
-          style={{ color: onTint ? colors.lavender : colors.tint }}
+          // On the tint, lavender measured 2.81:1 — a link you have to hunt for
+          // inside your own message. White clears 4.60:1 there, and the underline
+          // is what carries "this is a link" once the colour no longer can.
+          style={
+            onTint
+              ? { color: colors.onTint, textDecorationLine: 'underline' }
+              : { color: colors.tint }
+          }
           accessibilityRole="link"
           onPress={() => {
             void Linking.openURL(span.href);
