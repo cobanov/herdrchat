@@ -42,6 +42,11 @@ export function Toggle({
         // and sat well clear. Padding gives every row the same space above and
         // below regardless of how much it has to say.
         paddingVertical: spacing.sm,
+        // The row owns its horizontal inset rather than inheriting it from the
+        // card, so a divider can stop short of the label's left edge — and so
+        // every row type in a group starts at the same x whether it holds a
+        // switch, a value or a button.
+        paddingHorizontal: spacing.md,
         // Still a floor, for a platform whose switch renders shorter than ours.
         minHeight: minTouchTarget,
         opacity: disabled ? 0.5 : 1,

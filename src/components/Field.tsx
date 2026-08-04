@@ -46,17 +46,27 @@ export function SegmentedField<T extends string>({
   options,
   value,
   onChange,
+  labelInset = 0,
 }: {
   label: string;
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (next: T) => void;
+  /**
+   * Left inset for the label only.
+   *
+   * Zero on a form, where the label sits above a full-width control and lines up
+   * with the `Field` labels around it. Settings passes the group inset instead,
+   * so this label starts at the same x as the row labels inside the cards below
+   * it rather than half a step to their left.
+   */
+  labelInset?: number;
 }) {
   const { colors } = useTheme();
 
   return (
     <View style={{ gap: spacing.xs + 2 }}>
-      <Text variant="footnote" color="secondary">
+      <Text variant="footnote" color="secondary" style={{ paddingHorizontal: labelInset }}>
         {label}
       </Text>
       <View

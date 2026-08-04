@@ -23,7 +23,7 @@ import { clientFor, useConnections, useSelectedConnection } from '@/state/connec
 import { cachedMessageCount, clearCachedMessages, setSetting } from '@/state/db';
 import { encodeBool, useSettings, type Settings } from '@/state/settings';
 import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
-import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Settings.
@@ -150,6 +150,7 @@ export default function SettingsScreen() {
         }}>
         <SegmentedField<ThemePreference>
           label="Appearance"
+          labelInset={ROW_INSET}
           options={[
             { value: 'system', label: 'System' },
             { value: 'light', label: 'Light' },
@@ -197,7 +198,13 @@ export default function SettingsScreen() {
             testID="toggle-notifications"
           />
           {pushNote !== null && (
-            <View style={{ paddingTop: spacing.sm, gap: spacing.xs }}>
+            <View
+              style={{
+                paddingHorizontal: ROW_INSET,
+                paddingTop: spacing.xs,
+                paddingBottom: spacing.xs,
+                gap: spacing.xs,
+              }}>
               <Text variant="footnote" color="secondary">
                 {pushNote.message}
               </Text>
@@ -214,13 +221,11 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Storage">
-          <View style={{ gap: spacing.md, paddingVertical: spacing.xs }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text variant="body">Cached messages</Text>
-              <Text variant="body" color="secondary">
-                {cached === null ? '—' : cached.toLocaleString()}
-              </Text>
-            </View>
+          <Row label="Cached messages" value={cached === null ? '—' : cached.toLocaleString()} />
+          <Divider />
+          {/* The button is a row too, so its edges line up with the label above
+              rather than being the one element in the group that runs wider. */}
+          <View style={{ paddingHorizontal: ROW_INSET, paddingVertical: spacing.sm }}>
             <Button
               title="Clear cache"
               variant="tinted"
@@ -233,20 +238,25 @@ export default function SettingsScreen() {
 
         <Section title="About">
           <Row label="Version" value={Constants.expoConfig?.version ?? '—'} />
+          <Divider />
           <Row label="Build" value={String(Constants.expoConfig?.ios?.buildNumber ?? '—')} />
+          <Divider />
           {/* Surfaced rather than hidden: whether the OS actually granted the
               glass API is the difference between the design people were shown
               and the one they got, and it varies by build. */}
           <Row label="Liquid Glass" value={glass ? 'on' : 'unavailable'} />
+          <Divider />
           {/* The build asks for the New Architecture in app.json; this is what
               the running JS engine actually reports. A request and an answer are
               different things, and only one of them is worth showing. */}
           <Row label="New Architecture" value={newArchitecture} />
+          <Divider />
           <Row label="Reduce Motion" value={reduceMotion ? 'on' : 'off'} />
+          <Divider />
           <Row label="Reduce Transparency" value={reduceTransparency ? 'on' : 'off'} />
         </Section>
 
-        <Text variant="caption" color="secondary">
+        <Text variant="caption" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
           HerdrChat reaches your machines over SSH on your tailnet. Keys are stored in the device
           keychain and never leave it; nothing is sent to any server of ours, because there isn’t
           one.
@@ -256,6 +266,16 @@ export default function SettingsScreen() {
   );
 }
 
+/**
+ * A titled group of rows.
+ *
+ * The card carries no horizontal padding of its own — every row supplies
+ * `ROW_INSET` instead, and so does the title. That is the whole alignment fix:
+ * previously the card was padded and the title was not, so a heading sat 12pt to
+ * the left of the labels it introduced. One inset, applied at the row level,
+ * also lets a divider stop short of the label's left edge the way a system list
+ * does, instead of cutting the full width of the card.
+ */
 function Section({
   title,
   footer,
@@ -268,20 +288,27 @@ function Section({
   const { colors } = useTheme();
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text variant="footnote" color="secondary">
+      <Text variant="footnote" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
         {title}
       </Text>
       <View
         style={{
           borderRadius: radius.sm,
           backgroundColor: colors.secondarySystemBackground,
-          paddingHorizontal: spacing.md,
+          // A hairline rim. The light scheme's card sits only a shade off its
+          // canvas — enough separation to group, not enough to give the card an
+          // edge — and without this it reads as a smudge rather than a surface.
+          borderWidth: 1,
+          borderColor: colors.separator,
+          // Matches a row's own vertical padding, so the space above the first
+          // row equals the space between any two.
           paddingVertical: spacing.sm,
+          overflow: 'hidden',
         }}>
         {children}
       </View>
       {footer !== undefined && (
-        <Text variant="caption" color="secondary">
+        <Text variant="caption" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
           {footer}
         </Text>
       )}
@@ -289,24 +316,54 @@ function Section({
   );
 }
 
+/**
+ * The horizontal inset shared by every row, every section title and every
+ * footer. Section cards do not pad; their contents do.
+ */
+const ROW_INSET = spacing.md;
+
+/**
+ * The rule between two rows, inset to the label's left edge.
+ *
+ * `marginVertical` matters as much as the line: rows pad themselves by
+ * `spacing.sm` top and bottom, so a divider drawn flush would sit 8pt from the
+ * text above and 8pt from the text below with no air of its own.
+ */
 function Divider() {
   const { colors } = useTheme();
-  return <View style={{ height: 1, backgroundColor: colors.separator, opacity: 0.6 }} />;
+  return (
+    <View
+      style={{
+        height: 1,
+        marginLeft: ROW_INSET,
+        marginVertical: spacing.xxs,
+        backgroundColor: colors.separator,
+      }}
+    />
+  );
 }
 
+/**
+ * A label and its value. Same inset, same vertical padding and same type size as
+ * `Toggle`, because a reader scanning down a settings screen sees one column of
+ * rows — not a switch list and, further down, a slightly smaller info list.
+ */
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View
       style={{
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
         gap: spacing.md,
-        paddingVertical: spacing.xs,
+        paddingHorizontal: ROW_INSET,
+        paddingVertical: spacing.sm,
+        minHeight: minTouchTarget,
       }}>
-      <Text variant="subhead" color="secondary">
-        {label}
+      <Text variant="body">{label}</Text>
+      <Text variant="body" color="secondary" numberOfLines={1}>
+        {value}
       </Text>
-      <Text variant="subhead">{value}</Text>
     </View>
   );
 }
