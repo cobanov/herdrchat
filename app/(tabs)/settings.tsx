@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/Button';
@@ -9,9 +9,7 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Toggle } from '@/components/Toggle';
-import { useGlassAvailable } from '@/components/Glass';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { runtimeReport } from '@/lib/runtimeReport';
 import {
   deviceFileId,
   errorDetail,
@@ -34,19 +32,9 @@ import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
  */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
-  const { reduceMotion, reduceTransparency } = useTheme();
-  const glass = useGlassAvailable();
   const settings = useSettings();
   const connection = useSelectedConnection();
   const connections = useConnections((state) => state.connections);
-
-  // Read once: these are globals installed before the first render and they do
-  // not change while the app is running.
-  const newArchitecture = useMemo(() => {
-    const report = runtimeReport();
-    const missing = (Object.keys(report) as (keyof typeof report)[]).filter((k) => !report[k]);
-    return missing.length === 0 ? 'on' : `partial — no ${missing.join(', ')}`;
-  }, []);
 
   const [cached, setCached] = useState<number | null>(null);
   const [pushBusy, setPushBusy] = useState(false);
@@ -236,24 +224,18 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
+        {/* Version and build, and nothing else.
+
+            This section used to also report Liquid Glass availability, the New
+            Architecture, Reduce Motion and Reduce Transparency. Every one of
+            those is a fact about the build or a mirror of a switch in iOS
+            Settings — worth checking while developing, and noise on the screen a
+            person actually opens. The two rows left are the two you quote when
+            something is wrong. */}
         <Section title="About">
           <Row label="Version" value={Constants.expoConfig?.version ?? '—'} />
           <Divider />
           <Row label="Build" value={String(Constants.expoConfig?.ios?.buildNumber ?? '—')} />
-          <Divider />
-          {/* Surfaced rather than hidden: whether the OS actually granted the
-              glass API is the difference between the design people were shown
-              and the one they got, and it varies by build. */}
-          <Row label="Liquid Glass" value={glass ? 'on' : 'unavailable'} />
-          <Divider />
-          {/* The build asks for the New Architecture in app.json; this is what
-              the running JS engine actually reports. A request and an answer are
-              different things, and only one of them is worth showing. */}
-          <Row label="New Architecture" value={newArchitecture} />
-          <Divider />
-          <Row label="Reduce Motion" value={reduceMotion ? 'on' : 'off'} />
-          <Divider />
-          <Row label="Reduce Transparency" value={reduceTransparency ? 'on' : 'off'} />
         </Section>
 
         <Text variant="caption" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
