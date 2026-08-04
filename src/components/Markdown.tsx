@@ -233,30 +233,58 @@ function Inline({
       selectable
       style={italic ? { fontStyle: 'italic' } : undefined}>
       {spans.map((span, index) => (
-        <Span key={index} span={span} onTint={onTint} colors={colors} />
+        <Span key={index} span={span} onTint={onTint} colors={colors} variant={variant} />
       ))}
     </Text>
   );
 }
 
+/**
+ * One run of inline text.
+ *
+ * Every branch names its colour and its size, and that is not redundancy.
+ * `Text` always WRITES a colour and a font size — its defaults are `label` and
+ * `body` — so a nested span does not inherit what the surrounding `Text` set,
+ * it overrides it. Two consequences, both of which were live:
+ *
+ * A message on the tint rendered in the label colour. Invisible in dark, where
+ * label and onTint are both white; in light it was near-black text inside a
+ * periwinkle bubble.
+ *
+ * And a heading containing bold or code dropped to body size at exactly that
+ * span, so `## Some **bold** word` changed size mid-line.
+ */
 function Span({
   span,
   onTint,
   colors,
+  variant,
 }: {
   span: InlineSpan;
   onTint: boolean;
   colors: ReturnType<typeof useTheme>['colors'];
+  variant: keyof typeof typography;
 }) {
+  const ink = onTint ? 'onTint' : 'label';
   switch (span.kind) {
     case 'bold':
-      return <Text weight="700">{span.text}</Text>;
+      return (
+        <Text color={ink} variant={variant} weight="700">
+          {span.text}
+        </Text>
+      );
     case 'italic':
-      return <Text style={{ fontStyle: 'italic' }}>{span.text}</Text>;
+      return (
+        <Text color={ink} variant={variant} style={{ fontStyle: 'italic' }}>
+          {span.text}
+        </Text>
+      );
     case 'code':
       return (
         <Text
           mono
+          color={ink}
+          variant={variant}
           style={{ backgroundColor: onTint ? 'rgba(255,255,255,0.22)' : colors.fillSubtle }}>
           {span.text}
         </Text>
@@ -280,6 +308,10 @@ function Span({
         </Text>
       );
     case 'text':
-      return <Text>{span.text}</Text>;
+      return (
+        <Text color={ink} variant={variant}>
+          {span.text}
+        </Text>
+      );
   }
 }
