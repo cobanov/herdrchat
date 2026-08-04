@@ -240,148 +240,164 @@ export default function ThreadScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}>
         {/*
-          The list is mounted only once there is something to show.
+          The controls anchor to this wrapper, NOT to the avoider itself.
 
-          `startRenderingFromBottom` positions the FIRST render at the end — so
-          mounting an empty list and letting messages stream in afterwards means
-          it anchors to the bottom of nothing, and every later batch arrives as
-          an append the reader has to chase. History arrives in phases here
-          (disk cache → recent window → live tail), which is exactly the case
-          that defeats it. Waiting for the first batch is what makes the native
-          anchoring do its job instead of fighting it from JS.
+          Measured, not assumed: an absolutely positioned child resolves against
+          its parent's border box, so `bottom: 0` on a child of the avoider means
+          the bottom of the avoider — behind the keyboard — no matter how much
+          bottom padding the avoider has taken on. The composer disappeared under
+          the keys exactly that way.
+
+          This wrapper is a flex child, so it SHRINKS by that padding instead of
+          absorbing it, and carries none of its own. `bottom: 0` against it lands
+          just above the keyboard, which is what the controls want, while the
+          list still overlays correctly.
         */}
-        {rows.length === 0 ? (
-          <ThreadPlaceholder
-            waiting={waiting}
-            title={params.title ?? params.workspaceId}
-            sessionState={thread.sessionState}
-          />
-        ) : (
-        <FlashList
-          ref={listRef}
-          data={rows}
-          keyExtractor={(row) => row.message.id}
-          contentContainerStyle={{
-            paddingHorizontal: screenPadding,
-            paddingTop: spacing.sm,
-            // Room for the floating controls that overlay the list. Measured
-            // rather than guessed, because the blocked bar changes the height
-            // and a wrong value either clips the newest bubble or leaves a gap.
-            // The extra step is breathing room: the live-preview bubble grows
-            // while the agent writes, and landing flush against the composer
-            // reads as clipped even when it technically isn't.
-            paddingBottom: controlsHeight + spacing.lg,
-          }}
-          /**
-           * The fix for "the chat isn't at the bottom".
-           *
-           * This is native and runs during layout, so it cannot lose a race the
-           * way a JS `scrollToEnd` does. `startRenderingFromBottom` means the
-           * first frame is already at the end rather than scrolling there after
-           * measuring, and the threshold keeps it pinned as the tail appends —
-           * but only while the reader is near the end, so scrolling back through
-           * history is never yanked.
-           */
-          maintainVisibleContentPosition={{
-            startRenderingFromBottom: true,
-            autoscrollToBottomThreshold: 0.2,
-            animateAutoScrollToBottom: false,
-          }}
-          // Reaching the top is a request for more history. Safe to fire more
-          // than once: loadOlder walks a single anchor, so a repeat call either
-          // finds the previous one still running or continues from where it
-          // left off — it cannot fetch the same page twice.
-          onStartReached={() => void thread.loadOlder()}
-          onStartReachedThreshold={0.5}
-          ListHeaderComponent={
-            <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
-          }
-          onScroll={onScroll}
-          scrollEventThrottle={64}
-          renderItem={({ item }) => (
-            <View style={{ paddingTop: item.startsGroup ? spacing.sm + 2 : 2 }}>
-              {item.startsGroup &&
-                item.message.agentLabel !== null &&
-                item.message.role !== 'user' && (
-                  <Text
-                    variant="caption2"
-                    color="secondary"
-                    style={{ paddingLeft: spacing.md, paddingBottom: 2 }}>
-                    {item.message.agentLabel}
-                  </Text>
+        <View style={{ flex: 1 }}>
+          {/*
+            The list is mounted only once there is something to show.
+
+            `startRenderingFromBottom` positions the FIRST render at the end — so
+            mounting an empty list and letting messages stream in afterwards means
+            it anchors to the bottom of nothing, and every later batch arrives as
+            an append the reader has to chase. History arrives in phases here
+            (disk cache → recent window → live tail), which is exactly the case
+            that defeats it. Waiting for the first batch is what makes the native
+            anchoring do its job instead of fighting it from JS.
+          */}
+          {rows.length === 0 ? (
+            <ThreadPlaceholder
+              waiting={waiting}
+              title={params.title ?? params.workspaceId}
+              sessionState={thread.sessionState}
+            />
+          ) : (
+          <FlashList
+            ref={listRef}
+            data={rows}
+            keyExtractor={(row) => row.message.id}
+            contentContainerStyle={{
+              paddingHorizontal: screenPadding,
+              paddingTop: spacing.sm,
+              // Room for the floating controls that overlay the list. Measured
+              // rather than guessed, because the blocked bar changes the height
+              // and a wrong value either clips the newest bubble or leaves a gap.
+              // The extra step is breathing room: the live-preview bubble grows
+              // while the agent writes, and landing flush against the composer
+              // reads as clipped even when it technically isn't.
+              paddingBottom: controlsHeight + spacing.lg,
+            }}
+            /**
+             * The fix for "the chat isn't at the bottom".
+             *
+             * This is native and runs during layout, so it cannot lose a race the
+             * way a JS `scrollToEnd` does. `startRenderingFromBottom` means the
+             * first frame is already at the end rather than scrolling there after
+             * measuring, and the threshold keeps it pinned as the tail appends —
+             * but only while the reader is near the end, so scrolling back through
+             * history is never yanked.
+             */
+            maintainVisibleContentPosition={{
+              startRenderingFromBottom: true,
+              autoscrollToBottomThreshold: 0.2,
+              animateAutoScrollToBottom: false,
+            }}
+            // Reaching the top is a request for more history. Safe to fire more
+            // than once: loadOlder walks a single anchor, so a repeat call either
+            // finds the previous one still running or continues from where it
+            // left off — it cannot fetch the same page twice.
+            onStartReached={() => void thread.loadOlder()}
+            onStartReachedThreshold={0.5}
+            ListHeaderComponent={
+              <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
+            }
+            onScroll={onScroll}
+            scrollEventThrottle={64}
+            renderItem={({ item }) => (
+              <View style={{ paddingTop: item.startsGroup ? spacing.sm + 2 : 2 }}>
+                {item.startsGroup &&
+                  item.message.agentLabel !== null &&
+                  item.message.role !== 'user' && (
+                    <Text
+                      variant="caption2"
+                      color="secondary"
+                      style={{ paddingLeft: spacing.md, paddingBottom: 2 }}>
+                      {item.message.agentLabel}
+                    </Text>
+                  )}
+                <Bubble
+                  message={item.message}
+                  isLastInGroup={item.endsGroup}
+                  timeLabel={item.endsGroup ? formatTime(item.message.timestamp) : null}
+                />
+                {thread.failedIds.has(item.message.id) && (
+                  <Pressable
+                    onPress={() => void thread.retry(item.message.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Failed to send. Retry."
+                    style={{ alignSelf: 'flex-end', paddingVertical: spacing.xs }}>
+                    <Text variant="caption" color="attention">
+                      Failed to send — retry
+                    </Text>
+                  </Pressable>
                 )}
-              <Bubble
-                message={item.message}
-                isLastInGroup={item.endsGroup}
-                timeLabel={item.endsGroup ? formatTime(item.message.timestamp) : null}
-              />
-              {thread.failedIds.has(item.message.id) && (
-                <Pressable
-                  onPress={() => void thread.retry(item.message.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Failed to send. Retry."
-                  style={{ alignSelf: 'flex-end', paddingVertical: spacing.xs }}>
-                  <Text variant="caption" color="attention">
-                    Failed to send — retry
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-          ListFooterComponent={
-            <View style={{ paddingTop: waiting ? spacing.md : 0 }}>
-              {waiting &&
-                (thread.livePreview !== null ? (
-                  <LivePreviewBubble text={thread.livePreview} />
-                ) : (
-                  <View style={{ paddingHorizontal: spacing.xxl, paddingVertical: spacing.md }}>
-                    <WaitingBar />
-                  </View>
-                ))}
-            </View>
-          }
-        />
-        )}
-
-        {/* Sits just above the composer, so it never covers the newest bubble. */}
-        <View
-          pointerEvents="box-none"
-          style={{ position: 'absolute', left: 0, right: 0, bottom: controlsHeight }}>
-          <JumpToBottom
-            visible={!atBottom && rows.length > 0}
-            unreadBelow={!atBottom && waiting}
-            onPress={jumpToBottom}
+              </View>
+            )}
+            ListFooterComponent={
+              <View style={{ paddingTop: waiting ? spacing.md : 0 }}>
+                {waiting &&
+                  (thread.livePreview !== null ? (
+                    <LivePreviewBubble text={thread.livePreview} />
+                  ) : (
+                    <View style={{ paddingHorizontal: spacing.xxl, paddingVertical: spacing.md }}>
+                      <WaitingBar />
+                    </View>
+                  ))}
+              </View>
+            }
           />
-        </View>
-
-        {thread.error !== null && (
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: controlsHeight }}>
-            <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
-          </View>
-        )}
-
-        {/*
-          The controls OVERLAY the list rather than sitting in a row beneath it.
-          That is what gives the glass something to refract: messages scroll
-          underneath the pill instead of stopping above a flat bar. It is also why
-          the list carries a matching bottom padding.
-        */}
-        <View
-          onLayout={(event) => setControlsHeight(event.nativeEvent.layout.height)}
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            gap: spacing.sm,
-            paddingHorizontal: screenPadding,
-            paddingTop: spacing.sm,
-            paddingBottom: bottomInset,
-          }}>
-          {thread.isBlocked && (
-            <BlockedBar prompt={thread.blockedPrompt} onKeys={(keys) => void thread.sendKeys(keys)} />
           )}
-          <Composer onSend={(text) => void thread.send(text)} disabled={thread.isSending} />
+
+          {/* Sits just above the composer, so it never covers the newest bubble. */}
+          <View
+            pointerEvents="box-none"
+            style={{ position: 'absolute', left: 0, right: 0, bottom: controlsHeight }}>
+            <JumpToBottom
+              visible={!atBottom && rows.length > 0}
+              unreadBelow={!atBottom && waiting}
+              onPress={jumpToBottom}
+            />
+          </View>
+
+          {thread.error !== null && (
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: controlsHeight }}>
+              <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
+            </View>
+          )}
+
+          {/*
+            The controls OVERLAY the list rather than sitting in a row beneath it.
+            That is what gives the glass something to refract: messages scroll
+            underneath the pill instead of stopping above a flat bar. It is also why
+            the list carries a matching bottom padding.
+          */}
+          <View
+            onLayout={(event) => setControlsHeight(event.nativeEvent.layout.height)}
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              gap: spacing.sm,
+              paddingHorizontal: screenPadding,
+              paddingTop: spacing.sm,
+              paddingBottom: bottomInset,
+            }}>
+            {thread.isBlocked && (
+              <BlockedBar prompt={thread.blockedPrompt} onKeys={(keys) => void thread.sendKeys(keys)} />
+            )}
+            <Composer onSend={(text) => void thread.send(text)} disabled={thread.isSending} />
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
