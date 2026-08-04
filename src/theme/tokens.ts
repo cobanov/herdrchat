@@ -170,6 +170,16 @@ export interface Palette {
   /** Subtle fills: tool chips, code blocks, inactive controls. */
   fillSubtle: string;
   separator: string;
+  /**
+   * The track of an OFF switch.
+   *
+   * Its own token rather than `fillSubtle`, because it is the only thing making
+   * a switch visible when it is off: the knob is white and Apple draws no border
+   * on a `UISwitch`, so if the track is not clearly darker than the surface
+   * behind it, the control disappears. `fillSubtle` is tuned to sit almost
+   * invisibly under a code block, which is the opposite requirement.
+   */
+  controlTrack: string;
 
   /** Solid stand-in for glass, used on Android and under Reduce Transparency. */
   glassFallback: string;
@@ -225,6 +235,12 @@ export const lightPalette: Palette = {
   bubbleOutgoing: '#6167E4', // white on this: 4.60:1
   fillSubtle: 'rgba(84, 89, 212, 0.10)',
   separator: '#CDD1E2',
+  // Apple's own off-track is #E9E9EA, which works because it sits on a white
+  // card. Ours sits on a card that is already a shade off white, so the same
+  // value would leave a white knob on an almost-white capsule. This keeps the
+  // system's proportions by keeping the same step DOWN from the surface it
+  // sits on.
+  controlTrack: '#CFD3E3',
 
   glassFallback: 'rgba(246, 247, 252, 0.94)',
   backdropTop: '#F0F2FB',
@@ -250,6 +266,7 @@ export const darkPalette: Palette = {
   bubbleOutgoing: '#6067EC', // white on this: 4.52:1
   fillSubtle: 'rgba(118, 118, 128, 0.24)',
   separator: 'rgba(84, 84, 88, 0.65)',
+  controlTrack: '#3A3A41', // the system's dark off-track, lifted off our card
 
   glassFallback: 'rgba(30, 30, 34, 0.92)',
   backdropTop: '#111119',
@@ -258,8 +275,8 @@ export const darkPalette: Palette = {
 
 /**
  * Stable avatar colours derived from a key. Chosen to sit beside the periwinkle
- * tint without competing with it, and to stay legible with white initials on
- * top in both schemes.
+ * tint without competing with it, and to stay dark enough that an emoji sitting
+ * on top reads in both schemes.
  */
 export const avatarPalette: readonly string[] = [
   '#128C7E',
@@ -273,14 +290,60 @@ export const avatarPalette: readonly string[] = [
 ];
 
 /**
- * djb2 over UTF-8 — stable across launches, which a JS string hash is not
- * guaranteed to be. A workspace that changed colour on every cold start would
- * defeat the point of a per-workspace colour.
+ * Avatar glyphs.
+ *
+ * Initials were the obvious choice and the wrong one: workspaces are named after
+ * directories, so a list of real chats reads "H, H, H, D, D" — the one thing an
+ * avatar exists to prevent. An emoji carries no meaning about the workspace,
+ * which is the point; it is a colour you can name, and that is what makes a row
+ * findable at a glance.
+ *
+ * Curated rather than taken from a range: every one of these has a distinct
+ * silhouette at 20pt, none carries a skin tone or a flag, and none is so busy
+ * that it turns to mush on a saturated circle.
+ *
+ * 64 of them, and the count is the point. Repeats are birthday-paradox
+ * arithmetic, not a bad hash — with a dozen workspaces a 40-glyph set repeats
+ * about a quarter of the time, and doubling the set roughly halves that. Two
+ * chats sharing a glyph is survivable; it happening in a list of six is not.
  */
-export function avatarColor(key: string): string {
-  let hash = 5381;
+export const avatarGlyphs: readonly string[] = [
+  '🦊', '🐙', '🦉', '🐢', '🦩', '🐝', '🦄', '🐳',
+  '🦁', '🐼', '🦔', '🐧', '🦋', '🌵', '🍄', '🌻',
+  '🍁', '🌙', '⭐️', '🔥', '⚡️', '🌈', '🍊', '🍇',
+  '🍓', '🥑', '🌮', '☕️', '🎈', '🎲', '🎸', '🎧',
+  '🚀', '🛸', '🧭', '🔭', '🧩', '🎯', '💎', '🪐',
+  '🐨', '🦥', '🦜', '🦈', '🐬', '🦕', '🐴', '🦒',
+  '🌸', '🌴', '🍀', '🌊', '🍑', '🍒', '🥝', '🍩',
+  '🧁', '🎹', '🥁', '🎬', '⛵️', '🪁', '🧿', '🕹️',
+];
+
+/**
+ * djb2 over the key — stable across launches, which a JS string hash is not
+ * guaranteed to be. A workspace that changed colour or glyph on every cold start
+ * would defeat the point of having one.
+ */
+function hashKey(key: string, seed: number): number {
+  let hash = seed;
   for (let index = 0; index < key.length; index += 1) {
     hash = ((hash * 33) ^ key.charCodeAt(index)) >>> 0;
   }
-  return avatarPalette[hash % avatarPalette.length] ?? avatarPalette[0]!;
+  return hash;
+}
+
+export function avatarColor(key: string): string {
+  return avatarPalette[hashKey(key, 5381) % avatarPalette.length] ?? avatarPalette[0]!;
+}
+
+/**
+ * The glyph for a key.
+ *
+ * A DIFFERENT seed from the colour, not a stride applied to the same hash. With
+ * one hash and a palette length that divides the glyph count evenly, colour is a
+ * pure function of glyph — every green avatar carries the same handful of emoji,
+ * so the two signals stop being independent and the list loses half the variety
+ * it looks like it has.
+ */
+export function avatarGlyph(key: string): string {
+  return avatarGlyphs[hashKey(key, 7919) % avatarGlyphs.length] ?? avatarGlyphs[0]!;
 }

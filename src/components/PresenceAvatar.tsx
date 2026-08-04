@@ -11,7 +11,7 @@ import Animated, {
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { avatarColor } from '@/theme/tokens';
+import { avatarColor, avatarGlyph } from '@/theme/tokens';
 import type { AgentStatus } from '@/lib/herdr/models';
 
 /**
@@ -23,13 +23,15 @@ import type { AgentStatus } from '@/lib/herdr/models';
  * — a list where every row glows is a list with no signal in it.
  */
 export function PresenceAvatar({
-  title,
   colorKey,
   status,
   size = 52,
 }: {
-  title: string;
-  /** Stable key for the colour, so a rename doesn't reshuffle the list. */
+  /**
+   * Stable key for the colour and the glyph, so a rename doesn't reshuffle the
+   * list. The avatar takes no title: it is deliberately not a label, and the row
+   * around it already carries the workspace name for screen readers.
+   */
   colorKey: string;
   status: AgentStatus;
   size?: number;
@@ -94,23 +96,16 @@ export function PresenceAvatar({
           alignItems: 'center',
           justifyContent: 'center',
         }}>
+        {/* Slightly smaller than initials were, and with the line height freed:
+            an emoji's own glyph box already carries padding, so matching the
+            letter sizing pushed it off centre. */}
         <Text
-          variant="headline"
-          color="onTint"
-          weight="600"
-          style={{ fontSize: size * 0.36, lineHeight: size * 0.44 }}>
-          {initials(title)}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={{ fontSize: size * 0.44, lineHeight: size * 0.58 }}>
+          {avatarGlyph(colorKey)}
         </Text>
       </View>
     </View>
   );
-}
-
-export function initials(title: string): string {
-  const letters = title
-    .split(/\s+/)
-    .filter((word) => word.length > 0)
-    .slice(0, 2)
-    .map((word) => word.charAt(0));
-  return letters.length === 0 ? '?' : letters.join('').toUpperCase();
 }

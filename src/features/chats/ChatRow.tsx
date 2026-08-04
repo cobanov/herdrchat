@@ -58,7 +58,6 @@ export const ChatRow = memo(function ChatRow({
       })}>
       <View>
         <PresenceAvatar
-          title={summary.title}
           colorKey={summary.title.length > 0 ? summary.title : summary.workspaceId}
           status={summary.status}
           size={AVATAR_SIZE}
