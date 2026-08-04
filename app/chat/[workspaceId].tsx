@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -123,9 +124,33 @@ export default function ThreadScreen() {
     .filter((part): part is string => part !== null)
     .join(' · ');
 
+  /**
+   * The bottom safe-area inset exists to clear the home indicator. A raised
+   * keyboard already covers it, so keeping the inset then would leave the
+   * composer floating a thumb's width above the keys.
+   *
+   * `will*` on iOS so the change rides the same curve as the keyboard rather
+   * than snapping after it lands; Android has no `will` phase.
+   */
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardUp(true)
+    );
+    const hidden = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardUp(false)
+    );
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
   // Floating controls clear the home indicator. Without this the composer sits
   // on the very bottom edge, where it is genuinely hard to hit.
-  const bottomInset = Math.max(insets.bottom, spacing.md);
+  const bottomInset = keyboardUp ? spacing.md : Math.max(insets.bottom, spacing.md);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
@@ -191,7 +216,29 @@ export default function ThreadScreen() {
         <View style={{ width: minTouchTarget - spacing.md }} />
       </View>
 
-      <View style={{ flex: 1 }}>
+      {/*
+        The keyboard avoider is the whole conversation area, not just the
+        composer.
+
+        It used to wrap only the floating controls, which were themselves
+        absolutely positioned over the list — so the pill rose with the keyboard
+        and nothing else did. The list kept its full height and its bottom
+        padding still only reserved room for the controls, which left the newest
+        messages sitting behind the keys with no way to scroll to them.
+
+        As the flex container it makes the list SHRINK by the keyboard's height,
+        which is what pushes the conversation up. The controls stay absolutely
+        positioned inside it: Yoga lays out absolute children against the padding
+        box, so `bottom: 0` now means "just above the keyboard" rather than "at
+        the bottom of the window", and the overlay — the whole reason the glass
+        has anything to refract — is preserved.
+
+        Android is left on the default behaviour: `adjustResize` already shrinks
+        the window, and adding padding on top of that would double-count it.
+      */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}>
         {/*
           The list is mounted only once there is something to show.
 
@@ -306,22 +353,26 @@ export default function ThreadScreen() {
             onPress={jumpToBottom}
           />
         </View>
-      </View>
 
-      {thread.error !== null && <ErrorBanner message={thread.error} onDismiss={thread.clearError} />}
+        {thread.error !== null && (
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: controlsHeight }}>
+            <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
+          </View>
+        )}
 
-      {/*
-        The controls OVERLAY the list rather than sitting in a row beneath it.
-        That is what gives the glass something to refract: messages scroll
-        underneath the pill instead of stopping above a flat bar. It is also why
-        the list carries a matching bottom padding.
-      */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+        {/*
+          The controls OVERLAY the list rather than sitting in a row beneath it.
+          That is what gives the glass something to refract: messages scroll
+          underneath the pill instead of stopping above a flat bar. It is also why
+          the list carries a matching bottom padding.
+        */}
         <View
           onLayout={(event) => setControlsHeight(event.nativeEvent.layout.height)}
           style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
             gap: spacing.sm,
             paddingHorizontal: screenPadding,
             paddingTop: spacing.sm,
