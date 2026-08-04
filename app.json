@@ -29,6 +29,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
+      "versionCode": 37,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"
