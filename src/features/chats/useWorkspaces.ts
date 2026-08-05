@@ -67,7 +67,16 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const refresh = useCallback(async () => {
     if (client === null) return;
     try {
-      const [workspaces, snapshot] = await Promise.all([client.workspaces(), client.snapshot()]);
+      // One call, not two. `api snapshot` returns the whole session — workspaces
+      // and agents together — so asking `workspace list` as well was a second
+      // SSH round-trip for data we already had.
+      //
+      // The fallback is not defensive padding: `snapshot.workspaces` is null
+      // only when this herdr does not send the field, which is a real
+      // possibility on a host we have not seen. Null means ask; empty means
+      // there genuinely are none, and asking again would be pointless.
+      const snapshot = await client.snapshot();
+      const workspaces = snapshot.workspaces ?? (await client.workspaces());
       if (!alive.current) return;
 
       const store = new TranscriptStore(client.transport);

@@ -57,6 +57,41 @@ describe('snapshot decoding', () => {
     expect(bare.layouts).toBeNull();
     expect(bare.agents).toEqual([]);
   });
+
+  /**
+   * The chat list uses `snapshot.workspaces` when it is there and falls back to
+   * a second `workspace list` command when it is not — so the two "no
+   * workspaces" cases must stay distinguishable. Null is "this herdr didn't
+   * send the field, go and ask"; empty is "there genuinely are none". Collapsing
+   * them would either strand an older herdr with a blank list or make every
+   * poll pay a round-trip it doesn't need.
+   */
+  it('separates a missing workspaces field from an empty one', () => {
+    expect(decodeSnapshot({ agents: [] }).workspaces).toBeNull();
+    expect(decodeSnapshot({ agents: [], workspaces: [] }).workspaces).toEqual([]);
+  });
+
+  it('decodes workspaces carried in the snapshot', () => {
+    const carried = decodeSnapshot({
+      agents: [],
+      workspaces: [
+        { workspace_id: 'w1', label: 'herdrchat', number: 1, agent_status: 'working' },
+      ],
+    });
+    expect(carried.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: 'w1', label: 'herdrchat', agentStatus: 'working' }),
+    ]);
+  });
+
+  // Read but not yet acted on — the compatibility guard needs somewhere to look.
+  it('keeps the version and protocol herdr reports', () => {
+    const stamped = decodeSnapshot({ agents: [], version: '0.7.3', protocol: 16 });
+    expect(stamped.version).toBe('0.7.3');
+    expect(stamped.protocol).toBe(16);
+    const unstamped = decodeSnapshot({ agents: [] });
+    expect(unstamped.version).toBeNull();
+    expect(unstamped.protocol).toBeNull();
+  });
 });
 
 describe('workspace list decoding', () => {

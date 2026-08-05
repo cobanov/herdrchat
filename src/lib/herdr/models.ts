@@ -102,13 +102,32 @@ export interface Pane {
   focused: boolean;
 }
 
-/** Full runtime snapshot (`session.snapshot`). */
+/**
+ * Full runtime snapshot (`session.snapshot`).
+ *
+ * herdr returns the whole session in this one payload — workspaces, tabs, panes
+ * and agents together. We used to decode only the agents and then ask for
+ * `workspace list` separately, which was a second round-trip for data the first
+ * one had already delivered. Over SSH that is not free.
+ *
+ * `workspaces` is nullable rather than an empty array because those two mean
+ * different things: null is "this herdr didn't send the field", empty is "there
+ * are no workspaces". Only the first is a reason to fall back to `workspace
+ * list`, and conflating them would either strand us on an older herdr or make
+ * us pay the extra round-trip forever.
+ */
 export interface Snapshot {
   agents: AgentInfo[];
+  /** Null when this herdr's snapshot doesn't carry them — see above. */
+  workspaces: Workspace[] | null;
   focusedPaneId: string | null;
   focusedTabId: string | null;
   focusedWorkspaceId: string | null;
   layouts: TabLayout[] | null;
+  /** herdr's own version string, e.g. "0.7.3". Null if absent. */
+  version: string | null;
+  /** Wire protocol number. Null if absent. */
+  protocol: number | null;
 }
 
 export interface TabLayout {
@@ -273,12 +292,21 @@ export function decodeSnapshot(raw: unknown): Snapshot {
   const value = record(raw);
   // Layout geometry is optional so the app tolerates herdr shape changes.
   const layouts = Array.isArray(value.layouts) ? value.layouts.map(decodeTabLayout) : null;
+  // `Array.isArray` rather than `array()`: an absent field must stay
+  // distinguishable from an empty one, because only the first justifies a
+  // second round-trip to `workspace list`.
+  const workspaces = Array.isArray(value.workspaces)
+    ? value.workspaces.map(decodeWorkspace)
+    : null;
   return {
     agents: array(value.agents).map(decodeAgentInfo),
+    workspaces,
     focusedPaneId: optionalStr(value.focused_pane_id),
     focusedTabId: optionalStr(value.focused_tab_id),
     focusedWorkspaceId: optionalStr(value.focused_workspace_id),
     layouts,
+    version: optionalStr(value.version),
+    protocol: typeof value.protocol === 'number' ? value.protocol : null,
   };
 }
 
