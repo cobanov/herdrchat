@@ -292,12 +292,83 @@ export class HerdrClient {
     if (!result.ok) {
       throw new HerdrError(result.code, result.message);
     }
+    if (result.exitCode === 127) {
+      // Worth one extra round-trip: this is the error people actually hit when
+      // setting up a host, and "not installed, or not on PATH, or wrong path"
+      // asks them to guess which of three unrelated fixes applies.
+      throw await this.diagnoseMissingHerdr();
+    }
     if (result.exitCode !== 0) {
       throw exitCodeError(result.exitCode, result.stderr);
     }
     return result.stdout;
   }
+
+  /**
+   * Work out WHY herdr wasn't found, instead of listing the possibilities.
+   *
+   * Three different situations produce exit 127 and they need three different
+   * fixes: install it, tell us where it already is, or make it executable. We
+   * used to print all three and let the reader work out which one they were in.
+   */
+  private async diagnoseMissingHerdr(): Promise<HerdrError> {
+    const location = await this.locateHerdr();
+    switch (location.kind) {
+      case 'found':
+        return new HerdrError(
+          'herdr_not_on_path',
+          `herdr is installed at ${location.path}, but isn't on the PATH a non-interactive SSH session gets. Set that path in this server's Advanced settings.`
+        );
+      case 'not_executable':
+        return new HerdrError(
+          'herdr_not_executable',
+          `herdr is at ${location.path} but isn't executable. On the host, run: chmod +x ${location.path}`
+        );
+      case 'missing':
+        return new HerdrError(
+          'herdr_not_found',
+          "herdr isn't installed on this account. Install it on the host, or set its full path in this server's Advanced settings if it lives somewhere unusual."
+        );
+      case 'unknown':
+        return exitCodeError(127);
+    }
+  }
+
+  /**
+   * Where herdr is on the host, if anywhere.
+   *
+   * Checks the same places the PATH prefix covers, plus whatever the login
+   * shell would resolve. Everything is `2>/dev/null` and the script always
+   * exits 0, because a diagnosis that itself fails tells the user nothing.
+   */
+  async locateHerdr(): Promise<HerdrLocation> {
+    const script = [
+      `p=$(command -v ${shellQuote(this.herdr)} 2>/dev/null)`,
+      '[ -n "$p" ] || for c in "$HOME/.local/bin/herdr" "$HOME/bin/herdr" /opt/homebrew/bin/herdr /usr/local/bin/herdr /usr/bin/herdr; do',
+      '  [ -e "$c" ] && { p="$c"; break; }',
+      'done',
+      '[ -n "$p" ] || { echo NONE; exit 0; }',
+      '[ -x "$p" ] && echo "EXEC $p" || echo "NOEXEC $p"',
+    ].join('; ');
+
+    const result = await this.transport.exec(withPath(script), POLL_TIMEOUT_MS);
+    if (!result.ok || result.exitCode !== 0) return { kind: 'unknown' };
+
+    const line = result.stdout.trim().split('\n').pop()?.trim() ?? '';
+    if (line === 'NONE') return { kind: 'missing' };
+    if (line.startsWith('EXEC ')) return { kind: 'found', path: line.slice(5) };
+    if (line.startsWith('NOEXEC ')) return { kind: 'not_executable', path: line.slice(7) };
+    return { kind: 'unknown' };
+  }
 }
+
+/** Where herdr is on a host, as far as we could tell. */
+export type HerdrLocation =
+  | { kind: 'missing' }
+  | { kind: 'found'; path: string }
+  | { kind: 'not_executable'; path: string }
+  /** The probe itself failed — say nothing rather than something wrong. */
+  | { kind: 'unknown' };
 
 /**
  * Turn a non-zero exit into a helpful message. Exit 127 = "command not found",

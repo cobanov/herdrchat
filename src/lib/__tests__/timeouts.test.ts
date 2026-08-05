@@ -148,3 +148,56 @@ describe('HerdrClient.interrupt', () => {
     expect(transport.sent[0]).toContain('ctrl+c');
   });
 });
+
+/**
+ * Exit 127 has three unrelated causes and three unrelated fixes: install it,
+ * tell us where it already is, or make it executable. We used to print all
+ * three and let the reader work out which one they were in.
+ */
+describe('HerdrClient diagnosing a missing binary', () => {
+  class ProbeTransport implements HerdrTransport {
+    constructor(private readonly probeOutput: string) {}
+    async exec(command: string): Promise<ExecResult> {
+      // The probe is the only command that looks for the binary itself.
+      if (command.includes('command -v')) {
+        return { ok: true, stdout: this.probeOutput, stderr: '', exitCode: 0 };
+      }
+      return { ok: true, stdout: '', stderr: 'herdr: not found', exitCode: 127 };
+    }
+    async *streamLines(): AsyncIterable<string> {}
+  }
+
+  const failureFrom = async (probeOutput: string) => {
+    const client = new HerdrClient(new ProbeTransport(probeOutput));
+    return client.snapshot().then(
+      () => null,
+      (error: unknown) => error as { code: string; message: string }
+    );
+  };
+
+  it('says install it when it is genuinely nowhere', async () => {
+    const failure = await failureFrom('NONE\n');
+    expect(failure?.code).toBe('herdr_not_found');
+    expect(failure?.message).toContain("isn't installed");
+  });
+
+  it('names the path and the fix when it is installed but off PATH', async () => {
+    const failure = await failureFrom('EXEC /opt/herdr/bin/herdr\n');
+    expect(failure?.code).toBe('herdr_not_on_path');
+    // The valuable case: the user does not have to install anything, only tell
+    // us where it is — and the message hands them the exact path to paste.
+    expect(failure?.message).toContain('/opt/herdr/bin/herdr');
+    expect(failure?.message).toContain('Advanced settings');
+  });
+
+  it('says chmod when it is there but not executable', async () => {
+    const failure = await failureFrom('NOEXEC /usr/local/bin/herdr\n');
+    expect(failure?.code).toBe('herdr_not_executable');
+    expect(failure?.message).toContain('chmod +x /usr/local/bin/herdr');
+  });
+
+  it('falls back to the old message when the probe itself says nothing useful', async () => {
+    const failure = await failureFrom('what?\n');
+    expect(failure?.code).toBe('herdr_not_found');
+  });
+});
