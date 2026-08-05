@@ -183,3 +183,29 @@ function safeParse(payload: string): ChatMessage | null {
     return null;
   }
 }
+
+/**
+ * Forget everything cached for one workspace.
+ *
+ * Called when a workspace is closed. herdr recycles workspace ids, so leaving
+ * a dead chat's messages behind means the next workspace to land in that slot
+ * opens showing them. `rebind` would eventually catch it — that is what the
+ * session signature is for — but only once an agent there reports a session
+ * id, and the wrong history on screen in the meantime is exactly the bug the
+ * signature exists to prevent. Cheaper not to create it.
+ */
+export async function forgetWorkspace(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads']) {
+      await db.runAsync(
+        `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
+        connectionId,
+        workspaceId
+      );
+    }
+  });
+}

@@ -270,3 +270,9 @@ function invalidateStalePreviews(
 export function summaryNeedsAttention(summary: ChatSummary): boolean {
   return needsAttention(summary.status);
 }
+
+/** A thrown value, as something a person can read. */
+export function errorText(thrown: unknown): string {
+  if (thrown instanceof HerdrError) return thrown.message;
+  return thrown instanceof Error ? thrown.message : String(thrown);
+}

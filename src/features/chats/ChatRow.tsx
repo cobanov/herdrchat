@@ -34,10 +34,13 @@ export const ChatRow = memo(function ChatRow({
   summary,
   unread,
   onPress,
+  onLongPress,
 }: {
   summary: ChatSummary;
   unread: boolean;
   onPress: () => void;
+  /** Manage this chat — rename, or close it on the host. */
+  onLongPress?: () => void;
 }) {
   const { colors } = useTheme();
   const attention = summary.status === 'blocked';
@@ -45,6 +48,7 @@ export const ChatRow = memo(function ChatRow({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel(summary, unread)}
       testID={`chat-row-${summary.workspaceId}`}

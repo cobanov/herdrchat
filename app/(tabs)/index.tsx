@@ -2,18 +2,21 @@ import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, View } from 'react-native';
+import { Alert, RefreshControl, View } from 'react-native';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET, ChatRow } from '@/features/chats/ChatRow';
-import { useWorkspaces } from '@/features/chats/useWorkspaces';
+import type { ChatSummary } from '@/features/chats/useWorkspaces';
+import { errorText, useWorkspaces } from '@/features/chats/useWorkspaces';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
 import { loadThreadReads } from '@/state/db';
+import { forgetWorkspace } from '@/state/threadCache';
+import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { screenPadding, spacing } from '@/theme/tokens';
 
@@ -41,6 +44,8 @@ function ChatsForServer() {
   const [installing, setInstalling] = useState(false);
 
   const db = useSQLiteContext();
+  // Failures from rename/close, which happen outside the poll's own error path.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
   // Re-read on focus rather than on an interval: the only thing that changes a
   // read marker is opening a thread, and coming back from one is exactly this
@@ -51,6 +56,69 @@ function ChatsForServer() {
       void loadThreadReads(db, connection.id).then(setReads);
     }, [db, connection])
   );
+
+  /**
+   * Rename or close a chat, from a long press on its row.
+   *
+   * Long press rather than a swipe: the row is already a horizontal surface in
+   * a vertically scrolling list, and a swipe here would fight the back gesture
+   * on the way out of a thread.
+   *
+   * Close is destructive on the HOST, not just in the app — it stops every tab,
+   * pane and process in the workspace — so the confirmation says that in those
+   * words rather than asking a vague "are you sure".
+   */
+  const manageChat = (summary: ChatSummary) => {
+    if (client === null || connection === null) return;
+    haptics.medium();
+    Alert.alert(summary.title, undefined, [
+      {
+        text: 'Rename\u2026',
+        onPress: () =>
+          Alert.prompt(
+            'Rename chat',
+            'This renames the workspace on the host.',
+            (next) => {
+              const label = next.trim();
+              if (label.length === 0 || label === summary.title) return;
+              void client
+                .renameWorkspace(summary.workspaceId, label)
+                .then(refresh)
+                .catch((thrown: unknown) => setActionError(errorText(thrown)));
+            },
+            'plain-text',
+            summary.title
+          ),
+      },
+      {
+        text: 'Close chat',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert(
+            `Close ${summary.title}?`,
+            'Every tab, pane and running process in this workspace stops. The conversation stays on disk, but the agent does not.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Close chat',
+                style: 'destructive',
+                onPress: () => {
+                  void client
+                    .closeWorkspace(summary.workspaceId)
+                    // Drop the cache too: herdr recycles workspace ids, and the
+                    // next chat to land in this slot must not open showing this
+                    // one's messages.
+                    .then(() => forgetWorkspace(db, connection.id, summary.workspaceId))
+                    .then(refresh)
+                    .catch((thrown: unknown) => setActionError(errorText(thrown)));
+                },
+              },
+            ]
+          ),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const installHerdr = async () => {
     if (client === null) return;
@@ -73,6 +141,13 @@ function ChatsForServer() {
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
       />
+
+      {/* Rename and close fail outside the poll's own error path, so they get
+          their own banner — dismissible, because unlike a connection error this
+          one is about an action that is over. */}
+      {actionError !== null && (
+        <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />
+      )}
 
       {error !== null && (
         <ErrorBanner
@@ -122,6 +197,7 @@ function ChatsForServer() {
                   params: { workspaceId: item.workspaceId, title: item.title },
                 })
               }
+              onLongPress={() => manageChat(item)}
             />
           )}
           ItemSeparatorComponent={() => (

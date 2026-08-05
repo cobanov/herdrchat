@@ -231,6 +231,29 @@ export class HerdrClient {
     return decodeWorkspaceCreation(result);
   }
 
+  /** Give a workspace a new label. The chat list reads it as the chat's title. */
+  async renameWorkspace(workspaceId: string, label: string): Promise<void> {
+    const output = await this.shell(
+      shellCommand([this.herdr, 'workspace', 'rename', workspaceId, label]),
+      SEND_TIMEOUT_MS
+    );
+    checkEnvelope(output);
+  }
+
+  /**
+   * Close a workspace, stopping every tab, pane and process inside it.
+   *
+   * Destructive on the host, not just in the app — which is why the caller
+   * confirms first and says so in those words.
+   */
+  async closeWorkspace(workspaceId: string): Promise<void> {
+    const output = await this.shell(
+      shellCommand([this.herdr, 'workspace', 'close', workspaceId]),
+      LAUNCH_TIMEOUT_MS
+    );
+    checkEnvelope(output);
+  }
+
   /**
    * Launch an agent in a freshly created pane's shell. Uses `pane run`, which
    * types the command and presses Enter in one request.
