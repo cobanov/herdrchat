@@ -58,11 +58,49 @@ export class TranscriptStore {
   // belongs to whichever conversation was touched last, not to the one being
   // opened. Callers wait for the session id instead — see `sessionTranscriptPath`.
 
-  /** Current file size in bytes, or -1 if unknown (missing file, no permission). */
-  async fileSize(path: string): Promise<number> {
-    const output = (await this.shell(`wc -c < ${shellQuote(path)} 2>/dev/null`)).trim();
-    const size = Number.parseInt(output, 10);
-    return Number.isNaN(size) ? -1 : size;
+  /**
+   * How big a transcript is, or why we don't know.
+   *
+   * Three answers, not two. This used to return `-1` for both "no such file"
+   * and "the read failed", with `2>/dev/null` throwing away the only thing that
+   * could tell them apart — so a transport hiccup was indistinguishable from a
+   * session whose file hasn't appeared yet, and the caller waited quietly for a
+   * file that was already there.
+   *
+   * `absent` is normal and expected: herdr reports a session id a moment before
+   * Claude creates the file. `unknown` is not, and the caller is expected to say
+   * so rather than retry in silence.
+   */
+  async fileProbe(path: string): Promise<FileProbe> {
+    const result = await this.transport.exec(withPath(`wc -c < ${shellQuote(path)}`));
+    if (!result.ok) return { kind: 'unknown', reason: result.message };
+
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim().split('\n')[0] ?? '';
+      // The shell's own words. Every sh spells this "No such file or
+      // directory"; anything else is a permission or transport problem and
+      // must not be mistaken for a file that hasn't been written yet.
+      return /no such file|not found/i.test(detail)
+        ? { kind: 'absent' }
+        : { kind: 'unknown', reason: detail.length > 0 ? detail : `wc exited ${result.exitCode}` };
+    }
+
+    const bytes = Number.parseInt(result.stdout.trim(), 10);
+    return Number.isNaN(bytes)
+      ? { kind: 'unknown', reason: `couldn't read a size from "${result.stdout.trim().slice(0, 60)}"` }
+      : { kind: 'size', bytes };
+  }
+
+  /** The size, or a throw. For callers that cannot proceed without one. */
+  private async sizeOrThrow(path: string): Promise<number> {
+    const probe = await this.fileProbe(path);
+    if (probe.kind === 'size') return probe.bytes;
+    throw new HerdrError(
+      probe.kind === 'absent' ? 'transcript_absent' : 'transcript_unreadable',
+      probe.kind === 'absent'
+        ? "The transcript file isn't there yet."
+        : `Couldn't measure the transcript: ${probe.reason}`
+    );
   }
 
   /**
@@ -83,7 +121,7 @@ export class TranscriptStore {
     maxBytes: number,
     maxMessages?: number
   ): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number }> {
-    const size = await this.fileSize(path);
+    const size = await this.sizeOrThrow(path);
     const start = size > maxBytes ? size - maxBytes : 0;
     const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)}`);
 
@@ -294,6 +332,18 @@ export interface PreviewRequest {
   /** null when the agent hasn't reported a session id yet. */
   sessionId: string | null;
 }
+
+/**
+ * The answer to "how big is this transcript".
+ *
+ * `absent` means the host said the file is not there — normal for a few seconds
+ * after a session id arrives. `unknown` means we could not find out, which is a
+ * different thing and must not be silently retried as if it were `absent`.
+ */
+export type FileProbe =
+  | { kind: 'size'; bytes: number }
+  | { kind: 'absent' }
+  | { kind: 'unknown'; reason: string };
 
 /** Collapse a transcript turn into a single-paragraph snippet for the list. */
 export function previewText(message: ChatMessage): string | null {

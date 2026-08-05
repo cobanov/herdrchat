@@ -374,3 +374,60 @@ describe('TranscriptStore.tail', () => {
     expect(subject.commands.join('\n')).toContain('tail -c +4097');
   });
 });
+
+/**
+ * `fileProbe` has to answer three questions, not two.
+ *
+ * It used to return `-1` for both "no such file" and "the read failed", with
+ * `2>/dev/null` discarding the only evidence that separated them — so a
+ * permission or transport problem was indistinguishable from a session whose
+ * transcript hadn't been written yet, and the thread waited silently for a file
+ * that was already there.
+ */
+describe('TranscriptStore.fileProbe', () => {
+  class ProbeTransport implements HerdrTransport {
+    constructor(private readonly result: ExecResult) {}
+    async exec(): Promise<ExecResult> {
+      return this.result;
+    }
+    async *streamLines(): AsyncIterable<string> {}
+  }
+
+  const probe = (result: ExecResult) =>
+    new TranscriptStore(new ProbeTransport(result)).fileProbe('/t.jsonl');
+
+  it('reports a size when the host answers with one', async () => {
+    await expect(probe({ ok: true, stdout: '  4096\n', stderr: '', exitCode: 0 })).resolves.toEqual({
+      kind: 'size',
+      bytes: 4096,
+    });
+  });
+
+  it('reports absent when the shell says the file is not there', async () => {
+    await expect(
+      probe({
+        ok: true,
+        stdout: '',
+        stderr: 'sh: /t.jsonl: No such file or directory\n',
+        exitCode: 1,
+      })
+    ).resolves.toEqual({ kind: 'absent' });
+  });
+
+  it('reports unknown — not absent — when the read failed for another reason', async () => {
+    await expect(
+      probe({ ok: true, stdout: '', stderr: 'wc: /t.jsonl: Permission denied\n', exitCode: 1 })
+    ).resolves.toEqual({ kind: 'unknown', reason: 'wc: /t.jsonl: Permission denied' });
+  });
+
+  it('reports unknown when the transport itself failed', async () => {
+    await expect(
+      probe({ ok: false, code: 'transport_failed', message: 'connection reset' })
+    ).resolves.toEqual({ kind: 'unknown', reason: 'connection reset' });
+  });
+
+  it('reports unknown rather than guess when the output is not a number', async () => {
+    const result = await probe({ ok: true, stdout: 'wat\n', stderr: '', exitCode: 0 });
+    expect(result.kind).toBe('unknown');
+  });
+});

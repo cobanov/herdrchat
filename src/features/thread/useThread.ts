@@ -334,11 +334,30 @@ export function useThread(
       const label = multiAgent ? agent.agent : null;
 
       const home = await store.homeDirectory();
-      let path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
-      // The session may be known a moment before its file exists; return
-      // rather than tailing a stale one, and let the next poll retry.
-      if (path !== null && (await store.fileSize(path)) < 0) path = null;
+      const path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
       if (path === null || !alive.current) return;
+
+      // One probe, and it answers two different questions.
+      //
+      // `absent` is expected: herdr reports a session id a moment before Claude
+      // creates the file, so returning and letting the next poll retry is
+      // correct and should be silent.
+      //
+      // `unknown` is not expected — a permission problem, or the transport
+      // failing. It used to arrive as the same `-1` as `absent` and put the
+      // thread into a quiet wait for a file that was already there. It gets
+      // said out loud now.
+      //
+      // Previously this measured the file twice: once to test existence and
+      // again for the resume arithmetic below. Same answer, two round-trips.
+      const probe = await store.fileProbe(path);
+      if (!alive.current) return;
+      if (probe.kind === 'absent') return;
+      if (probe.kind === 'unknown') {
+        setError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+        return;
+      }
+      const size = probe.bytes;
 
       const controller = new AbortController();
       tails.current.set(sessionId, controller);
@@ -348,7 +367,6 @@ export function useThread(
 
       const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
       const cached = await tailCursor(db, connectionId, workspaceId, path);
-      const size = await store.fileSize(path);
       const canResume = cached !== null && size >= cached;
 
       let followFrom: number;
