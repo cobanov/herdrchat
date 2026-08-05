@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { backoffDelay } from '@/lib/poll';
+import { usePollGate } from '../usePollGate';
 import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
@@ -140,6 +143,9 @@ export function useThread(
   const [reachedStart, setReachedStart] = useState(false);
   const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing'>('ok');
   const noSessionPolls = useRef(0);
+  const polling = usePollGate();
+  /** Consecutive failed polls, for the backoff. Reset by any success. */
+  const failures = useRef(0);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
   // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
@@ -438,7 +444,10 @@ export function useThread(
 
   // Status poll, which doubles as the tail watchdog.
   useEffect(() => {
-    if (client === null) return;
+    // Backgrounded: iOS suspends these timers anyway, but the socket usually
+    // dies with them, so the honest thing is to stop and re-poll immediately on
+    // resume — which is what remounting this effect does.
+    if (client === null || !polling) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const poll = async () => {
@@ -524,11 +533,17 @@ export function useThread(
           }
         }
         setError(null);
+        failures.current = 0;
       } catch (thrown) {
         if (!alive.current) return;
+        failures.current += 1;
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
-        if (alive.current) timer = setTimeout(() => void poll(), STATUS_POLL_MS);
+        // The banner stays up throughout: backing off must never read as
+        // recovery. Only the interval changes.
+        if (alive.current) {
+          timer = setTimeout(() => void poll(), backoffDelay(STATUS_POLL_MS, failures.current));
+        }
       }
     };
     void poll();
@@ -541,7 +556,7 @@ export function useThread(
       for (const controller of live.values()) controller.abort();
       live.clear();
     };
-  }, [client, db, connectionId, workspaceId, startTail, resetHistory]);
+  }, [client, db, connectionId, workspaceId, startTail, resetHistory, polling]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
     ? 'blocked'

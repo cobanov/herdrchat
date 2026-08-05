@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { backoffDelay } from '@/lib/poll';
+import { usePollGate } from '../usePollGate';
+
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
@@ -59,13 +62,21 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const [error, setError] = useState<string | null>(null);
   const [herdrMissing, setHerdrMissing] = useState(false);
 
+  const polling = usePollGate();
+  /**
+   * Consecutive failures, for the backoff. A host that is down used to get a
+   * failing SSH round-trip every three seconds forever, on a metered radio.
+   */
+  const failures = useRef(0);
+
   const previews = useRef(new Map<string, ChatSummary['preview']>());
   const previewSessions = useRef(new Map<string, string>());
   const tick = useRef(0);
   const alive = useRef(true);
 
-  const refresh = useCallback(async () => {
-    if (client === null) return;
+  /** Resolves true when the poll failed, so the loop knows whether to back off. */
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (client === null) return false;
     try {
       // One call, not two. `api snapshot` returns the whole session — workspaces
       // and agents together — so asking `workspace list` as well was a second
@@ -77,21 +88,24 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       // there genuinely are none, and asking again would be pointless.
       const snapshot = await client.snapshot();
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
-      if (!alive.current) return;
+      // Unmounted mid-flight: not a failure, just nothing left to do with it.
+      if (!alive.current) return false;
 
       const store = new TranscriptStore(client.transport);
       invalidateStalePreviews(snapshot.agents, previews.current, previewSessions.current);
       await refreshPreviews(store, snapshot.agents, previews.current, tick);
-      if (!alive.current) return;
+      if (!alive.current) return false;
 
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
       setError(null);
       setHerdrMissing(false);
+      return false;
     } catch (thrown) {
-      if (!alive.current) return;
+      if (!alive.current) return true;
       const failure = thrown instanceof HerdrError ? thrown : null;
       setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
       setHerdrMissing(failure?.code === 'herdr_not_found');
+      return true;
     } finally {
       if (alive.current) setLoading(false);
     }
@@ -99,15 +113,20 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
 
   useEffect(() => {
     alive.current = true;
-    if (client === null) return;
+    // Backgrounded, or a conversation open on top of us: either way nobody is
+    // reading this list, and the thread's own poll covers what they ARE reading.
+    // Expo Router's native stack keeps this screen mounted underneath a pushed
+    // route, so without the gate both loops ran at once.
+    if (client === null || !polling) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     // A chained timeout rather than an interval: an interval on a slow host
     // stacks overlapping polls, and each one costs a round-trip.
     const loop = async () => {
-      await refresh();
+      const failed = await refresh();
       if (!alive.current) return;
-      timer = setTimeout(() => void loop(), POLL_INTERVAL_MS);
+      failures.current = failed ? failures.current + 1 : 0;
+      timer = setTimeout(() => void loop(), backoffDelay(POLL_INTERVAL_MS, failures.current));
     };
     void loop();
 
@@ -115,9 +134,20 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       alive.current = false;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [client, refresh]);
+  }, [client, refresh, polling]);
 
-  return { summaries, loading, error, herdrMissing, refresh };
+  return {
+    summaries,
+    loading,
+    error,
+    herdrMissing,
+    // A manual pull is a fresh start: clear the backoff so an explicit retry is
+    // never made to wait out a penalty the user did not cause.
+    refresh: useCallback(async () => {
+      failures.current = 0;
+      await refresh();
+    }, [refresh]),
+  };
 }
 
 // MARK: - Internals
