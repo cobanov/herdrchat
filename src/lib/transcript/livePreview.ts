@@ -11,8 +11,11 @@
  * Behaviour ported from the original SwiftUI implementation (see git
  * history before the Expo rewrite).
  */
+
+import { clean } from './ansi';
+
 export function extractLivePreview(raw: string): string | null {
-  const lines = raw.split('\n').map(clean);
+  const lines = raw.split('\n').map(scrub);
 
   // Anchor: the last status/spinner line (Claude prints one while working).
   const anchor = lastIndexWhere(lines, isStatusLine);
@@ -53,22 +56,18 @@ export function extractLivePreview(raw: string): string | null {
 
 // MARK: - Internals
 
-const ANSI_CSI = /\[[0-9;?]*[A-Za-z]/g;
-const BORDER_CHARS = '│┃|╭╮╰╯─┌┐└┘├┤ \t';
 const SPINNER_GLYPHS = '✳✽✻✢✶✷✸✹✺⚹∗·';
 
-function clean(line: string): string {
-  const withoutAnsi = line.replace(ANSI_CSI, '');
-  let start = 0;
-  let end = withoutAnsi.length;
-  while (start < end && BORDER_CHARS.includes(withoutAnsi[start] ?? '')) start += 1;
-  while (end > start && BORDER_CHARS.includes(withoutAnsi[end - 1] ?? '')) end -= 1;
-  // Box-drawing bars survive in the MIDDLE of a line (only the ends are
-  // trimmed), and a status bar's fields are separated by them. Normalising to
-  // an ASCII pipe is what lets the chrome checks below see one shape instead of
-  // two — without it, herdr's own footer reads as prose and gets shown as the
-  // agent's answer.
-  return withoutAnsi.slice(start, end).replaceAll('│', '|').replaceAll('┃', '|');
+/**
+ * Scrub a line, then normalise interior box-drawing bars to an ASCII pipe.
+ *
+ * `clean()` only trims the ENDS, so bars survive in the middle of a line —
+ * and a status bar's fields are separated by them. Normalising is what lets
+ * the chrome checks below see one shape instead of two; without it, herdr's
+ * own footer reads as prose and gets shown as the agent's answer.
+ */
+function scrub(line: string): string {
+  return clean(line).replaceAll('\u2502', '|').replaceAll('\u2503', '|');
 }
 
 /**

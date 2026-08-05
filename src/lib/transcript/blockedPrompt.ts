@@ -10,6 +10,8 @@
  * history before the Expo rewrite).
  */
 
+import { clean } from './ansi';
+
 /** One selectable choice: the keys to send and the label to show. */
 export interface BlockedOption {
   /** 1-based menu index. */
@@ -79,19 +81,6 @@ export function isBlockedPromptEmpty(prompt: BlockedPrompt | null): boolean {
 }
 
 // MARK: - Internals
-
-const ANSI_CSI = /\[[0-9;?]*[A-Za-z]/g;
-const BORDER_CHARS = '│┃|╭╮╰╯─┌┐└┘├┤ \t';
-
-/** Strip ANSI escapes and TUI box/border chrome, then trim. */
-function clean(line: string): string {
-  const withoutAnsi = line.replace(ANSI_CSI, '');
-  let start = 0;
-  let end = withoutAnsi.length;
-  while (start < end && BORDER_CHARS.includes(withoutAnsi[start] ?? '')) start += 1;
-  while (end > start && BORDER_CHARS.includes(withoutAnsi[end - 1] ?? '')) end -= 1;
-  return withoutAnsi.slice(start, end);
-}
 
 const SELECTION_MARKERS = ['❯', '▶', '>', '→', '•', '*'];
 const KEYBOARD_HINT = /\s*\((esc|enter|return)\)\s*$/i;

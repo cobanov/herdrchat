@@ -9,6 +9,15 @@ import { shellCommand, shellQuote, withPath } from '../herdr/shell';
  * agent's actual answer.
  */
 
+/**
+ * Spelled out rather than typed as the bytes themselves. A literal 0x1B is
+ * invisible in every editor and diff view — which is how the fixture below
+ * ("strips ANSI colour before matching") could contain a real escape while the
+ * regex it tested had lost one, and nobody could see the difference.
+ */
+const ESC = '\u001b';
+const BEL = '\u0007';
+
 const PERMISSION_PROMPT = [
   '╭──────────────────────────────────────────╮',
   '│ Bash command                             │',
@@ -40,7 +49,7 @@ describe('blocked prompt parsing', () => {
   });
 
   it('strips ANSI colour before matching', () => {
-    const coloured = '[1m❯ 1.[0m Yes\n  2. No';
+    const coloured = `${ESC}[1m❯ 1.${ESC}[0m Yes\n  2. No`;
     expect(parseBlockedPrompt(coloured).options).toHaveLength(2);
   });
 
@@ -108,6 +117,45 @@ describe('live preview extraction', () => {
       '✳ Working…',
     ].join('\n');
     expect(extractLivePreview(screen)).toBeNull();
+  });
+
+  /**
+   * The regression this file existed to catch and didn't. `livePreview` had its
+   * own copy of the ANSI pattern with the escape byte missing, so it reduced to
+   * "[ followed by a letter" and ate bracketed prose — while leaving the real
+   * escape byte in the output. Both halves are asserted.
+   */
+  it('leaves bracketed prose alone', () => {
+    const screen = [
+      '⏺ I checked the [TODO] list and the [README](docs/readme.md) link is stale.',
+      '✳ Working… (1.2k tokens)',
+    ].join('\n');
+
+    expect(extractLivePreview(screen)).toBe(
+      'I checked the [TODO] list and the [README](docs/readme.md) link is stale.'
+    );
+  });
+
+  it('strips real escape sequences without leaving the escape byte behind', () => {
+    const screen = [
+      `${ESC}[1m⏺ The refactor is complete and every test now passes cleanly.${ESC}[0m`,
+      `${ESC}[2m✳ Working… (900 tokens)${ESC}[0m`,
+    ].join('\n');
+
+    const preview = extractLivePreview(screen);
+    expect(preview).toBe('The refactor is complete and every test now passes cleanly.');
+    expect(preview).not.toContain(ESC);
+  });
+
+  it('drops an OSC title sequence rather than treating its payload as prose', () => {
+    const screen = [
+      `${ESC}]0;herdrchat — zsh${BEL}⏺ Reading the transcript store to find the cursor drift.`,
+      '✳ Working…',
+    ].join('\n');
+
+    expect(extractLivePreview(screen)).toBe(
+      'Reading the transcript store to find the cursor drift.'
+    );
   });
 
   it('drops the composer, mode hints and shortcut footers', () => {
