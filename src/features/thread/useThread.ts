@@ -558,17 +558,50 @@ export function useThread(
   const blockedPane = agents.find((a) => a.agentStatus === 'blocked') ?? null;
 
   /**
+   * The pane to send to, re-read at the moment of sending.
+   *
+   * `primaryPane` comes from the poll, so by the time someone taps send it can
+   * be two seconds old. A pane id that has changed in that window — an agent
+   * restarted, a layout redrawn — sends the message somewhere it will not be
+   * read, and `pane run` succeeds against whatever is there, so the failure is
+   * silent. This is the same trap the Raycast extension's reviewers caught in
+   * its split targeting: don't act on an id you sampled a moment ago.
+   *
+   * Falls back to the polled pane if the check itself fails. A send that might
+   * go to a stale pane still beats a send that does not happen.
+   */
+  const currentPane = useCallback(
+    async (fallback: AgentInfo): Promise<AgentInfo> => {
+      if (client === null) return fallback;
+      try {
+        const snapshot = await client.snapshot();
+        const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
+        return (
+          live.find((a) => a.focused && a.agent !== null) ??
+          live.find((a) => a.agent !== null) ??
+          live[0] ??
+          fallback
+        );
+      } catch {
+        return fallback;
+      }
+    },
+    [client, workspaceId]
+  );
+
+  /**
    * Submit and verify. `pane run` types the text and presses Enter, but a busy
    * TUI can leave the prompt sitting in the composer — so unless the agent was
    * already working (where a send just queues), require the status to flip to
    * `working`; if it doesn't, press Enter once more and re-check.
    */
   const deliver = useCallback(
-    async (text: string, echoId: string, pane: AgentInfo) => {
+    async (text: string, echoId: string, polled: AgentInfo) => {
       if (client === null) return;
       setIsSending(true);
-      const wasWorking = pane.agentStatus === 'working';
       try {
+        const pane = await currentPane(polled);
+        const wasWorking = pane.agentStatus === 'working';
         await client.sendMessage(pane.paneId, text);
         if (!wasWorking) {
           let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
@@ -590,7 +623,7 @@ export function useThread(
         setIsSending(false);
       }
     },
-    [client]
+    [client, currentPane]
   );
 
   const send = useCallback(
