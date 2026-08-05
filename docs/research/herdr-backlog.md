@@ -5,10 +5,10 @@ Ranked by **user impact**, not by effort. Every item traces to a finding in
 
 Effort: **S** ≤ half a day · **M** 1–3 days · **L** ≥ a week.
 
-**Ten of the sixteen shipped in 0.5.0 (39)**, one landed partly, five are open. Status is in
+**Eleven of the sixteen shipped in 0.5.0 (40)**, one landed partly, four are open. Status is in
 the table. Two of the open ones — B3 and B4, the `agent prompt` / `agent start` pair — are
 blocked on three commands that need running against a live herdr host once; the issues say
-exactly which. The other three are unblocked, just not done yet.
+exactly which. The other two are unblocked, just not done yet.
 
 All sixteen are filed as GitHub issues #8–#23, tracked by [#24](https://github.com/cobanov/herdrchat/issues/24), which carries the suggested order.
 
@@ -21,7 +21,7 @@ All sixteen are filed as GitHub issues #8–#23, tracked by [#24](https://github
 | B5 | Fix the live-preview ANSI regex | [#12](https://github.com/cobanov/herdrchat/issues/12) | ✅ shipped 0.5.0 | S | low |
 | B6 | Collapse the polls onto one snapshot | [#13](https://github.com/cobanov/herdrchat/issues/13) | 🟡 partly — see #13 | M | med |
 | B7 | Pause polling in the background; back off on failure | [#14](https://github.com/cobanov/herdrchat/issues/14) | ✅ shipped 0.5.0 | S | low |
-| B8 | Rename and close a chat | [#15](https://github.com/cobanov/herdrchat/issues/15) | ⬜ open | S | low |
+| B8 | Rename and close a chat | [#15](https://github.com/cobanov/herdrchat/issues/15) | ✅ shipped 0.5.0 | S | low |
 | B9 | Named herdr sessions | [#16](https://github.com/cobanov/herdrchat/issues/16) | ⬜ open | M | low |
 | B10 | Install the Claude integration from the app | [#17](https://github.com/cobanov/herdrchat/issues/17) | ✅ shipped 0.5.0 | S | low |
 | B11 | Agents that aren't Claude | [#18](https://github.com/cobanov/herdrchat/issues/18) | ⬜ blocked on B4 | L | high |
