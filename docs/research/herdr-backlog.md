@@ -5,28 +5,30 @@ Ranked by **user impact**, not by effort. Every item traces to a finding in
 
 Effort: **S** ≤ half a day · **M** 1–3 days · **L** ≥ a week.
 
-| | Title | Effort | Risk |
-|---|---|---|---|
-| B1 | Put a deadline on every remote call | M | med |
-| B2 | Give the phone a stop button | S | low |
-| B3 | Send prompts with `agent prompt` | S | med |
-| B4 | Start agents with `agent start`, and give them names | M | med |
-| B5 | Fix the live-preview ANSI regex | S | low |
-| B6 | Collapse the polls onto one snapshot | M | med |
-| B7 | Pause polling in the background; back off on failure | S | low |
-| B8 | Rename and close a chat | S | low |
-| B9 | Named herdr sessions | M | low |
-| B10 | Install the Claude integration from the app | S | low |
-| B11 | Agents that aren't Claude | L | high |
-| B12 | Prompt history | S | low |
-| B13 | Refresh-interval preference | S | low |
-| B14 | Diagnose a missing binary instead of guessing | S | low |
-| B15 | Don't send to a pane id sampled two seconds ago | S | low |
-| B16 | Stop conflating "couldn't find out" with "isn't there" | S | low |
+All sixteen are filed as GitHub issues #8–#23, tracked by [#24](https://github.com/cobanov/herdrchat/issues/24), which carries the suggested order.
+
+| | Title | Issue | Effort | Risk |
+|---|---|---|---|---|
+| B1 | Put a deadline on every remote call | [#8](https://github.com/cobanov/herdrchat/issues/8) | M | med |
+| B2 | Give the phone a stop button | [#9](https://github.com/cobanov/herdrchat/issues/9) | S | low |
+| B3 | Send prompts with `agent prompt` | [#10](https://github.com/cobanov/herdrchat/issues/10) | S | med |
+| B4 | Start agents with `agent start`, and give them names | [#11](https://github.com/cobanov/herdrchat/issues/11) | M | med |
+| B5 | Fix the live-preview ANSI regex | [#12](https://github.com/cobanov/herdrchat/issues/12) | S | low |
+| B6 | Collapse the polls onto one snapshot | [#13](https://github.com/cobanov/herdrchat/issues/13) | M | med |
+| B7 | Pause polling in the background; back off on failure | [#14](https://github.com/cobanov/herdrchat/issues/14) | S | low |
+| B8 | Rename and close a chat | [#15](https://github.com/cobanov/herdrchat/issues/15) | S | low |
+| B9 | Named herdr sessions | [#16](https://github.com/cobanov/herdrchat/issues/16) | M | low |
+| B10 | Install the Claude integration from the app | [#17](https://github.com/cobanov/herdrchat/issues/17) | S | low |
+| B11 | Agents that aren't Claude | [#18](https://github.com/cobanov/herdrchat/issues/18) | L | high |
+| B12 | Prompt history | [#19](https://github.com/cobanov/herdrchat/issues/19) | S | low |
+| B13 | Refresh-interval preference | [#20](https://github.com/cobanov/herdrchat/issues/20) | S | low |
+| B14 | Diagnose a missing binary instead of guessing | [#21](https://github.com/cobanov/herdrchat/issues/21) | S | low |
+| B15 | Don't send to a pane id sampled two seconds ago | [#22](https://github.com/cobanov/herdrchat/issues/22) | S | low |
+| B16 | Stop conflating "couldn't find out" with "isn't there" | [#23](https://github.com/cobanov/herdrchat/issues/23) | S | low |
 
 ---
 
-## B1 — Put a deadline on every remote call
+## B1 — Put a deadline on every remote call · [#8](https://github.com/cobanov/herdrchat/issues/8)
 
 **Effort M · Risk medium · Finding §4.4**
 
@@ -107,7 +109,7 @@ after a timeout, which is the actual bug.
 
 ---
 
-## B2 — Give the phone a stop button
+## B2 — Give the phone a stop button · [#9](https://github.com/cobanov/herdrchat/issues/9)
 
 **Effort S · Risk low · Finding §4.3**
 
@@ -154,7 +156,7 @@ real host which of `escape` / `esc` herdr's `send-keys` accepts — theirs sends
 
 ---
 
-## B3 — Send prompts with `agent prompt`
+## B3 — Send prompts with `agent prompt` · [#10](https://github.com/cobanov/herdrchat/issues/10)
 
 **Effort S · Risk medium · Finding §4.2**
 
@@ -215,7 +217,7 @@ recoverable by the user, not just by us.
 
 ---
 
-## B4 — Start agents with `agent start`, and give them names
+## B4 — Start agents with `agent start`, and give them names · [#11](https://github.com/cobanov/herdrchat/issues/11)
 
 **Effort M · Risk medium · Finding §4.1**
 
@@ -289,7 +291,7 @@ so an older herdr on someone's host doesn't break new chats.
 
 ---
 
-## B5 — Fix the live-preview ANSI regex
+## B5 — Fix the live-preview ANSI regex · [#12](https://github.com/cobanov/herdrchat/issues/12)
 
 **Effort S · Risk low · Finding §5**
 
@@ -342,7 +344,7 @@ live-preview tests — if any passed because of the corruption, that's worth kno
 
 ---
 
-## B6 — Collapse the polls onto one snapshot
+## B6 — Collapse the polls onto one snapshot · [#13](https://github.com/cobanov/herdrchat/issues/13)
 
 **Effort M · Risk medium · Finding §3.1, §3.2**
 
@@ -380,7 +382,7 @@ snapshot it fetched. Do it after B1.
 
 ---
 
-## B7 — Pause polling in the background; back off on failure
+## B7 — Pause polling in the background; back off on failure · [#14](https://github.com/cobanov/herdrchat/issues/14)
 
 **Effort S · Risk low · Finding §3.3**
 
@@ -403,7 +405,7 @@ mistaken for a substitute.
 
 ---
 
-## B8 — Rename and close a chat
+## B8 — Rename and close a chat · [#15](https://github.com/cobanov/herdrchat/issues/15)
 
 **Effort S · Risk low · Finding §3 matrix**
 
@@ -422,7 +424,7 @@ workspace's cached messages (`state/threadCache.ts`) so a recycled id can't resu
 
 ---
 
-## B9 — Named herdr sessions
+## B9 — Named herdr sessions · [#16](https://github.com/cobanov/herdrchat/issues/16)
 
 **Effort M · Risk low · Finding §4.6**
 
@@ -442,7 +444,7 @@ deliberately run *outside* any session (`lib/herdr.ts:144`).
 
 ---
 
-## B10 — Install the Claude integration from the app
+## B10 — Install the Claude integration from the app · [#17](https://github.com/cobanov/herdrchat/issues/17)
 
 **Effort S · Risk low · Finding §4.7**
 
@@ -463,7 +465,7 @@ action on the `sessionState === 'missing'` view (`app/chat/[workspaceId].tsx:440
 
 ---
 
-## B11 — Agents that aren't Claude
+## B11 — Agents that aren't Claude · [#18](https://github.com/cobanov/herdrchat/issues/18)
 
 **Effort L · Risk high · Finding §3 matrix**
 
@@ -486,7 +488,7 @@ Do this **after** B4 — `agent start --kind` is where the kind enters the syste
 
 ---
 
-## B12 — Prompt history
+## B12 — Prompt history · [#19](https://github.com/cobanov/herdrchat/issues/19)
 
 **Effort S · Risk low**
 
@@ -504,7 +506,7 @@ long-press on the send button.
 
 ---
 
-## B13 — Refresh-interval preference
+## B13 — Refresh-interval preference · [#20](https://github.com/cobanov/herdrchat/issues/20)
 
 **Effort S · Risk low · Finding §3.2**
 
@@ -518,7 +520,7 @@ previews). Do it after B6, or you're making two independent polls configurable t
 
 ---
 
-## B14 — Diagnose a missing binary instead of guessing
+## B14 — Diagnose a missing binary instead of guessing · [#21](https://github.com/cobanov/herdrchat/issues/21)
 
 **Effort S · Risk low · Finding §4.5**
 
@@ -537,7 +539,7 @@ share one message.
 
 ---
 
-## B15 — Don't send to a pane id sampled two seconds ago
+## B15 — Don't send to a pane id sampled two seconds ago · [#22](https://github.com/cobanov/herdrchat/issues/22)
 
 **Effort S · Risk low · Finding §7.1**
 
@@ -557,7 +559,7 @@ worth a note.
 
 ---
 
-## B16 — Stop conflating "couldn't find out" with "isn't there"
+## B16 — Stop conflating "couldn't find out" with "isn't there" · [#23](https://github.com/cobanov/herdrchat/issues/23)
 
 **Effort S · Risk low · Finding §7.2**
 
