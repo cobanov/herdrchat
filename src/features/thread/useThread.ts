@@ -112,6 +112,8 @@ export interface ThreadState {
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
   sendKeys: (keys: readonly string[]) => Promise<void>;
+  /** Stop the working agent. `hard` sends Ctrl-C and may end the session. */
+  interrupt: (hard?: boolean) => Promise<void>;
   clearError: () => void;
   reload: () => Promise<void>;
 }
@@ -687,6 +689,27 @@ export function useThread(
     [client, blockedPane, primaryPane]
   );
 
+  /**
+   * Stop the agent. `hard` sends Ctrl-C, which can end the session.
+   *
+   * Targets the working pane specifically rather than `blockedPane ??
+   * primaryPane` the way `sendKeys` does: a blocked agent is already stopped and
+   * waiting for an answer, so interrupting it would answer nothing and might
+   * dismiss the prompt the user is about to read.
+   */
+  const interrupt = useCallback(
+    async (hard = false) => {
+      const pane = agents.find((a) => a.agentStatus === 'working') ?? primaryPane;
+      if (client === null || pane === null) return;
+      try {
+        await (hard ? client.interruptHard(pane.paneId) : client.interrupt(pane.paneId));
+      } catch (thrown) {
+        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      }
+    },
+    [client, agents, primaryPane]
+  );
+
   const reload = useCallback(async () => {
     for (const controller of tails.current.values()) controller.abort();
     tails.current.clear();
@@ -712,6 +735,7 @@ export function useThread(
     send,
     retry,
     sendKeys,
+    interrupt,
     clearError: () => setError(null),
     reload,
   };

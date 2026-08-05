@@ -23,6 +23,7 @@ import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
+import { StopButton } from '@/features/thread/StopButton';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
 import { clientFor, useSelectedConnection } from '@/state/connections';
@@ -212,8 +213,16 @@ export default function ThreadScreen() {
           )}
         </View>
 
-        {/* Balances the back control so the title is optically centred. */}
-        <View style={{ width: minTouchTarget - spacing.md }} />
+        {/*
+          Stop, or the spacer that balances the back control so the title stays
+          optically centred. The button is exactly the spacer's width, so the
+          title does not shift when the agent starts or finishes working.
+        */}
+        {thread.status === 'working' ? (
+          <StopButton onStop={(hard) => void thread.interrupt(hard)} />
+        ) : (
+          <View style={{ width: minTouchTarget - spacing.md }} />
+        )}
       </View>
 
       {/*

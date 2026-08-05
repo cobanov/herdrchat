@@ -148,6 +148,48 @@ export class HerdrClient {
     checkEnvelope(output);
   }
 
+  /**
+   * Stop what the agent is doing, without ending the session.
+   *
+   * Escape is Claude's own "stop this turn" — the agent stays alive and the
+   * conversation survives, which is what someone reaching for a stop button on
+   * a phone almost always means. `interruptHard` is the other thing.
+   *
+   * The two spellings are a hedge, not indecision. Our one proven key name is
+   * the capitalised `Enter` that quick replies have always sent, while the
+   * Raycast extension — shipping against the same CLI — sends lowercase `esc`.
+   * Both cannot be checked from here, and a stop button that silently does
+   * nothing is worse than one that costs an extra round-trip on hosts where the
+   * first spelling is wrong. Whichever works, works.
+   */
+  async interrupt(paneId: string): Promise<void> {
+    await this.sendFirstAccepted(paneId, ['Escape', 'esc']);
+  }
+
+  /**
+   * Ctrl-C. A bigger hammer: this can exit the agent process and end the
+   * session, losing the conversation, so the UI asks first.
+   */
+  async interruptHard(paneId: string): Promise<void> {
+    await this.sendFirstAccepted(paneId, ['ctrl+c', 'C-c']);
+  }
+
+  /** Try each spelling in turn; the last failure is the one that surfaces. */
+  private async sendFirstAccepted(paneId: string, spellings: readonly string[]): Promise<void> {
+    let last: unknown = null;
+    for (const key of spellings) {
+      try {
+        await this.sendKeys(paneId, [key]);
+        return;
+      } catch (thrown) {
+        last = thrown;
+      }
+    }
+    throw last instanceof Error
+      ? last
+      : new HerdrError('send_keys_failed', "The host didn't accept that key.");
+  }
+
   /** Send raw keys to a pane, e.g. a quick reply to a blocked prompt. */
   async sendKeys(paneId: string, keys: readonly string[]): Promise<void> {
     const output = await this.shell(

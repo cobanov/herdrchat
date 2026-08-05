@@ -99,3 +99,52 @@ describe('HerdrClient under a timeout', () => {
     expect(transport.budgets[0]).toBeGreaterThan(30_000);
   });
 });
+
+/**
+ * Interrupt exists because the app could start work and not stop it — new chats
+ * default to `bypassPermissions`, so an agent started from a phone runs tools
+ * without asking.
+ *
+ * The key SPELLING is the part that cannot be checked from here: our one proven
+ * name is the capitalised `Enter` quick replies have always sent, while the
+ * Raycast extension sends lowercase `esc` against the same CLI. So interrupt
+ * tries both rather than betting on one.
+ */
+describe('HerdrClient.interrupt', () => {
+  class KeyTransport implements HerdrTransport {
+    readonly sent: string[] = [];
+    constructor(private readonly accept: (command: string) => boolean) {}
+    async exec(command: string): Promise<ExecResult> {
+      this.sent.push(command);
+      return this.accept(command)
+        ? { ok: true, stdout: '', stderr: '', exitCode: 0 }
+        : { ok: true, stdout: '', stderr: 'unknown key', exitCode: 1 };
+    }
+    async *streamLines(): AsyncIterable<string> {}
+  }
+
+  it('stops at the first spelling the host accepts', async () => {
+    const transport = new KeyTransport(() => true);
+    await new HerdrClient(transport).interrupt('w1:p1');
+    expect(transport.sent).toHaveLength(1);
+    expect(transport.sent[0]).toContain('Escape');
+  });
+
+  it('falls back rather than leaving the button doing nothing', async () => {
+    const transport = new KeyTransport((command) => command.includes("'esc'"));
+    await new HerdrClient(transport).interrupt('w1:p1');
+    expect(transport.sent).toHaveLength(2);
+    expect(transport.sent[1]).toContain('esc');
+  });
+
+  it('surfaces a failure when the host accepts neither', async () => {
+    const transport = new KeyTransport(() => false);
+    await expect(new HerdrClient(transport).interrupt('w1:p1')).rejects.toThrow();
+  });
+
+  it('sends Ctrl-C only for the hard stop', async () => {
+    const transport = new KeyTransport(() => true);
+    await new HerdrClient(transport).interruptHard('w1:p1');
+    expect(transport.sent[0]).toContain('ctrl+c');
+  });
+});
