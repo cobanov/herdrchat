@@ -56,7 +56,17 @@ export type SshFailureCode =
   /** A command was issued against an id that has no live connection. */
   | 'not_connected'
   /** The channel died mid-command (dropped socket, suspended app). */
-  | 'transport_failed';
+  | 'transport_failed'
+  /**
+   * The command was still running when its deadline elapsed.
+   *
+   * Distinct from `transport_failed` because it is the one failure that used
+   * not to exist: with no deadline, a half-open TCP — the phone sleeping, a
+   * route change, a wedged host — left the command pending forever. The poll
+   * loops that drive this app re-arm in a `finally`, so "forever" meant the
+   * loop stopped and the screen froze with no error at all.
+   */
+  | 'timeout';
 
 export interface SshFailure {
   ok: false;

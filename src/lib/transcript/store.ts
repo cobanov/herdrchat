@@ -1,6 +1,7 @@
 import { exitCodeError } from '../herdr/client';
 import { HerdrError } from '../herdr/protocol';
 import { shellQuote, withPath } from '../herdr/shell';
+import { POLL_TIMEOUT_MS, STREAM_START_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 import type { ChatMessage } from './message';
 import { displayText, isToolOnly } from './message';
@@ -35,7 +36,7 @@ export class TranscriptStore {
    * shell quoting stays safe.
    */
   async homeDirectory(): Promise<string> {
-    const home = (await this.shell('printf %s "$HOME"')).trim();
+    const home = (await this.shell('printf %s "$HOME"', POLL_TIMEOUT_MS)).trim();
     return home.length > 0 ? home : '~';
   }
 
@@ -72,7 +73,10 @@ export class TranscriptStore {
    * so rather than retry in silence.
    */
   async fileProbe(path: string): Promise<FileProbe> {
-    const result = await this.transport.exec(withPath(`wc -c < ${shellQuote(path)}`));
+    const result = await this.transport.exec(
+      withPath(`wc -c < ${shellQuote(path)}`),
+      POLL_TIMEOUT_MS
+    );
     if (!result.ok) return { kind: 'unknown', reason: result.message };
 
     if (result.exitCode !== 0) {
@@ -229,7 +233,7 @@ export class TranscriptStore {
   > {
     let consumed = startByte;
     const command = withPath(`tail -c +${startByte + 1} -f ${shellQuote(path)}`);
-    for await (const line of this.transport.streamLines(command)) {
+    for await (const line of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS)) {
       consumed += byteLength(line) + 1; // + the newline the framing stripped
       const entry = parseTranscriptEntry(line, agentLabel);
       yield { message: entry.message, meta: entry.meta, consumedBytes: consumed };
@@ -314,8 +318,8 @@ export class TranscriptStore {
     return result;
   }
 
-  private async shell(command: string): Promise<string> {
-    const result = await this.transport.exec(withPath(command));
+  private async shell(command: string, timeoutMs = TRANSCRIPT_TIMEOUT_MS): Promise<string> {
+    const result = await this.transport.exec(withPath(command), timeoutMs);
     if (!result.ok) throw new HerdrError(result.code, result.message);
     if (result.exitCode !== 0) throw exitCodeError(result.exitCode, result.stderr);
     return result.stdout;

@@ -13,6 +13,13 @@ import {
 } from './models';
 import { HerdrError, checkEnvelope, decodeEnvelope } from './protocol';
 import { shellCommand, shellQuote, withPath } from './shell';
+import {
+  INSTALL_TIMEOUT_MS,
+  LAUNCH_TIMEOUT_MS,
+  POLL_TIMEOUT_MS,
+  SCREEN_TIMEOUT_MS,
+  SEND_TIMEOUT_MS,
+} from './timeouts';
 import type { HerdrTransport } from './transport';
 
 /**
@@ -41,28 +48,28 @@ export class HerdrClient {
   // MARK: - Reads
 
   async snapshot(): Promise<Snapshot> {
-    const result = await this.run([this.herdr, 'api', 'snapshot']);
+    const result = await this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS);
     return decodeSnapshot(field(result, 'snapshot'));
   }
 
   async workspaces(): Promise<Workspace[]> {
-    const result = await this.run([this.herdr, 'workspace', 'list']);
+    const result = await this.run([this.herdr, 'workspace', 'list'], POLL_TIMEOUT_MS);
     return asArray(field(result, 'workspaces')).map(decodeWorkspace);
   }
 
   async agents(): Promise<AgentInfo[]> {
-    const result = await this.run([this.herdr, 'agent', 'list']);
+    const result = await this.run([this.herdr, 'agent', 'list'], POLL_TIMEOUT_MS);
     return asArray(field(result, 'agents')).map(decodeAgentInfo);
   }
 
   async panes(): Promise<Pane[]> {
-    const result = await this.run([this.herdr, 'pane', 'list']);
+    const result = await this.run([this.herdr, 'pane', 'list'], POLL_TIMEOUT_MS);
     return asArray(field(result, 'panes')).map(decodePane);
   }
 
   /** Confirm the host is reachable and herdr is answering. */
   async ping(): Promise<void> {
-    await this.shell(shellCommand([this.herdr, 'status', 'server']));
+    await this.shell(shellCommand([this.herdr, 'status', 'server']), POLL_TIMEOUT_MS);
   }
 
   /**
@@ -71,7 +78,7 @@ export class HerdrClient {
    * fails because herdr isn't installed on that account.
    */
   async installHerdr(): Promise<void> {
-    await this.shell('curl -fsSL https://herdr.dev/install.sh | sh');
+    await this.shell('curl -fsSL https://herdr.dev/install.sh | sh', INSTALL_TIMEOUT_MS);
   }
 
   /**
@@ -79,7 +86,7 @@ export class HerdrClient {
    * working directory in the new-chat folder picker.
    */
   async homeDirectory(): Promise<string> {
-    const output = await this.shell('printf %s "$HOME"');
+    const output = await this.shell('printf %s "$HOME"', POLL_TIMEOUT_MS);
     const home = output.trim();
     return home.length > 0 ? home : '/';
   }
@@ -94,7 +101,7 @@ export class HerdrClient {
     // keep only entries ending in "/" and strip it. An unreadable path yields
     // nothing rather than erroring the picker.
     const command = `cd ${shellQuote(path)} 2>/dev/null && ls -1Lp 2>/dev/null; true`;
-    const output = await this.shell(command);
+    const output = await this.shell(command, POLL_TIMEOUT_MS);
     return output
       .split('\n')
       .map((line) => line.trim())
@@ -121,7 +128,8 @@ export class HerdrClient {
         'visible',
         '--lines',
         String(lines),
-      ])
+      ]),
+      SCREEN_TIMEOUT_MS
     );
   }
 
@@ -133,14 +141,18 @@ export class HerdrClient {
    * the text but doesn't submit inside an agent TUI (only in a plain shell).
    */
   async sendMessage(paneId: string, text: string): Promise<void> {
-    const output = await this.shell(shellCommand([this.herdr, 'pane', 'run', paneId, text]));
+    const output = await this.shell(
+      shellCommand([this.herdr, 'pane', 'run', paneId, text]),
+      SEND_TIMEOUT_MS
+    );
     checkEnvelope(output);
   }
 
   /** Send raw keys to a pane, e.g. a quick reply to a blocked prompt. */
   async sendKeys(paneId: string, keys: readonly string[]): Promise<void> {
     const output = await this.shell(
-      shellCommand([this.herdr, 'pane', 'send-keys', paneId, ...keys])
+      shellCommand([this.herdr, 'pane', 'send-keys', paneId, ...keys]),
+      SEND_TIMEOUT_MS
     );
     checkEnvelope(output);
   }
@@ -152,7 +164,7 @@ export class HerdrClient {
   async createWorkspace(cwd: string, label: string | null): Promise<WorkspaceCreation> {
     const argv = [this.herdr, 'workspace', 'create', '--cwd', cwd, '--no-focus'];
     if (label !== null && label.length > 0) argv.push('--label', label);
-    const result = await this.run(argv);
+    const result = await this.run(argv, LAUNCH_TIMEOUT_MS);
     return decodeWorkspaceCreation(result);
   }
 
@@ -161,7 +173,10 @@ export class HerdrClient {
    * types the command and presses Enter in one request.
    */
   async startAgent(paneId: string, command = 'claude'): Promise<void> {
-    const output = await this.shell(shellCommand([this.herdr, 'pane', 'run', paneId, command]));
+    const output = await this.shell(
+      shellCommand([this.herdr, 'pane', 'run', paneId, command]),
+      LAUNCH_TIMEOUT_MS
+    );
     checkEnvelope(output);
   }
 
@@ -185,7 +200,11 @@ export class HerdrClient {
             '--timeout',
             String(timeoutMs),
           ])
-        )
+        ),
+        // herdr's own wait, plus headroom. Our deadline must never fire before
+        // the one we asked the host to honour, or a normal "didn't reach the
+        // state" answer would come back as a transport timeout.
+        timeoutMs + SEND_TIMEOUT_MS
       );
       return result.ok && result.exitCode === 0;
     } catch {
@@ -196,8 +215,8 @@ export class HerdrClient {
   // MARK: - Plumbing
 
   /** Run an argv (quoted, so arbitrary user text is safe) and unwrap the envelope. */
-  private async run(argv: readonly string[]): Promise<unknown> {
-    const output = await this.shell(shellCommand(argv));
+  private async run(argv: readonly string[], timeoutMs: number): Promise<unknown> {
+    const output = await this.shell(shellCommand(argv), timeoutMs);
     return decodeEnvelope(output);
   }
 
@@ -205,8 +224,8 @@ export class HerdrClient {
    * Run a shell command on the host, mapping transport failures and the exit
    * statuses that mean something specific into `HerdrError`.
    */
-  private async shell(command: string): Promise<string> {
-    const result = await this.transport.exec(withPath(command));
+  private async shell(command: string, timeoutMs: number): Promise<string> {
+    const result = await this.transport.exec(withPath(command), timeoutMs);
     if (!result.ok) {
       throw new HerdrError(result.code, result.message);
     }

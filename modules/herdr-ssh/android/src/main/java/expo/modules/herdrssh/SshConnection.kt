@@ -2,9 +2,11 @@ package expo.modules.herdrssh
 
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.IOUtils
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
@@ -120,20 +122,45 @@ class SshConnection(private val config: SshConfigRecord) {
   /**
    * Run a command to completion. A non-zero exit is a RESULT, not an error — the
    * caller decides what exit 127 means. Only connection-level failures retry.
+   *
+   * A timeout is NOT retried: spending a second full deadline before the caller
+   * hears anything is the difference, on a wedged host, between a slow refresh
+   * and a UI that looks dead. `keepAliveInterval` above would eventually notice
+   * a dropped socket, but "eventually" is not a deadline.
    */
-  suspend fun exec(command: String): CommandOutput =
+  suspend fun exec(command: String, timeoutMs: Int): CommandOutput =
     try {
-      execOnce(command)
+      withDeadline(timeoutMs) { execOnce(command) }
     } catch (failure: SshFailure) {
-      throw failure   // auth / host key / bad key: retrying changes nothing
+      throw failure   // auth / host key / bad key / timeout: retrying changes nothing
     } catch (error: IOException) {
       resetClient()
       try {
-        execOnce(command)
+        withDeadline(timeoutMs) { execOnce(command) }
       } catch (retry: IOException) {
         throw SshFailure("transport_failed", retry.message ?: "The connection dropped.")
       }
     }
+
+  /**
+   * Race an operation against its deadline.
+   *
+   * A blocked read on a half-open socket does not necessarily notice
+   * cancellation, so the client is dropped as well — the next command dials
+   * fresh rather than queueing behind a channel that will never answer.
+   */
+  private suspend fun <T> withDeadline(timeoutMs: Int, operation: suspend () -> T): T {
+    if (timeoutMs <= 0) return operation()
+    return try {
+      withTimeout(timeoutMs.toLong()) { operation() }
+    } catch (expired: TimeoutCancellationException) {
+      resetClient()
+      throw SshFailure(
+        "timeout",
+        "The host didn't answer in time. Check that it's awake and on the tailnet.",
+      )
+    }
+  }
 
   private suspend fun execOnce(command: String): CommandOutput = withContext(Dispatchers.IO) {
     val client = connected()
@@ -155,17 +182,23 @@ class SshConnection(private val config: SshConfigRecord) {
    */
   suspend fun startStream(
     command: String,
+    startTimeoutMs: Int,
     onLine: (String) -> Unit,
     onEnd: (Int) -> Unit,
     onError: (String, String) -> Unit,
   ): StreamHandle {
-    val client = try {
-      connected()
-    } catch (failure: SshFailure) {
-      throw failure
-    } catch (error: IOException) {
-      resetClient()
-      connected()
+    // Only STARTING is bounded. What follows is a `tail -f` and is meant to
+    // outlive any deadline; a stream that dies quietly is the tail watchdog's
+    // job, not this one's.
+    val client = withDeadline(startTimeoutMs) {
+      try {
+        connected()
+      } catch (failure: SshFailure) {
+        throw failure
+      } catch (error: IOException) {
+        resetClient()
+        connected()
+      }
     }
 
     return withContext(Dispatchers.IO) {

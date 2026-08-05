@@ -8,6 +8,7 @@ import {
   type SshConfig,
 } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from './transport';
+import { withJsDeadline } from './timeouts';
 
 /**
  * A `HerdrTransport` backed by the native SSH module.
@@ -57,18 +58,18 @@ export class SshHerdrTransport implements HerdrTransport {
     return this.opening;
   }
 
-  async exec(command: string): Promise<ExecResult> {
+  async exec(command: string, timeoutMs: number): Promise<ExecResult> {
     const opened = await this.open();
     if (!opened.ok) return opened;
-    return exec(this.id, command);
+    return withJsDeadline(exec(this.id, command, timeoutMs), timeoutMs);
   }
 
-  async *streamLines(command: string): AsyncIterable<string> {
+  async *streamLines(command: string, startTimeoutMs: number): AsyncIterable<string> {
     const opened = await this.open();
     if (!opened.ok) {
       throw new Error(opened.message);
     }
-    yield* streamLines(this.id, command);
+    yield* streamLines(this.id, command, startTimeoutMs);
   }
 
   async close(): Promise<void> {

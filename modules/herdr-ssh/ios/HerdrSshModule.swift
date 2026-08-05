@@ -52,12 +52,12 @@ public class HerdrSshModule: Module {
       await self.connections.drop(id)
     }
 
-    AsyncFunction("exec") { (id: String, command: String) -> [String: Any] in
+    AsyncFunction("exec") { (id: String, command: String, timeoutMs: Int) -> [String: Any] in
       guard let connection = await self.connections.existing(id) else {
         return Self.notConnected
       }
       do {
-        let output = try await connection.exec(command)
+        let output = try await connection.exec(command, timeoutMs: timeoutMs)
         return [
           "ok": true,
           "stdout": output.stdout,
@@ -71,13 +71,15 @@ public class HerdrSshModule: Module {
       }
     }
 
-    AsyncFunction("startStream") { (id: String, streamId: String, command: String) -> [String: Any] in
+    AsyncFunction("startStream") {
+      (id: String, streamId: String, command: String, startTimeoutMs: Int) -> [String: Any] in
       guard let connection = await self.connections.existing(id) else {
         return Self.notConnected
       }
       do {
         let task = try await connection.startStream(
           command,
+          startTimeoutMs: startTimeoutMs,
           onLine: { [weak self] line in
             self?.sendEvent("onStreamLine", ["streamId": streamId, "line": line])
           },

@@ -47,10 +47,18 @@ struct SshFailure: Error {
 /// which sets `keepAliveInterval = 20`: Citadel exposes no equivalent on
 /// `SSHClientSettings`, so there is nothing to set. The path monitor above
 /// covers a route change, and `isConnected` covers a client that noticed its own
-/// death — but neither catches a `tail -f` channel silently dropped by a NAT
-/// idle timeout on an unchanged route. That case is handled a layer up, by the
-/// tail watchdog in `useThread`, which restarts a stream that has gone quiet
-/// while its agent is working.
+/// death — but neither catches a channel silently dropped by a NAT idle timeout
+/// on an unchanged route. Two things cover that, at two different layers:
+///
+/// `exec` carries a deadline (see `withDeadline`). Without one, a half-open
+/// socket left the command pending forever, and because the app's poll loops
+/// re-arm inside a `finally`, forever meant the loop stopped and the screen
+/// froze holding stale data with no error shown.
+///
+/// A live `tail -f` cannot have an overall deadline — being long-lived is the
+/// point — so it is covered instead by the tail watchdog in `useThread`, which
+/// restarts a stream that has gone quiet while its agent is working. Only the
+/// bounded part, getting the command started, has a deadline here.
 actor SshConnection {
   private let config: SshConfigRecord
   private var client: SSHClient?
@@ -221,17 +229,54 @@ actor SshConnection {
   /// Run a command to completion. A non-zero exit is a RESULT, not an error:
   /// the caller decides what exit 127 means. Only connection-level failures
   /// throw, and those are retried once against a fresh connection first.
-  func exec(_ command: String) async throws -> CommandOutput {
+  ///
+  /// A `timeout` is NOT retried, and that is deliberate. Retrying a command
+  /// that already burned its deadline costs the caller a second full deadline
+  /// before it hears anything, which on a wedged host is the difference between
+  /// a slow refresh and a UI that looks dead.
+  func exec(_ command: String, timeoutMs: Int) async throws -> CommandOutput {
     do {
-      return try await execOnce(command)
+      return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
     } catch let failure as SshFailure {
-      // host_key_changed / auth_failed / bad_key: retrying changes nothing.
       guard failure.code == "transport_failed" else { throw failure }
       await resetClient()
-      return try await execOnce(command)
+      return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
     } catch {
       await resetClient()
-      return try await execOnce(command)
+      return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
+    }
+  }
+
+  /// Race an operation against its deadline.
+  ///
+  /// The losing task is cancelled, but a Citadel channel blocked on a half-open
+  /// socket will not necessarily notice — so the client is dropped as well. The
+  /// next command dials fresh rather than queueing behind a channel that is
+  /// never going to answer.
+  private func withDeadline<T: Sendable>(
+    _ timeoutMs: Int,
+    _ operation: @escaping @Sendable () async throws -> T
+  ) async throws -> T {
+    guard timeoutMs > 0 else { return try await operation() }
+    do {
+      return try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+          try await Task.sleep(nanoseconds: UInt64(timeoutMs) * 1_000_000)
+          throw SshFailure(
+            code: "timeout",
+            message: "The host didn't answer in time. Check that it's awake and on the tailnet."
+          )
+        }
+        guard let first = try await group.next() else {
+          throw SshFailure(code: "transport_failed", message: "The command produced no result.")
+        }
+        group.cancelAll()
+        return first
+      }
+    } catch let failure as SshFailure where failure.code == "timeout" {
+      await resetClient()
+      throw failure
     }
   }
 
@@ -264,25 +309,29 @@ actor SshConnection {
   /// the caller can report a start failure synchronously.
   func startStream(
     _ command: String,
+    startTimeoutMs: Int,
     onLine: @escaping @Sendable (String) -> Void,
     onEnd: @escaping @Sendable (Int) -> Void,
     onError: @escaping @Sendable (String, String) -> Void
   ) async throws -> Task<Void, Never> {
-    let client: SSHClient
-    do {
-      client = try await connected()
-    } catch let failure as SshFailure where failure.code == "transport_failed" {
-      await resetClient()
-      client = try await connected()
-    }
-
-    let stream: AsyncThrowingStream<ExecCommandOutput, Error>
-    do {
-      stream = try await client.executeCommandStream(command)
-    } catch let failure as SshFailure {
-      throw failure
-    } catch {
-      throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
+    // Only STARTING is bounded. The stream that follows is a `tail -f` and is
+    // meant to outlive any deadline; a stream that dies quietly is the tail
+    // watchdog's job, not this one's.
+    let stream = try await withDeadline(startTimeoutMs) {
+      let client: SSHClient
+      do {
+        client = try await self.connected()
+      } catch let failure as SshFailure where failure.code == "transport_failed" {
+        await self.resetClient()
+        client = try await self.connected()
+      }
+      do {
+        return try await client.executeCommandStream(command)
+      } catch let failure as SshFailure {
+        throw failure
+      } catch {
+        throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
+      }
     }
 
     return Task {

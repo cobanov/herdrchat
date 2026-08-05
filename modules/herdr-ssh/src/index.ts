@@ -43,8 +43,15 @@ export function disconnect(id: string): Promise<void> {
   return HerdrSshModule.disconnect(id);
 }
 
-export function exec(id: string, command: string): Promise<ExecResult> {
-  return HerdrSshModule.exec(id, command);
+/**
+ * Run a command to completion, or give up after `timeoutMs`.
+ *
+ * The deadline is enforced natively, where the channel can actually be torn
+ * down. `SshHerdrTransport` adds a second, slightly later one in JS — see the
+ * comment there for why a belt as well as braces.
+ */
+export function exec(id: string, command: string, timeoutMs: number): Promise<ExecResult> {
+  return HerdrSshModule.exec(id, command, timeoutMs);
 }
 
 let streamCounter = 0;
@@ -63,7 +70,8 @@ let streamCounter = 0;
  */
 export async function* streamLines(
   id: string,
-  command: string
+  command: string,
+  startTimeoutMs: number
 ): AsyncGenerator<string, void, void> {
   const streamId = `s${++streamCounter}`;
 
@@ -102,7 +110,7 @@ export async function* streamLines(
   };
 
   try {
-    const started = await HerdrSshModule.startStream(id, streamId, command);
+    const started = await HerdrSshModule.startStream(id, streamId, command, startTimeoutMs);
     if (!started.ok) {
       throw new SshStreamError(started);
     }

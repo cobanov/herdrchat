@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { HerdrError } from '@/lib/herdr/protocol';
+import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
 import { shellQuote, withPath } from '@/lib/herdr/shell';
 import type { HerdrTransport } from '@/lib/herdr/transport';
 
@@ -118,7 +119,7 @@ export async function removePushToken(
 }
 
 async function run(transport: HerdrTransport, command: string): Promise<void> {
-  const result = await transport.exec(withPath(command));
+  const result = await transport.exec(withPath(command), SEND_TIMEOUT_MS);
   if (!result.ok) throw new HerdrError(result.code, result.message);
   if (result.exitCode !== 0) {
     throw new HerdrError(

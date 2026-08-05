@@ -54,10 +54,10 @@ class HerdrSshModule : Module() {
       connections.remove(id)?.close()
     }
 
-    AsyncFunction("exec") Coroutine { id: String, command: String ->
+    AsyncFunction("exec") Coroutine { id: String, command: String, timeoutMs: Int ->
       val connection = connections[id] ?: return@Coroutine notConnected
       try {
-        val output = connection.exec(command)
+        val output = connection.exec(command, timeoutMs)
         mapOf(
           "ok" to true,
           "stdout" to output.stdout,
@@ -71,11 +71,13 @@ class HerdrSshModule : Module() {
       }
     }
 
-    AsyncFunction("startStream") Coroutine { id: String, streamId: String, command: String ->
+    AsyncFunction("startStream") Coroutine {
+      id: String, streamId: String, command: String, startTimeoutMs: Int ->
       val connection = connections[id] ?: return@Coroutine notConnected
       try {
         val handle = connection.startStream(
           command,
+          startTimeoutMs,
           onLine = { line ->
             sendEvent("onStreamLine", mapOf("streamId" to streamId, "line" to line))
           },
