@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/Bubble';
+import { Button } from '@/components/Button';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -26,6 +27,7 @@ import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
+import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
@@ -95,6 +97,35 @@ export default function ThreadScreen() {
     [thread.messages, showToolActivity, showSidechain]
   );
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
+
+  /**
+   * Installing herdr's Claude integration from here.
+   *
+   * The thread already works out that this is what is wrong — an agent that
+   * reports no session id for eighty seconds is almost always a host missing
+   * the integration. Naming the command was better than nothing, but it still
+   * meant putting the phone down and finding a terminal.
+   */
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+  const installIntegration = useCallback(() => {
+    if (client === null || installing) return;
+    setInstalling(true);
+    setInstallError(null);
+    void client
+      .installIntegration('claude')
+      .then(() => {
+        // Deliberately no success banner. The integration binds at SessionStart,
+        // so this agent keeps reporting nothing until it is restarted — and a
+        // cheerful "Installed" over a screen that has not changed is exactly the
+        // confusion this is meant to remove. The copy above already says so.
+        setInstallError(null);
+      })
+      .catch((thrown: unknown) => {
+        setInstallError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      })
+      .finally(() => setInstalling(false));
+  }, [client, installing]);
 
   /**
    * Whether the viewport sits at the end, measured rather than inferred.
@@ -279,6 +310,9 @@ export default function ThreadScreen() {
               waiting={waiting}
               title={params.title ?? params.workspaceId}
               sessionState={thread.sessionState}
+              onInstallIntegration={client === null ? undefined : installIntegration}
+              installing={installing}
+              installError={installError}
             />
           ) : (
           <FlashList
@@ -425,10 +459,16 @@ function ThreadPlaceholder({
   waiting,
   title,
   sessionState,
+  onInstallIntegration,
+  installing,
+  installError,
 }: {
   waiting: boolean;
   title: string;
   sessionState: 'ok' | 'waiting' | 'missing';
+  onInstallIntegration?: () => void;
+  installing: boolean;
+  installError: string | null;
 }) {
   return (
     <View
@@ -459,12 +499,29 @@ function ThreadPlaceholder({
             thread can&apos;t be told apart from others in the same folder.
           </Text>
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
-            On the host, run{' '}
-            <Text variant="footnote" mono>
-              herdr integration install claude
-            </Text>{' '}
-            — then restart this agent, since it only reports at session start.
+            Installing it takes a moment. This agent has to be restarted
+            afterwards — the integration only reports at session start, so a
+            session already running keeps saying nothing.
           </Text>
+          {onInstallIntegration !== undefined && (
+            <View style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}>
+              <Button
+                title={installing ? 'Installing\u2026' : 'Install it on the host'}
+                onPress={onInstallIntegration}
+                loading={installing}
+                testID="install-integration"
+              />
+            </View>
+          )}
+          {installError !== null && (
+            <Text variant="footnote" color="attention" style={{ textAlign: 'center' }}>
+              {installError} Run{' '}
+              <Text variant="footnote" mono color="attention">
+                herdr integration install claude
+              </Text>{' '}
+              on the host instead.
+            </Text>
+          )}
         </>
       ) : sessionState === 'waiting' ? (
         <>

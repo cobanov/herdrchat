@@ -82,6 +82,27 @@ export class HerdrClient {
   }
 
   /**
+   * Install one of herdr's agent integrations on the host.
+   *
+   * The Claude integration is what makes herdr report `agent_session.value` —
+   * the transcript filename this whole app is built on. Without it every pane
+   * reports a null session, the thread cannot identify which conversation it is
+   * looking at, and it refuses to guess.
+   *
+   * We already detected that precisely and told the user which command to run;
+   * this is the same thing with the terminal step removed. Less invasive than
+   * `installHerdr`, which pipes a remote script into a shell — this runs a
+   * subcommand of a binary already trusted enough to be driving the machine.
+   */
+  async installIntegration(name = 'claude'): Promise<void> {
+    const output = await this.shell(
+      shellCommand([this.herdr, 'integration', 'install', name]),
+      INSTALL_TIMEOUT_MS
+    );
+    checkEnvelope(output);
+  }
+
+  /**
    * The host user's home directory — the starting point for browsing to a
    * working directory in the new-chat folder picker.
    */
