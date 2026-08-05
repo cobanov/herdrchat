@@ -3,7 +3,13 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
-import { SETTINGS_DEFAULTS, decodeBool, isThemePreference, useSettings } from './settings';
+import {
+  SETTINGS_DEFAULTS,
+  decodeBool,
+  decodePollScale,
+  isThemePreference,
+  useSettings,
+} from './settings';
 
 const SELECTED_KEY = 'selectedConnectionId';
 
@@ -22,7 +28,16 @@ export function Hydrate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const [connections, selected, theme, toolActivity, sidechain, haptics, notifications] =
+      const [
+        connections,
+        selected,
+        theme,
+        toolActivity,
+        sidechain,
+        haptics,
+        notifications,
+        pollScale,
+      ] =
         await Promise.all([
           loadConnections(db),
           getSetting(db, SELECTED_KEY),
@@ -31,6 +46,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'showSidechain'),
           getSetting(db, 'haptics'),
           getSetting(db, 'notifications'),
+          getSetting(db, 'pollScale'),
         ]);
       setAll(connections, selected);
       hydrateSettings({
@@ -39,6 +55,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         showSidechain: decodeBool(sidechain, SETTINGS_DEFAULTS.showSidechain),
         haptics: decodeBool(haptics, SETTINGS_DEFAULTS.haptics),
         notifications: decodeBool(notifications, SETTINGS_DEFAULTS.notifications),
+        pollScale: decodePollScale(pollScale),
       });
     })();
   }, [db, setAll, hydrateSettings]);

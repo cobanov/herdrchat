@@ -1,4 +1,5 @@
 import { BACKOFF_CEILING_MS, backoffDelay, shouldPoll } from '../poll';
+import { decodePollScale } from '@/state/settings';
 
 /**
  * A host that is down used to get a failing SSH round-trip every two or three
@@ -37,5 +38,28 @@ describe('shouldPoll', () => {
     // own poll covers what the user is actually reading.
     expect(shouldPoll({ active: true, focused: false })).toBe(false);
     expect(shouldPoll({ active: false, focused: false })).toBe(false);
+  });
+});
+
+/**
+ * The stored value is a string from SQLite and could be anything — a row
+ * written by an older build, a hand-edited database, a partial write. A poll
+ * interval of NaN or zero would spin the loop, so parsing clamps rather than
+ * trusts.
+ */
+describe('decodePollScale', () => {
+  it('accepts the values the picker offers', () => {
+    expect(decodePollScale('1')).toBe(1);
+    expect(decodePollScale('2')).toBe(2);
+    expect(decodePollScale('5')).toBe(5);
+  });
+
+  it('falls back rather than let a bad row set the interval', () => {
+    expect(decodePollScale(null)).toBe(1);
+    expect(decodePollScale('')).toBe(1);
+    expect(decodePollScale('0')).toBe(1);
+    expect(decodePollScale('-3')).toBe(1);
+    expect(decodePollScale('banana')).toBe(1);
+    expect(decodePollScale('999')).toBe(1);
   });
 });

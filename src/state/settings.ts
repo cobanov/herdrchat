@@ -23,6 +23,36 @@ export interface Settings {
   haptics: boolean;
   /** Push notifications when an agent blocks or finishes. */
   notifications: boolean;
+  /**
+   * Seconds between status polls, as a multiplier on each screen's own rate.
+   *
+   * A preference rather than a constant because this is the app's whole
+   * battery and cellular cost, and only the person holding the phone knows
+   * whether they are on wifi at a desk or on a train. `1` is the original
+   * behaviour; higher numbers poll proportionally less often.
+   */
+  pollScale: PollScale;
+}
+
+/**
+ * Offered as a scale rather than raw seconds because the two screens poll at
+ * different rates for good reasons — the open conversation is more urgent than
+ * the list behind it — and a single "refresh every N seconds" would have to
+ * flatten that or expose two settings nobody wants to reason about.
+ */
+export const POLL_SCALES = [1, 2, 5] as const;
+export type PollScale = (typeof POLL_SCALES)[number];
+
+export function isPollScale(value: unknown): value is PollScale {
+  return (POLL_SCALES as readonly unknown[]).includes(
+    typeof value === 'string' ? Number(value) : value
+  );
+}
+
+/** Parse a stored value, clamping to something sane. A bad row must not spin the loop. */
+export function decodePollScale(value: string | null): PollScale {
+  const parsed = Number(value);
+  return isPollScale(parsed) ? (parsed as PollScale) : SETTINGS_DEFAULTS.pollScale;
 }
 
 export const SETTINGS_DEFAULTS: Settings = {
@@ -31,6 +61,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   showSidechain: false,
   haptics: true,
   notifications: false,
+  pollScale: 1,
 };
 
 interface SettingsState extends Settings {
@@ -56,6 +87,7 @@ export function settingsSnapshot(): Settings {
     showSidechain: state.showSidechain,
     haptics: state.haptics,
     notifications: state.notifications,
+    pollScale: state.pollScale,
   };
 }
 

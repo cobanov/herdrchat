@@ -40,8 +40,14 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
   );
 }
 
-/** A segmented picker for a small, mutually exclusive choice. */
-export function SegmentedField<T extends string>({
+/**
+ * A segmented picker for a small, mutually exclusive choice.
+ *
+ * `string | number` rather than `string`: the poll-rate preference is genuinely
+ * numeric (it multiplies an interval), and stringifying it just to satisfy the
+ * picker would mean parsing it back at every use.
+ */
+export function SegmentedField<T extends string | number>({
   label,
   options,
   value,
@@ -82,7 +88,7 @@ export function SegmentedField<T extends string>({
           const selected = option.value === value;
           return (
             <Pressable
-              key={option.value}
+              key={String(option.value)}
               onPress={() => onChange(option.value)}
               accessibilityRole="radio"
               accessibilityState={{ selected }}

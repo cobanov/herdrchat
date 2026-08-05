@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
 import { usePollGate } from '../usePollGate';
+import { useSettings } from '@/state/settings';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -63,6 +64,8 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const [herdrMissing, setHerdrMissing] = useState(false);
 
   const polling = usePollGate();
+  // The user's own battery/data tradeoff, applied on top of each screen's rate.
+  const pollScale = useSettings((state) => state.pollScale);
   /**
    * Consecutive failures, for the backoff. A host that is down used to get a
    * failing SSH round-trip every three seconds forever, on a metered radio.
@@ -126,7 +129,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       const failed = await refresh();
       if (!alive.current) return;
       failures.current = failed ? failures.current + 1 : 0;
-      timer = setTimeout(() => void loop(), backoffDelay(POLL_INTERVAL_MS, failures.current));
+      timer = setTimeout(() => void loop(), backoffDelay(POLL_INTERVAL_MS * pollScale, failures.current));
     };
     void loop();
 
@@ -134,7 +137,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       alive.current = false;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [client, refresh, polling]);
+  }, [client, refresh, polling, pollScale]);
 
   return {
     summaries,

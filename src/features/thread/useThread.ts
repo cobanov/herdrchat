@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
 import { usePollGate } from '../usePollGate';
+import { useSettings } from '@/state/settings';
 import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
@@ -146,6 +147,8 @@ export function useThread(
   const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing'>('ok');
   const noSessionPolls = useRef(0);
   const polling = usePollGate();
+  // The user's own battery/data tradeoff, applied on top of each screen's rate.
+  const pollScale = useSettings((state) => state.pollScale);
   /** Consecutive failed polls, for the backoff. Reset by any success. */
   const failures = useRef(0);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
@@ -544,7 +547,7 @@ export function useThread(
         // The banner stays up throughout: backing off must never read as
         // recovery. Only the interval changes.
         if (alive.current) {
-          timer = setTimeout(() => void poll(), backoffDelay(STATUS_POLL_MS, failures.current));
+          timer = setTimeout(() => void poll(), backoffDelay(STATUS_POLL_MS * pollScale, failures.current));
         }
       }
     };
@@ -558,7 +561,7 @@ export function useThread(
       for (const controller of live.values()) controller.abort();
       live.clear();
     };
-  }, [client, db, connectionId, workspaceId, startTail, resetHistory, polling]);
+  }, [client, db, connectionId, workspaceId, startTail, resetHistory, polling, pollScale]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
     ? 'blocked'

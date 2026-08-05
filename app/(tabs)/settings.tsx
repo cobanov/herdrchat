@@ -19,7 +19,7 @@ import {
 } from '@/features/notifications/push';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { cachedMessageCount, clearCachedMessages, setSetting } from '@/state/db';
-import { encodeBool, useSettings, type Settings } from '@/state/settings';
+import { encodeBool, useSettings, type PollScale, type Settings } from '@/state/settings';
 import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 
@@ -147,6 +147,30 @@ export default function SettingsScreen() {
           value={settings.themePreference}
           onChange={(next) => update('themePreference', next)}
         />
+
+        {/* Framed as how often it checks, not as a number of seconds: the two
+            screens poll at different rates on purpose — the open conversation is
+            more urgent than the list behind it — and exposing raw seconds would
+            mean either flattening that or shipping two settings nobody wants to
+            reason about. */}
+        <SegmentedField<PollScale>
+          label="Check for updates"
+          labelInset={ROW_INSET}
+          options={[
+            { value: 1, label: 'Often' },
+            { value: 2, label: 'Less' },
+            { value: 5, label: 'Rarely' },
+          ]}
+          value={settings.pollScale}
+          onChange={(next) => update('pollScale', next)}
+        />
+        <Text
+          variant="caption"
+          color="secondary"
+          style={{ paddingHorizontal: ROW_INSET, marginTop: -spacing.md }}>
+          Every check is a round-trip over SSH. Slower saves battery and data on
+          cellular; the live message stream is unaffected either way.
+        </Text>
 
         <Section title="Conversations">
           <Toggle
