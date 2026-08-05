@@ -24,12 +24,13 @@ import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
+import { PromptHistory } from '@/features/thread/PromptHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useSelectedConnection } from '@/state/connections';
-import { markThreadRead } from '@/state/db';
+import { markThreadRead, recentPrompts, rememberPrompt } from '@/state/db';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
@@ -97,6 +98,19 @@ export default function ThreadScreen() {
     [thread.messages, showToolActivity, showSidechain]
   );
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
+
+  /**
+   * The draft lives here rather than inside the composer so a prompt-history
+   * chip can fill it, and so this screen can tell whether the composer is empty
+   * — which is what decides whether the chips are shown at all.
+   */
+  const [draft, setDraft] = useState('');
+  const [prompts, setPrompts] = useState<string[]>([]);
+  const loadPrompts = useCallback(() => {
+    if (connection === null) return;
+    void recentPrompts(db, connection.id).then(setPrompts);
+  }, [db, connection]);
+  useEffect(loadPrompts, [loadPrompts]);
 
   /**
    * Installing herdr's Claude integration from here.
@@ -439,7 +453,20 @@ export default function ThreadScreen() {
             {thread.isBlocked && (
               <BlockedBar prompt={thread.blockedPrompt} onKeys={(keys) => void thread.sendKeys(keys)} />
             )}
-            <Composer onSend={(text) => void thread.send(text)} disabled={thread.isSending} />
+            {/* Only while the composer is empty: a shortcut must never cover
+                the conversation or compete with something half-typed. */}
+            {draft.trim().length === 0 && (
+              <PromptHistory prompts={prompts} onPick={setDraft} />
+            )}
+            <Composer
+              draft={draft}
+              onDraftChange={setDraft}
+              onSend={(text) => {
+                void thread.send(text);
+                void rememberPrompt(db, connection?.id ?? '', text).then(loadPrompts);
+              }}
+              disabled={thread.isSending}
+            />
           </View>
         </View>
       </KeyboardAvoidingView>

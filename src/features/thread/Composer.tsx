@@ -37,12 +37,21 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export function Composer({
   onSend,
   disabled = false,
+  draft,
+  onDraftChange,
 }: {
   onSend: (text: string) => void;
   disabled?: boolean;
+  /**
+   * The draft lives in the parent so a prompt-history chip can fill it. Kept
+   * controlled rather than exposing an imperative `setText` handle, because the
+   * parent already needs to know whether the composer is empty — that is what
+   * decides whether the history chips are shown at all.
+   */
+  draft: string;
+  onDraftChange: (text: string) => void;
 }) {
   const { colors, reduceMotion } = useTheme();
-  const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   const canSend = draft.trim().length > 0 && !disabled;
 
@@ -53,7 +62,7 @@ export function Composer({
     if (!canSend) return;
     haptics.light();
     onSend(draft);
-    setDraft('');
+    onDraftChange('');
   };
 
   return (
@@ -79,7 +88,7 @@ export function Composer({
         placeholder="Message"
         placeholderTextColor={colors.tertiaryLabel}
         value={draft}
-        onChangeText={setDraft}
+        onChangeText={onDraftChange}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         multiline
