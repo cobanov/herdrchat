@@ -1,8 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
+import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
+import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
@@ -28,6 +30,7 @@ export default function ServersScreen() {
   const selectedId = useConnections((state) => state.selectedId);
   const select = useConnections((state) => state.select);
   const remove = useConnections((state) => state.remove);
+  useTabPressHaptic();
 
   const choose = async (connection: ServerConnection) => {
     select(connection.id);
@@ -38,25 +41,20 @@ export default function ServersScreen() {
   };
 
   const confirmDelete = (connection: ServerConnection) => {
-    Alert.alert(
-      `Remove ${connection.name}?`,
-      'The saved key and cached chats for this host are deleted from this device. Nothing on the machine itself changes.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              await invalidateClient(connection.id);
-              await clearSecrets(connection.id);
-              await deleteConnection(db, connection.id);
-              remove(connection.id);
-            })();
-          },
-        },
-      ]
-    );
+    confirmDestructive({
+      title: `Remove ${connection.name}?`,
+      message:
+        'The saved key and cached chats for this host are deleted from this device. Nothing on the machine itself changes.',
+      confirmLabel: 'Remove',
+      onConfirm: () => {
+        void (async () => {
+          await invalidateClient(connection.id);
+          await clearSecrets(connection.id);
+          await deleteConnection(db, connection.id);
+          remove(connection.id);
+        })();
+      },
+    });
   };
 
   return (

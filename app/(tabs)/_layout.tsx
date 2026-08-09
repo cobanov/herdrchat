@@ -1,5 +1,6 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
+import { useBadge } from '@/state/badge';
 import { useTheme } from '@/theme/ThemeProvider';
 
 /**
@@ -16,16 +17,32 @@ import { useTheme } from '@/theme/ThemeProvider';
  */
 export default function TabsLayout() {
   const { colors } = useTheme();
+  /**
+   * Chats wanting attention — blocked agents plus unread threads.
+   *
+   * Read from a store the chats list writes, not polled here. A blocked agent is
+   * the most time-sensitive state the app has, and with Settings or Hosts open
+   * there was previously nothing at all to see; the badge is the only thing that
+   * carries it while you are on another tab.
+   */
+  const attention = useBadge((state) => state.count);
 
   return (
     <NativeTabs
       tintColor={colors.tint}
+      badgeBackgroundColor={colors.attention}
       // The bar shrinks out of the way as the chat list scrolls, then comes
       // back on scroll-up — the iOS 26 behaviour people already expect.
       minimizeBehavior="onScrollDown">
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} />
         <NativeTabs.Trigger.Label>Chats</NativeTabs.Trigger.Label>
+        {/* Rendered conditionally rather than as an empty string: a badge whose
+            value is falsy still reserves its dot on some iOS versions, and a
+            permanent mark next to Chats would mean nothing. */}
+        {attention > 0 && (
+          <NativeTabs.Trigger.Badge>{String(attention)}</NativeTabs.Trigger.Badge>
+        )}
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="hosts">

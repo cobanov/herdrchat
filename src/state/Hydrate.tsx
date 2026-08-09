@@ -37,6 +37,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         haptics,
         notifications,
         pollScale,
+        seenSwipeHint,
       ] =
         await Promise.all([
           loadConnections(db),
@@ -47,6 +48,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'haptics'),
           getSetting(db, 'notifications'),
           getSetting(db, 'pollScale'),
+          getSetting(db, 'seenSwipeHint'),
         ]);
       setAll(connections, selected);
       hydrateSettings({
@@ -56,6 +58,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         haptics: decodeBool(haptics, SETTINGS_DEFAULTS.haptics),
         notifications: decodeBool(notifications, SETTINGS_DEFAULTS.notifications),
         pollScale: decodePollScale(pollScale),
+        seenSwipeHint: decodeBool(seenSwipeHint, SETTINGS_DEFAULTS.seenSwipeHint),
       });
     })();
   }, [db, setAll, hydrateSettings]);

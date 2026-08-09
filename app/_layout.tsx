@@ -100,6 +100,13 @@ function RootStack() {
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />
+        {/* A form sheet rather than a full modal: it is one field, and a sheet
+            that only takes the height it needs keeps the list it renamed
+            visible behind it. */}
+        <Stack.Screen
+          name="rename-chat"
+          options={{ presentation: 'formSheet', sheetAllowedDetents: [0.4] }}
+        />
       </Stack>
     </ThemeProvider>
   );

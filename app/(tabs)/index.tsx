@@ -1,22 +1,29 @@
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useMemo, useState } from 'react';
-import { Alert, RefreshControl, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshControl, View } from 'react-native';
 
+import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { CHAT_ROW_TEXT_INSET, ChatRow } from '@/features/chats/ChatRow';
+import { CHAT_ROW_TEXT_INSET } from '@/features/chats/ChatRow';
+import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
+import { SwipeHint } from '@/features/chats/SwipeHint';
 import type { ChatSummary } from '@/features/chats/useWorkspaces';
-import { errorText, useWorkspaces } from '@/features/chats/useWorkspaces';
+import { errorText, summaryNeedsAttention, useWorkspaces } from '@/features/chats/useWorkspaces';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
+import { useBadge } from '@/state/badge';
+import { useChatEdits } from '@/state/chatEdits';
 import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
-import { loadThreadReads } from '@/state/db';
+import { loadThreadReads, setSetting } from '@/state/db';
 import { forgetWorkspace } from '@/state/threadCache';
 import { haptics } from '@/lib/haptics';
+import { encodeBool, useSettings } from '@/state/settings';
+import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { useTheme } from '@/theme/ThemeProvider';
 import { screenPadding, spacing } from '@/theme/tokens';
 
@@ -44,9 +51,12 @@ function ChatsForServer() {
   const [installing, setInstalling] = useState(false);
 
   const db = useSQLiteContext();
+  useTabPressHaptic();
   // Failures from rename/close, which happen outside the poll's own error path.
   const [actionError, setActionError] = useState<string | null>(null);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
+  const editsDirty = useChatEdits((state) => state.dirty);
+  const clearEdits = useChatEdits((state) => state.clear);
   // Re-read on focus rather than on an interval: the only thing that changes a
   // read marker is opening a thread, and coming back from one is exactly this
   // callback. A poll would just re-query the same rows every few seconds.
@@ -54,71 +64,77 @@ function ChatsForServer() {
     useCallback(() => {
       if (connection === null) return;
       void loadThreadReads(db, connection.id).then(setReads);
-    }, [db, connection])
+      // A rename happened in the sheet that just closed. Re-fetch rather than
+      // wait out the poll, but only then — refreshing on every focus would cost
+      // a round-trip each time you switch tabs.
+      if (editsDirty) {
+        clearEdits();
+        void refresh();
+      }
+    }, [db, connection, editsDirty, clearEdits, refresh])
   );
 
   /**
-   * Rename or close a chat, from a long press on its row.
+   * Close a chat on the host.
    *
-   * Long press rather than a swipe: the row is already a horizontal surface in
-   * a vertically scrolling list, and a swipe here would fight the back gesture
-   * on the way out of a thread.
-   *
-   * Close is destructive on the HOST, not just in the app — it stops every tab,
-   * pane and process in the workspace — so the confirmation says that in those
+   * Destructive on the HOST, not just in the app — it stops every tab, pane and
+   * running process in the workspace — so the confirmation says that in those
    * words rather than asking a vague "are you sure".
    */
-  const manageChat = (summary: ChatSummary) => {
-    if (client === null || connection === null) return;
-    haptics.medium();
-    Alert.alert(summary.title, undefined, [
-      {
-        text: 'Rename\u2026',
-        onPress: () =>
-          Alert.prompt(
-            'Rename chat',
-            'This renames the workspace on the host.',
-            (next) => {
-              const label = next.trim();
-              if (label.length === 0 || label === summary.title) return;
-              void client
-                .renameWorkspace(summary.workspaceId, label)
-                .then(refresh)
-                .catch((thrown: unknown) => setActionError(errorText(thrown)));
-            },
-            'plain-text',
-            summary.title
-          ),
-      },
-      {
-        text: 'Close chat',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert(
-            `Close ${summary.title}?`,
-            'Every tab, pane and running process in this workspace stops. The conversation stays on disk, but the agent does not.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Close chat',
-                style: 'destructive',
-                onPress: () => {
-                  void client
-                    .closeWorkspace(summary.workspaceId)
-                    // Drop the cache too: herdr recycles workspace ids, and the
-                    // next chat to land in this slot must not open showing this
-                    // one's messages.
-                    .then(() => forgetWorkspace(db, connection.id, summary.workspaceId))
-                    .then(refresh)
-                    .catch((thrown: unknown) => setActionError(errorText(thrown)));
-                },
-              },
-            ]
-          ),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  const closeChat = useCallback(
+    (summary: ChatSummary) => {
+      if (client === null || connection === null) return;
+      confirmDestructive({
+        title: `Close ${summary.title}?`,
+        message:
+          'Every tab, pane and running process in this workspace stops. The conversation stays on disk, but the agent does not.',
+        confirmLabel: 'Close chat',
+        onConfirm: () => {
+          void client
+            .closeWorkspace(summary.workspaceId)
+            // Drop the cache too: herdr recycles workspace ids, and the next
+            // chat to land in this slot must not open showing this one's
+            // messages.
+            .then(() => forgetWorkspace(db, connection.id, summary.workspaceId))
+            .then(refresh)
+            .catch((thrown: unknown) => setActionError(errorText(thrown)));
+        },
+      });
+    },
+    [client, connection, db, refresh]
+  );
+
+  const renameChat = useCallback(
+    (summary: ChatSummary) => {
+      router.push({
+        pathname: '/rename-chat',
+        params: { workspaceId: summary.workspaceId, title: summary.title },
+      });
+    },
+    [router]
+  );
+
+  /**
+   * The same two actions the row's swipe offers, as a long-press menu.
+   *
+   * Both affordances on purpose. The swipe is faster once you know it is there,
+   * and the long press is the one a person finds by trying things — an action
+   * reachable only by a gesture is an action most people never reach.
+   */
+  const manageChat = useCallback(
+    (summary: ChatSummary) => {
+      if (client === null) return;
+      haptics.medium();
+      showActionSheet({
+        title: summary.title,
+        actions: [
+          { label: 'Rename\u2026', onPress: () => renameChat(summary) },
+          { label: 'Close chat', destructive: true, onPress: () => closeChat(summary) },
+        ],
+      });
+    },
+    [client, renameChat, closeChat]
+  );
 
   const installHerdr = async () => {
     if (client === null) return;
@@ -130,6 +146,41 @@ function ChatsForServer() {
       setInstalling(false);
     }
   };
+
+  /**
+   * Publish the attention count for the tab bar's badge.
+   *
+   * Computed here because the number is already in hand — the alternative is a
+   * second poll in the tab layout, which would double every host's round-trips
+   * to learn something this screen recalculated a moment ago.
+   */
+  const attention = useMemo(
+    () =>
+      summaries.filter(
+        (summary) =>
+          summaryNeedsAttention(summary) ||
+          isThreadUnread(summary.preview, summary.sessionSig, reads.get(summary.workspaceId))
+      ).length,
+    [summaries, reads]
+  );
+  // An effect, not a render-phase write: publishing to a store outside React's
+  // tree is a side effect, and doing it during render is the kind of thing that
+  // works until concurrent rendering retries a render.
+  useEffect(() => {
+    useBadge.getState().setCount(connection === null ? 0 : attention);
+  }, [attention, connection]);
+
+  /**
+   * The hint stops the first time the gesture is used, so it teaches rather than
+   * expires. Persisted alongside the settings it lives next to, and written
+   * through the same store-plus-mirror path everything else uses.
+   */
+  const seenSwipeHint = useSettings((state) => state.seenSwipeHint);
+  const markHintSeen = useCallback(() => {
+    if (useSettings.getState().seenSwipeHint) return;
+    useSettings.getState().set('seenSwipeHint', true);
+    void setSetting(db, 'seenSwipeHint', encodeBool(true));
+  }, [db]);
 
   return (
     <Screen>
@@ -187,8 +238,9 @@ function ChatsForServer() {
         <FlashList
           data={summaries}
           keyExtractor={(item) => item.workspaceId}
+          ListHeaderComponent={seenSwipeHint ? null : <SwipeHint />}
           renderItem={({ item }) => (
-            <ChatRow
+            <SwipeableChatRow
               summary={item}
               unread={isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
               onPress={() =>
@@ -198,6 +250,14 @@ function ChatsForServer() {
                 })
               }
               onLongPress={() => manageChat(item)}
+              onRename={() => {
+                markHintSeen();
+                renameChat(item);
+              }}
+              onClose={() => {
+                markHintSeen();
+                closeChat(item);
+              }}
             />
           )}
           ItemSeparatorComponent={() => (
@@ -212,7 +272,17 @@ function ChatsForServer() {
             />
           )}
           refreshControl={
-            <RefreshControl refreshing={false} onRefresh={() => void refresh()} tintColor={colors.tint} />
+            <RefreshControl
+              refreshing={false}
+              // Felt at the moment the pull commits, not when data lands. Every
+              // refresh is an SSH round-trip over a tailnet, so there is a beat
+              // before anything changes — and your thumb is over the spinner.
+              onRefresh={() => {
+                haptics.light();
+                void refresh();
+              }}
+              tintColor={colors.tint}
+            />
           }
         />
       )}

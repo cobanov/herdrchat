@@ -32,6 +32,15 @@ export interface Settings {
    * behaviour; higher numbers poll proportionally less often.
    */
   pollScale: PollScale;
+  /**
+   * Whether the swipe-a-chat-row gesture has been used once.
+   *
+   * Not a preference — nothing in Settings shows it — but it belongs here
+   * anyway: it is a persisted boolean the UI reads during render, which is
+   * exactly what this store and its table are. Giving it a second mechanism
+   * would mean a second hydration path for one bit.
+   */
+  seenSwipeHint: boolean;
 }
 
 /**
@@ -62,6 +71,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   haptics: true,
   notifications: false,
   pollScale: 1,
+  seenSwipeHint: false,
 };
 
 interface SettingsState extends Settings {
@@ -88,6 +98,7 @@ export function settingsSnapshot(): Settings {
     haptics: state.haptics,
     notifications: state.notifications,
     pollScale: state.pollScale,
+    seenSwipeHint: state.seenSwipeHint,
   };
 }
 
