@@ -1,0 +1,194 @@
+# Mobile UX checklist
+
+Thirty-one items across four areas, audited 2026-08-09 against the app as it
+stood at build 40. Design: [`docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md`](docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md).
+
+Status is one of:
+
+- **done** — already satisfied before the audit, or satisfied by this work
+- **gap** — genuinely missing, has an issue
+- **n/a** — considered and does not apply to this app, with the reason
+- **declined** — applies, judged not worth building, with the reason
+
+An item that was considered and rejected is a different thing from one that was
+missed. Both are written down here so the difference survives.
+
+---
+
+## Settings
+
+| # | Item | Status | Issue |
+|---|---|---|---|
+| S1 | Grouped table layout | gap | #26 |
+| S2 | Native toggle controls | done | — |
+| S3 | Destructive actions grouped | gap | #26 |
+| S4 | Account details at top | gap | #26 |
+| S5 | Deep link to specific settings | gap | #27 |
+| S6 | Support and feedback access | gap | #26 |
+| S7 | App version | done | — |
+| S8 | Legal links | gap | #26 |
+
+**S1 — Grouped table layout.** `Section` / `Row` / `Divider` already implement
+the pattern properly, down to the divider stopping at the label's left edge.
+What is missing is that the first two controls — Appearance and Check for
+updates — float outside any section, so the screen opens with two unlabelled
+controls above the first heading.
+
+**S2 — Native toggle controls.** `Toggle` wraps React Native's `Switch`, which
+is `UISwitch` on iOS and Material Switch on Android. Already correct.
+
+**S3 — Destructive actions grouped.** There is no destructive section. Clear
+cache is a tinted button inside Storage, and nothing wipes the app. Becomes a
+bottom section in red: Clear cache, and Reset app data — which deletes keychain
+keys, hosts and cached threads, and is this app's honest equivalent of log out
+and delete account.
+
+**S4 — Account details at top.** There is no account. Identity here is which of
+your own machines the app is talking to, so the anchor is an active-host card:
+name, `user@host:port`, live presence, tapping through to Hosts.
+
+**S5 — Deep link to specific settings.** Nothing links into settings. A failed
+push registration says notifications are off in iOS Settings and leaves you to
+find them.
+
+**S6 — Support and feedback access.** No path to support at all. Points at
+`github.com/cobanov/herdrchat/issues`, with a Copy diagnostics row alongside it —
+version, build, host count and last SSH error — so a report arrives with the
+details you would otherwise have to ask for.
+
+**S7 — App version.** About already carries version and build.
+
+**S8 — Legal links.** The privacy policy exists at `site/privacy` and is not
+linked from the app. No terms of service exists; a short one gets written, since
+there is genuinely little to say when there are no accounts, no payments and no
+servers of ours.
+
+---
+
+## Tab bar
+
+| # | Item | Status | Issue |
+|---|---|---|---|
+| T1 | Tab count (3–5) | done | — |
+| T2 | Icon and label | done | — |
+| T3 | Active and default states | done | — |
+| T4 | Badge counts | gap | #28 |
+| T5 | Fixed presence | done | — |
+| T6 | Tap target size | done | — |
+| T7 | Haptic feedback | gap | #28 |
+
+**T1–T3, T5, T6.** `NativeTabs` renders the system's own UIKit bar. Three tabs,
+each with an SF Symbol and a label, selected variants and a tint for the active
+state, 44pt+ targets, and the bar stays put on tab roots while a pushed thread
+covers it. All six are the system's behaviour, not an imitation of it.
+
+**T4 — Badge counts.** No badge. Chats should carry the number of threads
+wanting attention — blocked, plus unread. `NativeTabs.Trigger.Badge` exists, so
+this is native rather than a JS overlay. The count must come from the poll that
+already runs; a second poll in the layout would double every host's SSH
+round-trips and defeat the `pollScale` preference.
+
+**T7 — Haptic feedback.** No haptic on tab selection. `onTabChange` is not on the
+public `NativeTabs` props, but the navigator emits React Navigation's `tabPress`
+on native selection, which is the supported hook.
+
+---
+
+## Action sheet
+
+Every menu and confirmation in the app is currently an `Alert`. The long-press
+chat menu is the clearest case: it wants to be a sheet and is a stacked
+centre-screen dialog, so it gets none of the backdrop dismiss, drag dismiss or
+thumb-reachable placement below.
+
+| # | Item | Status | Issue |
+|---|---|---|---|
+| A1 | Heading and actions | gap | #29 |
+| A2 | Swipe or backdrop dismiss | gap | #29 |
+| A3 | Destructive action styling | gap | #29 |
+| A4 | Cancel action | gap | #29 |
+| A5 | Snap points | n/a | — |
+| A6 | Content scrollability | n/a | — |
+| A7 | Keyboard relation | gap | #29 |
+| A8 | Backdrop dimming | gap | #29 |
+
+**A1–A4, A8.** All five follow from replacing `Alert` with a real action sheet.
+The system sheet supplies backdrop dimming, tap-outside and drag-down dismiss,
+red destructive styling and bottom anchoring; the app supplies the title and the
+ordering. Destructive-last stops being something each call site remembers and
+becomes a rule enforced once, with a test on the index arithmetic.
+
+**A5 — Snap points.** n/a. A system action sheet sizes itself to its content.
+Snap points are a resizable-custom-sheet concept, and building a custom sheet to
+have somewhere to put them would be the wrong trade.
+
+**A6 — Content scrollability.** n/a, same reason. No sheet in this app has more
+than four actions.
+
+**A7 — Keyboard relation.** Rename uses `Alert.prompt`, which is iOS-only and
+cannot be styled or positioned. Renaming goes to a proper input surface that
+behaves with the keyboard, and gets an Android path at the same time — today
+Android silently has no rename at all.
+
+---
+
+## Gesture navigation
+
+| # | Item | Status | Issue |
+|---|---|---|---|
+| G1 | Swipe to go back | gap | #33 |
+| G2 | List item swipe actions | gap | #30 |
+| G3 | Pull to refresh | gap | #32 |
+| G4 | Long press menus | gap | #31 |
+| G5 | Pinch to zoom | n/a | — |
+| G6 | Drag to reorder | declined | — |
+| G7 | Gesture hints | gap | #30 |
+| G8 | Haptic feedback | gap | #30, #32 |
+
+**G1 — Swipe to go back.** Native stack enables it by default, but the thread
+screen draws its own header with `headerShown: false` and nothing has confirmed
+the gesture still works there. Verify on device, and pin it in a Maestro flow so
+a future screen option cannot silently take it away.
+
+**G2 — List item swipe actions.** None. Chat rows get trailing Rename and Close.
+
+The code currently argues against this: *"a swipe here would fight the back
+gesture on the way out of a thread."* That reasoning does not hold — the chats
+list is a tab root and has no back gesture. The real constraint is narrower:
+trailing-edge only, so a row swipe never starts in the left-edge region the
+interactive pop owns on screens that do have one.
+
+**G3 — Pull to refresh.** Present on the chats list, with no haptic when it
+fires — so on a slow host there is a beat where nothing has acknowledged the
+pull.
+
+**G4 — Long press menus.** Chat rows and the stop button have one. Message
+bubbles do not, which means there is no way to copy what an agent said — on a
+phone, from a tool whose whole output is text.
+
+**G5 — Pinch to zoom.** n/a. There is no image, map or diagram content in the
+app; the only rendered media is text and tool chips.
+
+**G6 — Drag to reorder.** declined. Ordering is not a concept the app has —
+hosts are a set you pick one from, not a ranked list — and for the one to three
+hosts a person actually configures, a reorder affordance is ceremony. Revisit if
+host lists ever get long enough to scroll.
+
+**G7 — Gesture hints.** Nothing hints at any gesture. Needed once G2 lands,
+since a swipe action nobody discovers is the same as no swipe action.
+
+**G8 — Haptic feedback.** Partial. Long-press-to-manage buzzes; pull-to-refresh
+and swipe-action commit do not. The calibration already documented in
+`src/lib/haptics.ts` decides which weight each gets.
+
+---
+
+## Score
+
+| Area | Done | Gap | n/a | Declined |
+|---|---|---|---|---|
+| Settings | 2 | 6 | 0 | 0 |
+| Tab bar | 5 | 2 | 0 | 0 |
+| Action sheet | 0 | 6 | 2 | 0 |
+| Gestures | 0 | 6 | 1 | 1 |
+| **Total** | **7** | **20** | **3** | **1** |
