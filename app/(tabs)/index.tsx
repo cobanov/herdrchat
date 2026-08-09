@@ -170,14 +170,9 @@ function ChatsForServer() {
                 })
               }
               onLongPress={() => actions.manageChat(item)}
-              onRename={() => {
-                markHintSeen();
-                actions.renameChat(item);
-              }}
-              onClose={() => {
-                markHintSeen();
-                actions.closeChat(item);
-              }}
+              onSwiped={markHintSeen}
+              onRename={() => actions.renameChat(item)}
+              onClose={() => actions.closeChat(item)}
             />
           )}
           ItemSeparatorComponent={() => (

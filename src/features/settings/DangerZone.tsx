@@ -44,19 +44,22 @@ export function DangerZone({ onCacheCleared }: { onCacheCleared: () => void }) {
         'Every host, its saved key and pinned fingerprint, all cached conversations and your prompt history are deleted from this device. Nothing on your machines changes — but you will have to add your hosts and keys again.',
       confirmLabel: 'Erase everything',
       onConfirm: () => {
-        void resetAppData(db, connections).then(({ failed }) => {
-          // The store is reset from the outcome rather than optimistically: a
-          // host whose keychain entry refused to delete still has its row, and
-          // clearing the list anyway would hide something still on the device.
-          setAll([], null);
-          if (failed.length === 0) {
+        void resetAppData(db, connections).then(({ remaining }) => {
+          // The store is set from the OUTCOME, not optimistically. A host whose
+          // keychain entry refused to delete still has its database row, and
+          // showing an empty list anyway would hide data still on the device —
+          // and leave the retry below with nothing to retry.
+          setAll(remaining, null);
+          if (remaining.length === 0) {
             haptics.success();
             setNote('Everything was erased.');
             return;
           }
           haptics.error();
           setNote(
-            `Erased, except the saved key for ${failed.join(', ')}. Reopen this screen and try again.`
+            `Erased, except ${remaining
+              .map((host) => (host.name.length > 0 ? host.name : host.host))
+              .join(', ')} — the saved key would not delete. They are still listed under Hosts; try again.`
           );
         });
       },

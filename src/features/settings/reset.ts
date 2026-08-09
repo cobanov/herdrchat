@@ -31,8 +31,17 @@ import { clearCachedMessages, clearPrompts, deleteConnection } from '@/state/db'
 export async function resetAppData(
   db: SQLite.SQLiteDatabase,
   connections: readonly ServerConnection[]
-): Promise<{ failed: string[] }> {
-  const failed: string[] = [];
+): Promise<{ remaining: ServerConnection[] }> {
+  /**
+   * The hosts that did NOT come off, returned rather than just counted.
+   *
+   * The caller has to put these back in the store. Clearing the list
+   * unconditionally would show an empty Hosts screen while their rows are still
+   * in the database — so the retry the failure note asks for would have nothing
+   * to retry, and the data would sit there invisible until the next launch
+   * re-hydrated it.
+   */
+  const remaining: ServerConnection[] = [];
 
   for (const connection of connections) {
     try {
@@ -45,7 +54,7 @@ export async function resetAppData(
       await clearPrompts(db, connection.id);
       await deleteConnection(db, connection.id);
     } catch {
-      failed.push(connection.name.length > 0 ? connection.name : connection.host);
+      remaining.push(connection);
     }
   }
 
@@ -54,5 +63,5 @@ export async function resetAppData(
   // you just erased are the thing you least want left behind.
   await clearCachedMessages(db);
 
-  return { failed };
+  return { remaining };
 }

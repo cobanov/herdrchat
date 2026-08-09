@@ -1,4 +1,5 @@
-import { memo, useCallback } from 'react';
+import { useRecyclingState } from '@shopify/flash-list';
+import { memo, useCallback, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
@@ -38,6 +39,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onLongPress,
   onRename,
   onClose,
+  onSwiped,
 }: {
   summary: ChatSummary;
   unread: boolean;
@@ -45,7 +47,30 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onLongPress: () => void;
   onRename: () => void;
   onClose: () => void;
+  /**
+   * The gesture was used. Opening the panel is enough — someone who swipes,
+   * reads the two actions and swipes back has learned the gesture, and going on
+   * hinting at it would be nagging about something they just did.
+   */
+  onSwiped: () => void;
 }) {
+  const swipeable = useRef<SwipeableMethods>(null);
+
+  /**
+   * Close the panel when this instance is recycled onto a different chat.
+   *
+   * FlashList reuses mounted components rather than remounting them, and the
+   * swipeable keeps its open state internally — so a row left open, scrolled
+   * past and recycled would come back open on an unrelated conversation, with
+   * Rename and Close already under the reader's thumb.
+   *
+   * The state value is unused; `onReset` firing on a workspace-id change is the
+   * whole point, and it is the hook FlashList ships for exactly this.
+   */
+  useRecyclingState(false, [summary.workspaceId], () => {
+    swipeable.current?.close();
+  });
+
   const renderRightActions = useCallback(
     (_progress: unknown, _translation: unknown, methods: SwipeableMethods) => (
       <View style={{ flexDirection: 'row' }}>
@@ -76,6 +101,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
 
   return (
     <ReanimatedSwipeable
+      ref={swipeable}
       friction={2}
       // Both actions have to be reachable before the panel snaps open, so the
       // threshold is a fraction of the panel rather than the default half-width
@@ -85,7 +111,10 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
       // The panel opening is the moment the gesture committed. Feeling it here
       // rather than on the action tap is what tells you the swipe worked while
       // your thumb is still covering the row.
-      onSwipeableWillOpen={() => haptics.selection()}
+      onSwipeableWillOpen={() => {
+        haptics.selection();
+        onSwiped();
+      }}
       testID={`chat-swipe-${summary.workspaceId}`}
       renderRightActions={renderRightActions}>
       <ChatRow
