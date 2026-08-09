@@ -96,7 +96,14 @@ function RootStack() {
         {/* The tab bar lives inside this group, so a conversation
             pushed from here covers it — the way Messages does. */}
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="chat/[workspaceId]" />
+        {/* `gestureEnabled` is the native-stack default, and it is stated here
+            anyway. This is the only pushed screen in the app, its back control
+            is one chevron in the corner, and it draws its own header — so a
+            future `screenOptions` change could take the swipe away and nothing
+            would notice. Written down, it is a decision; inherited, it was an
+            accident that happened to be right. `.maestro/thread-back.yaml`
+            checks it still works. */}
+        <Stack.Screen name="chat/[workspaceId]" options={{ gestureEnabled: true }} />
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />

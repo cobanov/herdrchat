@@ -1,0 +1,48 @@
+# That a thread can be left by swiping, not only by finding the chevron.
+#
+# The thread is the app's only pushed screen and the one that draws its own
+# header, so it is the only place `headerShown: false` could plausibly have taken
+# the interactive pop away with it. It never did — but nothing checked, and the
+# back control is a single chevron in the top-left of a phone held one-handed.
+#
+# Needs a host with at least one workspace: there is no thread to leave
+# otherwise, and a flow that passes on an empty list proves nothing.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- assertVisible: "Chats"
+
+# The first row, whatever it is called. Rows are one accessibility element with a
+# composed label, so they are matched by testID prefix rather than by title.
+- tapOn:
+    id: "chat-row-.*"
+    index: 0
+
+# Something only the thread renders. Not the title — that comes from the row we
+# just tapped and would match the list behind a screen that failed to open.
+- assertVisible:
+    id: "thread-back"
+
+# The gesture itself: from the very left edge, which is the strip UIKit's
+# interactive pop owns. Starting further in would drag content instead and pass
+# for the wrong reason.
+- swipe:
+    start: "2%, 50%"
+    end: "90%, 50%"
+    duration: 400
+
+# Back on the list. `thread-back` is gone, which is the assertion that the pop
+# completed rather than rubber-banding back.
+- assertNotVisible:
+    id: "thread-back"
+- assertVisible: "Chats"
+
+# And the chevron still works, since the swipe is an addition to it, not a
+# replacement.
+- tapOn:
+    id: "chat-row-.*"
+    index: 0
+- tapOn:
+    id: "thread-back"
+- assertVisible: "Chats"

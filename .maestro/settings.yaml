@@ -1,0 +1,69 @@
+# Settings: the host anchor, support, legal, and the danger zone at the bottom.
+#
+# Every one of these was missing before the UX audit, and each is the kind of
+# thing nobody opens during development — which is exactly why they need a flow
+# rather than a promise to check.
+#
+# Host-free: none of it needs a connection. The host card renders its empty
+# variant when there are no hosts, and asserting THAT is worth as much as
+# asserting the populated one.
+appId: dev.herdr.HerdrChat
+---
+# stopApp first: launchApp on its own RESUMES, so a previous flow can leave the
+# app deep in a thread and every assertion here would be about the wrong screen.
+- stopApp
+- launchApp
+- assertVisible: "Chats"
+- tapOn: "Settings"
+
+# The anchor, at the top, before anything else. One of the two variants is
+# present depending on whether a host is configured; both answer the same
+# question, which is what the section exists for.
+- runFlow:
+    when:
+      visible:
+        id: "settings-host"
+    commands:
+      - assertVisible:
+          id: "settings-host"
+- runFlow:
+    when:
+      notVisible:
+        id: "settings-host"
+    commands:
+      - assertVisible:
+          id: "settings-host-empty"
+
+# Support. Diagnostics is asserted by its effect — the row relabels to "Copied"
+# — because the clipboard itself is not in the view hierarchy.
+- scrollUntilVisible:
+    element:
+      id: "support-diagnostics"
+    direction: DOWN
+- assertVisible:
+    id: "support-issues"
+- tapOn:
+    id: "support-diagnostics"
+- assertVisible: "Copied"
+
+# Legal. Tapping either leaves the app for Safari, so this asserts they are
+# reachable and does not follow them — a flow that ends in another app cannot
+# assert its way back.
+- scrollUntilVisible:
+    element:
+      id: "legal-privacy"
+    direction: DOWN
+- assertVisible:
+    id: "legal-terms"
+
+# The danger zone, last and alone. Both rows are asserted present and NEITHER is
+# tapped: one erases every key on the device. That is the point of the flow —
+# they are at the bottom, below everything, where scrolling for something else
+# does not land on them.
+- scrollUntilVisible:
+    element:
+      id: "reset-app"
+    direction: DOWN
+- assertVisible:
+    id: "clear-cache"
+- assertVisible: "Danger zone"

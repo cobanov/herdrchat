@@ -1,8 +1,12 @@
-import { memo, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { memo, useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
+import { showActionSheet, type SheetAction } from './ActionSheet';
 import { Markdown } from './Markdown';
 import { Text } from './Text';
+import { haptics } from '@/lib/haptics';
+import { copyOptions } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
@@ -42,10 +46,59 @@ export const Bubble = memo(function Bubble({
     borderBottomRightRadius: outgoing && isLastInGroup ? radius.bubbleTail : radius.md,
   };
 
+  /**
+   * Long press to copy.
+   *
+   * The entire output of this app is text an agent wrote — a command, a path, a
+   * diff, an explanation — and until now there was no way to get any of it off
+   * the phone. Chat rows had a long press; the bubbles, which are the reason the
+   * app exists, did not.
+   *
+   * "Copy code" only appears when there is code. Most answers are prose wrapped
+   * around the one line you actually wanted, and picking that out by hand on a
+   * touchscreen is the thing this removes.
+   */
+  const copy = useCallback(() => {
+    const options = copyOptions(message);
+    if (options.full.trim().length === 0) return;
+
+    haptics.medium();
+    const actions: SheetAction[] = [
+      {
+        label: 'Copy message',
+        onPress: () => {
+          void Clipboard.setStringAsync(options.full);
+          haptics.success();
+        },
+      },
+    ];
+    if (options.code !== null) {
+      // Above "Copy message" would put the narrower action first; below keeps
+      // the general case where the thumb lands by default.
+      actions.push({
+        label: 'Copy code only',
+        onPress: () => {
+          void Clipboard.setStringAsync(options.code ?? '');
+          haptics.success();
+        },
+      });
+    }
+    showActionSheet({ title: outgoing ? 'Your message' : 'Agent message', actions });
+  }, [message, outgoing]);
+
   return (
     <View style={{ flexDirection: 'row' }}>
       {outgoing && <Gutter />}
-      <View
+      <Pressable
+        onLongPress={copy}
+        // Never a tap handler. A bubble containing an expandable tool chip has
+        // its own press targets inside it, and a tap on the bubble itself must
+        // stay a tap on whatever it landed on.
+        delayLongPress={400}
+        accessibilityRole="button"
+        accessibilityLabel={outgoing ? 'Your message' : 'Agent message'}
+        accessibilityHint="Long press to copy"
+        testID={`bubble-${message.id}`}
         style={[
           {
             flexShrink: 1,
@@ -76,7 +129,7 @@ export const Bubble = memo(function Bubble({
             </Text>
           </View>
         )}
-      </View>
+      </Pressable>
       {!outgoing && <Gutter />}
     </View>
   );

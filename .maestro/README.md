@@ -9,16 +9,23 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | Flow | Covers | Needs a host |
 |------|--------|--------------|
 | `smoke` | launch, all three tabs, the host switcher | no |
+| `settings` | host anchor, support, legal, danger zone | no |
 | `new-chat` | the sheet's fields, permission mode, both exits | no |
 | `folder-picker` | opening over the sheet, abandon vs. commit | no |
 | `add-server` | that the connection test really connects | **yes** |
+| `thread-back` | that a thread can be left by swiping, not only by the chevron | **yes** |
 
-`maestro test .maestro/` runs `add-server` too and fails without the credentials
-below — that is the flow doing its job, not a broken suite.
+`maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
+without a host — that is those flows doing their job, not a broken suite.
 
 **Not covered:** blocked quick-replies. Asserting them needs an agent actually
 sitting at a prompt, which is a live host plus a seeded conversation; the
 host-free flows here would only be able to prove the bar is absent.
+
+**Also not covered:** the chat-row swipe actions. Maestro's `swipe` can open the
+panel, but the actions behind it are Rename and Close — one of which stops every
+process in a workspace on a real machine. A flow that runs against a live host
+must not have that as its failure mode, so the swipe is verified by hand.
 
 ## Credentials
 
