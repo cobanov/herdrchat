@@ -1,37 +1,35 @@
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, View } from 'react-native';
 
-import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET } from '@/features/chats/ChatRow';
+import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { SwipeHint } from '@/features/chats/SwipeHint';
-import type { ChatSummary } from '@/features/chats/useWorkspaces';
-import { errorText, summaryNeedsAttention, useWorkspaces } from '@/features/chats/useWorkspaces';
-import { ErrorBanner } from '@/components/ErrorBanner';
+import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
+import { useChatActions } from '@/features/chats/useChatActions';
+import { useWorkspaces } from '@/features/chats/useWorkspaces';
+import { useTabPressHaptic } from '@/features/useTabPressHaptic';
+import { haptics } from '@/lib/haptics';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
-import { useBadge } from '@/state/badge';
 import { useChatEdits } from '@/state/chatEdits';
 import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
 import { loadThreadReads, setSetting } from '@/state/db';
-import { forgetWorkspace } from '@/state/threadCache';
-import { haptics } from '@/lib/haptics';
 import { encodeBool, useSettings } from '@/state/settings';
-import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { useTheme } from '@/theme/ThemeProvider';
-import { screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * Chats — the primary destination. One row per workspace, with live presence.
  *
- * Thin by design: everything it knows comes from `useWorkspaces`, and everything
- * it draws comes from `ChatRow`.
+ * Thin by design: everything it knows comes from `useWorkspaces`, everything it
+ * draws comes from `ChatRow`, and everything it does to a workspace comes from
+ * `useChatActions`.
  */
 export default function ChatsScreen() {
   const connection = useSelectedConnection();
@@ -43,18 +41,23 @@ export default function ChatsScreen() {
 
 function ChatsForServer() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const { colors } = useTheme();
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
   const { summaries, loading, error, herdrMissing, refresh } = useWorkspaces(client);
   const [installing, setInstalling] = useState(false);
-
-  const db = useSQLiteContext();
-  useTabPressHaptic();
-  // Failures from rename/close, which happen outside the poll's own error path.
-  const [actionError, setActionError] = useState<string | null>(null);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
+  useTabPressHaptic();
+
+  const actions = useChatActions({
+    client,
+    connectionId: connection?.id ?? null,
+    db,
+    refresh,
+  });
+
   const editsDirty = useChatEdits((state) => state.dirty);
   const clearEdits = useChatEdits((state) => state.clear);
   // Re-read on focus rather than on an interval: the only thing that changes a
@@ -74,67 +77,19 @@ function ChatsForServer() {
     }, [db, connection, editsDirty, clearEdits, refresh])
   );
 
-  /**
-   * Close a chat on the host.
-   *
-   * Destructive on the HOST, not just in the app — it stops every tab, pane and
-   * running process in the workspace — so the confirmation says that in those
-   * words rather than asking a vague "are you sure".
-   */
-  const closeChat = useCallback(
-    (summary: ChatSummary) => {
-      if (client === null || connection === null) return;
-      confirmDestructive({
-        title: `Close ${summary.title}?`,
-        message:
-          'Every tab, pane and running process in this workspace stops. The conversation stays on disk, but the agent does not.',
-        confirmLabel: 'Close chat',
-        onConfirm: () => {
-          void client
-            .closeWorkspace(summary.workspaceId)
-            // Drop the cache too: herdr recycles workspace ids, and the next
-            // chat to land in this slot must not open showing this one's
-            // messages.
-            .then(() => forgetWorkspace(db, connection.id, summary.workspaceId))
-            .then(refresh)
-            .catch((thrown: unknown) => setActionError(errorText(thrown)));
-        },
-      });
-    },
-    [client, connection, db, refresh]
-  );
-
-  const renameChat = useCallback(
-    (summary: ChatSummary) => {
-      router.push({
-        pathname: '/rename-chat',
-        params: { workspaceId: summary.workspaceId, title: summary.title },
-      });
-    },
-    [router]
-  );
+  useAttentionBadge(summaries, reads, connection !== null);
 
   /**
-   * The same two actions the row's swipe offers, as a long-press menu.
-   *
-   * Both affordances on purpose. The swipe is faster once you know it is there,
-   * and the long press is the one a person finds by trying things — an action
-   * reachable only by a gesture is an action most people never reach.
+   * The hint stops the first time the gesture is used, so it teaches rather than
+   * expires. Written through the same store-plus-mirror path as every other
+   * persisted preference.
    */
-  const manageChat = useCallback(
-    (summary: ChatSummary) => {
-      if (client === null) return;
-      haptics.medium();
-      showActionSheet({
-        title: summary.title,
-        actions: [
-          { label: 'Rename\u2026', onPress: () => renameChat(summary) },
-          { label: 'Close chat', destructive: true, onPress: () => closeChat(summary) },
-        ],
-      });
-    },
-    [client, renameChat, closeChat]
-  );
+  const seenSwipeHint = useSettings((state) => state.seenSwipeHint);
+  const markHintSeen = useCallback(() => {
+    if (useSettings.getState().seenSwipeHint) return;
+    useSettings.getState().set('seenSwipeHint', true);
+    void setSetting(db, 'seenSwipeHint', encodeBool(true));
+  }, [db]);
 
   const installHerdr = async () => {
     if (client === null) return;
@@ -146,41 +101,6 @@ function ChatsForServer() {
       setInstalling(false);
     }
   };
-
-  /**
-   * Publish the attention count for the tab bar's badge.
-   *
-   * Computed here because the number is already in hand — the alternative is a
-   * second poll in the tab layout, which would double every host's round-trips
-   * to learn something this screen recalculated a moment ago.
-   */
-  const attention = useMemo(
-    () =>
-      summaries.filter(
-        (summary) =>
-          summaryNeedsAttention(summary) ||
-          isThreadUnread(summary.preview, summary.sessionSig, reads.get(summary.workspaceId))
-      ).length,
-    [summaries, reads]
-  );
-  // An effect, not a render-phase write: publishing to a store outside React's
-  // tree is a side effect, and doing it during render is the kind of thing that
-  // works until concurrent rendering retries a render.
-  useEffect(() => {
-    useBadge.getState().setCount(connection === null ? 0 : attention);
-  }, [attention, connection]);
-
-  /**
-   * The hint stops the first time the gesture is used, so it teaches rather than
-   * expires. Persisted alongside the settings it lives next to, and written
-   * through the same store-plus-mirror path everything else uses.
-   */
-  const seenSwipeHint = useSettings((state) => state.seenSwipeHint);
-  const markHintSeen = useCallback(() => {
-    if (useSettings.getState().seenSwipeHint) return;
-    useSettings.getState().set('seenSwipeHint', true);
-    void setSetting(db, 'seenSwipeHint', encodeBool(true));
-  }, [db]);
 
   return (
     <Screen>
@@ -196,8 +116,8 @@ function ChatsForServer() {
       {/* Rename and close fail outside the poll's own error path, so they get
           their own banner — dismissible, because unlike a connection error this
           one is about an action that is over. */}
-      {actionError !== null && (
-        <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />
+      {actions.error !== null && (
+        <ErrorBanner message={actions.error} onDismiss={actions.clearError} />
       )}
 
       {error !== null && (
@@ -249,14 +169,14 @@ function ChatsForServer() {
                   params: { workspaceId: item.workspaceId, title: item.title },
                 })
               }
-              onLongPress={() => manageChat(item)}
+              onLongPress={() => actions.manageChat(item)}
               onRename={() => {
                 markHintSeen();
-                renameChat(item);
+                actions.renameChat(item);
               }}
               onClose={() => {
                 markHintSeen();
-                closeChat(item);
+                actions.closeChat(item);
               }}
             />
           )}
@@ -287,31 +207,5 @@ function ChatsForServer() {
         />
       )}
     </Screen>
-  );
-}
-
-/**
- * A shaped skeleton rather than a bare spinner: the row layout is known, so
- * showing it stops the list from jumping when data lands.
- */
-function SkeletonRows() {
-  const { colors } = useTheme();
-  return (
-    <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, gap: spacing.lg }}>
-      {[0, 1, 2, 3].map((index) => (
-        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <View
-            style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.fillSubtle }}
-          />
-          <View style={{ flex: 1, gap: spacing.sm }}>
-            <View style={{ height: 14, width: '45%', borderRadius: 7, backgroundColor: colors.fillSubtle }} />
-            <View style={{ height: 12, width: '75%', borderRadius: 6, backgroundColor: colors.fillSubtle }} />
-          </View>
-        </View>
-      ))}
-      <Text variant="footnote" color="tertiary" style={{ textAlign: 'center' }}>
-        Connecting…
-      </Text>
-    </View>
   );
 }
