@@ -1,7 +1,7 @@
 # Mobile UX checklist
 
 Thirty-one items across four areas, audited 2026-08-09 against the app as it
-stood at build 40. Design: [`docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md`](docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md).
+stood at build 40, and closed the same day. Design: [`docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md`](docs/superpowers/specs/2026-08-09-mobile-ux-checklist-design.md).
 
 Status is one of:
 
@@ -19,14 +19,14 @@ missed. Both are written down here so the difference survives.
 
 | # | Item | Status | Issue |
 |---|---|---|---|
-| S1 | Grouped table layout | gap | #26 |
+| S1 | Grouped table layout | done | #26 |
 | S2 | Native toggle controls | done | — |
-| S3 | Destructive actions grouped | gap | #26 |
-| S4 | Account details at top | gap | #26 |
-| S5 | Deep link to specific settings | gap | #27 |
-| S6 | Support and feedback access | gap | #26 |
+| S3 | Destructive actions grouped | done | #26 |
+| S4 | Account details at top | done | #26 |
+| S5 | Deep link to specific settings | done | #27 |
+| S6 | Support and feedback access | done | #26 |
 | S7 | App version | done | — |
-| S8 | Legal links | gap | #26 |
+| S8 | Legal links | done | #26 |
 
 **S1 — Grouped table layout.** `Section` / `Row` / `Divider` already implement
 the pattern properly, down to the divider stopping at the label's left edge.
@@ -72,10 +72,10 @@ servers of ours.
 | T1 | Tab count (3–5) | done | — |
 | T2 | Icon and label | done | — |
 | T3 | Active and default states | done | — |
-| T4 | Badge counts | gap | #28 |
+| T4 | Badge counts | done | #28 |
 | T5 | Fixed presence | done | — |
 | T6 | Tap target size | done | — |
-| T7 | Haptic feedback | gap | #28 |
+| T7 | Haptic feedback | done | #28 |
 
 **T1–T3, T5, T6.** `NativeTabs` renders the system's own UIKit bar. Three tabs,
 each with an SF Symbol and a label, selected variants and a tint for the active
@@ -103,14 +103,14 @@ thumb-reachable placement below.
 
 | # | Item | Status | Issue |
 |---|---|---|---|
-| A1 | Heading and actions | gap | #29 |
-| A2 | Swipe or backdrop dismiss | gap | #29 |
-| A3 | Destructive action styling | gap | #29 |
-| A4 | Cancel action | gap | #29 |
+| A1 | Heading and actions | done | #29 |
+| A2 | Swipe or backdrop dismiss | done | #29 |
+| A3 | Destructive action styling | done | #29 |
+| A4 | Cancel action | done | #29 |
 | A5 | Snap points | n/a | — |
 | A6 | Content scrollability | n/a | — |
-| A7 | Keyboard relation | gap | #29 |
-| A8 | Backdrop dimming | gap | #29 |
+| A7 | Keyboard relation | done | #29 |
+| A8 | Backdrop dimming | done | #29 |
 
 **A1–A4, A8.** All five follow from replacing `Alert` with a real action sheet.
 The system sheet supplies backdrop dimming, tap-outside and drag-down dismiss,
@@ -136,14 +136,14 @@ Android silently has no rename at all.
 
 | # | Item | Status | Issue |
 |---|---|---|---|
-| G1 | Swipe to go back | gap | #33 |
-| G2 | List item swipe actions | gap | #30 |
-| G3 | Pull to refresh | gap | #32 |
-| G4 | Long press menus | gap | #31 |
+| G1 | Swipe to go back | done | #33 |
+| G2 | List item swipe actions | done | #30 |
+| G3 | Pull to refresh | done | #32 |
+| G4 | Long press menus | done | #31 |
 | G5 | Pinch to zoom | n/a | — |
 | G6 | Drag to reorder | declined | — |
-| G7 | Gesture hints | gap | #30 |
-| G8 | Haptic feedback | gap | #30, #32 |
+| G7 | Gesture hints | done | #30 |
+| G8 | Haptic feedback | done | #30, #32 |
 
 **G1 — Swipe to go back.** Native stack enables it by default, but the thread
 screen draws its own header with `headerShown: false` and nothing has confirmed
@@ -187,8 +187,11 @@ and swipe-action commit do not. The calibration already documented in
 
 | Area | Done | Gap | n/a | Declined |
 |---|---|---|---|---|
-| Settings | 2 | 6 | 0 | 0 |
-| Tab bar | 5 | 2 | 0 | 0 |
-| Action sheet | 0 | 6 | 2 | 0 |
-| Gestures | 0 | 6 | 1 | 1 |
-| **Total** | **7** | **20** | **3** | **1** |
+| Settings | 8 | 0 | 0 | 0 |
+| Tab bar | 7 | 0 | 0 | 0 |
+| Action sheet | 6 | 0 | 2 | 0 |
+| Gestures | 7 | 0 | 1 | 1 |
+| **Total** | **28** | **0** | **3** | **1** |
+
+All twenty gaps closed. Three items do not apply to this app and one was
+declined; the reasons are above, next to the items themselves.
