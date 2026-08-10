@@ -2,7 +2,8 @@ import { View } from 'react-native';
 
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { AVATAR_SIZE } from './ChatRow';
 
 /**
  * A shaped skeleton rather than a bare spinner: the row layout is known, so
@@ -14,12 +15,20 @@ export function SkeletonRows() {
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, gap: spacing.lg }}>
       {[0, 1, 2, 3].map((index) => (
         <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          {/* The real avatar's size, imported rather than copied — and
+              `radius.full` rather than half of it, so the circle stays a circle
+              without a second number to keep in step. */}
           <View
-            style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.fillSubtle }}
+            style={{
+              width: AVATAR_SIZE,
+              height: AVATAR_SIZE,
+              borderRadius: radius.full,
+              backgroundColor: colors.fillSubtle,
+            }}
           />
           <View style={{ flex: 1, gap: spacing.sm }}>
-            <View style={{ height: 14, width: '45%', borderRadius: 7, backgroundColor: colors.fillSubtle }} />
-            <View style={{ height: 12, width: '75%', borderRadius: 6, backgroundColor: colors.fillSubtle }} />
+            <View style={{ height: spacing.lg, width: '45%', borderRadius: radius.full, backgroundColor: colors.fillSubtle }} />
+            <View style={{ height: spacing.md, width: '75%', borderRadius: radius.full, backgroundColor: colors.fillSubtle }} />
           </View>
         </View>
       ))}

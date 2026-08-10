@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { Text } from '@/components/Text';
 import { TypingDots } from '@/components/Activity';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing } from '@/theme/tokens';
 
 /**
  * A dim bubble showing the answer the agent is currently writing, scraped from
@@ -30,9 +30,9 @@ export function LivePreviewBubble({ text }: { text: string }) {
           borderBottomRightRadius: radius.md,
           backgroundColor: colors.bubbleIncoming,
           opacity: 0.75,
-          gap: spacing.xs + 2,
+          gap: spacing.sm,
         }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
           <TypingDots size={4} />
           <Text variant="caption2" color="tint" weight="600">
             live
@@ -42,7 +42,7 @@ export function LivePreviewBubble({ text }: { text: string }) {
           {text}
         </Text>
       </View>
-      <View style={{ flexGrow: 1, flexBasis: '18%', minWidth: spacing.xxl + spacing.md }} />
+      <View style={{ flexGrow: 1, flexBasis: '18%', minWidth: size.bubbleGutterMin }} />
     </View>
   );
 }

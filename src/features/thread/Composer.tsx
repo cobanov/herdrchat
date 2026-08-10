@@ -9,6 +9,7 @@ import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
   composerLineHeight,
+  composerMaxHeight,
   minTouchTarget,
   motion,
   radius,
@@ -95,9 +96,8 @@ export function Composer({
         style={{
           flex: 1,
           minHeight: composerLineHeight,
-          // Four lines, then it scrolls. Past that the composer starts eating
-          // the conversation it is meant to serve.
-          maxHeight: composerLineHeight * 4,
+          // Four lines, then it scrolls — see `composerMaxHeight`.
+          maxHeight: composerMaxHeight,
           paddingLeft: spacing.lg,
           paddingRight: spacing.sm,
           // Padding rather than lineHeight, so a single line sits centred in the

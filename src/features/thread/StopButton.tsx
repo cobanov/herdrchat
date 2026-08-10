@@ -4,7 +4,7 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, spacing } from '@/theme/tokens';
+import { minTouchTarget, size, spacing } from '@/theme/tokens';
 
 /**
  * Stop the agent.
@@ -53,7 +53,7 @@ export function StopButton({ onStop }: { onStop: (hard: boolean) => void }) {
       testID="thread-stop"
       hitSlop={spacing.md}
       style={{
-        width: minTouchTarget - spacing.md,
+        width: size.headerControl,
         height: minTouchTarget,
         alignItems: 'flex-end',
         justifyContent: 'center',

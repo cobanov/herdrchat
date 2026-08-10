@@ -2,7 +2,7 @@ import { Pressable, TextInput, View, type TextInputProps } from 'react-native';
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, nestedRadius, radius, size, spacing, typography } from '@/theme/tokens';
 
 export interface FieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
@@ -14,7 +14,7 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
   const { colors } = useTheme();
 
   return (
-    <View style={{ gap: spacing.xs + 2 }}>
+    <View style={{ gap: spacing.sm }}>
       <Text variant="footnote" color="secondary">
         {label}
       </Text>
@@ -27,7 +27,7 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
           minHeight: multiline === true ? 120 : minTouchTarget,
           borderRadius: radius.sm,
           paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm + 2,
+          paddingVertical: spacing.md,
           backgroundColor: colors.secondarySystemBackground,
           color: colors.label,
           fontSize: mono ? typography.footnote.fontSize : typography.body.fontSize,
@@ -71,7 +71,7 @@ export function SegmentedField<T extends string | number>({
   const { colors } = useTheme();
 
   return (
-    <View style={{ gap: spacing.xs + 2 }}>
+    <View style={{ gap: spacing.sm }}>
       <Text variant="footnote" color="secondary" style={{ paddingHorizontal: labelInset }}>
         {label}
       </Text>
@@ -79,10 +79,10 @@ export function SegmentedField<T extends string | number>({
         accessibilityRole="radiogroup"
         style={{
           flexDirection: 'row',
-          padding: 3,
+          padding: size.segmented.inset,
           borderRadius: radius.sm,
           backgroundColor: colors.secondarySystemBackground,
-          gap: 3,
+          gap: size.segmented.inset,
         }}>
         {options.map((option) => {
           const selected = option.value === value;
@@ -96,10 +96,10 @@ export function SegmentedField<T extends string | number>({
               testID={`segment-${option.value}`}
               style={{
                 flex: 1,
-                minHeight: minTouchTarget - 8,
+                minHeight: size.segmented.height,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: radius.sm - 3,
+                borderRadius: nestedRadius(radius.sm, size.segmented.inset),
                 backgroundColor: selected ? colors.systemBackground : 'transparent',
               }}>
               <Text variant="subhead" weight={selected ? '600' : '400'} color={selected ? 'label' : 'secondary'}>

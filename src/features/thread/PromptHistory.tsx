@@ -49,7 +49,7 @@ export function PromptHistory({
           testID="prompt-chip"
           style={{
             paddingHorizontal: spacing.md,
-            paddingVertical: spacing.xs + 1,
+            paddingVertical: spacing.xs,
             borderRadius: radius.lg,
             backgroundColor: colors.secondarySystemBackground,
             borderWidth: 1,

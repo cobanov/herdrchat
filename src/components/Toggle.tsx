@@ -51,7 +51,7 @@ export function Toggle({
         minHeight: minTouchTarget,
         opacity: disabled ? 0.5 : 1,
       }}>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, gap: spacing.xxs }}>
         <Text variant="body">{label}</Text>
         {detail !== undefined && (
           <Text variant="footnote" color="secondary">

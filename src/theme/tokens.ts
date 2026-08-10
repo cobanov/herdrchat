@@ -5,10 +5,21 @@
  */
 
 /**
- * Spacing on an 8pt grid, with a 2 and a 4 for the sub-grid cases that actually
- * occur (hairline gaps inside a bubble, the offset between stacked glass
- * shapes). Named by size rather than by use, so a token can't drift from its
- * meaning when a layout changes.
+ * The spacing scale. Base-4 throughout, with a 2 for hairline gaps.
+ *
+ * Named by size rather than by use, so a token can't drift from its meaning
+ * when a layout changes. The `layout` object below adds the semantic layer on
+ * top — this is the primitive one, and every semantic name resolves to a value
+ * here.
+ *
+ * THE SCALE IS CLOSED. `spacing.xs + 2` is not a spacing token, it is the number
+ * 6 with a token's name attached, and for a while this file claimed an 8pt grid
+ * while the app actually used every value from 2 to 10. The escape hatch is what
+ * did it: the "no magic numbers" rule only ever caught a bare literal, and an
+ * expression containing a token slipped straight past it.
+ *
+ * If a layout needs a value that is not here, the answer is a named token below,
+ * not an adjustment at the call site. `spacing.test.ts` enforces this.
  */
 export const spacing = {
   xxs: 2,
@@ -19,6 +30,52 @@ export const spacing = {
   xl: 24,
   xxl: 32,
   xxxl: 48,
+} as const;
+
+/**
+ * Fixed dimensions that are neither spacing nor radius: the size of a specific
+ * thing, where the number is load-bearing and off the scale for a reason.
+ *
+ * Each of these was previously an arithmetic expression at a call site, which
+ * hid what the number meant. `spacing.xxl + spacing.md` is 44 — the same as
+ * `minTouchTarget`, purely by coincidence, while describing something entirely
+ * unrelated to touch.
+ */
+export const size = {
+  /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
+  avatar: 52,
+  /** The unread / attention dot on an avatar. */
+  unreadDot: 14,
+  /** The status dot beside a thread's subtitle. */
+  statusDot: 6,
+  /**
+   * The narrowest the empty channel opposite a bubble may get — what stops a
+   * long message from running the full width of the screen.
+   */
+  bubbleGutterMin: 44,
+  /**
+   * A header's leading/trailing control. Deliberately narrower than
+   * `minTouchTarget` (the target is met with `hitSlop`), so the glyph sits flush
+   * with the screen margin instead of being inset by its own padding.
+   */
+  headerControl: 32,
+  /**
+   * Room under a scroll view for the floating tab bar to pass over.
+   *
+   * Not `spacing.xxxl * 2`: doubling a spacing token to reach a clearance is how
+   * you end up unable to change either one. The bar's height is the system's,
+   * so this is measured generously rather than derived.
+   */
+  floatingBarClearance: 96,
+  /**
+   * The segmented picker's fixed geometry.
+   *
+   * Grouped because the three numbers are one shape: the track insets its
+   * segments by `inset`, and the segment's corner must therefore be
+   * `nestedRadius(radius.sm, inset)` to stay concentric with the track's. Change
+   * one and the other two follow.
+   */
+  segmented: { inset: 3, height: 36 },
 } as const;
 
 /**
@@ -48,12 +105,71 @@ export const radius = {
 } as const;
 
 /**
+ * A radius nested inside another, kept concentric.
+ *
+ * Two rounded rects sharing a centre only look right when the inner radius is
+ * the outer one minus the gap between them; equal radii make the inner corner
+ * look too round, and an arbitrary smaller value makes it look too square.
+ *
+ * A function rather than a token because it is a RULE, and the segmented control
+ * that needs it (`radius.sm` outer, 3pt inset) previously spelled it
+ * `radius.sm - 3` — correct, but indistinguishable at a glance from the drift
+ * this file is otherwise full of.
+ */
+export function nestedRadius(outer: number, inset: number): number {
+  return Math.max(0, outer - inset);
+}
+
+/**
+ * The semantic layer: what a space is FOR, resolved to the scale above.
+ *
+ * The scale stays the primitive vocabulary — that is what stops a token drifting
+ * from its meaning when a layout changes. These names sit on top of it so the
+ * recurring decisions are made once rather than re-argued per component, and so
+ * "every section gap in the app" is a single edit.
+ *
+ * Note the split the checklist asks for: `componentPadding` and `layoutGap` are
+ * deliberately separate namespaces even where two values currently coincide.
+ * A button's internal padding and the gap between page sections answer different
+ * questions, and tying them together is how internal padding and page rhythm end
+ * up moving as one.
+ */
+export const layout = {
+  /** Inside a control or a card. */
+  componentPadding: {
+    tight: spacing.xs,
+    /** A row's own inset inside a grouped list, and a bubble's padding. */
+    standard: spacing.md,
+    roomy: spacing.lg,
+  },
+  /** Between things, composing a page. */
+  gap: {
+    /** Between a label and the control it labels. */
+    label: spacing.sm,
+    /** Between rows within one group. */
+    row: spacing.sm,
+    /** Between one titled section and the next. */
+    section: spacing.xl,
+  },
+} as const;
+
+/**
  * One-line composer height. `radius.lg` is deliberately just under half of this:
  * at one line the rounded rect reads as a capsule, and as the field grows it
  * keeps the same corners instead of inflating into a stadium the way a real
  * capsule (radius tied to height) would.
  */
 export const composerLineHeight = 44;
+
+/**
+ * How tall the composer may grow before it scrolls instead.
+ *
+ * Four lines. Past that the composer starts eating the conversation it is meant
+ * to serve. Derived here rather than written as `composerLineHeight * 4` at the
+ * call site: this file is where a rule may be arithmetic, because this is where
+ * the reader is looking for the rule.
+ */
+export const composerMaxHeight = composerLineHeight * 4;
 
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
@@ -115,6 +231,16 @@ export type TypographyToken = keyof typeof typography;
  * an app can have, because you see it as motion rather than as layout.
  */
 export const headerTitleLine = typography.largeTitle.lineHeight;
+
+/**
+ * The height a chat row reserves for its subtitle: two subhead lines.
+ *
+ * Reserved rather than measured, because the variants swap live as agents start
+ * and stop working — without a fixed height a row changes size, and nudges every
+ * row under it, each time an agent begins. Derived from the type scale so it
+ * follows Dynamic Type instead of being a number that was right once.
+ */
+export const subtitleTwoLines = typography.subhead.lineHeight * 2;
 
 
 /**

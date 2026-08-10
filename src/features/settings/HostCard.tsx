@@ -43,7 +43,7 @@ export function HostCard() {
           borderColor: colors.separator,
           opacity: pressed ? 0.6 : 1,
         })}>
-        <View style={{ flex: 1, gap: 2 }}>
+        <View style={{ flex: 1, gap: spacing.xxs }}>
           <Text variant="headline">No host yet</Text>
           <Text variant="caption" color="secondary">
             Add a machine that runs herdr to get started.
@@ -75,7 +75,7 @@ export function HostCard() {
           decoration: two hosts with similar names are told apart by colour long
           before anyone reads the text. */}
       <PresenceAvatar colorKey={connection.name} status="idle" size={44} />
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, gap: spacing.xxs }}>
         <Text variant="headline" numberOfLines={1}>
           {connection.name}
         </Text>

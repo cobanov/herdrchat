@@ -5,12 +5,18 @@ import { PresenceAvatar } from '@/components/PresenceAvatar';
 import { Text } from '@/components/Text';
 import { TypingDots } from '@/components/Activity';
 import { useTheme } from '@/theme/ThemeProvider';
-import { screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing, subtitleTwoLines } from '@/theme/tokens';
 import type { ChatSummary } from './useWorkspaces';
 
-const AVATAR_SIZE = 52;
+/**
+ * Exported, because the loading skeleton draws the same row and used to carry
+ * its own copy of these numbers. A placeholder that stops matching the thing it
+ * stands in for is worse than no placeholder: the list jumps at exactly the
+ * moment the data arrives, which is the one thing a skeleton exists to prevent.
+ */
+export const AVATAR_SIZE = size.avatar;
 /** The avatar's ring adds 4pt on each side. */
-const AVATAR_BOX = AVATAR_SIZE + 8;
+const AVATAR_BOX = AVATAR_SIZE + spacing.sm;
 const GAP = spacing.md;
 
 /**
@@ -57,7 +63,7 @@ export const ChatRow = memo(function ChatRow({
         alignItems: 'center',
         gap: GAP,
         paddingHorizontal: screenPadding,
-        paddingVertical: spacing.sm + 2,
+        paddingVertical: spacing.md,
         backgroundColor: pressed ? colors.fillSubtle : 'transparent',
       })}>
       <View>
@@ -75,9 +81,9 @@ export const ChatRow = memo(function ChatRow({
               position: 'absolute',
               top: 0,
               right: 0,
-              width: 14,
-              height: 14,
-              borderRadius: 7,
+              width: size.unreadDot,
+              height: size.unreadDot,
+              borderRadius: radius.full,
               borderWidth: 2,
               borderColor: colors.systemBackground,
               backgroundColor: attention ? colors.attention : colors.tint,
@@ -86,7 +92,7 @@ export const ChatRow = memo(function ChatRow({
         )}
       </View>
 
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, gap: spacing.xxs }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
           <Text variant="headline" numberOfLines={1} style={{ flexShrink: 1 }}>
             {summary.title.length > 0 ? summary.title : summary.workspaceId}
@@ -152,7 +158,7 @@ function Subtitle({ summary }: { summary: ChatSummary }) {
  */
 function Reserved({ children }: { children: ReactNode }) {
   return (
-    <View style={{ minHeight: 38, justifyContent: 'center', alignItems: 'flex-start' }}>
+    <View style={{ minHeight: subtitleTwoLines, justifyContent: 'center', alignItems: 'flex-start' }}>
       {children}
     </View>
   );

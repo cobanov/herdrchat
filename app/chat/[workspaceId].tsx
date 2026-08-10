@@ -35,7 +35,7 @@ import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
 
 /**
  * How close to the end still counts as "at the bottom": enough slack to survive
@@ -220,7 +220,7 @@ export default function ThreadScreen() {
           testID="thread-back"
           hitSlop={spacing.md}
           style={{
-            width: minTouchTarget - spacing.md,
+            width: size.headerControl,
             height: minTouchTarget,
             alignItems: 'flex-start',
             justifyContent: 'center',
@@ -241,9 +241,9 @@ export default function ThreadScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
               <View
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
+                  width: size.statusDot,
+                  height: size.statusDot,
+                  borderRadius: radius.full,
                   backgroundColor: statusColor(thread.status, colors),
                 }}
               />
@@ -266,7 +266,7 @@ export default function ThreadScreen() {
         {thread.status === 'working' ? (
           <StopButton onStop={(hard) => void thread.interrupt(hard)} />
         ) : (
-          <View style={{ width: minTouchTarget - spacing.md }} />
+          <View style={{ width: size.headerControl }} />
         )}
       </View>
 
@@ -371,14 +371,14 @@ export default function ThreadScreen() {
             onScroll={onScroll}
             scrollEventThrottle={64}
             renderItem={({ item }) => (
-              <View style={{ paddingTop: item.startsGroup ? spacing.sm + 2 : 2 }}>
+              <View style={{ paddingTop: item.startsGroup ? spacing.md : spacing.xxs }}>
                 {item.startsGroup &&
                   item.message.agentLabel !== null &&
                   item.message.role !== 'user' && (
                     <Text
                       variant="caption2"
                       color="secondary"
-                      style={{ paddingLeft: spacing.md, paddingBottom: 2 }}>
+                      style={{ paddingLeft: spacing.md, paddingBottom: spacing.xxs }}>
                       {item.message.agentLabel}
                     </Text>
                   )}

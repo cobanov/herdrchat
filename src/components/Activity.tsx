@@ -12,7 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius } from '@/theme/tokens';
+import { radius, spacing } from '@/theme/tokens';
 
 /** Three softly pulsing dots. Used beside "working…" wherever presence is shown. */
 export function TypingDots({ color, size = 5 }: { color?: string; size?: number }) {
@@ -21,7 +21,7 @@ export function TypingDots({ color, size = 5 }: { color?: string; size?: number 
 
   return (
     <View
-      style={{ flexDirection: 'row', gap: 3, height: size, alignItems: 'center' }}
+      style={{ flexDirection: 'row', gap: spacing.xs, height: size, alignItems: 'center' }}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants">
       {[0, 1, 2].map((index) => (

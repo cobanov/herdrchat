@@ -10,10 +10,19 @@ import { buildSheet, type SheetAction } from '@/lib/actionSheet';
  * the fallback have to live somewhere they cannot be forgotten, and the ordering
  * rule has to be somewhere a call site cannot opt out of.
  *
- * What the system sheet gives us that the `Alert` this replaces did not: a
- * dimmed backdrop, dismissal by tapping outside or dragging down, red styling on
- * destructive rows, and — the one that actually matters on a phone — placement
- * at the bottom of the screen instead of the middle, where the thumb already is.
+ * WHAT THIS ACTUALLY LOOKS LIKE ON iOS 26, measured on a simulator rather than
+ * assumed: a CENTRED glass card, not a sheet anchored to the bottom edge. Apple
+ * unified the alert and action-sheet presentations, and `UIAlertController`'s
+ * `.actionSheet` style now centres on iPhone at any number of actions — a
+ * three-action sheet centres exactly like a one-action confirmation does.
+ *
+ * So the claim to make for this module is narrower than "it is a bottom sheet":
+ * what the system gives us, and the `Alert` it replaces did not, is a dimmed
+ * backdrop, tap-outside-to-dismiss, red styling on destructive rows, and a
+ * consistent ordering enforced in one place. It does NOT give bottom-edge
+ * placement or a drag-to-dismiss grabber on this OS version. If either is ever
+ * genuinely needed, that is a custom sheet and a deliberate decision — not
+ * something to expect from here.
  *
  * Android falls back to `Alert.alert`, which is that platform's own equivalent
  * surface. A JS imitation of an iOS sheet on Android would be worse than either.

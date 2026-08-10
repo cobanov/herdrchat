@@ -15,7 +15,7 @@ import { parseInline, parseMarkdown, type InlineSpan, type MarkdownBlock } from 
 export function Markdown({ text, onTint = false }: { text: string; onTint?: boolean }) {
   const blocks = parseMarkdown(text);
   return (
-    <View style={{ gap: spacing.xs + 2 }}>
+    <View style={{ gap: spacing.sm }}>
       {blocks.map((block, index) => (
         <Block key={index} block={block} onTint={onTint} />
       ))}
@@ -43,7 +43,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
 
     case 'bullet':
       return (
-        <View style={{ gap: spacing.xxs + 1 }}>
+        <View style={{ gap: spacing.xs }}>
           {block.items.map((item, index) => (
             <ListRow key={index} marker="•" text={item} onTint={onTint} />
           ))}
@@ -52,7 +52,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
 
     case 'numbered':
       return (
-        <View style={{ gap: spacing.xxs + 1 }}>
+        <View style={{ gap: spacing.xs }}>
           {block.items.map((item, index) => (
             <ListRow key={index} marker={`${index + 1}.`} text={item} onTint={onTint} />
           ))}
@@ -77,7 +77,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
 
     case 'code':
       return (
-        <View style={{ backgroundColor: fill, borderRadius: radius.xs, padding: spacing.sm + 1 }}>
+        <View style={{ backgroundColor: fill, borderRadius: radius.xs, padding: spacing.sm }}>
           {block.language !== null && (
             <Text variant="caption2" color={onTint ? 'onTint' : 'secondary'} mono>
               {block.language.toLowerCase()}
@@ -119,7 +119,7 @@ function ListRow({
   onTint: boolean;
 }) {
   return (
-    <View style={{ flexDirection: 'row', gap: spacing.xs + 2 }}>
+    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
       <Text
         variant="body"
         color={onTint ? 'onTint' : 'secondary'}
@@ -192,8 +192,8 @@ function TableRow({
             style={{
               minWidth: 56,
               maxWidth: 220,
-              paddingHorizontal: spacing.sm + 1,
-              paddingVertical: spacing.xs + 1,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: spacing.xs,
             }}>
             <Text
               variant="footnote"

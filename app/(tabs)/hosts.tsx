@@ -101,7 +101,7 @@ export default function ServersScreen() {
                   padding: spacing.md,
                   opacity: pressed ? 0.6 : 1,
                 })}>
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flex: 1, gap: spacing.xxs }}>
                   <Text variant="headline">{connection.name}</Text>
                   <Text variant="caption" color="secondary">
                     {connection.username}@{connection.host}:{connection.port}

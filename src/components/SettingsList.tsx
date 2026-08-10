@@ -164,7 +164,7 @@ export function ActionRow({
         backgroundColor: pressed ? colors.fillSubtle : 'transparent',
         opacity: disabled ? 0.4 : 1,
       })}>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, gap: spacing.xxs }}>
         <Text variant="body" color={labelColor}>
           {label}
         </Text>

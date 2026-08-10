@@ -19,7 +19,7 @@ import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { cachedMessageCount, setSetting } from '@/state/db';
 import { encodeBool, useSettings, type PollScale, type Settings } from '@/state/settings';
 import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
-import { screenPadding, spacing } from '@/theme/tokens';
+import { screenPadding, size, spacing } from '@/theme/tokens';
 
 /**
  * Settings.
@@ -62,7 +62,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{
           padding: screenPadding,
           gap: spacing.xl,
-          paddingBottom: spacing.xxxl * 2,
+          paddingBottom: size.floatingBarClearance,
         }}>
         {/* The anchor. There is no account to show — the app signs in to nothing
             — so this answers the question an account header actually answers:

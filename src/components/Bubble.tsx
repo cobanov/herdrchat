@@ -8,7 +8,7 @@ import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
 import { copyOptions } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
 import { useSettings } from '@/state/settings';
 
@@ -103,7 +103,7 @@ export const Bubble = memo(function Bubble({
           {
             flexShrink: 1,
             paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm - 1,
+            paddingVertical: spacing.sm,
             backgroundColor: outgoing ? colors.bubbleOutgoing : colors.bubbleIncoming,
             gap: spacing.xs,
           },
@@ -142,7 +142,7 @@ export const Bubble = memo(function Bubble({
  * adapts to Dynamic Type.
  */
 function Gutter() {
-  return <View style={{ flexGrow: 1, flexBasis: '18%', minWidth: spacing.xxl + spacing.md }} />;
+  return <View style={{ flexGrow: 1, flexBasis: '18%', minWidth: size.bubbleGutterMin }} />;
 }
 
 function Segment({ segment, onTint }: { segment: MessageSegment; onTint: boolean }) {
@@ -197,10 +197,10 @@ export function ToolChip({
       style={{
         flexDirection: 'row',
         alignItems: 'flex-start',
-        gap: spacing.xs + 1,
+        gap: spacing.xs,
         alignSelf: 'flex-start',
-        paddingHorizontal: spacing.sm - 1,
-        paddingVertical: spacing.xxs + 1,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
         borderRadius: radius.xs,
         backgroundColor: colors.fillSubtle,
       }}>

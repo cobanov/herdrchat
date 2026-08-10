@@ -43,7 +43,7 @@ export function BlockedBar({
         padding: spacing.md,
         gap: spacing.sm,
       }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
         <Icon
           name="exclamationmark.bubble.fill"
           size={14}
@@ -68,7 +68,7 @@ export function BlockedBar({
               alignItems: 'flex-start',
               gap: spacing.sm,
               paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm + 1,
+              paddingVertical: spacing.sm,
               borderRadius: radius.sm,
               backgroundColor: pressed ? colors.fillSubtle : `${colors.attention}1F`,
             })}>
