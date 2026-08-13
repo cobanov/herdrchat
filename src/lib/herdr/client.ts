@@ -676,6 +676,18 @@ export function exitCodeError(exitCode: number, stderr = ''): HerdrError {
       "herdr wasn't found on this account (exit 127). It's likely not installed for this user, or not on PATH. Install herdr on the host, or set its full path in the connection's Advanced settings."
     );
   }
+
+  // herdr reports its OWN failures as a JSON envelope on stderr and exits
+  // non-zero. Treating that as opaque text is how a phone ended up showing
+  //
+  //   The command failed on the host (exit 1): {"id":"cli:api:snapshot",…}
+  //
+  // when herdr had said, in a structured field, exactly what was wrong. Decode
+  // it before falling back to the exit code, which carries no information the
+  // envelope does not.
+  const structured = herdrErrorFrom(stderr);
+  if (structured !== null) return structured;
+
   const detail = stderr.trim().split('\n')[0] ?? '';
   return new HerdrError(
     'ssh_command_failed',
@@ -683,6 +695,63 @@ export function exitCodeError(exitCode: number, stderr = ''): HerdrError {
       ? `The command failed on the host (exit ${exitCode}): ${detail}`
       : `The command failed on the host (exit ${exitCode}).`
   );
+}
+
+/**
+ * A herdr error envelope found in command output, interpreted.
+ *
+ * Null when the output is not an envelope — a shell warning, an SSH banner,
+ * anything else — so the caller can fall back rather than mistaking noise for a
+ * diagnosis.
+ *
+ * The interpretation lives here rather than at the call sites for the same
+ * reason `exit 127 -> "herdr isn't installed here"` does: a code is a fact and a
+ * sentence is a decision, and the decision should be made once where a test can
+ * pin it.
+ */
+export function herdrErrorFrom(output: string): HerdrError | null {
+  const line = output
+    .split('\n')
+    .map((candidate) => candidate.trim())
+    .find((candidate) => candidate.startsWith('{') && candidate.includes('"error"'));
+  if (line === undefined) return null;
+
+  let code: string;
+  let message: string;
+  try {
+    const parsed = JSON.parse(line) as { error?: { code?: unknown; message?: unknown } };
+    if (typeof parsed.error?.code !== 'string') return null;
+    code = parsed.error.code;
+    message = typeof parsed.error.message === 'string' ? parsed.error.message : '';
+  } catch {
+    return null;
+  }
+
+  return new HerdrError(code, humanise(code, message));
+}
+
+/**
+ * herdr's own wording is written for a terminal. These are the cases where a
+ * phone needs different words — or where the fix is a thing you do somewhere
+ * else entirely, which a message ending in "run `herdr`" does not convey when
+ * there is no terminal in front of you.
+ */
+function humanise(code: string, message: string): string {
+  switch (code) {
+    case 'server_not_running':
+      // herdr says "run `herdr` to start or attach it", which is correct and
+      // unhelpful on a phone: the thing to do is on the other machine.
+      return 'herdr isn’t running on this host. Start it there — open a terminal and run `herdr` — then pull to refresh.';
+    case 'pane_not_found':
+      return 'That pane is gone. The agent may have been closed on the host.';
+    case 'agent_not_found':
+      return 'No agent is running in that pane any more.';
+    default:
+      // Unknown codes keep herdr's own words rather than being flattened into a
+      // generic apology — its message is usually the most specific thing anyone
+      // has about a failure nobody anticipated.
+      return message.length > 0 ? message : `herdr reported: ${code}`;
+  }
 }
 
 function field(result: unknown, key: string): unknown {
