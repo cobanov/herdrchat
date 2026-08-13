@@ -3,18 +3,21 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
+import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
 import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
+import { shouldResetPin } from '@/lib/hostkey';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
   loadSecret,
+  saveHostKeyPin,
   saveSecret,
   testClient,
   useConnections,
@@ -27,7 +30,13 @@ type TestState =
   | { kind: 'idle' }
   | { kind: 'testing' }
   | { kind: 'ok' }
-  | { kind: 'failed'; message: string; herdrMissing: boolean };
+  | { kind: 'failed'; message: string; herdrMissing: boolean }
+  /**
+   * The host answered with a key that differs from the stored pin. Its own
+   * state, not a `failed` flavour: the only way forward is an explicit,
+   * confirmed decision to trust the new key — never a silent re-pin.
+   */
+  | { kind: 'keyChanged'; message: string };
 
 /**
  * Add or edit a herdr host.
@@ -59,6 +68,10 @@ export default function ServerEditScreen() {
   const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
   const [sessionName, setSessionName] = useState(existing?.sessionName ?? '');
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
+  // What the passing test's connection actually accepted; save() persists it
+  // when the endpoint changed, so the pin is always a key we presented
+  // credentials to — never whoever answers the next connect.
+  const [observedFingerprint, setObservedFingerprint] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
 
   const valid =
@@ -92,27 +105,55 @@ export default function ServerEditScreen() {
 
   const runTest = async () => {
     setTest({ kind: 'testing' });
+    setObservedFingerprint(null);
     const connection = draft();
-    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath);
+    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath, {
+      // An unchanged endpoint keeps its identity: the test must refuse any key
+      // but the pinned one, because it authenticates with real credentials.
+      enforceStoredPin: !shouldResetPin(existing, connection),
+      onFingerprint: setObservedFingerprint,
+    });
     try {
       await client.ping();
       setTest({ kind: 'ok' });
     } catch (thrown) {
       const failure = thrown instanceof HerdrError ? thrown : null;
-      setTest({
-        kind: 'failed',
-        message: failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)),
-        herdrMissing: failure?.code === 'herdr_not_found',
-      });
+      if (failure?.code === 'host_key_changed') {
+        setTest({ kind: 'keyChanged', message: failure.message });
+      } else {
+        setTest({
+          kind: 'failed',
+          message: failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)),
+          herdrMissing: failure?.code === 'herdr_not_found',
+        });
+      }
     } finally {
       await dispose();
     }
   };
 
+  const trustNewKey = () => {
+    confirmDestructive({
+      title: 'Trust the new key?',
+      message:
+        'This forgets the key this host was pinned to. Do this only if you reinstalled or re-keyed the server yourself.',
+      confirmLabel: 'Trust the new key',
+      onConfirm: () => {
+        void (async () => {
+          await clearSecrets(params.id, { keepSecret: true });
+          await runTest();
+        })();
+      },
+    });
+  };
+
   const installHerdr = async () => {
     setInstalling(true);
     const connection = draft();
-    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath);
+    const { client, dispose } = testClient(connection, await resolveSecret(), connection.herdrPath, {
+      enforceStoredPin: !shouldResetPin(existing, connection),
+      onFingerprint: setObservedFingerprint,
+    });
     try {
       await client.installHerdr();
       await dispose();
@@ -132,9 +173,12 @@ export default function ServerEditScreen() {
   const save = async () => {
     const connection = draft();
     if (secret.length > 0) await saveSecret(connection.id, secret);
-    // Editing resets the host-key pin: the next connect re-pins, which is the
-    // only way to recover from a server that was legitimately reinstalled.
-    await clearSecrets(connection.id, { keepSecret: true });
+    // The pin survives a cosmetic edit (name, herdr path, session). Only a
+    // changed endpoint replaces it — and then with the key the passing test
+    // actually saw, never a blank slate the next connect fills in blindly.
+    if (shouldResetPin(existing, connection) && observedFingerprint !== null) {
+      await saveHostKeyPin(connection.id, observedFingerprint);
+    }
     await invalidateClient(connection.id);
     await saveConnection(db, connection);
     await setSetting(db, SELECTED_KEY, connection.id);
@@ -288,6 +332,28 @@ export default function ServerEditScreen() {
                   onPress={() => void installHerdr()}
                 />
               )}
+            </View>
+          )}
+
+          {test.kind === 'keyChanged' && (
+            <View
+              style={{
+                padding: spacing.md,
+                borderRadius: radius.sm,
+                backgroundColor: colors.fillSubtle,
+                gap: spacing.sm,
+              }}>
+              <Text variant="subhead" weight="600" testID="test-key-changed">
+                The host identifies with a different key
+              </Text>
+              <Text variant="footnote" color="secondary">
+                {test.message}
+              </Text>
+              <Text variant="footnote" color="secondary">
+                If you did not reinstall or re-key this server, stop here — something
+                between you and it could be intercepting the connection.
+              </Text>
+              <Button title="Trust the new key" variant="tinted" onPress={trustNewKey} />
             </View>
           )}
 

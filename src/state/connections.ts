@@ -50,26 +50,42 @@ export function newConnection(): ServerConnection {
 const secretKey = (id: string) => `herdrchat.secret.${id}`;
 const pinKey = (id: string) => `herdrchat.hostkey.${id}`;
 
+// Credentials for a machine on the owner's tailnet: never readable while the
+// device is locked, never restored onto a different device.
+const keychainOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
+/**
+ * Values written before the accessibility option existed migrate on read: the
+ * rewrite is idempotent, so no marker tracks whether it already happened.
+ */
+async function loadMigrating(key: string): Promise<string | null> {
+  const value = await SecureStore.getItemAsync(key);
+  if (value !== null) await SecureStore.setItemAsync(key, value, keychainOptions);
+  return value;
+}
+
 export async function saveSecret(id: string, secret: string): Promise<void> {
-  await SecureStore.setItemAsync(secretKey(id), secret);
+  await SecureStore.setItemAsync(secretKey(id), secret, keychainOptions);
 }
 
 export async function loadSecret(id: string): Promise<string | null> {
-  return SecureStore.getItemAsync(secretKey(id));
+  return loadMigrating(secretKey(id));
 }
 
 export async function loadHostKeyPin(id: string): Promise<string | null> {
-  return SecureStore.getItemAsync(pinKey(id));
+  return loadMigrating(pinKey(id));
 }
 
 export async function saveHostKeyPin(id: string, fingerprint: string): Promise<void> {
-  await SecureStore.setItemAsync(pinKey(id), fingerprint);
+  await SecureStore.setItemAsync(pinKey(id), fingerprint, keychainOptions);
 }
 
 /**
- * Forget everything secret about a server. Called on delete, and on edit —
- * editing a host resets its trust-on-first-use pin so the next connect re-pins,
- * which is the only way to recover from a legitimately reinstalled server.
+ * Forget everything secret about a server. Called on delete, on full reset,
+ * and from the editor's explicit "Trust the new key" recovery — never on an
+ * ordinary save, which would silently re-open the trust-on-first-use window.
  */
 export async function clearSecrets(id: string, { keepSecret = false } = {}): Promise<void> {
   if (!keepSecret) await SecureStore.deleteItemAsync(secretKey(id));
@@ -200,11 +216,31 @@ export function sshConfig(
 export function testClient(
   connection: ServerConnection,
   secret: string,
-  herdrPath: string
+  herdrPath: string,
+  {
+    enforceStoredPin = false,
+    onFingerprint,
+  }: {
+    /**
+     * True when editing an existing host whose endpoint is unchanged: the
+     * stored pin is still the host's identity, and the test presents real
+     * credentials — they must only ever reach the key we pinned. A new or
+     * moved host has no pin to hold it to, so first contact is trusted.
+     */
+    enforceStoredPin?: boolean;
+    /** The fingerprint the native layer accepted, for the caller to persist on save. */
+    onFingerprint?: (fingerprint: string) => void;
+  } = {}
 ): { client: HerdrClient; dispose: () => Promise<void> } {
   const id = `test-${connection.id}`;
-  // No pin: a test is exactly when you're meeting a host for the first time.
-  const transport = new SshHerdrTransport(id, async () => sshConfig(connection, secret, null));
+  const transport = new SshHerdrTransport(
+    id,
+    async () => {
+      const pin = enforceStoredPin ? await loadHostKeyPin(connection.id) : null;
+      return sshConfig(connection, secret, pin);
+    },
+    onFingerprint
+  );
   return {
     client: new HerdrClient(transport, herdrPath),
     dispose: () => transport.close(),
