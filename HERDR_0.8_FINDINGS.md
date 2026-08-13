@@ -40,10 +40,10 @@ Bu raporun en kritik bulgusu buna bağlı — aşağıda F1.
 | ~~F2~~ | ~~`agent start` imzası uyuşmuyor~~ — **YANLIŞ ALARM** | BILGI | — | — | yok | çözüldü |
 | **F14** | **Sürüm snapshot'ta zaten geliyordu, hiç okunmuyordu** | **OPTIMIZASYON** | orta | düşük | düşük | uygulandı |
 | F3 | `agent prompt` artık host'ta VAR (0.8.0) — #10 devrede | BILGI | orta | — | yok | çözüldü |
-| F4 | `pane wait-output` var, kullanmıyoruz — kör Enter hâlâ orada | OPTIMIZASYON | orta | orta | düşük | 0.8.0'da var |
-| F5 | `events.subscribe` ile polling'i bırakmak | OPTIMIZASYON | yüksek | yüksek | orta | doğrulanmalı |
-| F6 | `pane report-metadata --token` ile sidebar'a model/görev yansıtmak | YENI_YETENEK | orta | orta | düşük | var |
-| F7 | `agent explain --json` teşhis için, hiç kullanmıyoruz | OPTIMIZASYON | orta | düşük | yok | var |
+| F4 | ~~kör Enter~~ → `agent prompt --wait` + `agent_prompt_stalled` | **UYGULANDI** | orta | orta | düşük | 0.8.0 |
+| F5 | `events.subscribe` ile polling'i bırakmak | **ERTELENDİ**, gerekçe aşağıda | yüksek | yüksek | orta | doğrulanmalı |
+| F6 | `pane report-metadata --token` ile sidebar'a model + telefon işareti | **UYGULANDI** | orta | orta | düşük | var |
+| F7 | `agent explain --json` — `client.explainAgent()` | **UYGULANDI** | orta | düşük | yok | var |
 | F8 | `[session] resume_agents_on_restore` (default true) — config'imizde implicit | BILGI | orta | — | yok | doğrulanmalı |
 | F9 | Claude "session identity", "lifecycle authority" değil — state ekran tespitinden | BILGI | yüksek | — | yok | 0.8.0 dokümanı |
 | F10 | Named session'a otomasyonu izole etmek | OPTIMIZASYON | düşük | düşük | düşük | var, 0.6.2'de yapıldı |
@@ -125,48 +125,51 @@ elle kullandığından ayırmak istiyorsan alan zaten orada.
 
 ## 3. Değerlendirilmeli
 
-### F4 — `herdr wait output` ile sleep+read döngüsünü değiştir
+### F4 — UYGULANDI: kör Enter öldü
 
-**Mevcut** (`src/features/thread/useThread.ts`, `deliver`):
+Raporun ilk hâlinde `pane wait-output` ile ekrandan çıkarmayı önermiştim. Daha
+iyi bir cevap varmış, `agent prompt --wait`'in kendi `--help`'inde:
 
-```ts
-let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
-if (!accepted) {
-  await client.sendKeys(pane.paneId, ['Enter']);   // kör Enter
-  accepted = await client.waitAgentStatus(pane.paneId, 'working', 2500);
-}
-```
+> *"When submission starts from a non-working state, `--wait` first requires an
+> observed state change within 5000ms; otherwise it returns
+> `agent_prompt_stalled`."*
 
-`waitAgentStatus` zaten `herdr wait agent-status`'a gidiyor — bu **iyi**, polling
-değil. Ama kör Enter hâlâ orada (0.6.2'de sadece `agent prompt` varsa devre dışı
-kalıyor, ki 0.7.4'te yok).
+Yani kör Enter'ın **tahmin etmeye** çalıştığı durumu herdr **gözlemleyip adıyla**
+bildiriyor. `sendPrompt` artık üç şey döndürüyor — `delivered` / `stalled` /
+`unverified` — çünkü çağıran her biri için farklı davranıyor.
 
-0.7.4'te **bugün** kullanılabilecek şey: `herdr wait output <pane> --match <text>
-[--regex]`. Kör Enter'ın çözmeye çalıştığı "prompt composer'da takılı kaldı"
-durumu, ekranda prompt'un görünüp görünmediğine bakılarak ayırt edilebilir —
-körlemesine Enter yollamak yerine.
+`--timeout` bilerek 8000ms, herdr'ın 5000ms tabanının üstünde: help *"a shorter
+--timeout returns timeout instead"* diyor, yani kısası teşhis edilebilir bir
+stall'ı jenerik bir timeout'a çevirirdi.
 
-**Taşınma:** `client.ts`'e `waitOutput(paneId, match, {regex, timeoutMs})` ekle,
-`deliver`'da kör Enter'ı "ekranda gönderdiğimiz metin duruyor mu" kontrolüyle
-değiştir. Ölçülmeden yapılmamalı — `--source visible` semantiği doğrulanmalı.
+`wasWorking` kontrolü duruyor, çünkü help uyarıyor: *"does not track turns: if
+the agent is already working, that active turn's completion may match."*
 
-### F5 — `events.subscribe` ile polling'i bırakmak
+### F5 — ERTELENDİ, ve gerekçesi ölçüldü
 
-Bugün: chat listesi 3sn, thread 2sn, ikisi de `usePollGate` ile kapılı (aynı anda
-sadece biri çalışıyor). Yani en kötü hâl ~0.5 komut/sn, #13'te korkulan 2/sn değil.
+`session.snapshot` + `events.subscribe` doğru mimari, ama bizde çözdüğü problem
+büyük ölçüde zaten çözülmüş durumda.
 
-0.8.0 dokümanı `session.snapshot` + `events.subscribe` ile incremental cache
-öneriyor; event listesi geniş (`pane.agent_status_changed`, `pane.output_matched`,
-`workspace.metadata_updated`, `layout.updated`, `worktree.*`).
+Bugünkü gerçek yük: chat listesi 3sn, thread 2sn, **ikisi de `usePollGate` ile
+kapılı** — uygulama arka plandaysa veya ekran üstte değilse loop sökülüyor. Yani
+aynı anda tek loop çalışıyor ve en kötü hâl ~0.5 komut/sn. #13'ün korktuğu 2/sn
+senaryosu artık yok.
 
-**Bize uyar mı — açık soru.** Transport'umuz `exec` (tek atışlık komut) ve
-`streamLines` (uzun ömürlü). `events.subscribe` ikincisine oturur, ama:
-- SSH bağlantısı düştüğünde event akışı sessizce ölür; polling kendi kendini iyileştirir.
-- Telefon arka plana geçtiğinde akışı kapatıp snapshot'la yeniden başlamak gerekir.
-- `usePollGate` bugün bunu bedavaya çözüyor.
+Event'e geçmenin **kazancı**: ekran açıkken gecikme 2sn'den ~anlıka iner.
+**Maliyeti** üç tane ve hiçbiri küçük değil:
 
-Kazanç, ekran açıkken gecikmenin 2sn'den ~anlıka inmesi. Bu gerçek bir UX kazancı
-ama mimari değişiklik. **Önce F1/F2 kapansın.**
+1. SSH akışı sessizce ölür. Polling kendi kendini iyileştiriyor — her tick yeni
+   bir komut, bağlantı düşmüşse bir sonraki deniyor. Uzun ömürlü bir abonelik
+   düştüğünde ekran donar ve bunu fark edecek bir watchdog yazmak gerekir. Bu
+   watchdog'un kendisi de bir poll'dür.
+2. Telefon arka plana geçtiğinde aboneliği kapatıp dönüşte snapshot'la yeniden
+   kurmak gerekir — `usePollGate`'in bugün bedavaya yaptığı şey.
+3. `streamLines` transport'umuzda zaten transcript tail'i için kullanılıyor;
+   ikinci uzun ömürlü akış aynı SSH bağlantısında iki ayrı yaşam döngüsü demek.
+
+**Karar: yapılmıyor.** Yeniden değerlendirme tetikleyicisi net — poll'ün gecikmesi
+şikâyet konusu olursa, ya da tek bir host'ta aynı anda birden fazla thread
+açılabilir hâle gelirse.
 
 ### F6 — Sidebar'a agent metadata yansıtmak
 
@@ -216,6 +219,38 @@ yetiyor, yani poll'e bağlamak yerine ayrı ve seyrek bir yazım olmalı.
 | **`agent prompt` (F3)** | 0.7.4'te yok. Kod 0.6.2'de yazıldı ve fallback ile korumalı; 0.8.0'a çıkınca **kendiliğinden** devreye girer (F1 düzeltilirse). Bugün yapılacak bir şey yok. |
 
 ---
+
+## 4b. Şablonun ilk turda atladığım bölümleri
+
+**L — Bildirim.** `herdr notification` tek alt komut: `show`. `ui.toast.delivery`
+config'imizde `"system"`. Telefon bildirimleri APNs'ten geliyor
+(`scripts/herdr-apns-notifier.py`), yani herdr'ın toast'u bizim yolumuzla
+**alakasız** — masaüstünde çalışırken görülen şey. Uygulanacak bir şey yok.
+Dokümanın `reason` dönüş değerleri ve `delay_seconds` davranışı bu app'e
+değmiyor.
+
+**N — Ergonomi ve config.** `terminal.shell_mode = "auto"`, `terminal.new_cwd =
+"follow"`, `advanced.scrollback_limit_bytes = 10000000`,
+`experimental.allow_nested = false` — hepsi default ve config'imizde yok, yani
+implicit. Bunlar **masaüstü ergonomisi**; HerdrChat host'ta pane açmıyor, shell
+modu seçmiyor. `experimental.pane_history` bu binary'nin default-config'inde
+görünmüyor — **doğrulanmalı**, ama açmak için sebep de yok: ekran geçmişini
+diske yazmak, transcript'i zaten okuyan bir kurulumda ikinci bir kopya demek.
+`herdr completion zsh` ve `config reset-keys` senin kabuk ergonomin, app'in
+değil.
+
+**M — Oturum, socket, remote.** Named session çözümleme sırası
+(`--session` > `HERDR_SOCKET_PATH` > `HERDR_SESSION` > default) bizim için
+`withSession()` ile kapandı (0.6.2). `herdr --remote` ve `[remote]
+manage_ssh_config` **bize uymaz**: onlar bir herdr istemcisini SSH üzerinden
+sunucuya bağlıyor, biz zaten kendi SSH transport'umuzu taşıyoruz ve TUI
+attach etmiyoruz. `--handoff` canlı devir için, `herdr server` supervised
+çalıştırma için — ikisi de host tarafı işletme kararı, app'in değil.
+
+**I — Topoloji.** `worktree` var ve çalışıyor, ama HerdrChat tek seferde tek
+sohbet gösteren bir telefon uygulaması; paralel worktree akışı masaüstü işi.
+`pane move` cross-workspace var — kullanmıyoruz, çünkü telefondan pane taşımak
+için bir sebep yok. `layout export/apply` ne binary'de ne dokümanda.
 
 ## 5. Açık sorular — senin cevaplaman gerekenler
 

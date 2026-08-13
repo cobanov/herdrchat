@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 import { ActionRow, Divider, Row, Section } from '@/components/SettingsList';
 import { versionAdvice, versionVerdict } from '@/lib/herdr/version';
+import { useSelectedConnection } from '@/state/connections';
 import { useHostVersion } from '@/state/hostVersion';
 
 const PRIVACY_URL = 'https://herdrchat.cobanov.dev/privacy';
@@ -39,8 +40,19 @@ export function AboutSection() {
    * the user nor a bug report carried the version to find them with.
    */
   const hostVersion = useHostVersion((state) => state.version);
+  const connection = useSelectedConnection();
   const verdict = versionVerdict(hostVersion);
-  const advice = versionAdvice(verdict);
+  /**
+   * No advice until there is a host AND it has answered.
+   *
+   * `unknown` covers two different situations and only one of them is worth a
+   * sentence: a host that replied without a version field, versus no host at all
+   * or no poll landed yet. Showing "this host didn't report its version" on a
+   * screen with no hosts configured is telling someone about a machine that does
+   * not exist.
+   */
+  const advice =
+    connection === null || hostVersion === null ? null : versionAdvice(verdict);
 
   return (
     <Section title="About" footer={advice ?? undefined}>
@@ -51,11 +63,13 @@ export function AboutSection() {
       <Row
         label="herdr on host"
         value={
-          verdict.kind === 'unknown'
-            ? hostVersion === null
+          connection === null
+            ? 'no host'
+            : hostVersion === null
               ? '—'
-              : 'not reported'
-            : `${verdict.version}${verdict.kind === 'current' ? '' : ' ⚠︎'}`
+              : verdict.kind === 'unknown'
+                ? 'not reported'
+                : `${verdict.version}${verdict.kind === 'current' ? '' : ' ⚠︎'}`
         }
       />
       <Divider />

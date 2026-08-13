@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
 import { usePollGate } from '../usePollGate';
+import { useReportPresence } from './useReportPresence';
 import { useSettings } from '@/state/settings';
 import type * as SQLite from 'expo-sqlite';
 
@@ -13,7 +14,7 @@ import type { ChatMessage } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
 import { parseBlockedPrompt, type BlockedPrompt } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
-import type { SessionMeta } from '@/lib/transcript/sessionMeta';
+import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
   appendMessages,
   rebind,
@@ -576,6 +577,15 @@ export function useThread(
   const primaryPane =
     agents.find((a) => a.focused) ?? agents.find((a) => a.agent !== null) ?? agents[0] ?? null;
   const blockedPane = agents.find((a) => a.agentStatus === 'blocked') ?? null;
+
+  // Publish "driven from a phone, on this model" to the host's sidebar. Gated on
+  // `polling` so a backgrounded app stops claiming presence it does not have.
+  useReportPresence(
+    client,
+    primaryPane?.paneId ?? null,
+    modelDisplayName(sessionMeta?.model ?? null),
+    polling
+  );
 
   /**
    * The pane to send to, re-read at the moment of sending.

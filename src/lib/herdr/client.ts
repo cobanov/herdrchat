@@ -365,6 +365,39 @@ export class HerdrClient {
       : new HerdrError('send_keys_failed', "The host didn't accept that key.");
   }
 
+  /**
+   * Tell the host what this pane is doing, for its own sidebar.
+   *
+   * Display-only and one-way: herdr renders `$token` values in
+   * `ui.sidebar.agents.rows`, and nothing here changes agent state. The point is
+   * that a desktop looking at the sidebar can see which agents are being driven
+   * from the phone and on what model — information that today exists only inside
+   * this app, on a screen the desktop cannot see.
+   *
+   * `ttlMs` is the whole safety story. The phone is an unreliable reporter: it
+   * gets backgrounded, loses the tailnet, or is simply put down. A TTL means the
+   * label expires on its own rather than leaving the desktop with a stale claim
+   * that a chat is live when nobody has touched it for an hour.
+   *
+   * `seq` orders concurrent reports. Best-effort throughout: decoration must
+   * never take down a send.
+   */
+  async reportMetadata(
+    paneId: string,
+    options: { source: string; tokens: Record<string, string>; ttlMs: number; seq: number }
+  ): Promise<void> {
+    const argv = [this.herdr, 'pane', 'report-metadata', paneId, '--source', options.source];
+    for (const [name, value] of Object.entries(options.tokens)) {
+      argv.push('--token', `${name}=${value}`);
+    }
+    argv.push('--ttl-ms', String(options.ttlMs), '--seq', String(options.seq));
+    try {
+      checkEnvelope(await this.shell(shellCommand(argv), SEND_TIMEOUT_MS));
+    } catch {
+      /* decoration, never fatal */
+    }
+  }
+
   /** Send raw keys to a pane, e.g. a quick reply to a blocked prompt. */
   async sendKeys(paneId: string, keys: readonly string[]): Promise<void> {
     const output = await this.shell(
