@@ -8,6 +8,7 @@ import { Field } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
+import { agentName } from '@/lib/herdr/agentName';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   DEFAULT_PERMISSION_MODE,
@@ -92,7 +93,15 @@ export default function NewChatScreen() {
         directory,
         label.trim().length === 0 ? null : label.trim()
       );
-      await client.startAgent(creation.rootPane.paneId, launchCommand(mode));
+      // Named after the workspace, so `herdr agent list` on the desktop shows
+      // the same thing this app calls the chat. On a host without `agent start`
+      // this falls back to typing the launch command, which is what shipped.
+      await client.startNamedAgent(
+        creation.rootPane.paneId,
+        agentName(creation.workspace.label),
+        'claude',
+        launchCommand(mode)
+      );
       await setSetting(db, settingKey('lastCwd'), directory);
       await setSetting(db, settingKey('permissionMode'), mode);
 
@@ -161,7 +170,7 @@ export default function NewChatScreen() {
                 style={{
                   padding: spacing.md,
                   borderRadius: radius.sm,
-                  gap: 2,
+                  gap: spacing.xxs,
                   backgroundColor: selected ? colors.tintMuted : colors.secondarySystemBackground,
                 }}>
                 <Text variant="headline" color={selected ? 'tint' : 'label'}>

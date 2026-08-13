@@ -108,6 +108,28 @@ export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     -- one on a later launch.
     DROP TABLE IF EXISTS unread;
   `);
+
+  await addColumnIfMissing(db, 'connections', 'session_name', "TEXT NOT NULL DEFAULT ''");
+}
+
+/**
+ * `ALTER TABLE … ADD COLUMN`, made idempotent.
+ *
+ * Everything above is `CREATE TABLE IF NOT EXISTS`, which re-runs harmlessly on
+ * every launch. `ADD COLUMN` has no such form — it throws once the column is
+ * there — and this schema has no version counter to hang a one-shot migration
+ * off. Asking the table what it already has is cheaper than introducing one, and
+ * cannot drift from reality the way a version number can.
+ */
+async function addColumnIfMissing(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string
+): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (columns.some((existing) => existing.name === column)) return;
+  await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 // MARK: - Connections
@@ -120,6 +142,7 @@ interface ConnectionRow {
   username: string;
   auth_kind: string;
   herdr_path: string;
+  session_name: string | null;
 }
 
 export async function loadConnections(db: SQLite.SQLiteDatabase): Promise<ServerConnection[]> {
@@ -134,6 +157,8 @@ export async function loadConnections(db: SQLite.SQLiteDatabase): Promise<Server
     username: row.username,
     authKind: row.auth_kind === 'password' ? 'password' : 'privateKey',
     herdrPath: row.herdr_path,
+    // Null on a row written before the column existed.
+    sessionName: row.session_name ?? '',
   }));
 }
 
@@ -142,19 +167,20 @@ export async function saveConnection(
   connection: ServerConnection
 ): Promise<void> {
   await db.runAsync(
-    `INSERT INTO connections (id, name, host, port, username, auth_kind, herdr_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO connections (id, name, host, port, username, auth_kind, herdr_path, session_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name, host = excluded.host, port = excluded.port,
        username = excluded.username, auth_kind = excluded.auth_kind,
-       herdr_path = excluded.herdr_path`,
+       herdr_path = excluded.herdr_path, session_name = excluded.session_name`,
     connection.id,
     connection.name,
     connection.host,
     connection.port,
     connection.username,
     connection.authKind,
-    connection.herdrPath
+    connection.herdrPath,
+    connection.sessionName
   );
 }
 

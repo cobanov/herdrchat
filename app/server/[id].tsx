@@ -57,6 +57,7 @@ export default function ServerEditScreen() {
   );
   const [secret, setSecret] = useState('');
   const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
+  const [sessionName, setSessionName] = useState(existing?.sessionName ?? '');
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
   const [installing, setInstalling] = useState(false);
 
@@ -80,6 +81,7 @@ export default function ServerEditScreen() {
     username: username.trim(),
     authKind,
     herdrPath: herdrPath.trim().length === 0 ? 'herdr' : herdrPath.trim(),
+    sessionName: sessionName.trim(),
   });
 
   const resolveSecret = async (): Promise<string> => {
@@ -222,6 +224,24 @@ export default function ServerEditScreen() {
           autoCapitalize="none"
           testID="field-herdr-path"
         />
+
+        {/* Blank is the common case and the right default. Naming a session only
+            matters on a host running more than one, where we previously drove
+            whichever the default resolved to without saying so. */}
+        <View style={{ gap: spacing.xs }}>
+          <Field
+            label="herdr session"
+            placeholder="Default"
+            value={sessionName}
+            onChangeText={invalidate(setSessionName)}
+            autoCapitalize="none"
+            testID="field-session"
+          />
+          <Text variant="caption" color="secondary">
+            Leave empty unless this machine runs more than one herdr session. The
+            name is what `herdr session list` shows.
+          </Text>
+        </View>
 
         <View style={{ gap: spacing.md }}>
           <Button

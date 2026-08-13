@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
 import { HerdrClient } from '@/lib/herdr/client';
+import { withSession } from '@/lib/herdr/session';
 import { SshHerdrTransport } from '@/lib/herdr/sshTransport';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 
@@ -19,6 +20,13 @@ export interface ServerConnection {
   authKind: 'privateKey' | 'password';
   /** Path to the herdr binary if it isn't on the non-interactive PATH. */
   herdrPath: string;
+  /**
+   * Which herdr session to drive. Empty (or "default") means let herdr resolve
+   * it — see `withSession`. A host running more than one session used to be
+   * driven blind: we controlled whichever the default resolved to, with nothing
+   * saying the others existed.
+   */
+  sessionName: string;
 }
 
 export function newConnection(): ServerConnection {
@@ -26,6 +34,7 @@ export function newConnection(): ServerConnection {
     id: `srv-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
     name: '',
     host: '',
+    sessionName: '',
     port: 22,
     username: '',
     authKind: 'privateKey',
@@ -146,7 +155,10 @@ export function clientFor(connection: ServerConnection): HerdrClient {
       void saveHostKeyPin(connection.id, fingerprint);
     }
   );
-  const client = new HerdrClient(transport, connection.herdrPath);
+  // Bound here and nowhere else: everything that reaches the host — the client,
+  // the transcript store, push registration — goes through this transport, so a
+  // future call site cannot forget the session because it never has to know.
+  const client = new HerdrClient(withSession(transport, connection.sessionName), connection.herdrPath);
   clients.set(connection.id, { client, transport });
   return client;
 }

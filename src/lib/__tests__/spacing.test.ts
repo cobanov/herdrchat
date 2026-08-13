@@ -26,15 +26,22 @@ import { layout, size, spacing } from '@/theme/tokens';
  * repo-scanning tests flaky on someone else's checkout.
  */
 function sourceFiles(): string[] {
-  const out = execFileSync(
-    'git',
-    ['ls-files', 'src/**/*.ts', 'src/**/*.tsx', 'app/**/*.ts', 'app/**/*.tsx'],
-    { encoding: 'utf8', cwd: process.cwd() }
-  );
+  // Whole directories, filtered by extension here. The first version of this
+  // asked git for `app/**/*.tsx`, which does NOT match `app/new-chat.tsx` — the
+  // glob needs at least one directory level — so four route files were silently
+  // never scanned and this suite passed while `gap: 2` sat in one of them.
+  //
+  // A test whose scope is decided by a glob can be wrong in exactly the way it
+  // exists to prevent, and it fails green. Listing directories and filtering in
+  // code has no such subtlety.
+  const out = execFileSync('git', ['ls-files', 'src', 'app'], {
+    encoding: 'utf8',
+    cwd: process.cwd(),
+  });
   return out
     .trim()
     .split('\n')
-    .filter((file) => file.length > 0)
+    .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
     .filter((file) => !file.startsWith('src/theme/') && !file.includes('__tests__'));
 }
 

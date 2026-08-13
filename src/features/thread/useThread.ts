@@ -610,10 +610,24 @@ export function useThread(
   );
 
   /**
-   * Submit and verify. `pane run` types the text and presses Enter, but a busy
-   * TUI can leave the prompt sitting in the composer — so unless the agent was
-   * already working (where a send just queues), require the status to flip to
-   * `working`; if it doesn't, press Enter once more and re-check.
+   * Submit, and verify only when we have to.
+   *
+   * `agent prompt` is herdr's agent-aware verb: a success means the agent got
+   * the text, so there is nothing to confirm and the send returns immediately
+   * instead of stalling up to six seconds on an idle agent.
+   *
+   * The rest is the legacy path, for hosts without that verb. `pane run` types
+   * the text and presses Enter, but a busy TUI can leave the prompt sitting in
+   * the composer — so unless the agent was already working (where a send just
+   * queues), require the status to flip to `working`; if it doesn't, press Enter
+   * once more and re-check.
+   *
+   * That second Enter is a blind retry and it is not safe in principle: if the
+   * first send DID land and merely hadn't flipped status yet, it submits an
+   * empty line into a live agent. It survives here only because it is the
+   * behaviour this app shipped for months against hosts that have no
+   * alternative, and removing it would regress the stuck-composer case it was
+   * written for. On any herdr with `agent prompt` the whole branch is dead.
    */
   const deliver = useCallback(
     async (text: string, echoId: string, polled: AgentInfo) => {
@@ -622,8 +636,8 @@ export function useThread(
       try {
         const pane = await currentPane(polled);
         const wasWorking = pane.agentStatus === 'working';
-        await client.sendMessage(pane.paneId, text);
-        if (!wasWorking) {
+        const confirmed = await client.sendPrompt(pane.paneId, text);
+        if (!confirmed && !wasWorking) {
           let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
           if (!accepted) {
             await client.sendKeys(pane.paneId, ['Enter']);

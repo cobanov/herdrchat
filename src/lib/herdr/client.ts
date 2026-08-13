@@ -160,6 +160,9 @@ export class HerdrClient {
    * Type a chat message into an agent pane and submit it. `pane run` sends the
    * text and a real Enter in one request — a separate `send-keys enter` types
    * the text but doesn't submit inside an agent TUI (only in a plain shell).
+   *
+   * The legacy path. Prefer `sendPrompt`, which uses the agent-aware verb where
+   * the host has it.
    */
   async sendMessage(paneId: string, text: string): Promise<void> {
     const output = await this.shell(
@@ -167,6 +170,56 @@ export class HerdrClient {
       SEND_TIMEOUT_MS
     );
     checkEnvelope(output);
+  }
+
+  /**
+   * Submit a prompt to the agent in a pane.
+   *
+   * Returns TRUE when the agent-aware verb handled it. That is the whole point
+   * of the return value: `agent prompt` is understood by herdr as "give this
+   * text to the agent", so a success means delivered and the caller can skip the
+   * verification dance entirely. `pane run` only means "the keystrokes were
+   * sent", which is why the caller has to watch the status afterwards.
+   *
+   * WHY A PROBE RATHER THAN TRY-AND-FALL-BACK. The obvious shape is to attempt
+   * `agent prompt` and fall back to `pane run` when it errors — and that is
+   * unsafe here, because "it errored" and "it did nothing" are not the same
+   * thing. A verb that half-landed would then be followed by a second send, and
+   * a duplicated prompt is exactly the class of bug this replaces. `--help`
+   * cannot send anything, so probing once per host per app run costs one
+   * round-trip and removes the ambiguity.
+   */
+  async sendPrompt(paneId: string, text: string): Promise<boolean> {
+    if (!(await this.supportsAgentPrompt())) {
+      await this.sendMessage(paneId, text);
+      return false;
+    }
+    const output = await this.shell(
+      shellCommand([this.herdr, 'agent', 'prompt', paneId, text]),
+      SEND_TIMEOUT_MS
+    );
+    checkEnvelope(output);
+    return true;
+  }
+
+  /**
+   * Whether a subcommand exists, asked without invoking it.
+   *
+   * Any failure reads as "not supported", including a host that is briefly
+   * unreachable. That is the safe direction: the fallback is the path the app
+   * shipped with for months, so a false negative costs the old behaviour rather
+   * than an error.
+   */
+  private async probe(subcommand: readonly string[]): Promise<boolean> {
+    try {
+      const result = await this.transport.exec(
+        withPath(shellCommand([this.herdr, ...subcommand, '--help'])),
+        POLL_TIMEOUT_MS
+      );
+      return result.ok && result.exitCode === 0;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -257,6 +310,8 @@ export class HerdrClient {
   /**
    * Launch an agent in a freshly created pane's shell. Uses `pane run`, which
    * types the command and presses Enter in one request.
+   *
+   * The legacy path. Prefer `startNamedAgent`.
    */
   async startAgent(paneId: string, command = 'claude'): Promise<void> {
     const output = await this.shell(
@@ -264,6 +319,70 @@ export class HerdrClient {
       LAUNCH_TIMEOUT_MS
     );
     checkEnvelope(output);
+  }
+
+  /**
+   * Start an agent the way herdr wants to be asked.
+   *
+   * `agent start` does in one blocking call what typing `claude` into a shell
+   * only hopes for: it REGISTERS the agent, NAMES it, attaches the `--kind`
+   * integration — which is what produces `agent_session.value`, the one field
+   * the whole transcript reader depends on — and returns only once the agent is
+   * interactive.
+   *
+   * The old path starts a bare process and waits for herdr's screen detection to
+   * notice. When it doesn't, the thread sits empty for eighty seconds before
+   * concluding the integration is missing, which is a long time to look broken
+   * for something that was never registered in the first place.
+   *
+   * Returns whether the named path was used, so the caller knows whether the
+   * agent is guaranteed interactive or merely launched.
+   */
+  async startNamedAgent(
+    paneId: string,
+    name: string,
+    kind: string,
+    fallbackCommand: string,
+    timeoutMs = LAUNCH_TIMEOUT_MS
+  ): Promise<boolean> {
+    if (!(await this.supportsAgentStart())) {
+      await this.startAgent(paneId, fallbackCommand);
+      return false;
+    }
+    const output = await this.shell(
+      shellCommand([
+        this.herdr,
+        'agent',
+        'start',
+        name,
+        '--kind',
+        kind,
+        '--pane',
+        paneId,
+        '--timeout',
+        String(timeoutMs),
+      ]),
+      // The host blocks for up to its own timeout, so ours has to outlast it —
+      // otherwise we give up on an agent that is about to come up, and the
+      // caller falls back and starts a SECOND one in the same pane.
+      timeoutMs + LAUNCH_TIMEOUT_MS
+    );
+    checkEnvelope(output);
+    return true;
+  }
+
+  /** Memoised for the client's lifetime — one per host, not one per send. */
+  private agentPrompt: Promise<boolean> | null = null;
+  private agentStart: Promise<boolean> | null = null;
+
+  private supportsAgentPrompt(): Promise<boolean> {
+    this.agentPrompt ??= this.probe(['agent', 'prompt']);
+    return this.agentPrompt;
+  }
+
+  private supportsAgentStart(): Promise<boolean> {
+    this.agentStart ??= this.probe(['agent', 'start']);
+    return this.agentStart;
   }
 
   /**
