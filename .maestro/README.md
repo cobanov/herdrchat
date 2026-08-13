@@ -14,13 +14,24 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `folder-picker` | opening over the sheet, abandon vs. commit | no |
 | `add-server` | that the connection test really connects | **yes** |
 | `thread-back` | that a thread can be left by swiping, not only by the chevron | **yes** |
+| `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
 without a host — that is those flows doing their job, not a broken suite.
 
-**Not covered:** blocked quick-replies. Asserting them needs an agent actually
-sitting at a prompt, which is a live host plus a seeded conversation; the
-host-free flows here would only be able to prove the bar is absent.
+**`blocked-replies` has never been run.** It is written against the real
+testIDs in `BlockedBar.tsx`, but no host with a blocked agent was reachable when
+it was authored, so treat its first execution as authoring rather than
+regression. It needs an agent driven into `blocked` first:
+
+```bash
+herdr agent prompt <pane> 'Ask me to choose between two options, then wait'
+herdr agent wait <pane> --status blocked --timeout 60000
+maestro test .maestro/blocked-replies.yaml -e WORKSPACE='<title>'
+```
+
+`agent wait` exiting 0 is the synchronisation point. Do not substitute a sleep —
+polling the screen for a prompt is what makes this class of test flaky.
 
 **Also not covered:** the chat-row swipe actions. Maestro's `swipe` can open the
 panel, but the actions behind it are Rename and Close — one of which stops every

@@ -1,0 +1,66 @@
+# Blocked quick-replies: that a parsed option reaches a tappable control, and
+# that tapping it delivers.
+#
+# NEVER RUN. Written against the real testIDs in `BlockedBar.tsx`, but no host
+# with a blocked agent has been reachable from the machine that wrote it, so
+# treat the first execution as authoring rather than regression. If a selector
+# is wrong, it is wrong here and not in the app.
+#
+# Why this cannot be host-free, unlike every other flow in this directory: the
+# bar only exists when an agent is actually sitting at a prompt. A flow without
+# a host could only assert the bar is ABSENT, which passes exactly as happily
+# when the feature is broken as when it works — a green run that proves nothing
+# is worse than no run.
+#
+# The parsing is already covered by unit tests (`src/lib/transcript/
+# blockedPrompt.ts`). What this adds is the two things a unit test cannot see:
+# that the parsed labels reach a control you can hit, and that hitting one sends
+# the keys.
+#
+# Needs a host, a workspace, and an agent driven into `blocked`:
+#
+#   herdr agent prompt <pane> 'Ask me to choose between two options, then wait'
+#   herdr agent wait <pane> --status blocked --timeout 60000
+#
+# `agent wait` exiting 0 is the synchronisation point. Polling the screen for a
+# prompt is what makes this class of test flaky — do not substitute a sleep.
+#
+#   maestro test .maestro/blocked-replies.yaml -e WORKSPACE=<title>
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- assertVisible: 'Chats'
+
+# The workspace whose agent was driven into `blocked` by the commands above.
+- tapOn: ${WORKSPACE}
+- assertVisible:
+    id: 'thread-back'
+
+# The bar itself. If this fails, either the agent is not blocked or the status
+# poll has not landed yet — `agent wait` returning is not the same instant as
+# the phone's next poll, and the default timeout here should absorb one cycle.
+- assertVisible:
+    id: 'blocked-bar'
+    timeout: 10000
+
+# The parsed options, as controls rather than as screen text. Asserting on the
+# raw terminal output would pass against a bar that renders the prompt verbatim
+# and parses nothing, which is the failure this flow exists to catch.
+- assertVisible:
+    id: 'blocked-option-1'
+- assertVisible:
+    id: 'blocked-option-2'
+
+# Delivery. The agent leaves `blocked` once the choice lands, so the bar going
+# away IS the assertion — there is no separate confirmation to look for.
+- tapOn:
+    id: 'blocked-option-1'
+- assertNotVisible:
+    id: 'blocked-bar'
+    timeout: 15000
+
+# And the thread is still usable afterwards, which catches a send that delivers
+# the keys but leaves the screen in the blocked layout.
+- assertVisible:
+    id: 'thread-back'
