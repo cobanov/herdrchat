@@ -503,15 +503,38 @@ describe('TranscriptStore.fileProbe', () => {
     });
   });
 
-  it('reports absent when the shell says the file is not there', async () => {
+  it('reports absent on the exit status the probe reserves for it', async () => {
+    await expect(
+      probe({ ok: true, stdout: '', stderr: '', exitCode: 44 })
+    ).resolves.toEqual({ kind: 'absent' });
+  });
+
+  // The old probe read the shell's English. A host with a localized libc says
+  // the same thing in its own words, and every freshly-created session then
+  // read `unknown` — a broken transcript — instead of "wait a beat".
+  it('reports absent on a host that does not speak English', async () => {
     await expect(
       probe({
         ok: true,
         stdout: '',
-        stderr: 'sh: /t.jsonl: No such file or directory\n',
-        exitCode: 1,
+        stderr: 'sh: /t.jsonl: Datei oder Verzeichnis nicht gefunden\n',
+        exitCode: 44,
       })
     ).resolves.toEqual({ kind: 'absent' });
+  });
+
+  it('asks the shell whether the file exists rather than reading its stderr', async () => {
+    const commands: string[] = [];
+    class Recording implements HerdrTransport {
+      async exec(command: string): Promise<ExecResult> {
+        commands.push(command);
+        return ok('12\n');
+      }
+      async *streamLines(): AsyncIterable<string> {}
+    }
+    await new TranscriptStore(new Recording()).fileProbe('/t.jsonl');
+    expect(commands[0]).toContain('[ -f ');
+    expect(commands[0]).toContain('exit 44');
   });
 
   it('reports unknown — not absent — when the read failed for another reason', async () => {
@@ -529,5 +552,86 @@ describe('TranscriptStore.fileProbe', () => {
   it('reports unknown rather than guess when the output is not a number', async () => {
     const result = await probe({ ok: true, stdout: 'wat\n', stderr: '', exitCode: 0 });
     expect(result.kind).toBe('unknown');
+  });
+});
+
+describe('shell failures inside the store', () => {
+  class FailingTransport implements HerdrTransport {
+    constructor(private readonly result: ExecResult) {}
+    async exec(): Promise<ExecResult> {
+      return this.result;
+    }
+    async *streamLines(): AsyncIterable<string> {}
+  }
+
+  // 127 here is `tail`/`wc`/`head` missing from a non-interactive PATH, not
+  // herdr. Blaming herdr sends the reader off to install something that is
+  // already installed.
+  it('names the tools it actually runs on exit 127', async () => {
+    const subject = new TranscriptStore(
+      new FailingTransport({ ok: true, stdout: '', stderr: 'tail: not found', exitCode: 127 })
+    );
+    await expect(subject.sessionMeta('/t.jsonl')).rejects.toThrow(/tail, wc and head/);
+    await expect(subject.sessionMeta('/t.jsonl')).rejects.not.toThrow(/herdr/);
+  });
+
+  it('fails loudly when the host will not say where home is', async () => {
+    const subject = new TranscriptStore(
+      new FailingTransport({ ok: true, stdout: '\n', stderr: '', exitCode: 0 })
+    );
+    // '~' was returned here once, and every path built from it was single-quoted
+    // downstream, so the host looked for a directory literally named "~".
+    await expect(subject.homeDirectory()).rejects.toThrow(/home directory/);
+  });
+});
+
+describe('home directory caching', () => {
+  it('asks the host once per store', async () => {
+    const commands: string[] = [];
+    class HomeTransport implements HerdrTransport {
+      async exec(command: string): Promise<ExecResult> {
+        commands.push(command);
+        return ok('/home/ege');
+      }
+      async *streamLines(): AsyncIterable<string> {}
+    }
+    const subject = new TranscriptStore(new HomeTransport());
+    expect(await subject.homeDirectory()).toBe('/home/ege');
+    expect(await subject.homeDirectory()).toBe('/home/ege');
+    expect(commands).toHaveLength(1);
+  });
+});
+
+describe('preview marker collision', () => {
+  /** Echoes the script's own marker lines, then serves the canned transcript. */
+  class MarkerTransport implements HerdrTransport {
+    constructor(private readonly body: string) {}
+
+    async exec(command: string): Promise<ExecResult> {
+      let out = '';
+      for (const match of command.matchAll(/printf '\\n(\S+) %s\\n' '([^']+)'/g)) {
+        out += `\n${match[1]} ${match[2]}\n${this.body}`;
+      }
+      return ok(out);
+    }
+    async *streamLines(): AsyncIterable<string> {}
+  }
+
+  // A chat ABOUT this app writes the separator verbatim. With a static marker
+  // the split filed the rest of that transcript under a workspace id read out
+  // of the transcript's own text.
+  it('is immune to a transcript that contains the separator', async () => {
+    const poison = JSON.stringify({
+      type: 'user',
+      uuid: 'u1',
+      message: { role: 'user', content: 'the marker is\n@@HERDRCHAT ghost\nand that is all' },
+    });
+    const subject = new TranscriptStore(new MarkerTransport(`${poison}\n`));
+    const result = await subject.latestMessages([
+      { workspaceId: 'w1', cwd: '/srv/app', sessionId: 'sess-a' },
+    ]);
+
+    expect([...result.keys()]).toEqual(['w1']);
+    expect(result.has('ghost')).toBe(false);
   });
 });

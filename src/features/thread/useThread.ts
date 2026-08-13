@@ -523,7 +523,12 @@ export function useThread(
         }
 
         for (const agent of conversational) {
-          void startTail(agent, conversational.length > 1);
+          // A tail that dies takes the whole live view with it silently. Route
+          // it into the same banner as everything else instead of an unhandled
+          // rejection nobody sees on a phone.
+          void startTail(agent, conversational.length > 1).catch((thrown: unknown) => {
+            setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+          });
         }
 
         const blocked = live.find((agent) => agent.agentStatus === 'blocked');

@@ -11,8 +11,11 @@ import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { getPushDeviceId } from '@/features/notifications/deviceId';
+import { deviceFileId, removePushToken } from '@/features/notifications/push';
 import {
   clearSecrets,
+  clientFor,
   invalidateClient,
   newConnection,
   useConnections,
@@ -48,6 +51,15 @@ export default function ServersScreen() {
       confirmLabel: 'Remove',
       onConfirm: () => {
         void (async () => {
+          // Best effort, and always before the client is thrown away: a host
+          // we forget keeps pushing to this device forever otherwise. An
+          // unreachable host must never stand between the user and removal.
+          try {
+            const deviceId = deviceFileId(await getPushDeviceId(db));
+            await removePushToken(clientFor(connection).transport, deviceId);
+          } catch {
+            /* unreachable host, or notifications were never set up here */
+          }
           await invalidateClient(connection.id);
           await clearSecrets(connection.id);
           await deleteConnection(db, connection.id);

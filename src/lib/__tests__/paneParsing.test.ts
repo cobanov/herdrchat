@@ -48,6 +48,12 @@ describe('blocked prompt parsing', () => {
     expect(optionKeys({ number: 2, label: 'Yes' })).toEqual(['2', 'Enter']);
   });
 
+  // "10" is not a key. Sending it as one is either dropped or lands as a bare
+  // "1" — which answers a different question.
+  it('sends a two-digit choice one digit at a time', () => {
+    expect(optionKeys({ number: 10, label: 'Tenth' })).toEqual(['1', '0', 'Enter']);
+  });
+
   it('strips ANSI colour before matching', () => {
     const coloured = `${ESC}[1m❯ 1.${ESC}[0m Yes\n  2. No`;
     expect(parseBlockedPrompt(coloured).options).toHaveLength(2);

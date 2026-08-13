@@ -219,3 +219,41 @@ describe('one-pass entry parsing', () => {
     expect(entry.meta).toEqual(assistantMeta(line));
   });
 });
+
+describe('bounded tool-input previews', () => {
+  it('caps a huge Write body instead of storing it whole', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      uuid: 'a1',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', name: 'Write', input: { content: 'x'.repeat(200_000) } }],
+      },
+    });
+    const message = parseTranscriptLine(line);
+    const segment = message?.segments[0];
+    expect(segment?.kind).toBe('toolUse');
+    // The chip shows one line; the rest was only ever a bill on SQLite.
+    if (segment?.kind === 'toolUse') {
+      expect(segment.input?.length).toBeLessThanOrEqual(2_001);
+      expect(segment.input?.endsWith('…')).toBe(true);
+    }
+  });
+});
+
+describe('context tokens from usage', () => {
+  const meta = (usage: Record<string, unknown>) =>
+    assistantMeta(
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', model: 'opus', usage } })
+    );
+
+  it('sums the three token fields', () => {
+    expect(meta({ input_tokens: 10, cache_read_input_tokens: 5 })?.contextTokens).toBe(15);
+  });
+
+  // Zero would win the header's `??` merge and wipe a good value the moment one
+  // such line streamed in.
+  it('reports null, not zero, when the line carries no counts', () => {
+    expect(meta({ output_tokens: 12 })?.contextTokens).toBeNull();
+  });
+});

@@ -101,6 +101,9 @@ export function projectDirName(cwd: string): string {
 
 const EMPTY_ENTRY: TranscriptEntry = { message: null, meta: null };
 
+/** How much of a tool's input the chip may carry. A chip shows one line anyway. */
+const TOOL_INPUT_PREVIEW_CHARS = 2_000;
+
 function messageFrom(
   raw: Record<string, unknown>,
   line: string,
@@ -129,12 +132,17 @@ function metaFrom(raw: Record<string, unknown>): AssistantMeta | null {
   if (message === null) return null;
 
   const usage = asRecord(message.usage);
-  const contextTokens =
+  // Null, not 0, when the line carries no token counts at all. A `usage` block
+  // with none of the three fields used to total 0, and the header merges with
+  // `??`, so a real context size was overwritten by a zero the moment one such
+  // line streamed in.
+  const counts =
     usage === null
-      ? null
-      : numberOr(usage.input_tokens, 0) +
-        numberOr(usage.cache_creation_input_tokens, 0) +
-        numberOr(usage.cache_read_input_tokens, 0);
+      ? []
+      : [usage.input_tokens, usage.cache_creation_input_tokens, usage.cache_read_input_tokens]
+          .filter((value): value is number => typeof value === 'number');
+  const contextTokens =
+    counts.length === 0 ? null : counts.reduce((total, value) => total + value, 0);
   const model = typeof message.model === 'string' ? message.model : null;
 
   if (model === null && contextTokens === null) return null;
@@ -202,17 +210,29 @@ function flattenContent(content: unknown): string {
     .join('\n');
 }
 
-/** A short single-line preview of a tool's input, for the tool chip. */
+/**
+ * A short single-line preview of a tool's input, for the tool chip.
+ *
+ * Capped, because "short" was only ever true of the tools that take short
+ * arguments: a Write of a 200 KB file put the whole body here, and every one of
+ * those went into SQLite and back out again on each thread open.
+ */
 function compactJson(value: unknown): string | null {
+  const flat = flattenJson(value);
+  if (flat === null || flat.length <= TOOL_INPUT_PREVIEW_CHARS) return flat;
+  return `${flat.slice(0, TOOL_INPUT_PREVIEW_CHARS)}…`;
+}
+
+function flattenJson(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
-    return `[${value.map((item) => compactJson(item) ?? 'null').join(', ')}]`;
+    return `[${value.map((item) => flattenJson(item) ?? 'null').join(', ')}]`;
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>).map(
-      ([key, item]) => `${key}: ${compactJson(item) ?? 'null'}`
+      ([key, item]) => `${key}: ${flattenJson(item) ?? 'null'}`
     );
     return `{${entries.join(', ')}}`;
   }
@@ -238,10 +258,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' ? value : fallback;
 }
 
 /**

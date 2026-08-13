@@ -191,6 +191,10 @@ export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): P
     await db.runAsync('DELETE FROM tail_cursors WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM previews WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM thread_reads WHERE connection_id = ?', id);
+    // The user's own words, typed on a host they just removed. Leaving them
+    // behind also let a re-added host inherit another host's prompt history,
+    // because connection ids are reused from the row that made them.
+    await db.runAsync('DELETE FROM prompts WHERE connection_id = ?', id);
   });
 }
 

@@ -26,6 +26,8 @@ import type { SessionMeta } from './sessionMeta';
  */
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
+  /** Cached `$HOME` — one lookup per connection, not one per tail. */
+  private home: string | null = null;
 
   constructor(transport: HerdrTransport) {
     this.transport = transport;
@@ -36,8 +38,20 @@ export class TranscriptStore {
    * shell quoting stays safe.
    */
   async homeDirectory(): Promise<string> {
+    const cached = this.home;
+    if (cached !== null) return cached;
     const home = (await this.shell('printf %s "$HOME"', POLL_TIMEOUT_MS)).trim();
-    return home.length > 0 ? home : '~';
+    // No usable answer is a failure, not a value. "~" was returned here once,
+    // and every path built from it went through `shellQuote` downstream, so the
+    // host looked for a directory literally named "~" and every read failed
+    // somewhere far from the cause.
+    if (home.length === 0) {
+      throw new HerdrError('home_unknown', "The host didn't say where the home directory is.");
+    }
+    // A home directory does not move under a live connection, and every tail
+    // start paid an SSH round-trip to learn the same string.
+    this.home = home;
+    return home;
   }
 
   /**
@@ -73,20 +87,22 @@ export class TranscriptStore {
    * so rather than retry in silence.
    */
   async fileProbe(path: string): Promise<FileProbe> {
+    const quoted = shellQuote(path);
+    // The shell ANSWERS the "is it there" question; we do not read its mind.
+    // This used to match /no such file|not found/ against stderr, which is
+    // whatever language the host is configured in — on a non-English host every
+    // freshly-created session read `unknown` instead of `absent`, and the
+    // caller reported a broken transcript instead of waiting a beat.
     const result = await this.transport.exec(
-      withPath(`wc -c < ${shellQuote(path)}`),
+      withPath(`[ -f ${quoted} ] || exit ${ABSENT_EXIT}; wc -c < ${quoted}`),
       POLL_TIMEOUT_MS
     );
     if (!result.ok) return { kind: 'unknown', reason: result.message };
 
+    if (result.exitCode === ABSENT_EXIT) return { kind: 'absent' };
     if (result.exitCode !== 0) {
       const detail = result.stderr.trim().split('\n')[0] ?? '';
-      // The shell's own words. Every sh spells this "No such file or
-      // directory"; anything else is a permission or transport problem and
-      // must not be mistaken for a file that hasn't been written yet.
-      return /no such file|not found/i.test(detail)
-        ? { kind: 'absent' }
-        : { kind: 'unknown', reason: detail.length > 0 ? detail : `wc exited ${result.exitCode}` };
+      return { kind: 'unknown', reason: detail.length > 0 ? detail : `wc exited ${result.exitCode}` };
     }
 
     const bytes = Number.parseInt(result.stdout.trim(), 10);
@@ -291,6 +307,11 @@ export class TranscriptStore {
     requests: readonly PreviewRequest[],
     tailBytes = 48_000
   ): Promise<Map<string, ChatMessage>> {
+    // A fresh marker per call. A transcript that happens to contain the literal
+    // separator — a chat ABOUT this app writes it verbatim — used to split a
+    // block in two and file the tail of one workspace's history under a
+    // workspace id read out of the transcript's own text.
+    const marker = randomMarker();
     let script = '';
     for (const request of requests) {
       // Ids are interpolated into the script and the marker line, so refuse
@@ -306,7 +327,7 @@ export class TranscriptStore {
       // row keeps its live status line until the id arrives.
       if (request.sessionId === null || !/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
       script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
-      script += `printf '\\n${MARKER} %s\\n' '${request.workspaceId}'; `;
+      script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
     }
     if (script.length === 0) return new Map();
@@ -315,7 +336,7 @@ export class TranscriptStore {
     const text = await this.shell(script);
     const result = new Map<string, ChatMessage>();
 
-    for (const block of text.split(`\n${MARKER} `).slice(1)) {
+    for (const block of text.split(`\n${marker} `).slice(1)) {
       const headerEnd = block.indexOf('\n');
       if (headerEnd < 0) continue;
       const workspaceId = block.slice(0, headerEnd).trim();
@@ -332,6 +353,15 @@ export class TranscriptStore {
   private async shell(command: string, timeoutMs = TRANSCRIPT_TIMEOUT_MS): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
     if (!result.ok) throw new HerdrError(result.code, result.message);
+    // Nothing in this file runs herdr — it runs `sh`, `tail`, `wc` and `head`.
+    // The shared exit-code reader blames herdr for a 127, which sends the
+    // reader off to install a tool that is already there.
+    if (result.exitCode === 127) {
+      throw new HerdrError(
+        'transcript_tools_missing',
+        "The host couldn't run the commands that read a transcript (exit 127). tail, wc and head must be on the PATH a non-interactive SSH session gets."
+      );
+    }
     if (result.exitCode !== 0) throw exitCodeError(result.exitCode, result.stderr);
     return result.stdout;
   }
@@ -373,7 +403,21 @@ export function previewText(message: ChatMessage): string | null {
   return collapsed.length === 0 ? null : collapsed.slice(0, 200);
 }
 
-const MARKER = '@@HERDRCHAT';
+const MARKER_PREFIX = '@@HERDRCHAT';
+
+/** Exit status the size probe uses to say "the file is not there". */
+const ABSENT_EXIT = 44;
+
+/**
+ * A separator no transcript can contain by accident. Random per call, so even a
+ * conversation that quotes an earlier batch's marker cannot split a block.
+ */
+function randomMarker(): string {
+  const hex = Math.floor(Math.random() * 0xffff_ffff)
+    .toString(16)
+    .padStart(8, '0');
+  return `${MARKER_PREFIX}-${hex}`;
+}
 
 /** What a lossy UTF-8 decode leaves behind where the real bytes were cut. */
 const REPLACEMENT_CHAR = '�';

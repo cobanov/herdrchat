@@ -25,9 +25,14 @@ export interface BlockedPrompt {
   options: BlockedOption[];
 }
 
-/** Keys that submit a choice: press the number, then Enter. */
+/**
+ * Keys that submit a choice: press the number, then Enter.
+ *
+ * One key per DIGIT. A ten-option menu is rare but real, and "10" is not a key
+ * — sending it as one would either be dropped or land as a bare "1".
+ */
 export function optionKeys(option: BlockedOption): string[] {
-  return [String(option.number), 'Enter'];
+  return [...String(option.number)].concat('Enter');
 }
 
 /**
