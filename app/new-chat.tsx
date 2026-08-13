@@ -14,6 +14,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODES,
   isPermissionMode,
+  launchArgs,
   launchCommand,
   permissionModeCopy,
   type PermissionMode,
@@ -100,6 +101,7 @@ export default function NewChatScreen() {
         creation.rootPane.paneId,
         agentName(creation.workspace.label),
         'claude',
+        launchArgs(mode),
         launchCommand(mode)
       );
       await setSetting(db, settingKey('lastCwd'), directory);

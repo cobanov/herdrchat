@@ -67,3 +67,15 @@ export function isPermissionMode(value: unknown): value is PermissionMode {
 export function launchCommand(mode: PermissionMode, executable = 'claude'): string {
   return `${executable} --permission-mode ${mode}`;
 }
+
+/**
+ * The same choice as argv, for `agent start … -- <args>`.
+ *
+ * herdr supplies the executable from `--kind`, so this is only what follows it.
+ * Kept next to `launchCommand` because the two must always say the same thing:
+ * one is used when the host has the agent-aware verb and the other when it does
+ * not, and a chat started either way should have the same permissions.
+ */
+export function launchArgs(mode: PermissionMode): string[] {
+  return ['--permission-mode', mode];
+}

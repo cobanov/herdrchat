@@ -215,3 +215,84 @@ describe('a stalled prompt', () => {
     await expect(new HerdrClient(transport).sendPrompt('p', 'x')).rejects.toThrow(/gone/);
   });
 });
+
+describe('startNamedAgent', () => {
+  /** A host that fails `agent start` with `agent_pane_busy` the first N times. */
+  function flakyPane(busyTimes: number) {
+    const commands: string[] = [];
+    let seen = 0;
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        const ok = { ok: true, exitCode: 0, stdout: '', stderr: '' };
+        if (command.includes('--help')) return { ...ok } as never;
+        if (command.includes("'agent' 'start'")) {
+          seen += 1;
+          if (seen <= busyTimes) {
+            return {
+              ...ok,
+              stdout: JSON.stringify({
+                error: { code: 'agent_pane_busy', message: 'not an available shell' },
+              }),
+            } as never;
+          }
+        }
+        return { ...ok, stdout: JSON.stringify({ ok: true, result: {} }) } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+
+  const starts = (c: string[]) => c.filter((x) => x.includes("'agent' 'start'") && !x.includes('--help'));
+  const runs = (c: string[]) => c.filter((x) => x.includes("'pane' 'run'"));
+
+  it('passes the permission mode through to the agent', async () => {
+    // herdr supplies the executable from --kind, so the mode has to ride after
+    // `--`. Without it the new-chat screen's choice is silently dropped and
+    // every tool call stops to ask.
+    const { client, commands } = flakyPane(0);
+    await client.startNamedAgent('p1', 'chat', 'claude', ['--permission-mode', 'bypassPermissions'], 'claude');
+    expect(starts(commands)[0]).toContain("'--' '--permission-mode' 'bypassPermissions'");
+  });
+
+  it('retries a pane whose shell has not come up yet', async () => {
+    // Measured against herdr 0.8.0: a pane created milliseconds ago answers
+    // `agent_pane_busy`, and nothing was started — so a retry cannot double-run.
+    const { client, commands } = flakyPane(2);
+    await expect(
+      client.startNamedAgent('p1', 'chat', 'claude', [], 'claude')
+    ).resolves.toBe(true);
+    expect(starts(commands)).toHaveLength(3);
+    expect(runs(commands)).toEqual([]);
+  });
+
+  it('falls back to the legacy path when the pane never becomes a shell', async () => {
+    const { client, commands } = flakyPane(99);
+    await expect(
+      client.startNamedAgent('p1', 'chat', 'claude', [], 'claude --permission-mode manual')
+    ).resolves.toBe(false);
+    expect(runs(commands)).toHaveLength(1);
+    expect(runs(commands)[0]).toContain('--permission-mode manual');
+  });
+
+  it('does not retry an error that is not about pane readiness', async () => {
+    // A timeout may mean the agent DID launch. Retrying that is how you end up
+    // with two agents in one pane.
+    const transport: HerdrTransport = {
+      exec: async (command: string) =>
+        ({
+          ok: true,
+          exitCode: 0,
+          stdout: command.includes('--help')
+            ? ''
+            : JSON.stringify({ error: { code: 'timeout', message: 'took too long' } }),
+          stderr: '',
+        }) as never,
+      streamLines: async function* () {},
+    };
+    await expect(
+      new HerdrClient(transport).startNamedAgent('p1', 'chat', 'claude', [], 'claude')
+    ).rejects.toThrow(/took too long/);
+  });
+});

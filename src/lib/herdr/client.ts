@@ -49,6 +49,16 @@ const SERVER_START_POLLS = 10;
 const SERVER_START_INTERVAL_MS = 1000;
 
 /**
+ * How long to let a freshly created pane reach its shell prompt.
+ *
+ * `agent start` refuses a pane that is not "an available shell", and a pane
+ * created milliseconds earlier often is not one yet. Measured on a warm host it
+ * is ready immediately; this is headroom for a cold or loaded one.
+ */
+const PANE_READY_RETRIES = 4;
+const PANE_READY_INTERVAL_MS = 750;
+
+/**
  * High-level herdr operations over any transport. Command shapes mirror the
  * `herdr` CLI helpers, which wrap the socket API and print `{id, result}` JSON.
  *
@@ -528,6 +538,7 @@ export class HerdrClient {
     paneId: string,
     name: string,
     kind: string,
+    agentArgs: readonly string[],
     fallbackCommand: string,
     timeoutMs = LAUNCH_TIMEOUT_MS
   ): Promise<boolean> {
@@ -535,26 +546,54 @@ export class HerdrClient {
       await this.startAgent(paneId, fallbackCommand);
       return false;
     }
-    const output = await this.shell(
-      shellCommand([
-        this.herdr,
-        'agent',
-        'start',
-        name,
-        '--kind',
-        kind,
-        '--pane',
-        paneId,
-        '--timeout',
-        String(timeoutMs),
-      ]),
-      // The host blocks for up to its own timeout, so ours has to outlast it —
-      // otherwise we give up on an agent that is about to come up, and the
-      // caller falls back and starts a SECOND one in the same pane.
-      timeoutMs + LAUNCH_TIMEOUT_MS
-    );
-    checkEnvelope(output);
-    return true;
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const output = await this.shell(
+          shellCommand([
+            this.herdr,
+            'agent',
+            'start',
+            name,
+            '--kind',
+            kind,
+            '--pane',
+            paneId,
+            '--timeout',
+            String(timeoutMs),
+            // Everything after `--` reaches the agent. Without it herdr launches
+            // a bare `claude`, which loses the permission mode the new-chat
+            // screen just asked about — every tool call would stop and ask.
+            ...(agentArgs.length > 0 ? ['--', ...agentArgs] : []),
+          ]),
+          // The host blocks for up to its own timeout, so ours has to outlast it
+          // — otherwise we give up on an agent that is about to come up, and the
+          // caller falls back and starts a SECOND one in the same pane.
+          timeoutMs + LAUNCH_TIMEOUT_MS
+        );
+        checkEnvelope(output);
+        return true;
+      } catch (thrown) {
+        const busy = thrown instanceof HerdrError && thrown.code === 'agent_pane_busy';
+        if (!busy) throw thrown;
+
+        // `agent_pane_busy` means "that pane is not an available shell", and for
+        // a pane we created a moment ago it almost always means the shell has
+        // not reached its prompt yet. `pane run` never checked, which is why the
+        // old path appeared to work — it typed into a shell that was not ready
+        // and got away with it.
+        //
+        // Nothing was started, so retrying is safe and cannot double-launch.
+        if (attempt < PANE_READY_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, PANE_READY_INTERVAL_MS));
+          continue;
+        }
+        // Still not a shell after several seconds. Fall back to the path that
+        // shipped for months rather than refusing to start a chat at all.
+        await this.startAgent(paneId, fallbackCommand);
+        return false;
+      }
+    }
   }
 
   /** Memoised for the client's lifetime — one per host, not one per send. */
