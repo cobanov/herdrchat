@@ -59,6 +59,13 @@ export default function ThreadScreen() {
   const showSidechain = useSettings((state) => state.showSidechain);
 
   const [atBottom, setAtBottom] = useState(true);
+  /**
+   * Content and viewport heights, kept so `atBottom` can be recomputed when the
+   * list grows rather than only when someone scrolls.
+   */
+  const [contentHeight, setContentHeight] = useState(0);
+  const viewportHeight = useRef(0);
+  const scrollOffset = useRef(0);
   // Measured height of the floating control stack, so the list can reserve
   // exactly that much room underneath its content.
   const [controlsHeight, setControlsHeight] = useState(96);
@@ -146,9 +153,17 @@ export default function ThreadScreen() {
    */
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    viewportHeight.current = layoutMeasurement.height;
+    scrollOffset.current = contentOffset.y;
     const distanceFromEnd = contentSize.height - contentOffset.y - layoutMeasurement.height;
     setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
   }, []);
+
+  useEffect(() => {
+    if (contentHeight === 0 || viewportHeight.current === 0) return;
+    const distanceFromEnd = contentHeight - scrollOffset.current - viewportHeight.current;
+    setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
+  }, [contentHeight]);
 
   const jumpToBottom = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true });
@@ -268,7 +283,16 @@ export default function ThreadScreen() {
           <Pressable
             onPress={() => {
               haptics.light();
-              void thread.reload();
+              // Re-anchor to the newest message afterwards. The SwiftUI original
+              // did this in the same handler (`didInitialScroll = false`) and it
+              // was not ported: reload drops the history and re-reads it, so the
+              // scroll position it leaves behind refers to content that no longer
+              // exists — which shows as the conversation resting somewhere above
+              // the composer with dead space beneath it.
+              void thread.reload().then(() => {
+                setAtBottom(true);
+                listRef.current?.scrollToEnd({ animated: false });
+              });
             }}
             accessibilityRole="button"
             accessibilityLabel="Reload this conversation"
@@ -391,6 +415,20 @@ export default function ThreadScreen() {
             }
             onScroll={onScroll}
             scrollEventThrottle={64}
+            /**
+             * `atBottom` starts true and, before this, only ever changed on a
+             * scroll event — so a thread that opened NOT at the bottom, or whose
+             * content grew past the viewport without the reader touching it, kept
+             * claiming it was at the end. The jump button is suppressed while
+             * that flag is true, which left the one control for getting back to
+             * the newest message hidden exactly when it was needed.
+             *
+             * Content size changes on every batch of history, so this is where
+             * the flag can be honest without waiting for a finger.
+             */
+            onContentSizeChange={(_width, height) => {
+              setContentHeight(height);
+            }}
             renderItem={({ item }) => (
               <View style={{ paddingTop: item.startsGroup ? spacing.md : spacing.xxs }}>
                 {item.startsGroup &&
