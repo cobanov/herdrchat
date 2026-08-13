@@ -80,6 +80,59 @@ export function isBlockedPromptEmpty(prompt: BlockedPrompt | null): boolean {
   return prompt === null || prompt.options.length === 0;
 }
 
+/**
+ * A blocked-prompt reply in flight: keys were sent to the pane, but no poll has
+ * yet observed the agent act on them. While one exists the options stay
+ * disabled — the gap between a tap and the next status poll is otherwise wide
+ * enough (up to ten seconds on the slowest poll setting) for a second tap to
+ * push a second digit + Enter into a live agent.
+ */
+export interface BlockedPending {
+  /** Exactly what was sent, so the UI can mark the tapped choice. */
+  keys: readonly string[];
+  /** Signature of the prompt being answered, from `blockedPromptSignature`. */
+  promptSig: string | null;
+  /** Epoch ms of the send, for the timeout. */
+  sentAt: number;
+}
+
+/**
+ * Identity of a parsed prompt. Null when nothing was parsed — an unreadable
+ * pane is "unknown", not "a different question", so a flickering parse cannot
+ * masquerade as a new prompt.
+ */
+export function blockedPromptSignature(prompt: BlockedPrompt | null): string | null {
+  if (prompt === null || prompt.options.length === 0) return null;
+  return [prompt.question ?? '', ...prompt.options.map((o) => `${o.number}.${o.label}`)].join('\n');
+}
+
+export type PendingResolution = 'waiting' | 'delivered' | 'superseded' | 'timed_out';
+
+/**
+ * What one status-poll observation means for a reply in flight.
+ *
+ * `delivered` — the agent left blocked, so the keys landed.
+ * `superseded` — a DIFFERENT prompt is on screen. A new question is a new
+ *   decision; pending must not leak onto it and lock its options.
+ * `timed_out` — still the same prompt after the deadline. The keys probably
+ *   never landed; the options come back and the caller says so.
+ */
+export function resolveBlockedPending(
+  pending: BlockedPending,
+  observed: { blocked: boolean; promptSig: string | null; now: number; timeoutMs: number }
+): PendingResolution {
+  if (!observed.blocked) return 'delivered';
+  if (observed.promptSig !== null && observed.promptSig !== pending.promptSig) return 'superseded';
+  if (observed.now - pending.sentAt >= observed.timeoutMs) return 'timed_out';
+  return 'waiting';
+}
+
+/** Whether these are the exact keys of the reply in flight. */
+export function isPendingKeys(pending: BlockedPending | null, keys: readonly string[]): boolean {
+  if (pending === null || pending.keys.length !== keys.length) return false;
+  return pending.keys.every((key, index) => key === keys[index]);
+}
+
 // MARK: - Internals
 
 const SELECTION_MARKERS = ['❯', '▶', '>', '→', '•', '*'];

@@ -510,7 +510,11 @@ export default function ThreadScreen() {
               paddingBottom: bottomInset,
             }}>
             {thread.isBlocked && (
-              <BlockedBar prompt={thread.blockedPrompt} onKeys={(keys) => void thread.sendKeys(keys)} />
+              <BlockedBar
+                prompt={thread.blockedPrompt}
+                pending={thread.blockedPending}
+                onKeys={(keys) => void thread.sendKeys(keys)}
+              />
             )}
             <Composer
               draft={draft}

@@ -12,7 +12,13 @@ import { hasSessionId, sessionSignature, type AgentInfo, type AgentStatus } from
 import { TranscriptStore } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
-import { parseBlockedPrompt, type BlockedPrompt } from '@/lib/transcript/blockedPrompt';
+import {
+  blockedPromptSignature,
+  parseBlockedPrompt,
+  resolveBlockedPending,
+  type BlockedPending,
+  type BlockedPrompt,
+} from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
@@ -84,12 +90,26 @@ const TAIL_SILENCE_MS = 90_000;
  * it elapses the thread says it is waiting rather than showing nothing.
  */
 const NO_SESSION_POLLS = 40; // × 2s ≈ 80 seconds
+/**
+ * How long a blocked-prompt reply may sit unconfirmed before the options are
+ * re-enabled and the user is told to check the agent.
+ *
+ * Six base poll intervals: long enough that the default poll has several
+ * chances to observe the agent move on, short enough that a reply the terminal
+ * genuinely dropped does not lock the bar for good. Wall-clock rather than
+ * poll-count, because the slowest poll setting stretches the interval to ten
+ * seconds and the lock must not stretch with it.
+ */
+const BLOCKED_PENDING_TIMEOUT_MS = STATUS_POLL_MS * 6;
+const BLOCKED_PENDING_ERROR = 'The reply may not have landed — check the agent.';
 
 export interface ThreadState {
   messages: ChatMessage[];
   status: AgentStatus;
   agents: AgentInfo[];
   blockedPrompt: BlockedPrompt | null;
+  /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
+  blockedPending: BlockedPending | null;
   isBlocked: boolean;
   sessionMeta: SessionMeta | null;
   livePreview: string | null;
@@ -139,6 +159,11 @@ export function useThread(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
   const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
+  const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
+  // Mirrors the state for the poll closure and for the synchronous double-tap
+  // guard in sendKeys — a second tap can land before React re-renders.
+  const blockedPendingRef = useRef<BlockedPending | null>(null);
+  const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
   const [livePreview, setLivePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -281,6 +306,15 @@ export function useThread(
       if (alive.current) setLoadingOlder(false);
     }
   }, [client, rebuild]);
+
+  const clearBlockedPending = useCallback(() => {
+    if (blockedPendingTimer.current !== null) {
+      clearTimeout(blockedPendingTimer.current);
+      blockedPendingTimer.current = null;
+    }
+    blockedPendingRef.current = null;
+    setBlockedPending(null);
+  }, []);
 
   const resetHistory = useCallback(() => {
     arrivals.current = [];
@@ -493,12 +527,27 @@ export function useThread(
         }
 
         const blocked = live.find((agent) => agent.agentStatus === 'blocked');
-        if (blocked === undefined) {
-          setBlockedPrompt(null);
-        } else {
+        let parsedPrompt: BlockedPrompt | null = null;
+        if (blocked !== undefined) {
           const raw = await client.paneVisible(blocked.paneId, 40);
           const parsed = parseBlockedPrompt(raw);
-          setBlockedPrompt(parsed.options.length === 0 ? null : parsed);
+          parsedPrompt = parsed.options.length === 0 ? null : parsed;
+        }
+        setBlockedPrompt(parsedPrompt);
+
+        // A reply in flight is confirmed (or orphaned) by what this poll saw.
+        // Only the silent outcomes are handled here: the timeout banner belongs
+        // to the timer in sendKeys, because this same poll iteration ends in
+        // `setError(null)` and would wipe a banner raised from inside it.
+        const pending = blockedPendingRef.current;
+        if (pending !== null) {
+          const resolution = resolveBlockedPending(pending, {
+            blocked: blocked !== undefined,
+            promptSig: blockedPromptSignature(parsedPrompt),
+            now: Date.now(),
+            timeoutMs: BLOCKED_PENDING_TIMEOUT_MS,
+          });
+          if (resolution === 'delivered' || resolution === 'superseded') clearBlockedPending();
         }
 
         const primary = live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
@@ -562,7 +611,7 @@ export function useThread(
       for (const controller of live.values()) controller.abort();
       live.clear();
     };
-  }, [client, db, connectionId, workspaceId, startTail, resetHistory, polling, pollScale]);
+  }, [client, db, connectionId, workspaceId, startTail, resetHistory, clearBlockedPending, polling, pollScale]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
     ? 'blocked'
@@ -715,17 +764,52 @@ export function useThread(
     [primaryPane, deliver]
   );
 
+  /**
+   * Answer a blocked prompt (or poke the primary pane).
+   *
+   * When the target is a blocked agent, the reply is marked pending BEFORE it
+   * is sent, and stays pending until a poll observes the agent act on it. The
+   * poll is what removes the bar, and at the slowest setting it runs every ten
+   * seconds — without the pending state that whole window accepts a second tap,
+   * which sends a second digit + Enter into an agent that already moved on.
+   *
+   * The ref check is synchronous on purpose: the disabled prop the pending
+   * state drives arrives only with the next render, and two fast taps fit
+   * inside that gap.
+   */
   const sendKeys = useCallback(
     async (keys: readonly string[]) => {
       const pane = blockedPane ?? primaryPane;
       if (client === null || pane === null) return;
+      if (blockedPendingRef.current !== null) return;
+
+      if (blockedPane !== null) {
+        const pending: BlockedPending = {
+          keys,
+          promptSig: blockedPromptSignature(blockedPrompt),
+          sentAt: Date.now(),
+        };
+        blockedPendingRef.current = pending;
+        setBlockedPending(pending);
+        // The banner is raised from here rather than from the poll: the poll's
+        // success path clears the error state, so a banner it raised itself
+        // would not survive its own iteration.
+        blockedPendingTimer.current = setTimeout(() => {
+          if (!alive.current || blockedPendingRef.current !== pending) return;
+          clearBlockedPending();
+          setError(BLOCKED_PENDING_ERROR);
+        }, BLOCKED_PENDING_TIMEOUT_MS);
+      }
+
       try {
         await client.sendKeys(pane.paneId, keys);
       } catch (thrown) {
+        // The keys never left the phone; nothing is pending on the host.
+        clearBlockedPending();
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
-    [client, blockedPane, primaryPane]
+    [client, blockedPane, primaryPane, blockedPrompt, clearBlockedPending]
   );
 
   /**
@@ -760,6 +844,7 @@ export function useThread(
     status,
     agents,
     blockedPrompt,
+    blockedPending,
     isBlocked: blockedPane !== null,
     sessionMeta,
     livePreview,
