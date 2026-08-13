@@ -1,3 +1,5 @@
+import { useWindowDimensions } from 'react-native';
+
 /**
  * Design tokens. Nothing outside `src/theme/` may hardcode a colour, radius,
  * duration or spacing value — if a screen needs a number that isn't here, the
@@ -223,6 +225,25 @@ export const typography = {
 export type TypographyToken = keyof typeof typography;
 
 /**
+ * How far a variant may grow beyond its base size.
+ *
+ * CONTENT SCALES WITHOUT LIMIT. Anything a person is trying to read — body,
+ * callout, subhead, footnote, the captions under a switch — has no cap here on
+ * purpose, because capping it is just refusing the accessibility setting.
+ *
+ * Screen chrome is different. A `largeTitle` at the top accessibility size took
+ * 40% of the display to say "Chats", pushing the content it labels off the
+ * bottom, and it is not text anyone needs to read at that size — it names a
+ * screen you are already looking at. iOS caps its own navigation titles for
+ * exactly this reason. The cap is generous (still roughly half again) and
+ * applies only to the two display sizes.
+ */
+export const maxFontScale: Partial<Record<TypographyToken, number>> = {
+  largeTitle: 1.6,
+  title1: 1.6,
+};
+
+/**
  * The line the large title occupies in a screen header.
  *
  * Fixed, and equal to the largeTitle line height, so the title sits at the same
@@ -231,6 +252,23 @@ export type TypographyToken = keyof typeof typography;
  * an app can have, because you see it as motion rather than as layout.
  */
 export const headerTitleLine = typography.largeTitle.lineHeight;
+
+/**
+ * A line-height token, scaled to the reader's Dynamic Type setting.
+ *
+ * Anything used as a HEIGHT next to text has to go through this. The tokens
+ * above are the metrics at the default setting; React Native scales `fontSize`
+ * for the user and nothing else, so a raw `headerTitleLine` reserves 41pt for a
+ * title that is drawing 60pt glyphs — and the overflow lands on whatever is
+ * below it.
+ *
+ * Reactive on purpose: changing the setting in iOS Settings re-renders rather
+ * than leaving the app correct only until the next cold start.
+ */
+export function useScaledLine(base: number): number {
+  const { fontScale } = useWindowDimensions();
+  return base * fontScale;
+}
 
 /**
  * The height a chat row reserves for its subtitle: two subhead lines.

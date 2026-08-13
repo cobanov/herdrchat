@@ -4,7 +4,7 @@ import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { headerTitleLine, minTouchTarget, screenPadding, spacing } from '@/theme/tokens';
+import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine } from '@/theme/tokens';
 
 /**
  * The screen header: a large title, an optional server line under it, and at
@@ -44,10 +44,11 @@ export function Header({
   onClose?: () => void;
 }) {
   const { colors } = useTheme();
+  const titleLine = useScaledLine(headerTitleLine);
 
   return (
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: headerTitleLine }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: titleLine }}>
         <Text variant="largeTitle" numberOfLines={1} style={{ flexShrink: 1 }}>
           {title}
         </Text>

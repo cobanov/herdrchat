@@ -98,10 +98,20 @@ export function PresenceAvatar({
         }}>
         {/* Slightly smaller than initials were, and with the line height freed:
             an emoji's own glyph box already carries padding, so matching the
-            letter sizing pushed it off centre. */}
+            letter sizing pushed it off centre.
+
+            THE ONE PLACE `allowFontScaling` IS OFF, and it is not an oversight.
+            This glyph is sized from the avatar's own diameter, not from the type
+            scale — it is a picture drawn with a font, the way an icon is. Left
+            scaling, the emoji grew with the reader's text setting while the
+            circle around it stayed 52pt, and at the accessibility sizes it
+            simply overflowed its own avatar. Nothing here is text to be read:
+            the row's accessibility label carries the meaning, which is why this
+            is hidden from the accessibility tree two lines up. */}
         <Text
           accessibilityElementsHidden
           importantForAccessibility="no"
+          allowFontScaling={false}
           style={{ fontSize: size * 0.44, lineHeight: size * 0.58 }}>
           {avatarGlyph(colorKey)}
         </Text>

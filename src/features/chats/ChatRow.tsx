@@ -5,7 +5,7 @@ import { PresenceAvatar } from '@/components/PresenceAvatar';
 import { Text } from '@/components/Text';
 import { TypingDots } from '@/components/Activity';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, size, spacing, subtitleTwoLines } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing, subtitleTwoLines, useScaledLine } from '@/theme/tokens';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
@@ -157,8 +157,9 @@ function Subtitle({ summary }: { summary: ChatSummary }) {
  * each time an agent begins.
  */
 function Reserved({ children }: { children: ReactNode }) {
+  const reserved = useScaledLine(subtitleTwoLines);
   return (
-    <View style={{ minHeight: subtitleTwoLines, justifyContent: 'center', alignItems: 'flex-start' }}>
+    <View style={{ minHeight: reserved, justifyContent: 'center', alignItems: 'flex-start' }}>
       {children}
     </View>
   );
