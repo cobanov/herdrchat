@@ -93,3 +93,64 @@ describe('sendPrompt', () => {
     expect(sends(commands)[0]).toContain("'line one\nline two'");
   });
 });
+
+describe('capability gating by reported version', () => {
+  /** A host that answers snapshots with `version` and records every command. */
+  function versioned(version: string | null) {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        const snapshot: Record<string, unknown> = { agents: [] };
+        if (version !== null) snapshot.version = version;
+        return {
+          ok: true,
+          exitCode: 0,
+          stdout: command.includes('--help')
+            ? ''
+            : JSON.stringify({ ok: true, result: { snapshot } }),
+          stderr: '',
+        } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { transport, commands, client: new HerdrClient(transport) };
+  }
+
+  const probes = (commands: string[]) => commands.filter((c) => c.includes('--help'));
+
+  it('spends no round-trip once a snapshot has reported 0.8.0', async () => {
+    // The version has been in the snapshot all along. Asking `--help` for
+    // something the host already told us is a wasted SSH round-trip per client.
+    const { client, commands } = versioned('0.8.0');
+    await client.snapshot();
+    await client.sendPrompt('pane-1', 'hello');
+    expect(probes(commands)).toEqual([]);
+    expect(commands.at(-1)).toContain("'agent' 'prompt'");
+  });
+
+  it('uses the legacy path on 0.7.4 without probing', async () => {
+    // Measured: 0.7.4 has no `agent prompt`. The version alone settles it.
+    const { client, commands } = versioned('0.7.4');
+    await client.snapshot();
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe(false);
+    expect(probes(commands)).toEqual([]);
+    expect(commands.at(-1)).toContain("'pane' 'run'");
+  });
+
+  it('still probes when the host reports no version at all', async () => {
+    // Every herdr older than the field looks like this, and those are exactly
+    // the hosts where guessing wrong is worst.
+    const { client, commands } = versioned(null);
+    await client.snapshot();
+    await client.sendPrompt('pane-1', 'hello');
+    expect(probes(commands)).toHaveLength(1);
+  });
+
+  it('exposes the version for the UI to quote', async () => {
+    const { client } = versioned('0.8.0');
+    expect(client.reportedVersion).toBeNull();
+    await client.snapshot();
+    expect(client.reportedVersion).toBe('0.8.0');
+  });
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
 import { usePollGate } from '../usePollGate';
+import { useHostVersion } from '@/state/hostVersion';
 import { useSettings } from '@/state/settings';
 
 import type { HerdrClient } from '@/lib/herdr/client';
@@ -90,6 +91,9 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       // possibility on a host we have not seen. Null means ask; empty means
       // there genuinely are none, and asking again would be pointless.
       const snapshot = await client.snapshot();
+      // Rides along with the poll that already runs. Settings reads this rather
+      // than asking the host itself — see `state/hostVersion`.
+      useHostVersion.getState().setVersion(snapshot.version);
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
       // Unmounted mid-flight: not a failure, just nothing left to do with it.
       if (!alive.current) return false;

@@ -21,6 +21,7 @@ import {
   SEND_TIMEOUT_MS,
 } from './timeouts';
 import type { HerdrTransport } from './transport';
+import { AGENT_VERBS_VERSION, atLeast } from './version';
 
 /**
  * High-level herdr operations over any transport. Command shapes mirror the
@@ -49,8 +50,25 @@ export class HerdrClient {
 
   async snapshot(): Promise<Snapshot> {
     const result = await this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS);
-    return decodeSnapshot(field(result, 'snapshot'));
+    const snapshot = decodeSnapshot(field(result, 'snapshot'));
+    // Remembered so the capability gates below can answer from it instead of
+    // spending a round-trip on `--help`. The field has been in the snapshot all
+    // along and nothing read it.
+    if (snapshot.version !== null) this.hostVersion = snapshot.version;
+    return snapshot;
   }
+
+  /**
+   * The host's herdr version, as last reported by a snapshot.
+   *
+   * Null until the first poll lands. Public so the UI can show it — a version
+   * you can quote is the first thing a support conversation needs.
+   */
+  get reportedVersion(): string | null {
+    return this.hostVersion;
+  }
+
+  private hostVersion: string | null = null;
 
   async workspaces(): Promise<Workspace[]> {
     const result = await this.run([this.herdr, 'workspace', 'list'], POLL_TIMEOUT_MS);
@@ -376,13 +394,30 @@ export class HerdrClient {
   private agentStart: Promise<boolean> | null = null;
 
   private supportsAgentPrompt(): Promise<boolean> {
-    this.agentPrompt ??= this.probe(['agent', 'prompt']);
+    this.agentPrompt ??= this.hasAgentVerbs(['agent', 'prompt']);
     return this.agentPrompt;
   }
 
   private supportsAgentStart(): Promise<boolean> {
-    this.agentStart ??= this.probe(['agent', 'start']);
+    this.agentStart ??= this.hasAgentVerbs(['agent', 'start']);
     return this.agentStart;
+  }
+
+  /**
+   * Both agent-aware verbs arrived together, so one question answers both.
+   *
+   * Ask the VERSION first. The snapshot has already told us what this host is —
+   * measured on 0.7.4 and 0.8.0, `agent prompt` and `agent start --kind` are
+   * exactly the 0.8.0 line — so the `--help` round-trip is only needed before
+   * the first poll lands, or against a host that reports no version at all.
+   *
+   * The probe stays as the fallback rather than being deleted, because "reports
+   * no version" is a real state: it is what every herdr older than the field
+   * looks like, and those are precisely the hosts where guessing wrong is worst.
+   */
+  private async hasAgentVerbs(subcommand: readonly string[]): Promise<boolean> {
+    if (this.hostVersion !== null) return atLeast(this.hostVersion, AGENT_VERBS_VERSION);
+    return this.probe(subcommand);
   }
 
   /**

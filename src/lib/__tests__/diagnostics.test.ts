@@ -12,6 +12,7 @@ const facts = (overrides: Partial<DiagnosticsFacts> = {}): DiagnosticsFacts => (
   newArchitecture: true,
   glassAvailable: true,
   lastError: null,
+  herdrVersion: '0.8.0',
   ...overrides,
 });
 

@@ -3,6 +3,8 @@ import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 
 import { ActionRow, Divider, Row, Section } from '@/components/SettingsList';
+import { versionAdvice, versionVerdict } from '@/lib/herdr/version';
+import { useHostVersion } from '@/state/hostVersion';
 
 const PRIVACY_URL = 'https://herdrchat.cobanov.dev/privacy';
 const TERMS_URL = 'https://herdrchat.cobanov.dev/terms';
@@ -30,11 +32,32 @@ export function AboutSection() {
       ? String(Constants.expoConfig?.ios?.buildNumber ?? '—')
       : String(Constants.expoConfig?.android?.versionCode ?? '—');
 
+  /**
+   * The HOST's herdr, which is a different number from ours and the one that
+   * actually explains behaviour. "Sending feels slow" and "the agent never
+   * reports a session" both have herdr-version answers, and until now neither
+   * the user nor a bug report carried the version to find them with.
+   */
+  const hostVersion = useHostVersion((state) => state.version);
+  const verdict = versionVerdict(hostVersion);
+  const advice = versionAdvice(verdict);
+
   return (
-    <Section title="About">
+    <Section title="About" footer={advice ?? undefined}>
       <Row label="Version" value={version} />
       <Divider />
       <Row label="Build" value={build} />
+      <Divider />
+      <Row
+        label="herdr on host"
+        value={
+          verdict.kind === 'unknown'
+            ? hostVersion === null
+              ? '—'
+              : 'not reported'
+            : `${verdict.version}${verdict.kind === 'current' ? '' : ' ⚠︎'}`
+        }
+      />
       <Divider />
       <ActionRow
         label="Privacy Policy"

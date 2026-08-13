@@ -22,6 +22,12 @@ export interface DiagnosticsFacts {
   glassAvailable: boolean;
   /** The most recent connection failure, if there was one. */
   lastError: string | null;
+  /**
+   * The host's herdr version. Not ours — this is the number that explains why a
+   * send is slow or a session never gets reported, and a report without it costs
+   * a round-trip of questions.
+   */
+  herdrVersion: string | null;
 }
 
 export function formatDiagnostics(facts: DiagnosticsFacts): string {
@@ -31,6 +37,7 @@ export function formatDiagnostics(facts: DiagnosticsFacts): string {
     `New Architecture: ${facts.newArchitecture ? 'yes' : 'no'}`,
     `Liquid Glass: ${facts.glassAvailable ? 'yes' : 'no'}`,
     `Hosts configured: ${facts.hostCount}`,
+    `herdr on host: ${facts.herdrVersion ?? 'not reported'}`,
   ];
   // Only when there is one. An empty "Last error: none" line invites the reader
   // to conclude nothing went wrong, which is the opposite of why they are

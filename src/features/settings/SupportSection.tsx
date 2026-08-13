@@ -9,6 +9,7 @@ import { ActionRow, Divider, Section } from '@/components/SettingsList';
 import { haptics } from '@/lib/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
 import { useConnections } from '@/state/connections';
+import { useHostVersion } from '@/state/hostVersion';
 import { formatDiagnostics } from './diagnostics';
 
 /** Where a bug report goes. The same tracker the site already links to. */
@@ -50,6 +51,7 @@ export function SupportSection() {
       // reading one here would report whatever screen happened to fail last —
       // and a stale error in a bug report is worse than no error at all.
       lastError: null,
+      herdrVersion: useHostVersion.getState().version,
     });
     void Clipboard.setStringAsync(text);
     haptics.success();
