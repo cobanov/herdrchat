@@ -24,13 +24,13 @@ import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
-import { PromptHistory } from '@/features/thread/PromptHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
+import { haptics } from '@/lib/haptics';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useSelectedConnection } from '@/state/connections';
-import { markThreadRead, recentPrompts, rememberPrompt } from '@/state/db';
+import { markThreadRead } from '@/state/db';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
@@ -100,17 +100,10 @@ export default function ThreadScreen() {
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 
   /**
-   * The draft lives here rather than inside the composer so a prompt-history
-   * chip can fill it, and so this screen can tell whether the composer is empty
-   * — which is what decides whether the chips are shown at all.
+   * The draft lives here rather than inside the composer because the send
+   * handler needs it and the composer should stay presentational.
    */
   const [draft, setDraft] = useState('');
-  const [prompts, setPrompts] = useState<string[]>([]);
-  const loadPrompts = useCallback(() => {
-    if (connection === null) return;
-    void recentPrompts(db, connection.id).then(setPrompts);
-  }, [db, connection]);
-  useEffect(loadPrompts, [loadPrompts]);
 
   /**
    * Installing herdr's Claude integration from here.
@@ -259,14 +252,42 @@ export default function ThreadScreen() {
         </View>
 
         {/*
-          Stop, or the spacer that balances the back control so the title stays
-          optically centred. The button is exactly the spacer's width, so the
-          title does not shift when the agent starts or finishes working.
+          Stop while the agent is working, Refresh the rest of the time. Both are
+          exactly the back control's width, so the title stays optically centred
+          and does not shift when the agent starts or finishes.
+
+          Refresh is not decoration: the live tail can drift — the thread scrolls
+          to a stale spot, or the newest messages are missing — and this drops the
+          in-memory history and byte cursors and re-reads the transcript for THIS
+          thread only. It existed in the SwiftUI app (build 21) and was lost in
+          the Expo rewrite; `useThread.reload` survived with nothing calling it.
         */}
         {thread.status === 'working' ? (
           <StopButton onStop={(hard) => void thread.interrupt(hard)} />
         ) : (
-          <View style={{ width: size.headerControl }} />
+          <Pressable
+            onPress={() => {
+              haptics.light();
+              void thread.reload();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Reload this conversation"
+            testID="thread-reload"
+            hitSlop={spacing.md}
+            style={({ pressed }) => ({
+              width: size.headerControl,
+              height: minTouchTarget,
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              opacity: pressed ? 0.5 : 1,
+            })}>
+            <Icon
+              name="arrow.clockwise"
+              size={19}
+              tintColor={colors.tint}
+              fallback={<Text color="tint">↻</Text>}
+            />
+          </Pressable>
         )}
       </View>
 
@@ -453,18 +474,14 @@ export default function ThreadScreen() {
             {thread.isBlocked && (
               <BlockedBar prompt={thread.blockedPrompt} onKeys={(keys) => void thread.sendKeys(keys)} />
             )}
-            {/* Only while the composer is empty: a shortcut must never cover
-                the conversation or compete with something half-typed. */}
-            {draft.trim().length === 0 && (
-              <PromptHistory prompts={prompts} onPick={setDraft} />
-            )}
             <Composer
               draft={draft}
               onDraftChange={setDraft}
-              onSend={(text) => {
-                void thread.send(text);
-                void rememberPrompt(db, connection?.id ?? '', text).then(loadPrompts);
-              }}
+              // Prompt history was removed with the chips that displayed it.
+              // Storing what someone typed for a feature that no longer exists
+              // is a liability, not a convenience — the table and its cleanup
+              // stay only so existing rows are still erased by Reset app data.
+              onSend={(text) => void thread.send(text)}
               disabled={thread.isSending}
             />
           </View>
