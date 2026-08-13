@@ -4,7 +4,9 @@
  * `herdr agent …`) wraps its output in the same envelope, so this decodes both
  * the raw socket stream and CLI stdout.
  *
- * Wire protocol pinned during development: protocol 16, schema_version 1.
+ * Wire protocol last measured against a host: protocol 19, schema_version 1,
+ * on herdr 0.8.0. The envelope has not changed since protocol 16; what the
+ * version gates is which verbs exist, and that lives in `version.ts`.
  */
 
 /** An error herdr itself reported, as opposed to a transport failure. */

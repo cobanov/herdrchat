@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <img alt="platform" src="https://img.shields.io/badge/iOS-26%2B-6E74E6?labelColor=1a1a1a">
-  <img alt="tests" src="https://img.shields.io/badge/tests-102-6E74E6?labelColor=1a1a1a">
-  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.3.0%20(36)-6E74E6?labelColor=1a1a1a">
+  <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-268-6E74E6?labelColor=1a1a1a">
+  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.1%20(45)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
 
@@ -27,9 +27,9 @@ structured turns. That is the whole reason the bubbles are clean, and why a tool
 call can be a chip rather than a wall of output.
 
 ```
- herdrchat                                        0.3.0   macmini
+ herdrchat                                        0.7.1   macmini
 
-   herdrchat          ● working   Tests are green — 102 passing
+   herdrchat          ● working   Tests are green — 268 passing
  > helva-todo         ○ idle      Added the recurring-task migration
    fight-sim-main     ! blocked   Do you want to proceed?
 
@@ -50,12 +50,14 @@ call can be a chip rather than a wall of output.
 - **Notifications come from your own machine.** A watcher you run signs with
   your own Apple push key and talks to APNs directly.
 
-Verified on **iPhone 17 Pro, iOS 26.5** against a real host.
+Builds for **iOS 17+**, and is verified on **iPhone 17 Pro, iOS 26.5** against a
+real host.
 
 ## Install
 
-The app is in TestFlight. To run it yourself you need Node 22+, Xcode 26+, and
-an iOS 26 device or simulator.
+The app is in TestFlight. To run it yourself you need Node 22+, Xcode 26+, and an
+iOS 17+ device or simulator. The Liquid Glass surfaces need iOS 26; below that
+the app falls back to a solid one.
 
 ```bash
 npm install
@@ -90,7 +92,7 @@ key. Nothing of ours is in the path, because nothing of ours exists.
 ```bash
 npx tsc --noEmit          # zero errors
 npx expo lint             # zero errors
-npx jest                  # 102 tests
+npx jest                  # 268 tests
 maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
 

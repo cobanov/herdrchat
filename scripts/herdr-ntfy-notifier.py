@@ -51,8 +51,8 @@ HERDR_BIN = os.environ.get("HERDR_BIN", "herdr")
 
 # Per-state notification style: (title template, body template, tags, priority)
 STYLES = {
-    "blocked": ("{label} seni bekliyor", "{name} bir yanıt bekliyor.", "raising_hand", "high"),
-    "done": ("{label} bitti", "{name} işini tamamladı.", "white_check_mark", "default"),
+    "blocked": ("{label} is waiting for you", "{name} needs an answer.", "raising_hand", "high"),
+    "done": ("{label} is done", "{name} completed its work.", "white_check_mark", "default"),
 }
 
 

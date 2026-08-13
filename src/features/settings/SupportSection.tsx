@@ -8,9 +8,9 @@ import { useGlassAvailable } from '@/components/Glass';
 import { ActionRow, Divider, Section } from '@/components/SettingsList';
 import { haptics } from '@/lib/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
-import { useConnections } from '@/state/connections';
+import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { useHostVersion } from '@/state/hostVersion';
-import { formatDiagnostics } from './diagnostics';
+import { explainTarget, formatDiagnostics } from './diagnostics';
 
 /** Where a bug report goes. The same tracker the site already links to. */
 const ISSUES_URL = 'https://github.com/cobanov/herdrchat/issues';
@@ -29,10 +29,30 @@ const README_URL = 'https://github.com/cobanov/herdrchat#readme';
  */
 export function SupportSection() {
   const hostCount = useConnections((state) => state.connections.length);
+  const selected = useSelectedConnection();
   const glassAvailable = useGlassAvailable();
   const [copied, setCopied] = useState(false);
 
-  const copyDiagnostics = () => {
+  /**
+   * herdr's account of one agent, or null.
+   *
+   * Best-effort on purpose: a person pressing this is already having a bad time,
+   * and a phone that is off the tailnet must still produce a pasteable block.
+   * Every failure — no host, no agent, no answer — is the same null.
+   */
+  const explainSelectedAgent = async (): Promise<string | null> => {
+    if (selected === null) return null;
+    try {
+      const client = clientFor(selected);
+      const target = explainTarget(await client.agents());
+      return target === null ? null : await client.explainAgent(target);
+    } catch {
+      return null;
+    }
+  };
+
+  const copyDiagnostics = async () => {
+    const agentExplain = await explainSelectedAgent();
     const report = runtimeReport();
     const text = formatDiagnostics({
       version: Constants.expoConfig?.version ?? 'unknown',
@@ -52,6 +72,7 @@ export function SupportSection() {
       // and a stale error in a bug report is worse than no error at all.
       lastError: null,
       herdrVersion: useHostVersion.getState().version,
+      agentExplain,
     });
     void Clipboard.setStringAsync(text);
     haptics.success();
@@ -87,7 +108,7 @@ export function SupportSection() {
         }
         tone="tint"
         accessory="none"
-        onPress={copyDiagnostics}
+        onPress={() => void copyDiagnostics()}
         testID="support-diagnostics"
       />
     </Section>

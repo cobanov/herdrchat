@@ -37,6 +37,11 @@ All sixteen are filed as GitHub issues #8–#23, tracked by [#24](https://github
 
 **Effort M · Risk medium · Finding §4.4**
 
+> **Correction, 2026-08-13.** The present tense below is the state before 0.5.0,
+> kept as written. It is no longer true: `src/lib/herdr/timeouts.ts` gives every
+> call a deadline, `client.ts` passes one on each verb, and `exec` on both
+> platforms takes a `timeoutMs`. Read this section as history.
+
 ### Why it matters
 
 There is no timeout anywhere in our stack. `grep -rn -i timeout modules/herdr-ssh` returns

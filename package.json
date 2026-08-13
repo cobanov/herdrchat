@@ -1,6 +1,6 @@
 {
   "name": "herdrchat",
-  "version": "1.0.0",
+  "version": "0.7.1",
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@shopify/flash-list": "2.0.2",
-    "@tanstack/react-query": "^5.101.4",
     "expo": "~57.0.9",
     "expo-blur": "~57.0.2",
     "expo-build-properties": "~57.0.8",
@@ -23,7 +22,6 @@
     "expo-dev-client": "~57.0.10",
     "expo-glass-effect": "~57.0.1",
     "expo-haptics": "~57.0.1",
-    "expo-image": "~57.0.1",
     "expo-linking": "~57.0.4",
     "expo-notifications": "~57.0.8",
     "expo-router": "~57.0.9",

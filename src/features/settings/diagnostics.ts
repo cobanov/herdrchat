@@ -11,6 +11,8 @@
  * people paste into a public issue without reading it twice.
  */
 
+import type { AgentInfo } from '@/lib/herdr/models';
+
 export interface DiagnosticsFacts {
   version: string;
   build: string;
@@ -28,6 +30,31 @@ export interface DiagnosticsFacts {
    * a round-trip of questions.
    */
   herdrVersion: string | null;
+  /**
+   * herdr's own account of why one agent reads as it does, from
+   * `agent explain --json`.
+   *
+   * Optional because it is the only fact here that needs the host to answer.
+   * Off the tailnet the rest of the block is still worth pasting, so a missing
+   * value is not an error — it is a line that is simply not there.
+   */
+  agentExplain?: string | null;
+}
+
+/**
+ * Which agent is worth explaining, as a pane id.
+ *
+ * A diagnostics block has room for one. Prefer a blocked agent, because that is
+ * the state people file bugs about; then the focused one, because that is the
+ * one they were looking at. A pane with no agent explains nothing.
+ */
+export function explainTarget(agents: readonly AgentInfo[]): string | null {
+  const withAgent = agents.filter((agent) => agent.agent !== null);
+  const chosen =
+    withAgent.find((agent) => agent.agentStatus === 'blocked') ??
+    withAgent.find((agent) => agent.focused) ??
+    withAgent[0];
+  return chosen?.paneId ?? null;
 }
 
 export function formatDiagnostics(facts: DiagnosticsFacts): string {
@@ -43,5 +70,10 @@ export function formatDiagnostics(facts: DiagnosticsFacts): string {
   // to conclude nothing went wrong, which is the opposite of why they are
   // reading a diagnostics block.
   if (facts.lastError !== null) lines.push(`Last error: ${facts.lastError}`);
+  // Same rule: present only when the host answered. It is one line because a
+  // bug report is read, not parsed.
+  if (facts.agentExplain != null && facts.agentExplain !== '') {
+    lines.push(`Agent detection: ${facts.agentExplain}`);
+  }
   return lines.join('\n');
 }

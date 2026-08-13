@@ -103,6 +103,10 @@ der.
 
 ### F7 — `agent explain --json`'ı teşhis yoluna ekle (~10 dk)
 
+> **2026-08-13:** bugün gönderildi. Copy diagnostics artık bloklu (yoksa
+> odaklı) pane için `client.explainAgent()` çağırıyor ve tek satır olarak
+> "Agent detection:" satırına koyuyor; host cevap vermezse satır hiç çıkmıyor.
+
 0.7.4'te **var** ve hiç kullanmıyoruz. Bugün agent durumu yanlış göründüğünde
 elimizde sadece `agentStatus` var. `agent explain` tespitin *neden* öyle olduğunu
 söylüyor.
