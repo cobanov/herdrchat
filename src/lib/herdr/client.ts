@@ -242,10 +242,28 @@ export class HerdrClient {
    */
   async listDirectories(path: string): Promise<string[]> {
     // `-p` appends "/" to directories and `-L` follows symlinked dirs, so we can
-    // keep only entries ending in "/" and strip it. An unreadable path yields
-    // nothing rather than erroring the picker.
-    const command = `cd ${shellQuote(path)} 2>/dev/null && ls -1Lp 2>/dev/null; true`;
-    const output = await this.shell(command, POLL_TIMEOUT_MS);
+    // keep only entries ending in "/" and strip it.
+    //
+    // The trailing `; true` this used to end with made EVERY failure — no such
+    // directory, no permission to read it — arrive as exit 0 with no output, so
+    // the picker said "No subfolders here" about a folder it never opened.
+    // Now a failed `cd`, and an `ls` that produced nothing at all, exit
+    // non-zero; a directory that is readable but empty still exits 0. `ls` is
+    // allowed to fail once it HAS printed entries, because one broken symlink
+    // is a non-zero exit on macOS and that listing is still worth showing.
+    const command = [
+      `cd ${shellQuote(path)} 2>/dev/null || exit 3`,
+      'entries=$(ls -1Lp 2>/dev/null) || [ -n "$entries" ] || exit 4',
+      'printf %s "$entries"',
+    ].join('\n');
+    const output = await this.shell(command, POLL_TIMEOUT_MS).catch((thrown: unknown) => {
+      throw thrown instanceof HerdrError && thrown.code === 'ssh_command_failed'
+        ? new HerdrError(
+            'dir_unreadable',
+            `Couldn't read ${path} on the host. It may not exist, or this account may not have permission to open it.`
+          )
+        : thrown;
+    });
     return output
       .split('\n')
       .map((line) => line.trim())

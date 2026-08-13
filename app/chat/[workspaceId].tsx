@@ -29,7 +29,7 @@ import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
 import { haptics } from '@/lib/haptics';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { clientFor, useSelectedConnection } from '@/state/connections';
+import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
 import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
@@ -54,6 +54,18 @@ export default function ThreadScreen() {
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
   const listRef = useRef<FlashListRef<Row>>(null);
+
+  /**
+   * This route outlives its host: delete the connection, or follow a deep link
+   * or a notification into one that is gone, and the screen still opens. It
+   * used to answer that with "No messages yet · Send your first message" over a
+   * composer whose every send failed silently.
+   *
+   * Hydration is what makes the difference honest — before the store has read
+   * the device, a null connection means "not loaded", not "deleted".
+   */
+  const hydrated = useConnections((state) => state.hydrated);
+  const hostGone = hydrated && connection === null;
 
   const showToolActivity = useSettings((state) => state.showToolActivity);
   const showSidechain = useSettings((state) => state.showSidechain);
@@ -364,7 +376,12 @@ export default function ThreadScreen() {
             that defeats it. Waiting for the first batch is what makes the native
             anchoring do its job instead of fighting it from JS.
           */}
-          {rows.length === 0 ? (
+          {hostGone ? (
+            <MissingHost
+              onBack={() => router.back()}
+              onHosts={() => router.push('/hosts')}
+            />
+          ) : rows.length === 0 ? (
             <ThreadPlaceholder
               waiting={waiting}
               title={params.title ?? params.workspaceId}
@@ -497,6 +514,9 @@ export default function ThreadScreen() {
             underneath the pill instead of stopping above a flat bar. It is also why
             the list carries a matching bottom padding.
           */}
+          {/* No composer without a host to send to: a text field that cannot
+              deliver anything is a promise the screen can't keep. */}
+          {!hostGone && (
           <View
             onLayout={(event) => setControlsHeight(event.nativeEvent.layout.height)}
             style={{
@@ -527,9 +547,43 @@ export default function ThreadScreen() {
               disabled={thread.isSending}
             />
           </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * The chat whose host is no longer on the device.
+ *
+ * Every other empty state here is about something the host has not said yet.
+ * This one is about there being no host to ask, so it offers the two places
+ * worth going instead of a message field that cannot send.
+ */
+function MissingHost({ onBack, onHosts }: { onBack: () => void; onHosts: () => void }) {
+  return (
+    <View
+      testID="thread-host-missing"
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.xxl,
+        gap: spacing.sm,
+      }}>
+      <Text variant="title3" style={{ textAlign: 'center' }}>
+        This chat&apos;s host is gone
+      </Text>
+      <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+        The connection this conversation belongs to isn&apos;t on this device any
+        more, so there is nothing to read it from and nothing to send to.
+      </Text>
+      <View style={{ marginTop: spacing.sm, alignSelf: 'stretch', gap: spacing.sm }}>
+        <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />
+        <Button title="Back to chats" variant="tinted" onPress={onBack} testID="thread-host-back" />
+      </View>
+    </View>
   );
 }
 
