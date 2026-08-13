@@ -46,8 +46,9 @@ function ChatsForServer() {
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  const { summaries, loading, error, herdrMissing, refresh } = useWorkspaces(client);
-  const [installing, setInstalling] = useState(false);
+  const { summaries, loading, error, herdrMissing, serverStopped, refresh } = useWorkspaces(client);
+  /** One flag for both recovery actions — only one is ever offered at a time. */
+  const [fixing, setFixing] = useState(false);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
   useTabPressHaptic();
 
@@ -91,14 +92,24 @@ function ChatsForServer() {
     void setSetting(db, 'seenSwipeHint', encodeBool(true));
   }, [db]);
 
-  const installHerdr = async () => {
+  /**
+   * The two things that can be fixed from here, and they are different sizes.
+   *
+   * Missing herdr downloads and runs an install script; a stopped server is one
+   * process. Offering them as one button would make the smaller one feel as
+   * consequential as the larger.
+   */
+  const fixHost = async (action: 'install' | 'start') => {
     if (client === null) return;
-    setInstalling(true);
+    setFixing(true);
     try {
-      await client.installHerdr();
+      await (action === 'install' ? client.installHerdr() : client.startServer());
       await refresh();
+    } catch {
+      // The poll's own banner already carries the failure; a second one here
+      // would stack two messages about one problem.
     } finally {
-      setInstalling(false);
+      setFixing(false);
     }
   };
 
@@ -123,8 +134,24 @@ function ChatsForServer() {
       {error !== null && (
         <ErrorBanner
           message={error}
-          actionLabel={herdrMissing ? (installing ? 'Installing…' : 'Install herdr on the host') : null}
-          onAction={herdrMissing && !installing ? () => void installHerdr() : undefined}
+          actionLabel={
+            fixing
+              ? 'Working…'
+              : herdrMissing
+                ? 'Install herdr on the host'
+                : serverStopped
+                  ? 'Start herdr on the host'
+                  : null
+          }
+          onAction={
+            fixing
+              ? undefined
+              : herdrMissing
+                ? () => void fixHost('install')
+                : serverStopped
+                  ? () => void fixHost('start')
+                  : undefined
+          }
         />
       )}
 

@@ -39,6 +39,13 @@ export interface WorkspacesState {
   error: string | null;
   /** True when the connect failed because herdr isn't installed on the host. */
   herdrMissing: boolean;
+  /**
+   * True when herdr IS installed but its server isn't up.
+   *
+   * Distinct from `herdrMissing` because the fix is different and much smaller:
+   * nothing to download, just a process to start.
+   */
+  serverStopped: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -63,6 +70,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const [loading, setLoading] = useState(client !== null);
   const [error, setError] = useState<string | null>(null);
   const [herdrMissing, setHerdrMissing] = useState(false);
+  const [serverStopped, setServerStopped] = useState(false);
 
   const polling = usePollGate();
   // The user's own battery/data tradeoff, applied on top of each screen's rate.
@@ -106,12 +114,14 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
       setError(null);
       setHerdrMissing(false);
+      setServerStopped(false);
       return false;
     } catch (thrown) {
       if (!alive.current) return true;
       const failure = thrown instanceof HerdrError ? thrown : null;
       setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
       setHerdrMissing(failure?.code === 'herdr_not_found');
+      setServerStopped(failure?.code === 'server_not_running');
       return true;
     } finally {
       if (alive.current) setLoading(false);
@@ -148,6 +158,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     loading,
     error,
     herdrMissing,
+    serverStopped,
     // A manual pull is a fresh start: clear the backoff so an explicit retry is
     // never made to wait out a penalty the user did not cause.
     refresh: useCallback(async () => {

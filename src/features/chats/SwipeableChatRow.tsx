@@ -57,18 +57,26 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   const swipeable = useRef<SwipeableMethods>(null);
 
   /**
-   * Close the panel when this instance is recycled onto a different chat.
+   * Snap the panel shut when this instance is recycled onto a different chat.
    *
    * FlashList reuses mounted components rather than remounting them, and the
    * swipeable keeps its open state internally — so a row left open, scrolled
    * past and recycled would come back open on an unrelated conversation, with
    * Rename and Close already under the reader's thumb.
    *
+   * `reset()`, NOT `close()`, and the difference is visible. `close()` calls
+   * `animateRow(0)`; `reset()` writes the shared values directly. Recycling is
+   * not a gesture ending, it is a component becoming a different row — so an
+   * animation there plays over content that has already changed. Closing a chat
+   * shifts every row below it up by one, which recycles them all, and with
+   * `close()` that showed as a blank gap where a row should be: the row's height
+   * was reserved while its content was still animating in from off-screen.
+   *
    * The state value is unused; `onReset` firing on a workspace-id change is the
    * whole point, and it is the hook FlashList ships for exactly this.
    */
   useRecyclingState(false, [summary.workspaceId], () => {
-    swipeable.current?.close();
+    swipeable.current?.reset();
   });
 
   const renderRightActions = useCallback(

@@ -39,6 +39,16 @@ export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 const PROMPT_WAIT_MS = 8000;
 
 /**
+ * How long to wait for a freshly spawned server to answer.
+ *
+ * Measured: about five seconds on a warm machine. Ten attempts a second apart
+ * is generous enough for a cold or loaded host without leaving a spinner up so
+ * long that it reads as hung.
+ */
+const SERVER_START_POLLS = 10;
+const SERVER_START_INTERVAL_MS = 1000;
+
+/**
  * High-level herdr operations over any transport. Command shapes mirror the
  * `herdr` CLI helpers, which wrap the socket API and print `{id, result}` JSON.
  *
@@ -140,6 +150,48 @@ export class HerdrClient {
    */
   async installHerdr(): Promise<void> {
     await this.shell('curl -fsSL https://herdr.dev/install.sh | sh', INSTALL_TIMEOUT_MS);
+  }
+
+  /**
+   * Start herdr's headless server on the host.
+   *
+   * The app could already INSTALL herdr and could not start it, which left the
+   * most recoverable failure of the three as the only one with no way out —
+   * `server_not_running` told you to open a terminal on another machine.
+   *
+   * `herdr server`, not `herdr`: the bare command launches or attaches the
+   * interactive session, which over a non-interactive SSH exec would be a TUI
+   * with nobody at it. The headless server is the mode meant for this.
+   *
+   * `nohup … &` and the redirects are what let it outlive the SSH channel that
+   * spawned it. Measured on a real host: the parent shell exits immediately, the
+   * server answers within about five seconds, and it is still up long after.
+   *
+   * Safe to press twice — herdr refuses a second instance with "herdr server is
+   * already running" rather than racing itself. Which is why this reports
+   * SUCCESS on that message: a button whose job is "make the server run" has
+   * done its job if the server is running.
+   */
+  async startServer(): Promise<void> {
+    await this.shell(
+      `nohup ${shellQuote(this.herdr)} server >/dev/null 2>&1 & echo started`,
+      LAUNCH_TIMEOUT_MS
+    );
+    // The spawn returns immediately; the socket takes a moment. Confirm rather
+    // than assume, so the banner does not clear on a server that never came up.
+    for (let attempt = 0; attempt < SERVER_START_POLLS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, SERVER_START_INTERVAL_MS));
+      try {
+        await this.snapshot();
+        return;
+      } catch {
+        /* not up yet */
+      }
+    }
+    throw new HerdrError(
+      'server_start_failed',
+      "herdr was started on the host but didn't come up. Check it there — `herdr status server`."
+    );
   }
 
   /**

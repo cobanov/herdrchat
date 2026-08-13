@@ -109,10 +109,16 @@ function RootStack() {
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />
         {/* A form sheet rather than a full modal: it is one field, and a sheet
             that only takes the height it needs keeps the list it renamed
-            visible behind it. */}
+            visible behind it.
+
+            `fitToContents`, NOT a fixed fraction. This was `[0.4]`, and 40% of
+            an iPhone is about 350pt — while the keyboard, which this screen
+            raises immediately because the field is autofocused, is about 340pt.
+            The sheet was almost entirely behind the keyboard. Letting UIKit size
+            it to its content is both correct and one fewer number to be wrong. */}
         <Stack.Screen
           name="rename-chat"
-          options={{ presentation: 'formSheet', sheetAllowedDetents: [0.4] }}
+          options={{ presentation: 'formSheet', sheetAllowedDetents: 'fitToContents' }}
         />
       </Stack>
     </ThemeProvider>
