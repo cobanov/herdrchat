@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
@@ -10,12 +10,13 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { shouldResetPin } from '@/lib/hostkey';
+import { formatFingerprint, shouldResetPin } from '@/lib/hostkey';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
+  loadHostKeyPin,
   loadSecret,
   saveHostKeyPin,
   saveSecret,
@@ -73,6 +74,22 @@ export default function ServerEditScreen() {
   // credentials to — never whoever answers the next connect.
   const [observedFingerprint, setObservedFingerprint] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  // The pin this host is already bound to, for the reader to compare against
+  // `ssh-keygen -lf` on the machine itself. Read once: it only changes through
+  // the flows on this screen, which set `observedFingerprint` anyway.
+  const [storedPin, setStoredPin] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadHostKeyPin(params.id).then((pin) => {
+      if (alive) setStoredPin(pin);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [params.id]);
+  // What a test just saw wins over what was stored: on a re-key the two differ,
+  // and the interesting one is the key on the wire now.
+  const fingerprint = observedFingerprint ?? storedPin;
 
   const valid =
     name.trim().length > 0 &&
@@ -144,6 +161,26 @@ export default function ServerEditScreen() {
           await runTest();
         })();
       },
+    });
+  };
+
+  /**
+   * The same rule as the chat list's banner: a remote script piped into a shell
+   * is stated in full and confirmed before it runs, never one tap.
+   *
+   * Note what the test transport does and does not promise here. An edit that
+   * leaves host and port alone enforces the stored pin, so the installer runs on
+   * the machine this host was already pinned to. On a NEW host there is no pin
+   * to enforce — first contact is trust-on-first-use by nature, and confirming
+   * the command is the only check there is.
+   */
+  const confirmInstallHerdr = () => {
+    const connection = draft();
+    confirmDestructive({
+      title: 'Run the herdr installer?',
+      message: `This runs curl -fsSL https://herdr.dev/install.sh | sh on ${connection.host} as ${connection.username}. It downloads a script from herdr.dev and runs it there.`,
+      confirmLabel: 'Run the installer',
+      onConfirm: () => void installHerdr(),
     });
   };
 
@@ -329,7 +366,7 @@ export default function ServerEditScreen() {
                   title={installing ? 'Installing…' : 'Install herdr on the host'}
                   variant="tinted"
                   loading={installing}
-                  onPress={() => void installHerdr()}
+                  onPress={confirmInstallHerdr}
                 />
               )}
             </View>
@@ -354,6 +391,21 @@ export default function ServerEditScreen() {
                 between you and it could be intercepting the connection.
               </Text>
               <Button title="Trust the new key" variant="tinted" onPress={trustNewKey} />
+            </View>
+          )}
+
+          {/* Shown once there is something true to show: a key a test just
+              accepted, or the pin this host is already bound to. Selectable and
+              monospaced because its only real use is being compared, character
+              by character, with `ssh-keygen -lf` on the machine. */}
+          {fingerprint !== null && (
+            <View style={{ gap: spacing.xs }}>
+              <Text variant="caption" color="secondary">
+                Host key fingerprint
+              </Text>
+              <Text variant="caption" color="tertiary" mono selectable testID="host-fingerprint">
+                {formatFingerprint(fingerprint)}
+              </Text>
             </View>
           )}
 

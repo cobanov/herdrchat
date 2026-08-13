@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
 import { SshHerdrTransport } from '@/lib/herdr/sshTransport';
+import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 
 /**
@@ -74,12 +75,21 @@ export async function loadSecret(id: string): Promise<string | null> {
   return loadMigrating(secretKey(id));
 }
 
+/**
+ * The stored pin, in today's format. Normalising on the way out is the whole
+ * migration for pins written before the two platforms agreed on a format — see
+ * `normalizeFingerprint`, which says which old forms carry over and which
+ * cannot.
+ */
 export async function loadHostKeyPin(id: string): Promise<string | null> {
-  return loadMigrating(pinKey(id));
+  const pin = await loadMigrating(pinKey(id));
+  return pin === null ? null : normalizeFingerprint(pin);
 }
 
 export async function saveHostKeyPin(id: string, fingerprint: string): Promise<void> {
-  await SecureStore.setItemAsync(pinKey(id), fingerprint, keychainOptions);
+  // Never pin nothing: an empty fingerprint would store "trust anyone".
+  if (fingerprint.length === 0) return;
+  await SecureStore.setItemAsync(pinKey(id), normalizeFingerprint(fingerprint), keychainOptions);
 }
 
 /**

@@ -44,8 +44,20 @@ export class SshHerdrTransport implements HerdrTransport {
     if (this.opening === null) {
       this.opening = this.loadConfig()
         .then((config) => connect(this.id, config))
-        .then((result) => {
+        .then((result): ConnectResult => {
           if (result.ok) {
+            // A connection we cannot name is a connection we cannot pin. Storing
+            // an empty fingerprint would read back as "no pin" — trust-on-first-
+            // use, re-armed on every connect — so this is a failure to surface,
+            // not a value to persist.
+            if (result.fingerprint.length === 0) {
+              this.opening = null;
+              return {
+                ok: false,
+                code: 'connect_failed',
+                message: "The host connected but reported no key fingerprint, so its identity can't be checked.",
+              };
+            }
             this.onFingerprint?.(result.fingerprint);
           } else {
             // Let the next call retry rather than caching a failure forever —

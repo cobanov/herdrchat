@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.Buffer
 import net.schmizz.sshj.common.IOUtils
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
@@ -70,12 +71,22 @@ class SshConnection(private val config: SshConfigRecord) {
    */
   private fun hostKeyVerifier(): HostKeyVerifier = object : HostKeyVerifier {
     override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
-      val digest = MessageDigest.getInstance("SHA-256").digest(key.encoded)
-      val fingerprint = Base64.encodeToString(digest, Base64.NO_WRAP)
-      acceptedFingerprint = fingerprint
+      // The SSH WIRE encoding of the key, not `key.encoded` — that is X.509
+      // SPKI DER, a different blob, so it hashed to a fingerprint no other SSH
+      // tool would ever print. OpenSSH's form is unpadded base64 of SHA-256
+      // over the wire blob, which is what `ssh-keygen -lf` shows and what iOS
+      // reports.
+      val wire = Buffer.PlainBuffer().putPublicKey(key).compactData
+      val digest = MessageDigest.getInstance("SHA-256").digest(wire)
+      val fingerprint = Base64.encodeToString(digest, Base64.NO_WRAP).trimEnd('=')
       val pin = config.hostKeyFingerprint?.takeIf { it.isNotEmpty() }
-        ?: return true   // first contact: trust and record
-      if (pin == fingerprint) return true
+      // Recorded only on acceptance. Assigning before the comparison published
+      // a REJECTED key as the one we accepted, which is exactly the key a
+      // "trust the new key" flow must never be handed for free.
+      if (pin == null || pin == fingerprint) {
+        acceptedFingerprint = fingerprint
+        return true   // no pin: first contact, trust and record
+      }
       hostKeyMismatch = true
       return false
     }

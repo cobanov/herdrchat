@@ -1,13 +1,15 @@
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, View } from 'react-native';
 
+import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
+import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET } from '@/features/chats/ChatRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
@@ -17,12 +19,19 @@ import { useChatActions } from '@/features/chats/useChatActions';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { haptics } from '@/lib/haptics';
+import { formatFingerprint, isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { useChatEdits } from '@/state/chatEdits';
-import { clientFor, newConnection, useSelectedConnection } from '@/state/connections';
+import {
+  clientFor,
+  loadHostKeyPin,
+  newConnection,
+  useSelectedConnection,
+} from '@/state/connections';
 import { loadThreadReads, setSetting } from '@/state/db';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
+import { radius, spacing } from '@/theme/tokens';
 
 /**
  * Chats — the primary destination. One row per workspace, with live presence.
@@ -49,6 +58,20 @@ function ChatsForServer() {
   const { summaries, loading, error, herdrMissing, serverStopped, refresh } = useWorkspaces(client);
   /** One flag for both recovery actions — only one is ever offered at a time. */
   const [fixing, setFixing] = useState(false);
+  // A key change is not one failure among many: it is the only one where the
+  // right move might be to stop using the app. It gets its own surface.
+  const keyChanged = isHostKeyChangedMessage(error);
+  const [storedPin, setStoredPin] = useState<string | null>(null);
+  useEffect(() => {
+    if (!keyChanged || connection === null) return;
+    let alive = true;
+    void loadHostKeyPin(connection.id).then((pin) => {
+      if (alive) setStoredPin(pin);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [keyChanged, connection]);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
   useTabPressHaptic();
 
@@ -113,6 +136,23 @@ function ChatsForServer() {
     }
   };
 
+  /**
+   * Never one tap. Installing pipes a script from the network into a shell on
+   * someone's machine, so the exact command is stated and confirmed before it
+   * runs — the same bargain a terminal would offer, where you would at least
+   * have typed it. Starting a stopped server is not in that class and goes
+   * straight through.
+   */
+  const confirmInstallHerdr = () => {
+    if (connection === null) return;
+    confirmDestructive({
+      title: 'Run the herdr installer?',
+      message: `This runs curl -fsSL https://herdr.dev/install.sh | sh on ${connection.host} as ${connection.username}. It downloads a script from herdr.dev and runs it there.`,
+      confirmLabel: 'Run the installer',
+      onConfirm: () => void fixHost('install'),
+    });
+  };
+
   return (
     <Screen>
       <Header
@@ -131,29 +171,37 @@ function ChatsForServer() {
         <ErrorBanner message={actions.error} onDismiss={actions.clearError} />
       )}
 
-      {error !== null && (
-        <ErrorBanner
-          message={error}
-          actionLabel={
-            fixing
-              ? 'Working…'
-              : herdrMissing
-                ? 'Install herdr on the host'
-                : serverStopped
-                  ? 'Start herdr on the host'
-                  : null
-          }
-          onAction={
-            fixing
-              ? undefined
-              : herdrMissing
-                ? () => void fixHost('install')
-                : serverStopped
-                  ? () => void fixHost('start')
-                  : undefined
-          }
-        />
-      )}
+      {error !== null &&
+        (keyChanged ? (
+          <HostKeyChangedBanner
+            pin={storedPin}
+            onOpenEditor={() =>
+              router.push({ pathname: '/server/[id]', params: { id: connection?.id ?? '' } })
+            }
+          />
+        ) : (
+          <ErrorBanner
+            message={error}
+            actionLabel={
+              fixing
+                ? 'Working…'
+                : herdrMissing
+                  ? 'Install herdr on the host'
+                  : serverStopped
+                    ? 'Start herdr on the host'
+                    : null
+            }
+            onAction={
+              fixing
+                ? undefined
+                : herdrMissing
+                  ? confirmInstallHerdr
+                  : serverStopped
+                    ? () => void fixHost('start')
+                    : undefined
+            }
+          />
+        ))}
 
       {connection === null ? (
         <EmptyState
@@ -229,5 +277,62 @@ function ChatsForServer() {
         />
       )}
     </Screen>
+  );
+}
+
+/**
+ * The host answered with a key that is not the pinned one.
+ *
+ * Deliberately not `ErrorBanner`: the generic banner reads as "try again", and
+ * retrying is the one thing that must not be the obvious move here. It states
+ * both readings — someone in the middle, or a server you rebuilt — shows the
+ * pin so the key can be compared against the machine itself, and offers the one
+ * route to the trust-reset flow. Nothing here re-pins anything.
+ */
+function HostKeyChangedBanner({
+  pin,
+  onOpenEditor,
+}: {
+  pin: string | null;
+  onOpenEditor: () => void;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <View
+      testID="host-key-changed-banner"
+      accessibilityRole="alert"
+      style={{
+        marginHorizontal: spacing.md,
+        marginBottom: spacing.sm,
+        padding: spacing.md,
+        borderRadius: radius.sm,
+        backgroundColor: colors.fillSubtle,
+        gap: spacing.sm,
+      }}>
+      <Text variant="subhead" weight="600" color="attention">
+        This host’s SSH key changed
+      </Text>
+      <Text variant="footnote" color="secondary">
+        Either the server was reinstalled or re-keyed, or something is
+        intercepting the connection. Until you know which, treat it as the second
+        one.
+      </Text>
+      {pin !== null && (
+        <Text variant="caption" color="tertiary" mono selectable>
+          Pinned: {formatFingerprint(pin)}
+        </Text>
+      )}
+      <Pressable
+        onPress={onOpenEditor}
+        accessibilityRole="button"
+        accessibilityLabel="Open host settings"
+        testID="host-key-changed-action"
+        style={{ alignSelf: 'flex-start', paddingVertical: spacing.xs }}>
+        <Text variant="footnote" color="tint" weight="600">
+          Open host settings
+        </Text>
+      </Pressable>
+    </View>
   );
 }

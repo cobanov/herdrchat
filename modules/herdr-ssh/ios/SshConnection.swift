@@ -200,7 +200,10 @@ actor SshConnection {
       var buffer = ByteBuffer()
       _ = hostKey.write(to: &buffer)
       let digest = SHA256.hash(data: Data(buffer.readableBytesView))
-      let fingerprint = Data(digest).base64EncodedString()
+      // OpenSSH's format: unpadded base64 of SHA-256 over the wire encoding of
+      // the key. Dropping the "=" is what makes this string equal to what
+      // `ssh-keygen -lf` prints, so the two can be compared by eye.
+      let fingerprint = Data(digest).base64EncodedString().replacingOccurrences(of: "=", with: "")
       observer.seen = fingerprint
 
       guard let pin = observer.pin else {
