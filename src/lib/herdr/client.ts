@@ -24,6 +24,21 @@ import type { HerdrTransport } from './transport';
 import { AGENT_VERBS_VERSION, atLeast } from './version';
 
 /**
+ * What the host observed about a submitted prompt. See `sendPrompt`.
+ */
+export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
+
+/**
+ * How long to let herdr watch for the agent to react.
+ *
+ * Its stall detection uses a fixed 5000ms window for the first state change,
+ * and its help warns that "a shorter --timeout returns timeout instead" — which
+ * would turn a diagnosable stall into a generic timeout. So this stays above
+ * that floor.
+ */
+const PROMPT_WAIT_MS = 8000;
+
+/**
  * High-level herdr operations over any transport. Command shapes mirror the
  * `herdr` CLI helpers, which wrap the socket API and print `{id, result}` JSON.
  *
@@ -88,6 +103,34 @@ export class HerdrClient {
   /** Confirm the host is reachable and herdr is answering. */
   async ping(): Promise<void> {
     await this.shell(shellCommand([this.herdr, 'status', 'server']), POLL_TIMEOUT_MS);
+  }
+
+  /**
+   * Why herdr thinks this pane's agent is in the state it is in.
+   *
+   * The app shows `agentStatus` and, when it looks wrong, has nothing further to
+   * say — which is the worst possible position for the one screen a person opens
+   * when something is broken. This is herdr's own account of its detection, and
+   * for Claude that account is the whole story: Claude is a "session identity"
+   * integration, so it reports which conversation it is but NOT its state, and
+   * the state comes from herdr's screen manifest. When the status is wrong, the
+   * manifest is where the answer is.
+   *
+   * Best-effort by design: returns null rather than throwing, because this is
+   * diagnostic colour attached to a bug report and must never be the reason one
+   * cannot be filed.
+   */
+  async explainAgent(target: string): Promise<string | null> {
+    try {
+      const output = await this.shell(
+        shellCommand([this.herdr, 'agent', 'explain', target, '--json']),
+        POLL_TIMEOUT_MS
+      );
+      const trimmed = output.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -193,11 +236,22 @@ export class HerdrClient {
   /**
    * Submit a prompt to the agent in a pane.
    *
-   * Returns TRUE when the agent-aware verb handled it. That is the whole point
-   * of the return value: `agent prompt` is understood by herdr as "give this
-   * text to the agent", so a success means delivered and the caller can skip the
-   * verification dance entirely. `pane run` only means "the keystrokes were
-   * sent", which is why the caller has to watch the status afterwards.
+   * Returns what the HOST observed:
+   *
+   * - `delivered` — herdr watched the agent react. Nothing to verify.
+   * - `stalled`   — herdr watched and nothing moved within its window. The
+   *                 prompt is sitting in the composer; this is the failure the
+   *                 blind Enter used to guess at, reported by name.
+   * - `unverified` — the host has no `agent prompt`, so `pane run` sent
+   *                 keystrokes and only the caller can tell whether they took.
+   *
+   * A three-way answer rather than a boolean because the caller does something
+   * different in each case, and collapsing `stalled` into "false" would put it
+   * back on the legacy guessing path it exists to replace.
+   *
+   * `agent prompt` is understood by herdr as "give this text to the agent", so
+   * a success means delivered. `pane run` only means "the keystrokes were
+   * sent", which is why `unverified` still costs the caller a status watch.
    *
    * WHY A PROBE RATHER THAN TRY-AND-FALL-BACK. The obvious shape is to attempt
    * `agent prompt` and fall back to `pane run` when it errors — and that is
@@ -207,17 +261,46 @@ export class HerdrClient {
    * cannot send anything, so probing once per host per app run costs one
    * round-trip and removes the ambiguity.
    */
-  async sendPrompt(paneId: string, text: string): Promise<boolean> {
+  async sendPrompt(paneId: string, text: string): Promise<PromptOutcome> {
     if (!(await this.supportsAgentPrompt())) {
       await this.sendMessage(paneId, text);
-      return false;
+      return 'unverified';
     }
-    const output = await this.shell(
-      shellCommand([this.herdr, 'agent', 'prompt', paneId, text]),
-      SEND_TIMEOUT_MS
-    );
-    checkEnvelope(output);
-    return true;
+
+    try {
+      const output = await this.shell(
+        shellCommand([
+          this.herdr,
+          'agent',
+          'prompt',
+          paneId,
+          text,
+          // Let the HOST decide whether the prompt landed. Its own help:
+          // "When submission starts from a non-working state, --wait first
+          // requires an observed state change within 5000ms; otherwise it
+          // returns agent_prompt_stalled."
+          //
+          // That is precisely the case the blind Enter was written for — a
+          // prompt left sitting in the composer — except herdr observes it
+          // instead of us guessing after a fixed sleep, and it says so by name.
+          '--wait',
+          '--timeout',
+          String(PROMPT_WAIT_MS),
+        ]),
+        // Our deadline has to outlast the host's, or we abandon a wait that is
+        // about to answer and report a failure the host never had.
+        PROMPT_WAIT_MS + SEND_TIMEOUT_MS
+      );
+      checkEnvelope(output);
+      return 'delivered';
+    } catch (thrown) {
+      // The one error that is an ANSWER rather than a failure: herdr watched,
+      // and nothing moved. The message is still in the composer.
+      if (thrown instanceof HerdrError && thrown.code === 'agent_prompt_stalled') {
+        return 'stalled';
+      }
+      throw thrown;
+    }
   }
 
   /**

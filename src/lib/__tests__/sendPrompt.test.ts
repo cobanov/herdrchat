@@ -29,7 +29,7 @@ const sends = (commands: string[]) => commands.filter((c) => !c.includes('--help
 describe('sendPrompt', () => {
   it('uses the agent-aware verb when the host has it, and says so', async () => {
     const { client, commands } = host({ hasAgentPrompt: true });
-    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe(true);
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('delivered');
     expect(sends(commands)).toHaveLength(1);
     expect(sends(commands)[0]).toContain("'agent' 'prompt' 'pane-1' 'hello'");
   });
@@ -37,7 +37,7 @@ describe('sendPrompt', () => {
   it('falls back to pane run when the host does not, and says so', async () => {
     // Returning false is what tells the thread it still has to verify delivery.
     const { client, commands } = host({ hasAgentPrompt: false });
-    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe(false);
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('unverified');
     expect(sends(commands)).toHaveLength(1);
     expect(sends(commands)[0]).toContain("'pane' 'run' 'pane-1' 'hello'");
   });
@@ -82,7 +82,7 @@ describe('sendPrompt', () => {
       },
       streamLines: async function* () {},
     };
-    await expect(new HerdrClient(transport).sendPrompt('pane-1', 'hi')).resolves.toBe(false);
+    await expect(new HerdrClient(transport).sendPrompt('pane-1', 'hi')).resolves.toBe('unverified');
     expect(sends(commands)[0]).toContain("'pane' 'run'");
   });
 
@@ -133,7 +133,7 @@ describe('capability gating by reported version', () => {
     // Measured: 0.7.4 has no `agent prompt`. The version alone settles it.
     const { client, commands } = versioned('0.7.4');
     await client.snapshot();
-    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe(false);
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('unverified');
     expect(probes(commands)).toEqual([]);
     expect(commands.at(-1)).toContain("'pane' 'run'");
   });
@@ -152,5 +152,66 @@ describe('capability gating by reported version', () => {
     expect(client.reportedVersion).toBeNull();
     await client.snapshot();
     expect(client.reportedVersion).toBe('0.8.0');
+  });
+});
+
+describe('a stalled prompt', () => {
+  /** A host whose `agent prompt --wait` reports that nothing moved. */
+  function stallingHost() {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        if (command.includes('--help')) {
+          return { ok: true, exitCode: 0, stdout: '', stderr: '' } as never;
+        }
+        return {
+          ok: true,
+          exitCode: 0,
+          stdout: JSON.stringify({
+            error: { code: 'agent_prompt_stalled', message: 'no state change observed' },
+          }),
+          stderr: '',
+        } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+
+  it('is an answer, not a failure — it resolves rather than throwing', async () => {
+    // herdr watched its own agent and saw nothing move. That is information the
+    // caller acts on, not an error to propagate.
+    const { client } = stallingHost();
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('stalled');
+  });
+
+  it('asks the host to wait, and outlasts the host own deadline', async () => {
+    const { client, commands } = stallingHost();
+    await client.sendPrompt('pane-1', 'hello');
+    // Not `find(c => c.includes("'agent' 'prompt'"))` — the capability probe is
+    // literally `agent prompt --help` and matches that too.
+    const sent = commands.find((c) => c.includes("'agent' 'prompt'") && !c.includes('--help')) ?? '';
+    expect(sent).toContain("'--wait'");
+    // herdr stalls at a fixed 5000ms and its help warns that a shorter
+    // --timeout returns a generic `timeout` instead, losing the diagnosis.
+    const timeout = Number(/'--timeout' '(\d+)'/.exec(sent)?.[1] ?? 0);
+    expect(timeout).toBeGreaterThan(5000);
+  });
+
+  it('still throws for any other herdr error', async () => {
+    // Only the stall is special. A real failure must not read as a quiet stall.
+    const transport: HerdrTransport = {
+      exec: async (command: string) => ({
+        ok: true,
+        exitCode: 0,
+        stdout: command.includes('--help')
+          ? ''
+          : JSON.stringify({ error: { code: 'pane_not_found', message: 'gone' } }),
+        stderr: '',
+      }) as never,
+      streamLines: async function* () {},
+    };
+    await expect(new HerdrClient(transport).sendPrompt('p', 'x')).rejects.toThrow(/gone/);
   });
 });

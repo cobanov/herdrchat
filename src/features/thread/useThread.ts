@@ -610,24 +610,28 @@ export function useThread(
   );
 
   /**
-   * Submit, and verify only when we have to.
+   * Submit, and let the host verify wherever it can.
    *
-   * `agent prompt` is herdr's agent-aware verb: a success means the agent got
-   * the text, so there is nothing to confirm and the send returns immediately
-   * instead of stalling up to six seconds on an idle agent.
+   * `agent prompt --wait` makes herdr watch its own agent and answer with what
+   * it saw. Its help: "when submission starts from a non-working state, --wait
+   * first requires an observed state change within 5000ms; otherwise it returns
+   * agent_prompt_stalled." That named error is exactly the stuck-in-the-composer
+   * case the blind Enter was written to guess at — observed by the process that
+   * owns the terminal, rather than inferred here from a fixed sleep.
    *
-   * The rest is the legacy path, for hosts without that verb. `pane run` types
-   * the text and presses Enter, but a busy TUI can leave the prompt sitting in
-   * the composer — so unless the agent was already working (where a send just
-   * queues), require the status to flip to `working`; if it doesn't, press Enter
-   * once more and re-check.
+   * So on a modern host there are two outcomes and neither needs us to guess:
+   * `delivered` returns immediately, `stalled` fails the bubble honestly.
    *
-   * That second Enter is a blind retry and it is not safe in principle: if the
-   * first send DID land and merely hadn't flipped status yet, it submits an
-   * empty line into a live agent. It survives here only because it is the
-   * behaviour this app shipped for months against hosts that have no
-   * alternative, and removing it would regress the stuck-composer case it was
-   * written for. On any herdr with `agent prompt` the whole branch is dead.
+   * `unverified` is the legacy path, for hosts with no `agent prompt`. There
+   * `pane run` only means keystrokes were sent, so the old dance survives —
+   * including the blind second Enter, which is unsafe in principle (if the first
+   * send DID land it submits an empty line into a live agent) but is also the
+   * only thing that recovers a stuck composer on a host with no alternative.
+   *
+   * `wasWorking` still guards all of it, and herdr's own caveat is why: --wait
+   * "does not track turns: if the agent is already working, that active turn's
+   * completion may match." Sending into a busy agent just queues, so there is
+   * nothing to wait for and waiting would match the wrong turn.
    */
   const deliver = useCallback(
     async (text: string, echoId: string, polled: AgentInfo) => {
@@ -636,8 +640,16 @@ export function useThread(
       try {
         const pane = await currentPane(polled);
         const wasWorking = pane.agentStatus === 'working';
-        const confirmed = await client.sendPrompt(pane.paneId, text);
-        if (!confirmed && !wasWorking) {
+        const outcome = await client.sendPrompt(pane.paneId, text);
+
+        if (outcome === 'stalled') {
+          // The host watched and nothing moved. No guessing, no second Enter.
+          setFailedIds((previous) => new Set(previous).add(echoId));
+          setError('The agent never picked that up — it may be stuck at a prompt. Try again.');
+          return;
+        }
+
+        if (outcome === 'unverified' && !wasWorking) {
           let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
           if (!accepted) {
             await client.sendKeys(pane.paneId, ['Enter']);
