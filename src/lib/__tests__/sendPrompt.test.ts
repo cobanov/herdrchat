@@ -296,3 +296,131 @@ describe('startNamedAgent', () => {
     ).rejects.toThrow(/took too long/);
   });
 });
+
+/**
+ * herdr can print its error envelope AND exit non-zero. The exit code must not
+ * eat the diagnosis: a stall that reads as "exit 1" is back to guessing.
+ */
+describe('an error envelope arriving with a non-zero exit', () => {
+  function exitingHost(reply: { exitCode: number; stdout?: string; stderr?: string }) {
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        if (command.includes('--help')) {
+          return { ok: true, exitCode: 0, stdout: '', stderr: '' } as never;
+        }
+        if (command.includes('command -v')) {
+          // The exit-127 path diagnoses WHERE herdr is; "nowhere" keeps the
+          // canned host on the plain herdr_not_found answer.
+          return { ok: true, exitCode: 0, stdout: 'NONE', stderr: '' } as never;
+        }
+        return {
+          ok: true,
+          exitCode: reply.exitCode,
+          stdout: reply.stdout ?? '',
+          stderr: reply.stderr ?? '',
+        } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return new HerdrClient(transport);
+  }
+
+  const STALL_ENVELOPE = JSON.stringify({
+    error: { code: 'agent_prompt_stalled', message: 'no state change observed' },
+  });
+
+  it('is recognised from stdout even when herdr also exits non-zero', async () => {
+    // herdr can print the error envelope AND exit 1. The exit code must not eat
+    // the diagnosis — a stall that reads as "exit 1" is back to guessing.
+    const client = exitingHost({ exitCode: 1, stdout: STALL_ENVELOPE });
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('stalled');
+  });
+
+  it('is recognised from stderr even when herdr also exits non-zero', async () => {
+    const client = exitingHost({ exitCode: 1, stderr: STALL_ENVELOPE });
+    await expect(client.sendPrompt('pane-1', 'hello')).resolves.toBe('stalled');
+  });
+
+  it('leaves a non-zero exit with no envelope as the generic error', async () => {
+    const client = exitingHost({ exitCode: 1, stderr: 'segmentation fault' });
+    await expect(client.sendPrompt('pane-1', 'hello')).rejects.toMatchObject({
+      code: 'ssh_command_failed',
+      message: expect.stringContaining('exit 1'),
+    });
+  });
+
+  it('leaves the exit-127 diagnosis exactly as it was', async () => {
+    const client = exitingHost({ exitCode: 127 });
+    await expect(client.sendPrompt('pane-1', 'hello')).rejects.toMatchObject({
+      code: 'herdr_not_found',
+    });
+  });
+});
+
+describe('capability memo provenance', () => {
+  /**
+   * A host whose `--help` answers are scripted per call, whose snapshots report
+   * `version`, and which records every command.
+   */
+  function scriptedHost(probeReplies: readonly ('ok' | 'no' | 'throw')[], version: string) {
+    const commands: string[] = [];
+    let probeCalls = 0;
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        if (command.includes('--help')) {
+          const reply = probeReplies[probeCalls] ?? 'ok';
+          probeCalls += 1;
+          if (reply === 'throw') throw new Error('connection reset');
+          return { ok: true, exitCode: reply === 'ok' ? 0 : 1, stdout: '', stderr: '' } as never;
+        }
+        return {
+          ok: true,
+          exitCode: 0,
+          stdout: JSON.stringify({ ok: true, result: { snapshot: { agents: [], version } } }),
+          stderr: '',
+        } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+
+  const sends = (commands: string[]) => commands.filter((c) => !c.includes('--help'));
+
+  it('recovers from a transport-failed probe once a snapshot reports 0.8.0', async () => {
+    // One blip before the first poll must not downgrade the host for the
+    // client's whole lifetime.
+    const { client, commands } = scriptedHost(['throw'], '0.8.0');
+    await expect(client.sendPrompt('pane-1', 'one')).resolves.toBe('unverified');
+    await client.snapshot();
+    await expect(client.sendPrompt('pane-1', 'two')).resolves.toBe('delivered');
+    expect(commands.at(-1)).toContain("'agent' 'prompt'");
+  });
+
+  it('lets a reported version overrule a probe that answered no', async () => {
+    // The probe said no (exit 1 — a mangled `--help`, an upgrade race), then the
+    // snapshot said 0.8.0. The version is the host's own word; it wins.
+    const { client, commands } = scriptedHost(['no'], '0.8.0');
+    await expect(client.sendPrompt('pane-1', 'one')).resolves.toBe('unverified');
+    await client.snapshot();
+    await expect(client.sendPrompt('pane-1', 'two')).resolves.toBe('delivered');
+    expect(commands.at(-1)).toContain("'agent' 'prompt'");
+  });
+
+  it('re-probes on the next send after a transport-failed probe', async () => {
+    // No snapshot involved: "couldn't ask" is simply never cached as "no".
+    const { client, commands } = scriptedHost(['throw', 'ok'], '0.8.0');
+    await expect(client.sendPrompt('pane-1', 'one')).resolves.toBe('unverified');
+    await expect(client.sendPrompt('pane-1', 'two')).resolves.toBe('delivered');
+    expect(commands.filter((c) => c.includes('--help'))).toHaveLength(2);
+    expect(sends(commands)).toHaveLength(2);
+  });
+
+  it('still caches a probe that genuinely answered no', async () => {
+    const { client, commands } = scriptedHost(['no'], '0.8.0');
+    await client.sendPrompt('pane-1', 'one');
+    await client.sendPrompt('pane-1', 'two');
+    expect(commands.filter((c) => c.includes('--help'))).toHaveLength(1);
+  });
+});

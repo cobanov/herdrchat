@@ -89,7 +89,16 @@ export class HerdrClient {
     // Remembered so the capability gates below can answer from it instead of
     // spending a round-trip on `--help`. The field has been in the snapshot all
     // along and nothing read it.
-    if (snapshot.version !== null) this.hostVersion = snapshot.version;
+    if (snapshot.version !== null) {
+      this.hostVersion = snapshot.version;
+      // The reported version outranks any probe. A probe-derived "no" — taken
+      // before the first poll landed, possibly against a host that was
+      // answering badly — would otherwise downgrade this client to the legacy
+      // paths for its whole lifetime. Forget it; the next send answers from
+      // the version.
+      if (this.agentPrompt?.provenance === 'probe') this.agentPrompt = null;
+      if (this.agentStart?.provenance === 'probe') this.agentStart = null;
+    }
     return snapshot;
   }
 
@@ -386,20 +395,21 @@ export class HerdrClient {
   /**
    * Whether a subcommand exists, asked without invoking it.
    *
-   * Any failure reads as "not supported", including a host that is briefly
-   * unreachable. That is the safe direction: the fallback is the path the app
-   * shipped with for months, so a false negative costs the old behaviour rather
-   * than an error.
+   * Three answers, not two, because "the host said no" and "the host couldn't
+   * be asked" age differently: the first is a fact about this herdr and can be
+   * memoised, while the second is a fact about one moment of the network and
+   * must not be.
    */
-  private async probe(subcommand: readonly string[]): Promise<boolean> {
+  private async probe(subcommand: readonly string[]): Promise<ProbeOutcome> {
     try {
       const result = await this.transport.exec(
         withPath(shellCommand([this.herdr, ...subcommand, '--help'])),
         POLL_TIMEOUT_MS
       );
-      return result.ok && result.exitCode === 0;
+      if (!result.ok) return 'unreachable';
+      return result.exitCode === 0 ? 'supported' : 'unsupported';
     } catch {
-      return false;
+      return 'unreachable';
     }
   }
 
@@ -614,18 +624,27 @@ export class HerdrClient {
     }
   }
 
-  /** Memoised for the client's lifetime — one per host, not one per send. */
-  private agentPrompt: Promise<boolean> | null = null;
-  private agentStart: Promise<boolean> | null = null;
+  /**
+   * Memoised for the client's lifetime — one per host, not one per send — with
+   * the answer's provenance kept, because the two sources age differently: a
+   * version-derived answer is settled, while a probe-derived one is superseded
+   * by the first snapshot that reports a version (see `snapshot`).
+   */
+  private agentPrompt: CapabilityMemo | null = null;
+  private agentStart: CapabilityMemo | null = null;
 
   private supportsAgentPrompt(): Promise<boolean> {
-    this.agentPrompt ??= this.hasAgentVerbs(['agent', 'prompt']);
-    return this.agentPrompt;
+    this.agentPrompt ??= this.agentVerbsMemo(['agent', 'prompt'], (memo) => {
+      if (this.agentPrompt === memo) this.agentPrompt = null;
+    });
+    return this.agentPrompt.answer;
   }
 
   private supportsAgentStart(): Promise<boolean> {
-    this.agentStart ??= this.hasAgentVerbs(['agent', 'start']);
-    return this.agentStart;
+    this.agentStart ??= this.agentVerbsMemo(['agent', 'start'], (memo) => {
+      if (this.agentStart === memo) this.agentStart = null;
+    });
+    return this.agentStart.answer;
   }
 
   /**
@@ -639,10 +658,29 @@ export class HerdrClient {
    * The probe stays as the fallback rather than being deleted, because "reports
    * no version" is a real state: it is what every herdr older than the field
    * looks like, and those are precisely the hosts where guessing wrong is worst.
+   *
+   * A probe that could not reach the host still answers false — the fallback is
+   * the right call for THIS send — but asks `forget` to drop the memo, so one
+   * network blip before the first poll cannot downgrade the host permanently.
    */
-  private async hasAgentVerbs(subcommand: readonly string[]): Promise<boolean> {
-    if (this.hostVersion !== null) return atLeast(this.hostVersion, AGENT_VERBS_VERSION);
-    return this.probe(subcommand);
+  private agentVerbsMemo(
+    subcommand: readonly string[],
+    forget: (memo: CapabilityMemo) => void
+  ): CapabilityMemo {
+    if (this.hostVersion !== null) {
+      return {
+        provenance: 'version',
+        answer: Promise.resolve(atLeast(this.hostVersion, AGENT_VERBS_VERSION)),
+      };
+    }
+    const memo: CapabilityMemo = {
+      provenance: 'probe',
+      answer: this.probe(subcommand).then((outcome) => {
+        if (outcome === 'unreachable') forget(memo);
+        return outcome === 'supported';
+      }),
+    };
+    return memo;
   }
 
   /**
@@ -701,7 +739,14 @@ export class HerdrClient {
       throw await this.diagnoseMissingHerdr();
     }
     if (result.exitCode !== 0) {
-      throw exitCodeError(result.exitCode, result.stderr);
+      // herdr can print its error envelope AND exit non-zero. The envelope is
+      // the better answer — `agent_prompt_stalled` arriving with exit 1 must
+      // stay a diagnosis rather than collapse into a generic exit-code error.
+      throw (
+        herdrErrorFrom(result.stdout) ??
+        herdrErrorFrom(result.stderr) ??
+        exitCodeError(result.exitCode, result.stderr)
+      );
     }
     return result.stdout;
   }
@@ -762,6 +807,15 @@ export class HerdrClient {
     if (line.startsWith('NOEXEC ')) return { kind: 'not_executable', path: line.slice(7) };
     return { kind: 'unknown' };
   }
+}
+
+/** See `probe`. */
+type ProbeOutcome = 'supported' | 'unsupported' | 'unreachable';
+
+/** A memoised capability answer, tagged with where it came from. */
+interface CapabilityMemo {
+  readonly provenance: 'version' | 'probe';
+  readonly answer: Promise<boolean>;
 }
 
 /** Where herdr is on a host, as far as we could tell. */
