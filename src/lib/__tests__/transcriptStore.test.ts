@@ -131,6 +131,106 @@ describe('recent window', () => {
   });
 });
 
+/**
+ * A canned host whose file can grow and whose live tail serves raw bytes from
+ * the requested offset. Slicing the Buffer BEFORE decoding is the point: a
+ * window that starts inside a code point decodes lossily into U+FFFD, exactly
+ * as the native side does — the plain FakeTransport above does the same, but
+ * no test there ever starts mid-code-point, which is why the drift bug was
+ * unreproducible in this suite.
+ */
+class LossyTailTransport implements HerdrTransport {
+  private file: Buffer;
+
+  constructor(initial: string) {
+    this.file = Buffer.from(initial, 'utf8');
+  }
+
+  append(text: string): void {
+    this.file = Buffer.concat([this.file, Buffer.from(text, 'utf8')]);
+  }
+
+  async exec(command: string): Promise<ExecResult> {
+    if (command.includes('wc -c')) return ok(`${this.file.length}\n`);
+    const window = /tail -c \+(\d+)/.exec(command);
+    if (window !== null) {
+      return ok(this.file.subarray(Number(window[1]) - 1).toString('utf8'));
+    }
+    return ok('');
+  }
+
+  async *streamLines(command: string): AsyncIterable<string> {
+    const from = /tail -c \+(\d+)/.exec(command);
+    const start = from === null ? 0 : Number(from[1]) - 1;
+    for (const line of this.file.subarray(start).toString('utf8').split('\n')) {
+      if (line.length > 0) yield line;
+    }
+  }
+}
+
+describe('recent window starting mid-code-point', () => {
+  /** Emoji on both sides of every turn, so any byte window lands near one. */
+  function emojiTranscript(turns: number): string {
+    const lines = Array.from(
+      { length: turns },
+      (_, index) =>
+        `{"type":"user","uuid":"e${index}","message":{"role":"user","content":"🎉🚀 turn ${index} 🐢"}}`
+    );
+    return `${lines.join('\n')}\n`;
+  }
+
+  /** A window start two bytes inside line 3's leading 🎉 — mid-code-point. */
+  function midEmojiStart(base: string): number {
+    const emojiChar = base.indexOf('🎉', base.indexOf('"uuid":"e3"'));
+    return Buffer.byteLength(base.slice(0, emojiChar), 'utf8') + 2;
+  }
+
+  // `start = size - maxBytes` is an arbitrary byte, not a boundary. Landing
+  // inside a 4-byte 🎉 strands its last two bytes at the head of the window;
+  // the lossy decode turns them into TWO U+FFFD. Each U+FFFD counts 3 bytes
+  // but replaced only 1, so the old arithmetic — consumed = start +
+  // byteLength(decoded window) — came out 4 bytes PAST the real end of file.
+  it('never reports a cursor past the end of file', async () => {
+    const base = emojiTranscript(6);
+    const size = Buffer.byteLength(base, 'utf8');
+    const start = midEmojiStart(base);
+    const subject = new TranscriptStore(new LossyTailTransport(base));
+
+    const result = await subject.recent('/t.jsonl', null, size - start);
+
+    expect(result.consumedBytes).toBe(size);
+    // The damaged fragment was dropped with the usual partial first line; the
+    // full lines after it still parse with their emoji intact.
+    expect(result.messages.map((message) => displayText(message))).toEqual([
+      '🎉🚀 turn 4 🐢',
+      '🎉🚀 turn 5 🐢',
+    ]);
+  });
+
+  // The invariant behind the clamp: a tail started at consumedBytes must see
+  // every later message. Under the old arithmetic the cursor sat 4 bytes past
+  // EOF, the tail began 4 bytes INSIDE the next appended line, that line's
+  // JSON never parsed, and 'turn 6' was silently lost.
+  it('tailing from consumedBytes yields every subsequent message intact', async () => {
+    const base = emojiTranscript(6);
+    const size = Buffer.byteLength(base, 'utf8');
+    const transport = new LossyTailTransport(base);
+    const subject = new TranscriptStore(transport);
+
+    const result = await subject.recent('/t.jsonl', null, size - midEmojiStart(base));
+    transport.append(
+      `{"type":"user","uuid":"e6","message":{"role":"user","content":"🎁 turn 6"}}\n` +
+        `{"type":"user","uuid":"e7","message":{"role":"user","content":"turn 7 🏁"}}\n`
+    );
+
+    const streamed: string[] = [];
+    for await (const chunk of subject.tail('/t.jsonl', null, result.consumedBytes)) {
+      if (chunk.message !== null) streamed.push(displayText(chunk.message));
+    }
+    expect(streamed).toEqual(['🎁 turn 6', 'turn 7 🏁']);
+  });
+});
+
 describe('session transcript path', () => {
   const { store: subject } = store('');
 

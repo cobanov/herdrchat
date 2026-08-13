@@ -151,11 +151,22 @@ export class TranscriptStore {
     // tail must resume at the real end of file, not at the first bubble shown,
     // or every trimmed message is re-read and re-appended as if it were new.
     //
+    // But `start` is an arbitrary byte, not a boundary — it can land inside a
+    // code point, and the host decodes the stranded bytes LOSSILY into U+FFFD.
+    // A U+FFFD is 3 bytes and can replace fewer, so summing decoded lengths
+    // can drift PAST the real end of file; a tail started there begins inside
+    // the next line and silently loses it. When the decode shows damage,
+    // anchor the cursor to the probed size instead: every byte up to `size`
+    // was read here, so a tail from there at worst re-enters a line it already
+    // saw — a partial fragment the tail's parser drops — and never skips one.
+    //
     // `startByte` runs the other way — it is where this window BEGAN, which is
     // the anchor `older()` reads backwards from. Note it is the window start,
     // not the first kept message: anything `maxMessages` trimmed was never
     // shown, so letting the first older page serve it again is correct.
-    return { messages, consumedBytes: start + byteLength(body), startByte };
+    const summed = start + byteLength(body);
+    const consumedBytes = body.includes(REPLACEMENT_CHAR) ? Math.min(summed, size) : summed;
+    return { messages, consumedBytes, startByte };
   }
 
   /**
@@ -363,6 +374,9 @@ export function previewText(message: ChatMessage): string | null {
 }
 
 const MARKER = '@@HERDRCHAT';
+
+/** What a lossy UTF-8 decode leaves behind where the real bytes were cut. */
+const REPLACEMENT_CHAR = '�';
 
 /**
  * UTF-8 byte length. Offsets are byte offsets on the host, and `String.length`
