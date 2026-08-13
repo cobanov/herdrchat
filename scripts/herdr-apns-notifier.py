@@ -132,8 +132,13 @@ def device_tokens():
     return out
 
 
-def send_push(device_token: str, title: str, body: str) -> bool:
-    payload = json.dumps({"aps": {"alert": {"title": title, "body": body}, "sound": "default"}})
+def send_push(device_token: str, title: str, body: str, extra=None) -> bool:
+    """`extra` rides at the payload root beside `aps`. The app reads
+    `workspace` (and optional `label`) from it to open the tapped thread."""
+    root = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+    if extra:
+        root.update(extra)
+    payload = json.dumps(root)
     result = subprocess.run(
         [
             "curl", "--http2", "-s", "-o", "/dev/null", "-w", "%{http_code}",
@@ -191,8 +196,9 @@ def main():
                     label = labels.get(a.get("workspace_id"), a.get("workspace_id", "agent"))
                     name = a.get("agent") or "agent"
                     title, body = (t.format(label=label, name=name) for t in STYLES[status])
+                    extra = {"workspace": a.get("workspace_id"), "label": label}
                     for tok in tokens:
-                        send_push(tok, title, body)
+                        send_push(tok, title, body, extra)
                 last[pane] = status
             seeded = True
         time.sleep(POLL_SECONDS)

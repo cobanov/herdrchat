@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { ROW_INSET, Section } from '@/components/SettingsList';
 import { Text } from '@/components/Text';
 import { Toggle } from '@/components/Toggle';
+import { getPushDeviceId } from '@/features/notifications/deviceId';
 import {
   deviceFileId,
   errorDetail,
@@ -45,15 +46,22 @@ export function NotificationsSection() {
     setBusy(true);
     setNote(null);
     try {
-      const id = deviceFileId(Constants.sessionId ?? 'device');
+      const id = deviceFileId(await getPushDeviceId(db));
 
       if (!next) {
+        // The token itself is needed too: earlier builds wrote one file per
+        // LAUNCH (named after Constants.sessionId), so removing today's file
+        // leaves legacy copies the watcher still pushes to. removePushToken
+        // deletes every file carrying this token. Permission is already
+        // granted while the toggle is on, so this resolves without a prompt.
+        const status = await requestPushToken();
+        const token = status.state === 'granted' ? status.token : null;
         // Best-effort removal: if a host is unreachable the local switch still
         // turns off, and a stale token there is harmless — APNs reports it as
         // unregistered and the watcher drops it.
         for (const target of connections) {
           try {
-            await removePushToken(clientFor(target).transport, id);
+            await removePushToken(clientFor(target).transport, id, token);
           } catch {
             /* unreachable host */
           }

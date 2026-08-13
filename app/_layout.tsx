@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
@@ -7,11 +8,27 @@ import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import {
+  useNotificationRouting,
+  usePushTokenRefresh,
+} from '@/features/notifications/useNotificationRouting';
 import { AppTheme } from '@/theme/AppTheme';
 import { useTheme } from '@/theme/ThemeProvider';
 import { darkPalette, lightPalette } from '@/theme/tokens';
 import { DATABASE_NAME, migrate } from '@/state/db';
 import { Hydrate } from '@/state/Hydrate';
+
+// Module scope, not an effect: iOS asks the handler what to do the moment a
+// notification arrives, which can be before the first render commits. Without
+// one, a push that lands while the app is FOREGROUND is silently swallowed.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function RootLayout() {
   return (
@@ -52,6 +69,11 @@ export default function RootLayout() {
  */
 function RootStack() {
   const { colors, scheme } = useTheme();
+
+  // Inside every provider (database, stores), which the notification lifecycle
+  // needs and the module scope above cannot reach.
+  usePushTokenRefresh();
+  useNotificationRouting();
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(colors.systemBackground);

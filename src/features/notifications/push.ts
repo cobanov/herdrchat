@@ -92,10 +92,11 @@ export async function requestPushToken(): Promise<PushStatus> {
 /**
  * Write this device's token onto the host so its watcher can reach us.
  *
- * Idempotent and safe to call on every connect: the filename is stable per
- * install, so re-registering overwrites rather than accumulating. A device that
- * stops using a host leaves a stale file behind, which the watcher survives —
- * APNs simply reports the token as unregistered.
+ * Idempotent and safe to call on every connect: the filename comes from
+ * `getPushDeviceId` (see `deviceId.ts`), stable per install, so re-registering
+ * overwrites rather than accumulating. A device that stops using a host leaves
+ * a stale file behind, which the watcher survives — APNs simply reports the
+ * token as unregistered.
  */
 export async function uploadPushToken(
   transport: HerdrTransport,
@@ -110,15 +111,86 @@ export async function uploadPushToken(
   );
 }
 
-/** Remove this device's token from the host. */
+/**
+ * One `name<TAB>content` line per token file. `$(cat)` strips the trailing
+ * newline and the content itself is single-line JSON (we wrote it with
+ * `JSON.stringify`, which escapes tabs and newlines), so the framing holds.
+ * Ends in `true` so an absent directory is an empty listing, not a failure.
+ */
+const LIST_TOKEN_FILES = `[ -d ${TOKEN_DIR} ] && cd ${TOKEN_DIR} && for f in *.json; do [ -f "$f" ] && printf '%s\\t%s\\n' "$f" "$(cat "$f")"; done; true`;
+
+export interface TokenFile {
+  name: string;
+  content: string;
+}
+
+/** Split a `LIST_TOKEN_FILES` transcript back into files. */
+export function parseTokenDirListing(stdout: string): TokenFile[] {
+  return stdout
+    .split('\n')
+    .map((line) => {
+      const tab = line.indexOf('\t');
+      return tab < 0 ? null : { name: line.slice(0, tab), content: line.slice(tab + 1) };
+    })
+    .filter((file): file is TokenFile => file !== null);
+}
+
+/**
+ * Which files in the token dir carry `token` — exactly those, by parsed field
+ * equality, never by substring. Other devices' tokens live in the same
+ * directory and must survive an opt-out untouched; a file that doesn't parse
+ * is not ours to judge and is left alone.
+ */
+export function matchingTokenFiles(files: readonly TokenFile[], token: string): string[] {
+  return files
+    .filter((file) => {
+      try {
+        const parsed: unknown = JSON.parse(file.content);
+        return (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          (parsed as { token?: unknown }).token === token
+        );
+      } catch {
+        return false;
+      }
+    })
+    .map((file) => file.name);
+}
+
+/**
+ * Remove this device's token from a host.
+ *
+ * The filename alone only covers files this build wrote. Earlier builds named
+ * the file after `Constants.sessionId`, which changed every launch, so a host
+ * can hold any number of legacy files that all carry this device's token — and
+ * the watcher pushes to every one it finds. Given the current `token`, every
+ * file whose "token" field equals it is deleted too; without one, only the
+ * named file goes.
+ */
 export async function removePushToken(
   transport: HerdrTransport,
-  deviceId: string
+  deviceId: string,
+  token: string | null = null
 ): Promise<void> {
-  await run(transport, `rm -f ${TOKEN_DIR}/${shellQuote(deviceId)}.json`);
+  const names = new Set([`${deviceId}.json`]);
+  if (token !== null) {
+    const listing = await runOut(transport, LIST_TOKEN_FILES);
+    for (const name of matchingTokenFiles(parseTokenDirListing(listing), token)) {
+      names.add(name);
+    }
+  }
+  // Names from the listing are basenames by construction, and they are quoted
+  // anyway before going back into a command.
+  const args = [...names].map(shellQuote).join(' ');
+  await run(transport, `cd ${TOKEN_DIR} 2>/dev/null && rm -f -- ${args}; true`);
 }
 
 async function run(transport: HerdrTransport, command: string): Promise<void> {
+  await runOut(transport, command);
+}
+
+async function runOut(transport: HerdrTransport, command: string): Promise<string> {
   const result = await transport.exec(withPath(command), SEND_TIMEOUT_MS);
   if (!result.ok) throw new HerdrError(result.code, result.message);
   if (result.exitCode !== 0) {
@@ -127,6 +199,7 @@ async function run(transport: HerdrTransport, command: string): Promise<void> {
       `Couldn't write the device token on the host (exit ${result.exitCode}).`
     );
   }
+  return result.stdout;
 }
 
 /**
