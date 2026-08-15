@@ -36,6 +36,9 @@ env:
     element:
       id: "field-secret"
     direction: DOWN
+# Password is the default, so the key path has to be selected: without this the
+# key below is typed into the password field and the test fails for the wrong reason.
+- tapOn: "Private key"
 - tapOn:
     id: "field-secret"
 - inputText: ${SSH_KEY}

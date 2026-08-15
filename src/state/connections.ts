@@ -38,7 +38,7 @@ export function newConnection(): ServerConnection {
     sessionName: '',
     port: 22,
     username: '',
-    authKind: 'privateKey',
+    authKind: 'password',
     herdrPath: 'herdr',
   };
 }

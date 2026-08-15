@@ -63,7 +63,7 @@ export default function ServerEditScreen() {
   const [port, setPort] = useState(String(existing?.port ?? 22));
   const [username, setUsername] = useState(existing?.username ?? '');
   const [authKind, setAuthKind] = useState<ServerConnection['authKind']>(
-    existing?.authKind ?? 'privateKey'
+    existing?.authKind ?? 'password'
   );
   const [secret, setSecret] = useState('');
   const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
@@ -264,8 +264,8 @@ export default function ServerEditScreen() {
           <SegmentedField
             label="Authentication"
             options={[
-              { value: 'privateKey', label: 'Private key' },
               { value: 'password', label: 'Password' },
+              { value: 'privateKey', label: 'Private key' },
             ]}
             value={authKind}
             onChange={invalidate(setAuthKind)}
