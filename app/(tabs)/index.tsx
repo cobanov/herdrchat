@@ -31,7 +31,7 @@ import {
 import { loadThreadReads, setSetting } from '@/state/db';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing } from '@/theme/tokens';
 
 /**
  * Chats — the primary destination. One row per workspace, with live presence.
@@ -233,6 +233,11 @@ function ChatsForServer() {
         <FlashList
           data={summaries}
           keyExtractor={(item) => item.workspaceId}
+          // The tab bar floats OVER the list, so the last row has to be able to
+          // scroll clear of it. Without this the final chat sits under the bar
+          // at the end of the list and cannot be read or tapped, however far you
+          // scroll — there is nothing left to scroll.
+          contentContainerStyle={{ paddingBottom: size.floatingBarClearance }}
           ListHeaderComponent={seenSwipeHint ? null : <SwipeHint />}
           renderItem={({ item }) => (
             <SwipeableChatRow
