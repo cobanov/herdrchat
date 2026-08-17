@@ -9,8 +9,8 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
-  <img alt="tests" src="https://img.shields.io/badge/tests-268-6E74E6?labelColor=1a1a1a">
-  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.1%20(45)-6E74E6?labelColor=1a1a1a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-299-6E74E6?labelColor=1a1a1a">
+  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(51)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
 
@@ -27,9 +27,9 @@ structured turns. That is the whole reason the bubbles are clean, and why a tool
 call can be a chip rather than a wall of output.
 
 ```
- herdrchat                                        0.7.1   macmini
+ herdrchat                                        0.7.7   macmini
 
-   herdrchat          ● working   Tests are green — 268 passing
+   herdrchat          ● working   Tests are green — 299 passing
  > helva-todo         ○ idle      Added the recurring-task migration
    fight-sim-main     ! blocked   Do you want to proceed?
 
@@ -92,7 +92,7 @@ key. Nothing of ours is in the path, because nothing of ours exists.
 ```bash
 npx tsc --noEmit          # zero errors
 npx expo lint             # zero errors
-npx jest                  # 268 tests
+npx jest                  # 299 tests
 maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
 
