@@ -10,11 +10,23 @@ import { haptics } from '@/lib/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { useHostVersion } from '@/state/hostVersion';
-import { explainTarget, formatDiagnostics } from './diagnostics';
+import { explainTarget, formatDiagnostics, summarizeAgentExplain } from './diagnostics';
 
 /** Where a bug report goes. The same tracker the site already links to. */
 const ISSUES_URL = 'https://github.com/cobanov/herdrchat/issues';
 const README_URL = 'https://github.com/cobanov/herdrchat#readme';
+
+/**
+ * How long Copy diagnostics will wait on the host before pasting without
+ * herdr's verdict.
+ *
+ * Asking for it costs two round-trips at the poll timeout each — up to thirty
+ * seconds of a row that gives no haptic, no label change and no clipboard, on
+ * exactly the phone most likely to be off the tailnet. The block is worth
+ * pasting without that one line, so the wait is bounded and the line is simply
+ * absent when the host is slow or away.
+ */
+const EXPLAIN_BUDGET_MS = 3000;
 
 /**
  * Support, and the facts a support conversation needs.
@@ -51,8 +63,20 @@ export function SupportSection() {
     }
   };
 
+  /**
+   * The verdict as one line, or null — bounded, summarised, and never a throw.
+   * The raw JSON never reaches the clipboard; see `summarizeAgentExplain` for
+   * what it carries and why none of it belongs in a public issue.
+   */
+  const agentVerdict = async (): Promise<string | null> => {
+    const budget = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), EXPLAIN_BUDGET_MS);
+    });
+    return summarizeAgentExplain(await Promise.race([explainSelectedAgent(), budget]));
+  };
+
   const copyDiagnostics = async () => {
-    const agentExplain = await explainSelectedAgent();
+    const agentExplain = await agentVerdict();
     const report = runtimeReport();
     const text = formatDiagnostics({
       version: Constants.expoConfig?.version ?? 'unknown',

@@ -31,8 +31,8 @@ export interface DiagnosticsFacts {
    */
   herdrVersion: string | null;
   /**
-   * herdr's own account of why one agent reads as it does, from
-   * `agent explain --json`.
+   * herdr's verdict on why one agent reads as it does — the SUMMARY, never the
+   * raw `agent explain --json`. Build it with `summarizeAgentExplain`.
    *
    * Optional because it is the only fact here that needs the host to answer.
    * Off the tailnet the rest of the block is still worth pasting, so a missing
@@ -55,6 +55,48 @@ export function explainTarget(agents: readonly AgentInfo[]): string | null {
     withAgent.find((agent) => agent.focused) ??
     withAgent[0];
   return chosen?.paneId ?? null;
+}
+
+/**
+ * herdr's detection verdict as one short line, or null.
+ *
+ * `agent explain --json` is NOT pasteable as it stands. Measured against herdr
+ * 0.8.0 it is ~7 KB, and it carries `manifest_source` — an absolute path, so the
+ * host's username — and `evaluated_rules[].evidence.region_preview`, which is a
+ * slice of the agent's actual terminal screen. This block promises the opposite
+ * of that in its own footer and is written to be pasted into a public issue.
+ *
+ * What a bug report actually needs from it is the verdict and the rule that
+ * produced it, both of which are host-independent. So this reads an allow-list
+ * of scalars and drops everything else, rather than trying to scrub a shape
+ * that may grow new fields later. Anything unparseable is simply omitted: a
+ * blob we cannot vet is a blob we do not paste.
+ */
+export function summarizeAgentExplain(json: string | null): string | null {
+  if (json === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const record = parsed as Record<string, unknown>;
+  const state = record.state;
+  if (typeof state !== 'string') return null;
+
+  const matched = record.matched_rule;
+  const ruleId =
+    typeof matched === 'object' && matched !== null && typeof (matched as Record<string, unknown>).id === 'string'
+      ? ((matched as Record<string, unknown>).id as string)
+      : 'no rule';
+
+  const visible = (['visible_blocker', 'visible_idle', 'visible_working'] as const)
+    .filter((key) => record[key] === true)
+    .map((key) => key.replace('visible_', ''));
+
+  const screen = visible.length > 0 ? `, screen ${visible.join('+')}` : '';
+  return `${state} via ${ruleId}${screen}`;
 }
 
 export function formatDiagnostics(facts: DiagnosticsFacts): string {

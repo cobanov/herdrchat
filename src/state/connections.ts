@@ -63,7 +63,16 @@ const keychainOptions: SecureStore.SecureStoreOptions = {
  */
 async function loadMigrating(key: string): Promise<string | null> {
   const value = await SecureStore.getItemAsync(key);
-  if (value !== null) await SecureStore.setItemAsync(key, value, keychainOptions);
+  if (value !== null) {
+    try {
+      await SecureStore.setItemAsync(key, value, keychainOptions);
+    } catch {
+      // The rewrite is housekeeping, not the point of the call: we already hold
+      // the value the caller asked for. Letting a refused write fail the read
+      // would take the host down for the whole session over an accessibility
+      // flag, and the next read attempts the migration again anyway.
+    }
+  }
   return value;
 }
 

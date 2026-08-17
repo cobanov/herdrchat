@@ -1,4 +1,8 @@
-import { explainTarget, formatDiagnostics } from '@/features/settings/diagnostics';
+import {
+  explainTarget,
+  formatDiagnostics,
+  summarizeAgentExplain,
+} from '@/features/settings/diagnostics';
 import type { AgentInfo, AgentStatus } from '@/lib/herdr/models';
 
 const agent = (overrides: Partial<AgentInfo> = {}): AgentInfo => ({
@@ -59,8 +63,60 @@ describe('formatDiagnostics with an explanation', () => {
   });
 
   it('carries the explanation when there is one', () => {
-    expect(formatDiagnostics(facts('{"status":"blocked"}'))).toContain(
-      'Agent detection: {"status":"blocked"}'
+    expect(formatDiagnostics(facts('blocked via claude.permission'))).toContain(
+      'Agent detection: blocked via claude.permission'
     );
+  });
+});
+
+describe('summarizeAgentExplain', () => {
+  // The shape herdr 0.8.0 actually prints, trimmed to the fields that matter
+  // here plus the two that must never survive.
+  const payload = (overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      agent: 'claude',
+      state: 'blocked',
+      matched_rule: { id: 'claude.permission', priority: 10, region: 'tail', state: 'blocked' },
+      visible_blocker: true,
+      visible_idle: false,
+      visible_working: false,
+      manifest_source: '/Users/someone/.config/herdr/agents.toml',
+      evaluated_rules: [
+        {
+          id: 'claude.permission',
+          matched: true,
+          evidence: { region_preview: 'Do you want to proceed? > 1. Yes  2. No', regex: ['\\d\\.'] },
+        },
+      ],
+      ...overrides,
+    });
+
+  it('reduces the verdict to one line', () => {
+    expect(summarizeAgentExplain(payload())).toBe(
+      'blocked via claude.permission, screen blocker'
+    );
+  });
+
+  it('leaks neither the manifest path nor the screen preview', () => {
+    const summary = summarizeAgentExplain(payload()) ?? '';
+    // The path carries the host's username; the preview is the agent's screen.
+    expect(summary).not.toContain('/Users/someone');
+    expect(summary).not.toContain('Do you want to proceed?');
+    expect(summary.length).toBeLessThan(80);
+  });
+
+  it('names the missing rule rather than inventing one', () => {
+    expect(summarizeAgentExplain(payload({ matched_rule: null }))).toBe(
+      'blocked via no rule, screen blocker'
+    );
+  });
+
+  it('omits anything it cannot vet', () => {
+    // A blob we cannot parse is a blob we do not paste.
+    expect(summarizeAgentExplain(null)).toBeNull();
+    expect(summarizeAgentExplain('not json at all')).toBeNull();
+    expect(summarizeAgentExplain('"a string"')).toBeNull();
+    // No verdict means nothing worth a line.
+    expect(summarizeAgentExplain(payload({ state: 42 }))).toBeNull();
   });
 });

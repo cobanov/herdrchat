@@ -52,6 +52,12 @@ export class SshHerdrTransport implements HerdrTransport {
             // not a value to persist.
             if (result.fingerprint.length === 0) {
               this.opening = null;
+              // Drop the native session too. It authenticated, so the module has
+              // it cached and the next connect short-circuits on it — the host
+              // key would never be validated again and this same refusal would
+              // repeat for the life of the process. Forgetting it here is what
+              // makes the next attempt a real handshake.
+              void disconnect(this.id);
               return {
                 ok: false,
                 code: 'connect_failed',
@@ -65,6 +71,19 @@ export class SshHerdrTransport implements HerdrTransport {
             this.opening = null;
           }
           return result;
+        })
+        .catch((thrown: unknown): ConnectResult => {
+          // Everything before the handshake can throw — reading the config, a
+          // keychain that will not answer. Without this the REJECTED promise
+          // stays in `opening` and every later command on this host rejects
+          // from cache until the app restarts, which is the one failure mode a
+          // transport must not have. Same shape as any other expected failure.
+          this.opening = null;
+          return {
+            ok: false,
+            code: 'connect_failed',
+            message: thrown instanceof Error ? thrown.message : String(thrown),
+          };
         });
     }
     return this.opening;

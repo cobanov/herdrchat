@@ -158,6 +158,11 @@ export default function ServerEditScreen() {
       onConfirm: () => {
         void (async () => {
           await clearSecrets(params.id, { keepSecret: true });
+          // The screen's copy of the pin has to go with the stored one. `save()`
+          // decides whether to write a pin by asking whether this host still has
+          // one, and a stale value here answers yes to a host that no longer
+          // does — which is how a re-trust ends up saving nothing.
+          setStoredPin(null);
           await runTest();
         })();
       },
@@ -213,7 +218,14 @@ export default function ServerEditScreen() {
     // The pin survives a cosmetic edit (name, herdr path, session). Only a
     // changed endpoint replaces it — and then with the key the passing test
     // actually saw, never a blank slate the next connect fills in blindly.
-    if (shouldResetPin(existing, connection) && observedFingerprint !== null) {
+    //
+    // A host with NO pin is the second case that must write one, and it is the
+    // one "Trust the new key" produces: that flow deletes the pin and re-tests
+    // against an endpoint it did not change, so the endpoint rule alone says
+    // "keep what you have" about a host that now has nothing. Saving there left
+    // the host unpinned and the next ordinary connect trusted whoever answered
+    // — the exact blank slate the confirmation exists to prevent.
+    if (observedFingerprint !== null && (shouldResetPin(existing, connection) || storedPin === null)) {
       await saveHostKeyPin(connection.id, observedFingerprint);
     }
     await invalidateClient(connection.id);
