@@ -10,7 +10,7 @@ import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing } from '@/theme/tokens';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { deviceFileId, removePushToken } from '@/features/notifications/push';
 import {
@@ -91,7 +91,15 @@ export default function ServersScreen() {
           }
         />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: screenPadding, gap: spacing.sm }}>
+        <ScrollView
+          contentContainerStyle={{
+            padding: screenPadding,
+            gap: spacing.sm,
+            // Same floating tab bar, same clearance: the last host card would
+            // otherwise end underneath it.
+            paddingBottom: size.floatingBarClearance,
+          }}
+        >
           {connections.map((connection) => (
             <View
               key={connection.id}
