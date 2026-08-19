@@ -1,0 +1,63 @@
+name: Bug report
+description: Something behaves differently from what it says it does.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a security problem — anything touching credentials, host-key
+        verification, or what leaves the device — please use
+        **Security → Report a vulnerability** instead of this form.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        The steps someone else can follow. If it only happens sometimes, say
+        what you think makes the difference — that is often the actual bug.
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: >
+        Settings → Support → **Copy diagnostics**, pasted here. It carries the
+        app version, platform and how many hosts you have configured — never
+        their names, addresses or keys.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: herdr
+    attributes:
+      label: herdr version on the host
+      description: "`herdr --version`, if you can reach the host."
+      placeholder: "0.8.0"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - iOS
+        - Android (note: never run by us, no release path yet)
+    validations:
+      required: true

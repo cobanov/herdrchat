@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
   <img alt="tests" src="https://img.shields.io/badge/tests-299-6E74E6?labelColor=1a1a1a">
   <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(51)-6E74E6?labelColor=1a1a1a">
@@ -146,8 +147,15 @@ Open [issues][issues] are the honest version of this list.
 Issues and pull requests welcome. Before opening one:
 
 ```bash
-npx tsc --noEmit && npx expo lint && npx jest
+npm run typecheck && npm run lint && npm test
 ```
+
+CI runs exactly those three on every pull request. [CONTRIBUTING.md](CONTRIBUTING.md)
+covers the rest — where logic belongs, why route files stay thin, and which
+rules were learned the hard way.
+
+Security problems go through [SECURITY.md](SECURITY.md) rather than a public
+issue: this app holds SSH credentials for machines you own.
 
 ## Licence
 

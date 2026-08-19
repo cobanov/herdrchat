@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/cobanov/herdrchat/security/advisories/new
+    about: >
+      Anything touching credentials, host-key verification, command
+      construction, or what leaves the device. Private, not a public issue.
+  - name: A problem with herdr itself
+    url: https://herdr.dev
+    about: >
+      This app is a client. If the workspace, agent or session behaves wrongly
+      in the terminal too, it belongs upstream.

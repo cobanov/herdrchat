@@ -1,0 +1,50 @@
+# The gates from CLAUDE.md, run for us instead of by us.
+#
+# These three are what the project already asks a contributor to run before
+# opening a pull request. Running them here is what makes that ask checkable:
+# ten branches landed at once before this existed, each claiming green on its
+# own, and nobody had run the three of them against the merged tree.
+#
+# Deliberately no native build. An iOS archive needs a macOS runner, signing
+# credentials and about fifteen minutes, and it would tell us nothing these
+# three don't — the things a build catches that a typecheck doesn't are native
+# config changes, which are reviewed by hand anyway.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The README asks contributors for 22+; CI holds the floor so a
+          # change that needs something newer fails here rather than on someone
+          # else's machine.
+          node-version: 22
+          cache: npm
+
+      # `ci`, not `install`: it installs the lockfile exactly and fails if
+      # package.json and the lock disagree, which is a real failure mode here —
+      # the lock has drifted from package.json before.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test

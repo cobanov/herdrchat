@@ -1,0 +1,32 @@
+name: Feature or change
+description: Something the app should do that it does not.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you were trying to do, and where the app got in the way. Describe
+        the situation rather than the solution — the fix is often not the one
+        that first comes to mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: Optional. If you already have a shape for it, say so.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: >
+            I have checked this belongs in the client rather than in herdr
+            itself.
+          required: false
