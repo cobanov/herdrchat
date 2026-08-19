@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
-  <img alt="tests" src="https://img.shields.io/badge/tests-299-6E74E6?labelColor=1a1a1a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-314-6E74E6?labelColor=1a1a1a">
   <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(51)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
@@ -30,7 +30,7 @@ call can be a chip rather than a wall of output.
 ```
  herdrchat                                        0.7.7   macmini
 
-   herdrchat          ● working   Tests are green — 299 passing
+   herdrchat          ● working   Tests are green — 314 passing
  > helva-todo         ○ idle      Added the recurring-task migration
    fight-sim-main     ! blocked   Do you want to proceed?
 
@@ -93,7 +93,7 @@ key. Nothing of ours is in the path, because nothing of ours exists.
 ```bash
 npx tsc --noEmit          # zero errors
 npx expo lint             # zero errors
-npx jest                  # 299 tests
+npx jest                  # 314 tests
 maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
 
@@ -138,9 +138,24 @@ Everything described above works on iOS. What does not, yet:
   but the host-side sender has never been set up ([#2][i2]).
 - **Android** — it compiles and the SSH module is written in Kotlin, but it has
   never been run and there is no release path ([#4][i4]).
-- **Public TestFlight** — blocked on a demo host for review ([#3][i3]).
+- **Public TestFlight** — build 51 is with Apple for Beta App Review ([#3][i3]).
+  The [public link][testflight] opens to everyone once that passes.
+- **The App Store** — not submitted. The listing needs screenshots, a category
+  and an age rating before it can be.
 
 Open [issues][issues] are the honest version of this list.
+
+## Trying it without a host
+
+The app is useless without a machine you administer — so it ships with one that
+does not exist. On first launch, with no hosts configured, it opens on a **demo
+host**: three sample workspaces, a real conversation, an agent that answers a
+prompt and replies to a message.
+
+That demo is not a mock screen. `HerdrTransport` has two methods, so the
+fictional host slots in underneath everything — the chat list, the transcript
+reader, the byte cursor, the blocked bar and the live tail all run their real
+code and cannot tell the difference. It is the app, with the machine replaced.
 
 ## Contributing
 
@@ -168,3 +183,4 @@ issue: this app holds SSH credentials for machines you own.
 [i2]: https://github.com/cobanov/herdrchat/issues/2
 [i3]: https://github.com/cobanov/herdrchat/issues/3
 [i4]: https://github.com/cobanov/herdrchat/issues/4
+[testflight]: https://testflight.apple.com/join/zTmVfpkn
