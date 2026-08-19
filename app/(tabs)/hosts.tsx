@@ -17,6 +17,7 @@ import {
   clearSecrets,
   clientFor,
   invalidateClient,
+  isDemo,
   newConnection,
   useConnections,
   type ServerConnection,
@@ -116,7 +117,9 @@ export default function ServersScreen() {
                 <View style={{ flex: 1, gap: spacing.xxs }}>
                   <Text variant="headline">{connection.name}</Text>
                   <Text variant="caption" color="secondary">
-                    {connection.username}@{connection.host}:{connection.port}
+                    {isDemo(connection.id)
+                      ? 'A sample conversation. No machine, no SSH, nothing sent.'
+                      : `${connection.username}@${connection.host}:${connection.port}`}
                   </Text>
                 </View>
                 {connection.id === selectedId && (
@@ -129,16 +132,22 @@ export default function ServersScreen() {
                 )}
               </Pressable>
 
-              <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.separator }}>
-                <RowAction
-                  label="Edit"
-                  onPress={() =>
-                    router.push({ pathname: '/server/[id]', params: { id: connection.id } })
-                  }
-                />
-                <View style={{ width: 1, backgroundColor: colors.separator }} />
-                <RowAction label="Remove" destructive onPress={() => confirmDelete(connection)} />
-              </View>
+              {/* The demo has nothing to edit and nothing to delete: it holds no
+                  secret, occupies no row in the database, and comes back on the
+                  next launch regardless. */}
+              {!isDemo(connection.id) && (
+                <View
+                  style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.separator }}>
+                  <RowAction
+                    label="Edit"
+                    onPress={() =>
+                      router.push({ pathname: '/server/[id]', params: { id: connection.id } })
+                    }
+                  />
+                  <View style={{ width: 1, backgroundColor: colors.separator }} />
+                  <RowAction label="Remove" destructive onPress={() => confirmDelete(connection)} />
+                </View>
+              )}
             </View>
           ))}
 

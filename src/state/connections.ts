@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
+import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
 import { SshHerdrTransport } from '@/lib/herdr/sshTransport';
@@ -129,8 +130,14 @@ export const useConnections = create<ConnectionsState>((set) => ({
   hydrated: false,
   setAll: (connections, selectedId) =>
     set({
-      connections,
-      selectedId: selectedId ?? connections[0]?.id ?? null,
+      // The demo is appended rather than stored: it exists for every install,
+      // survives a reset, and never occupies a row in SQLite. Last, so it never
+      // displaces a real host someone added.
+      connections: [...connections, demoConnection()],
+      // With no hosts and nothing remembered, the demo is the selection. An
+      // empty chat list explains nothing; a working conversation explains the
+      // whole app, and is also the only thing an App Review device can reach.
+      selectedId: selectedId ?? connections[0]?.id ?? DEMO_CONNECTION_ID,
       hydrated: true,
     }),
   select: (id) => set({ selectedId: id }),
@@ -164,7 +171,34 @@ export function useSelectedConnection(): ServerConnection | null {
 // One long-lived client (and therefore one reused SSH connection) per host,
 // shared by the chat list and every thread, so navigating never reconnects.
 
-const clients = new Map<string, { client: HerdrClient; transport: SshHerdrTransport }>();
+const clients = new Map<string, { client: HerdrClient; transport: SshHerdrTransport | null }>();
+
+/**
+ * The reserved id of the host that isn't one.
+ *
+ * A real connection in every respect the app cares about — it is selected,
+ * listed and opened by the same code as any other — except that its transport
+ * answers from fixtures instead of a socket. That is deliberate: a separate
+ * "demo screen" would be a second implementation of the app, free to drift from
+ * the one people actually use.
+ */
+export const DEMO_CONNECTION_ID = 'demo';
+
+/** The demo's entry in the host list. Never persisted; never holds a secret. */
+export function demoConnection(): ServerConnection {
+  return {
+    id: DEMO_CONNECTION_ID,
+    name: 'Demo',
+    host: 'demo.local',
+    port: 22,
+    username: 'demo',
+    authKind: 'password',
+    herdrPath: 'herdr',
+    sessionName: '',
+  };
+}
+
+export const isDemo = (id: string): boolean => id === DEMO_CONNECTION_ID;
 
 /**
  * Synchronous on purpose: the keychain reads it needs are deferred into the
@@ -174,6 +208,14 @@ const clients = new Map<string, { client: HerdrClient; transport: SshHerdrTransp
 export function clientFor(connection: ServerConnection): HerdrClient {
   const existing = clients.get(connection.id);
   if (existing !== undefined) return existing.client;
+
+  if (isDemo(connection.id)) {
+    // No session wrapper and no keychain: there is no host to address, and a
+    // demo that could hold a secret would be a demo worth attacking.
+    const client = new HerdrClient(new DemoHost());
+    clients.set(connection.id, { client, transport: null });
+    return client;
+  }
 
   const transport = new SshHerdrTransport(
     connection.id,
@@ -207,7 +249,9 @@ export async function invalidateClient(id: string): Promise<void> {
   const entry = clients.get(id);
   if (entry === undefined) return;
   clients.delete(id);
-  await entry.transport.close();
+  // The demo has no socket to close; dropping the client is the whole teardown,
+  // and it takes the fictional conversation with it.
+  await entry.transport?.close();
 }
 
 export function sshConfig(
