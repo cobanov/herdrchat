@@ -11,7 +11,7 @@
   <a href="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
   <img alt="tests" src="https://img.shields.io/badge/tests-314-6E74E6?labelColor=1a1a1a">
-  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(51)-6E74E6?labelColor=1a1a1a">
+  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(52)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
 
