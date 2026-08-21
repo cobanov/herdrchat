@@ -52,19 +52,29 @@ export default function ServersScreen() {
       confirmLabel: 'Remove',
       onConfirm: () => {
         void (async () => {
-          // Best effort, and always before the client is thrown away: a host
-          // we forget keeps pushing to this device forever otherwise. An
-          // unreachable host must never stand between the user and removal.
-          try {
+          // A host we forget keeps pushing to this device forever, so its token
+          // file has to go — and that request can only run on the connection we
+          // are about to discard, which is why it starts here rather than after.
+          //
+          // It is deliberately NOT awaited. The previous version said "an
+          // unreachable host must never stand between the user and removal" and
+          // then awaited a send to that very host, which is twenty seconds of a
+          // dismissed sheet and nothing happening whenever the machine is off.
+          const cleanup = (async () => {
             const deviceId = deviceFileId(await getPushDeviceId(db));
             await removePushToken(clientFor(connection).transport, deviceId);
-          } catch {
+          })().catch(() => {
             /* unreachable host, or notifications were never set up here */
-          }
-          await invalidateClient(connection.id);
+          });
+
+          // What the user actually asked for, and it happens now.
           await clearSecrets(connection.id);
           await deleteConnection(db, connection.id);
           remove(connection.id);
+
+          // Close the transport only once the cleanup has had its turn:
+          // invalidating first would abort the request just fired.
+          void cleanup.then(() => invalidateClient(connection.id));
         })();
       },
     });
