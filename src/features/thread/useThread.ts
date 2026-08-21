@@ -14,6 +14,7 @@ import type { ChatMessage } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
 import {
   blockedPromptSignature,
+  blockedPendingTimeout,
   parseBlockedPrompt,
   resolveBlockedPending,
   type BlockedPending,
@@ -90,17 +91,6 @@ const TAIL_SILENCE_MS = 90_000;
  * it elapses the thread says it is waiting rather than showing nothing.
  */
 const NO_SESSION_POLLS = 40; // × 2s ≈ 80 seconds
-/**
- * How long a blocked-prompt reply may sit unconfirmed before the options are
- * re-enabled and the user is told to check the agent.
- *
- * Six base poll intervals: long enough that the default poll has several
- * chances to observe the agent move on, short enough that a reply the terminal
- * genuinely dropped does not lock the bar for good. Wall-clock rather than
- * poll-count, because the slowest poll setting stretches the interval to ten
- * seconds and the lock must not stretch with it.
- */
-const BLOCKED_PENDING_TIMEOUT_MS = STATUS_POLL_MS * 6;
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed — check the agent.';
 
 export interface ThreadState {
@@ -550,7 +540,7 @@ export function useThread(
             blocked: blocked !== undefined,
             promptSig: blockedPromptSignature(parsedPrompt),
             now: Date.now(),
-            timeoutMs: BLOCKED_PENDING_TIMEOUT_MS,
+            timeoutMs: blockedPendingTimeout(STATUS_POLL_MS * pollScale),
           });
           if (resolution === 'delivered' || resolution === 'superseded') clearBlockedPending();
         }
@@ -803,7 +793,7 @@ export function useThread(
           if (!alive.current || blockedPendingRef.current !== pending) return;
           clearBlockedPending();
           setError(BLOCKED_PENDING_ERROR);
-        }, BLOCKED_PENDING_TIMEOUT_MS);
+        }, blockedPendingTimeout(STATUS_POLL_MS * pollScale));
       }
 
       try {
@@ -814,7 +804,10 @@ export function useThread(
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
-    [client, blockedPane, primaryPane, blockedPrompt, clearBlockedPending]
+    // `pollScale` belongs here: the pending window is derived from the poll
+    // interval, so a callback closing over a stale scale would arm the wrong
+    // deadline after the setting changed.
+    [client, blockedPane, primaryPane, blockedPrompt, clearBlockedPending, pollScale]
   );
 
   /**

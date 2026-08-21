@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
-  <img alt="tests" src="https://img.shields.io/badge/tests-314-6E74E6?labelColor=1a1a1a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-317-6E74E6?labelColor=1a1a1a">
   <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(52)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
@@ -30,7 +30,7 @@ call can be a chip rather than a wall of output.
 ```
  herdrchat                                        0.7.7   macmini
 
-   herdrchat          ● working   Tests are green — 314 passing
+   herdrchat          ● working   Tests are green — 317 passing
  > helva-todo         ○ idle      Added the recurring-task migration
    fight-sim-main     ! blocked   Do you want to proceed?
 
@@ -93,7 +93,7 @@ key. Nothing of ours is in the path, because nothing of ours exists.
 ```bash
 npx tsc --noEmit          # zero errors
 npx expo lint             # zero errors
-npx jest                  # 314 tests
+npx jest                  # 317 tests
 maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
 

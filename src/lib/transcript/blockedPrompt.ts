@@ -132,6 +132,35 @@ export function resolveBlockedPending(
   return 'waiting';
 }
 
+/**
+ * How long a blocked-prompt reply may sit unconfirmed before the options come
+ * back and the user is told to check the agent.
+ *
+ * Two constraints pull opposite ways and both are real.
+ *
+ * The window must span several POLLS, because only a poll can observe the agent
+ * moving on. The poll interval is a setting — `STATUS_POLL_MS * pollScale`,
+ * with pollScale 1, 2 or 5 — so a constant sized for the fastest rate fits
+ * barely one observation at the slowest. That is the bug: a reply that landed
+ * perfectly well ran out the clock, the options re-enabled, and the banner
+ * claimed it might not have arrived, reopening the double-tap window this state
+ * exists to close.
+ *
+ * The window must also stay short in WALL-CLOCK terms, because a reply the
+ * terminal genuinely dropped must not lock the bar for a minute. Scaling
+ * naively with the interval trades the first bug for that one.
+ *
+ * So: three intervals, floored at the window the default rate already used.
+ * The default setting is unchanged, the slow settings get three observations
+ * instead of one, and the worst case is half a minute rather than a full one.
+ */
+export function blockedPendingTimeout(pollIntervalMs: number): number {
+  return Math.max(BLOCKED_PENDING_FLOOR_MS, pollIntervalMs * 3);
+}
+
+/** What the fixed six-times-2s window used to be, kept as the lower bound. */
+const BLOCKED_PENDING_FLOOR_MS = 12_000;
+
 /** Whether these are the exact keys of the reply in flight. */
 export function isPendingKeys(pending: BlockedPending | null, keys: readonly string[]): boolean {
   if (pending === null || pending.keys.length !== keys.length) return false;

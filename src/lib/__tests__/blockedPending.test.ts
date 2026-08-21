@@ -1,4 +1,5 @@
 import {
+  blockedPendingTimeout,
   blockedPromptSignature,
   isPendingKeys,
   resolveBlockedPending,
@@ -77,6 +78,33 @@ describe('resolveBlockedPending', () => {
     // The pane became parseable: a real menu is on screen that the chips never
     // showed, so the pending must not lock it.
     expect(observe(pending, { blocked: true, prompt: PROMPT })).toBe('superseded');
+  });
+});
+
+describe('blockedPendingTimeout', () => {
+  // The poll runs at STATUS_POLL_MS * pollScale, where pollScale is 1, 2 or 5.
+  const intervals = [2_000, 4_000, 10_000];
+
+  it('spans at least three polls at every poll rate', () => {
+    // A window that fits one observation cannot tell "no answer yet" from
+    // "nobody has looked yet", which is how a delivered reply raised the alarm.
+    for (const interval of intervals) {
+      expect(blockedPendingTimeout(interval)).toBeGreaterThanOrEqual(interval * 3);
+    }
+  });
+
+  it('leaves the default poll rate exactly as it was', () => {
+    // The fixed window was six 2-second intervals. Nothing about the default
+    // setting was broken, so nothing about it should move.
+    expect(blockedPendingTimeout(2_000)).toBe(12_000);
+  });
+
+  it('never locks the bar for as long as a minute', () => {
+    // The competing constraint: a reply the terminal genuinely dropped must not
+    // hold the options hostage. Scaling with the interval alone would.
+    for (const interval of intervals) {
+      expect(blockedPendingTimeout(interval)).toBeLessThanOrEqual(30_000);
+    }
   });
 });
 
