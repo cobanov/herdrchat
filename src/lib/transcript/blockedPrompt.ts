@@ -26,13 +26,28 @@ export interface BlockedPrompt {
 }
 
 /**
- * Keys that submit a choice: press the number, then Enter.
+ * Keys that submit a choice — press the number, then Enter — or `null` when the
+ * choice cannot be typed at all.
  *
- * One key per DIGIT. A ten-option menu is rare but real, and "10" is not a key
- * — sending it as one would either be dropped or land as a bare "1".
+ * There is no way to type "10" into one of these menus. Claude acts on a
+ * numbered menu the instant a digit arrives, so `1` selects option 1 and closes
+ * the menu, and the `0` and the Enter behind it land in the composer and submit
+ * a bare "0". Tapping option 10 therefore committed option 1 AND took a stray
+ * turn, and the pending spinner marked the row the user tapped while the wrong
+ * option was already running.
+ *
+ * Sending one key per digit was an attempt to fix that and made it worse. So
+ * this refuses instead: a menu that long is rare, and answering it in the
+ * terminal is a much better outcome than answering it incorrectly from a phone.
+ *
+ * (Driving the selection cursor with arrow keys would genuinely work and is the
+ * obvious next step — but it cannot be verified without a real agent showing a
+ * ten-option menu, and guessing at key sequences aimed into a live agent is the
+ * exact failure this function already has one of.)
  */
-export function optionKeys(option: BlockedOption): string[] {
-  return [...String(option.number)].concat('Enter');
+export function optionKeys(option: BlockedOption): string[] | null {
+  if (!Number.isInteger(option.number) || option.number < 1 || option.number > 9) return null;
+  return [String(option.number), 'Enter'];
 }
 
 /**

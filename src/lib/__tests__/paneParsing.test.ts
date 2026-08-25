@@ -48,10 +48,23 @@ describe('blocked prompt parsing', () => {
     expect(optionKeys({ number: 2, label: 'Yes' })).toEqual(['2', 'Enter']);
   });
 
-  // "10" is not a key. Sending it as one is either dropped or lands as a bare
-  // "1" — which answers a different question.
-  it('sends a two-digit choice one digit at a time', () => {
-    expect(optionKeys({ number: 10, label: 'Tenth' })).toEqual(['1', '0', 'Enter']);
+  // There is no way to type "10" into one of these menus, and both previous
+  // attempts committed the WRONG option: "10" as a single key landed as a bare
+  // "1", and one-key-per-digit selected option 1 and then submitted a stray "0"
+  // into the composer. Refusing is the only answer that cannot be wrong.
+  it('refuses a choice it cannot type instead of sending the wrong one', () => {
+    expect(optionKeys({ number: 10, label: 'Tenth' })).toBeNull();
+    expect(optionKeys({ number: 11, label: 'Eleventh' })).toBeNull();
+  });
+
+  it('accepts every single-digit choice, and nothing outside that', () => {
+    for (let number = 1; number <= 9; number += 1) {
+      expect(optionKeys({ number, label: 'x' })).toEqual([String(number), 'Enter']);
+    }
+    // A menu never numbers from zero, and a negative is a parse that went wrong
+    // — neither should be handed to a live agent on the strength of a guess.
+    expect(optionKeys({ number: 0, label: 'Zeroth' })).toBeNull();
+    expect(optionKeys({ number: -1, label: 'Broken' })).toBeNull();
   });
 
   it('strips ANSI colour before matching', () => {

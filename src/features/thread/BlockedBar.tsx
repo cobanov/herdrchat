@@ -70,45 +70,61 @@ export function BlockedBar({
       </View>
 
       {prompt !== null && prompt.options.length > 0 ? (
-        prompt.options.map((option) => {
-          const keys = optionKeys(option);
-          const tapped = isPendingKeys(pending, keys);
-          return (
-            <Pressable
-              key={option.number}
-              onPress={() => press(keys)}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={`Option ${option.number}: ${option.label}`}
-              accessibilityState={{ disabled: busy, busy: tapped }}
-              testID={`blocked-option-${option.number}`}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'flex-start',
-                gap: spacing.sm,
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
-                borderRadius: radius.sm,
-                backgroundColor:
-                  busy || pressed ? colors.fillSubtle : `${colors.attention}1F`,
-              })}>
-              {tapped ? (
-                <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: 16 }} />
-              ) : (
-                <Text
-                  variant="footnote"
-                  color={busy ? 'secondary' : 'attention'}
-                  weight="700"
-                  style={{ fontVariant: ['tabular-nums'], minWidth: 16, textAlign: 'right' }}>
-                  {option.number}
+        <>
+          {prompt.options.map((option) => {
+            const keys = optionKeys(option);
+            // An option this app cannot type is still SHOWN, just not offered.
+            // Hiding it would renumber the menu against the one on the terminal,
+            // and then "option 9" means two different things in two places.
+            const untypable = keys === null;
+            const tapped = keys !== null && isPendingKeys(pending, keys);
+            const dim = busy || untypable;
+            return (
+              <Pressable
+                key={option.number}
+                onPress={keys === null ? undefined : () => press(keys)}
+                disabled={dim}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  untypable
+                    ? `Option ${option.number}: ${option.label}. Not available from this app.`
+                    : `Option ${option.number}: ${option.label}`
+                }
+                accessibilityState={{ disabled: dim, busy: tapped }}
+                testID={`blocked-option-${option.number}`}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  gap: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  borderRadius: radius.sm,
+                  backgroundColor:
+                    dim || pressed ? colors.fillSubtle : `${colors.attention}1F`,
+                })}>
+                {tapped ? (
+                  <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: 16 }} />
+                ) : (
+                  <Text
+                    variant="footnote"
+                    color={dim ? 'secondary' : 'attention'}
+                    weight="700"
+                    style={{ fontVariant: ['tabular-nums'], minWidth: 16, textAlign: 'right' }}>
+                    {option.number}
+                  </Text>
+                )}
+                <Text variant="subhead" color={dim ? 'secondary' : 'label'} style={{ flex: 1 }}>
+                  {option.label}
                 </Text>
-              )}
-              <Text variant="subhead" color={busy ? 'secondary' : 'label'} style={{ flex: 1 }}>
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })
+              </Pressable>
+            );
+          })}
+          {prompt.options.some((option) => optionKeys(option) === null) && (
+            <Text variant="caption" color="secondary">
+              Options above 9 can’t be typed from here. Answer this one in the terminal.
+            </Text>
+          )}
+        </>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>
