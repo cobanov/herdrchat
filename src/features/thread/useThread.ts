@@ -157,6 +157,22 @@ export function useThread(
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
   const [livePreview, setLivePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+    Tail failures need their own slot, because the poll's success path ends in
+    `setError(null)` and a tail that rejected earlier in the SAME iteration was
+    wiped by it a few hundred milliseconds after appearing.
+
+    `startTail` is fired without await and its first await — `homeDirectory()` —
+    is serialized ahead of the poll's own `paneVisible` calls on one connection,
+    so its rejection lands first almost every time. And when no agent is blocked
+    and none is working, the poll has no awaits left at all between the two, so
+    the clear follows immediately.
+
+    Whether it was visible therefore depended on what the agents happened to be
+    doing, which is why this read as "the banner flickers" rather than as a bug.
+    The poll clears only what the poll raised.
+  */
+  const [tailError, setTailError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
@@ -390,13 +406,16 @@ export function useThread(
       if (!alive.current) return;
       if (probe.kind === 'absent') return;
       if (probe.kind === 'unknown') {
-        setError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+        setTailError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
         return;
       }
       const size = probe.bytes;
 
       const controller = new AbortController();
       tails.current.set(sessionId, controller);
+      // A tail that starts is the only evidence that clears a tail complaint.
+      // The poll's own `setError(null)` must not do it — that is the bug above.
+      setTailError(null);
       // Starting counts as a beat, so a tail that never yields a single line is
       // still measured from when it began rather than from never.
       tailBeats.current.set(sessionId, Date.now());
@@ -517,7 +536,7 @@ export function useThread(
           // it into the same banner as everything else instead of an unhandled
           // rejection nobody sees on a phone.
           void startTail(agent, conversational.length > 1).catch((thrown: unknown) => {
-            setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+            setTailError(thrown instanceof HerdrError ? thrown.message : String(thrown));
           });
         }
 
@@ -847,7 +866,7 @@ export function useThread(
     sessionMeta,
     livePreview,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
-    error,
+    error: error ?? tailError,
     isSending,
     loadOlder,
     loadingOlder,
@@ -858,7 +877,10 @@ export function useThread(
     retry,
     sendKeys,
     interrupt,
-    clearError: () => setError(null),
+    clearError: () => {
+      setError(null);
+      setTailError(null);
+    },
     reload,
   };
 }
