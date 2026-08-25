@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, useColorScheme } from 'react-native';
+import { AccessibilityInfo, Appearance, useColorScheme } from 'react-native';
 
 import { darkPalette, lightPalette, type Palette } from './tokens';
 
@@ -39,6 +39,29 @@ export function ThemeProvider({
 
   const [reduceTransparency, setReduceTransparency] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  /*
+    Push the preference down to UIKit, not just into our palette.
+
+    Some surfaces are not ours to colour. The tab bar is a real UIKit tab bar
+    (see app/(tabs)/_layout.tsx — deliberately, so it minimises and blurs the way
+    the system's does), and it reads the window's trait collection rather than
+    anything in this file. So with the app set to light on a phone set to dark it
+    rendered as a dark slab under a light screen, and every other native surface
+    — action sheets, the keyboard, menus — did the same.
+
+    `Appearance.setColorScheme` sets overrideUserInterfaceStyle on the app's
+    windows, which is the one lever that reaches all of them at once.
+    'unspecified' hands control back to the OS — React Native's own name for it,
+    not null, which the typing rejects.
+
+    Note this does NOT make `useColorScheme()` above lie to us: the only time we
+    read it is when preference is 'system', and that is precisely when the
+    override is null.
+  */
+  useEffect(() => {
+    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
+  }, [preference]);
 
   useEffect(() => {
     let cancelled = false;
