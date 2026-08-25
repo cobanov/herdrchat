@@ -10,8 +10,8 @@
 <p align="center">
   <a href="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cobanov/herdrchat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="platform" src="https://img.shields.io/badge/iOS-17%2B-6E74E6?labelColor=1a1a1a">
-  <img alt="tests" src="https://img.shields.io/badge/tests-317-6E74E6?labelColor=1a1a1a">
-  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.7%20(52)-6E74E6?labelColor=1a1a1a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-329-6E74E6?labelColor=1a1a1a">
+  <img alt="testflight" src="https://img.shields.io/badge/TestFlight-0.7.8%20(53)-6E74E6?labelColor=1a1a1a">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-6E74E6?labelColor=1a1a1a"></a>
 </p>
 
@@ -93,7 +93,7 @@ key. Nothing of ours is in the path, because nothing of ours exists.
 ```bash
 npx tsc --noEmit          # zero errors
 npx expo lint             # zero errors
-npx jest                  # 317 tests
+npx jest                  # 329 tests
 maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.yaml
 ```
 
@@ -138,10 +138,12 @@ Everything described above works on iOS. What does not, yet:
   but the host-side sender has never been set up ([#2][i2]).
 - **Android** — it compiles and the SSH module is written in Kotlin, but it has
   never been run and there is no release path ([#4][i4]).
-- **Public TestFlight** — build 51 is with Apple for Beta App Review ([#3][i3]).
+- **Public TestFlight** — build 53 is with Apple for Beta App Review ([#3][i3]).
   The [public link][testflight] opens to everyone once that passes.
-- **The App Store** — not submitted. The listing needs screenshots, a category
-  and an age rating before it can be.
+- **The App Store** — submitted, and rejected once under Guideline 2.1 for
+  information Apple needed rather than for a defect. The listing, ratings and
+  answers are in place; what is outstanding is a demo video recorded on a
+  physical device.
 
 Open [issues][issues] are the honest version of this list.
 
