@@ -10,7 +10,8 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { formatFingerprint, shouldResetPin } from '@/lib/hostkey';
+import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
+import { shouldResetPin } from '@/lib/hostkey';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
@@ -385,41 +386,12 @@ export default function ServerEditScreen() {
           )}
 
           {test.kind === 'keyChanged' && (
-            <View
-              style={{
-                padding: spacing.md,
-                borderRadius: radius.sm,
-                backgroundColor: colors.fillSubtle,
-                gap: spacing.sm,
-              }}>
-              <Text variant="subhead" weight="600" testID="test-key-changed">
-                The host identifies with a different key
-              </Text>
-              <Text variant="footnote" color="secondary">
-                {test.message}
-              </Text>
-              <Text variant="footnote" color="secondary">
-                If you did not reinstall or re-key this server, stop here — something
-                between you and it could be intercepting the connection.
-              </Text>
-              <Button title="Trust the new key" variant="tinted" onPress={trustNewKey} />
-            </View>
+            <KeyChangedPanel message={test.message} onTrust={trustNewKey} />
           )}
 
           {/* Shown once there is something true to show: a key a test just
-              accepted, or the pin this host is already bound to. Selectable and
-              monospaced because its only real use is being compared, character
-              by character, with `ssh-keygen -lf` on the machine. */}
-          {fingerprint !== null && (
-            <View style={{ gap: spacing.xs }}>
-              <Text variant="caption" color="secondary">
-                Host key fingerprint
-              </Text>
-              <Text variant="caption" color="tertiary" mono selectable testID="host-fingerprint">
-                {formatFingerprint(fingerprint)}
-              </Text>
-            </View>
-          )}
+              accepted, or the pin this host is already bound to. */}
+          {fingerprint !== null && <HostFingerprint fingerprint={fingerprint} />}
 
           <Button
             title="Save"

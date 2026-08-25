@@ -2,24 +2,24 @@ import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { Text } from '@/components/Text';
 import { CHAT_ROW_TEXT_INSET } from '@/features/chats/ChatRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { SwipeHint } from '@/features/chats/SwipeHint';
+import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { haptics } from '@/lib/haptics';
-import { formatFingerprint, isHostKeyChangedMessage } from '@/lib/hostkey';
+import { isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { useChatEdits } from '@/state/chatEdits';
 import {
@@ -31,7 +31,7 @@ import {
 import { loadThreadReads, setSetting } from '@/state/db';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, size, spacing } from '@/theme/tokens';
+import { size } from '@/theme/tokens';
 
 /**
  * Chats — the primary destination. One row per workspace, with live presence.
@@ -282,62 +282,5 @@ function ChatsForServer() {
         />
       )}
     </Screen>
-  );
-}
-
-/**
- * The host answered with a key that is not the pinned one.
- *
- * Deliberately not `ErrorBanner`: the generic banner reads as "try again", and
- * retrying is the one thing that must not be the obvious move here. It states
- * both readings — someone in the middle, or a server you rebuilt — shows the
- * pin so the key can be compared against the machine itself, and offers the one
- * route to the trust-reset flow. Nothing here re-pins anything.
- */
-function HostKeyChangedBanner({
-  pin,
-  onOpenEditor,
-}: {
-  pin: string | null;
-  onOpenEditor: () => void;
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      testID="host-key-changed-banner"
-      accessibilityRole="alert"
-      style={{
-        marginHorizontal: spacing.md,
-        marginBottom: spacing.sm,
-        padding: spacing.md,
-        borderRadius: radius.sm,
-        backgroundColor: colors.fillSubtle,
-        gap: spacing.sm,
-      }}>
-      <Text variant="subhead" weight="600" color="attention">
-        This host’s SSH key changed
-      </Text>
-      <Text variant="footnote" color="secondary">
-        Either the server was reinstalled or re-keyed, or something is
-        intercepting the connection. Until you know which, treat it as the second
-        one.
-      </Text>
-      {pin !== null && (
-        <Text variant="caption" color="tertiary" mono selectable>
-          Pinned: {formatFingerprint(pin)}
-        </Text>
-      )}
-      <Pressable
-        onPress={onOpenEditor}
-        accessibilityRole="button"
-        accessibilityLabel="Open host settings"
-        testID="host-key-changed-action"
-        style={{ alignSelf: 'flex-start', paddingVertical: spacing.xs }}>
-        <Text variant="footnote" color="tint" weight="600">
-          Open host settings
-        </Text>
-      </Pressable>
-    </View>
   );
 }
