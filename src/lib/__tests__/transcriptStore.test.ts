@@ -585,23 +585,6 @@ describe('shell failures inside the store', () => {
   });
 });
 
-describe('home directory caching', () => {
-  it('asks the host once per store', async () => {
-    const commands: string[] = [];
-    class HomeTransport implements HerdrTransport {
-      async exec(command: string): Promise<ExecResult> {
-        commands.push(command);
-        return ok('/home/ege');
-      }
-      async *streamLines(): AsyncIterable<string> {}
-    }
-    const subject = new TranscriptStore(new HomeTransport());
-    expect(await subject.homeDirectory()).toBe('/home/ege');
-    expect(await subject.homeDirectory()).toBe('/home/ege');
-    expect(commands).toHaveLength(1);
-  });
-});
-
 describe('preview marker collision', () => {
   /** Echoes the script's own marker lines, then serves the canned transcript. */
   class MarkerTransport implements HerdrTransport {
@@ -633,5 +616,114 @@ describe('preview marker collision', () => {
 
     expect([...result.keys()]).toEqual(['w1']);
     expect(result.has('ghost')).toBe(false);
+  });
+});
+
+/**
+ * `$HOME` is looked up once per CONNECTION, and the cache used to claim that
+ * while delivering one lookup per call. It lived on the store instance, and no
+ * instance survives: `startTail` builds a new store every invocation and
+ * `useWorkspaces.refresh` builds one on a three-second poll.
+ */
+describe('homeDirectory caching', () => {
+  /** Counts `$HOME` lookups and can hold them open to force a concurrent race. */
+  class HomeTransport implements HerdrTransport {
+    lookups = 0;
+    private release: (() => void) | null = null;
+
+    constructor(private readonly hold = false) {}
+
+    async exec(command: string): Promise<ExecResult> {
+      if (!command.includes('$HOME')) return ok('');
+      this.lookups += 1;
+      if (this.hold) {
+        await new Promise<void>((resolve) => {
+          this.release = resolve;
+        });
+      }
+      return ok('/home/ada\n');
+    }
+
+    open(): void {
+      this.release?.();
+    }
+
+    async *streamLines(): AsyncIterable<string> {
+      // not used here
+    }
+  }
+
+  it('asks the host once for one store', async () => {
+    // This was the whole of the coverage, and it passed for the entire time the
+    // cache did nothing: one store, called twice, is the only shape in which an
+    // instance field works. Nothing in the app calls it that way.
+    const transport = new HomeTransport();
+    const subject = new TranscriptStore(transport);
+
+    await expect(subject.homeDirectory()).resolves.toBe('/home/ada');
+    await expect(subject.homeDirectory()).resolves.toBe('/home/ada');
+
+    expect(transport.lookups).toBe(1);
+  });
+
+  it('survives a new store on the same transport', async () => {
+    const transport = new HomeTransport();
+
+    await expect(new TranscriptStore(transport).homeDirectory()).resolves.toBe('/home/ada');
+    await expect(new TranscriptStore(transport).homeDirectory()).resolves.toBe('/home/ada');
+    await expect(new TranscriptStore(transport).homeDirectory()).resolves.toBe('/home/ada');
+
+    expect(transport.lookups).toBe(1);
+  });
+
+  it('does not leak one host’s home to another connection', async () => {
+    const a = new HomeTransport();
+    const b = new HomeTransport();
+
+    await new TranscriptStore(a).homeDirectory();
+    await new TranscriptStore(b).homeDirectory();
+
+    expect(a.lookups).toBe(1);
+    expect(b.lookups).toBe(1);
+  });
+
+  it('collapses concurrent first calls into one round-trip', async () => {
+    // The case that made caching the value alone useless: startTail runs once
+    // per conversational agent and they all start together, so every miss
+    // happens before the first result lands.
+    const transport = new HomeTransport(true);
+
+    const all = Promise.all([
+      new TranscriptStore(transport).homeDirectory(),
+      new TranscriptStore(transport).homeDirectory(),
+      new TranscriptStore(transport).homeDirectory(),
+    ]);
+    transport.open();
+
+    await expect(all).resolves.toEqual(['/home/ada', '/home/ada', '/home/ada']);
+    expect(transport.lookups).toBe(1);
+  });
+
+  it('retries after a failure instead of caching it forever', async () => {
+    // A busy host must not cost the connection its transcripts for good.
+    let first = true;
+    const transport: HerdrTransport = {
+      async exec(command) {
+        if (!command.includes('$HOME')) return ok('');
+        if (first) {
+          first = false;
+          return ok('\n');
+        }
+        return ok('/home/ada\n');
+      },
+      async *streamLines() {
+        // not used here
+      },
+    };
+
+    await expect(new TranscriptStore(transport).homeDirectory()).rejects.toThrow(
+      /home directory/i
+    );
+    await expect(new TranscriptStore(transport).homeDirectory()).resolves.toBe('/home/ada');
   });
 });

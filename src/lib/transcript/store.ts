@@ -24,10 +24,25 @@ import type { SessionMeta } from './sessionMeta';
  * Behaviour ported from the original SwiftUI implementation (see git
  * history before the Expo rewrite).
  */
+/**
+ * `$HOME` per transport, rather than per `TranscriptStore`.
+ *
+ * The cache used to be an instance field, and no instance ever lived long
+ * enough to use it: `startTail` builds a fresh store on every invocation and
+ * `useWorkspaces.refresh` builds one on a three-second poll, so each started
+ * with an empty cache and paid the same `printf %s "$HOME"` round-trip the
+ * comment claimed it had avoided.
+ *
+ * The transport is the right key because it IS the connection — same SSH user,
+ * same machine, and a home directory does not move underneath one. A WeakMap
+ * because invalidating a client discards its transport, and the stale entry
+ * should go with it rather than be remembered for a connection that no longer
+ * exists.
+ */
+const homeByTransport = new WeakMap<HerdrTransport, Promise<string>>();
+
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
-  /** Cached `$HOME` — one lookup per connection, not one per tail. */
-  private home: string | null = null;
 
   constructor(transport: HerdrTransport) {
     this.transport = transport;
@@ -36,10 +51,26 @@ export class TranscriptStore {
   /**
    * The host user's home directory. Stored transcript paths must be absolute so
    * shell quoting stays safe.
+   *
+   * Cached against the transport — see `homeByTransport`.
    */
   async homeDirectory(): Promise<string> {
-    const cached = this.home;
-    if (cached !== null) return cached;
+    const cached = homeByTransport.get(this.transport);
+    if (cached !== undefined) return cached;
+
+    // The PROMISE is cached, not the string it resolves to. `startTail` runs
+    // once per conversational agent and they start together, so caching only the
+    // result still let every one of them issue its own round-trip before the
+    // first came back — the misses all happen before the first hit.
+    const pending = this.readHomeDirectory();
+    homeByTransport.set(this.transport, pending);
+    // A failure must not become the answer for the life of the connection. The
+    // host may simply have been busy; drop it so the next caller tries again.
+    void pending.catch(() => homeByTransport.delete(this.transport));
+    return pending;
+  }
+
+  private async readHomeDirectory(): Promise<string> {
     const home = (await this.shell('printf %s "$HOME"', POLL_TIMEOUT_MS)).trim();
     // No usable answer is a failure, not a value. "~" was returned here once,
     // and every path built from it went through `shellQuote` downstream, so the
@@ -48,9 +79,6 @@ export class TranscriptStore {
     if (home.length === 0) {
       throw new HerdrError('home_unknown', "The host didn't say where the home directory is.");
     }
-    // A home directory does not move under a live connection, and every tail
-    // start paid an SSH round-trip to learn the same string.
-    this.home = home;
     return home;
   }
 
