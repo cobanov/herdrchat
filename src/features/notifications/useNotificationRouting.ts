@@ -103,6 +103,13 @@ export function useNotificationRouting(): void {
 
   useEffect(() => {
     const route = (response: Notifications.NotificationResponse) => {
+      // Deduplicate on the tap, not on the code path that delivered it — see
+      // `routed`. Marked before the target check so a payload we cannot route
+      // is not reconsidered by the other path either.
+      const id = response.notification.request.identifier;
+      if (routed.has(id)) return;
+      routed.add(id);
+
       const target = targetOf(response);
       if (target === null) return;
       router.push({
@@ -115,10 +122,7 @@ export function useNotificationRouting(): void {
     };
 
     void Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (response !== null && !coldStartRouted) {
-        coldStartRouted = true;
-        route(response);
-      }
+      if (response !== null) route(response);
     });
     const tap = Notifications.addNotificationResponseReceivedListener(route);
     return () => tap.remove();
@@ -126,7 +130,23 @@ export function useNotificationRouting(): void {
 }
 
 /**
- * The last response outlives the tap that caused it, so a remount (Fast
- * Refresh, layout re-key) would re-open the thread without this latch.
+ * Taps already routed, keyed by notification request identifier.
+ *
+ * A cold start from a notification is delivered TWICE. It resolves the
+ * `getLastNotificationResponseAsync` promise, and expo-notifications also hands
+ * the launching response to a listener registered afterwards. The previous latch
+ * guarded only the promise, so the listener pushed a second copy of the same
+ * thread: back had to be pressed twice, and two `useThread` instances polled one
+ * workspace.
+ *
+ * A boolean could not fix that, because it has to stay false for later taps in
+ * the same session and false is exactly what let the duplicate through. The
+ * identifier distinguishes "this tap again" from "another tap", which is the
+ * actual question.
+ *
+ * Module scope rather than a ref, for the reason the latch was module scope: the
+ * last response outlives the tap that caused it, so a remount — Fast Refresh, a
+ * layout re-key — re-reads it and would re-open the thread. Bounded by taps per
+ * app launch, which is a handful.
  */
-let coldStartRouted = false;
+const routed = new Set<string>();
