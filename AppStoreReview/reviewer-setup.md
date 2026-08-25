@@ -1,38 +1,45 @@
-# Preparing the review-only demo host
+# What a reviewer needs from us
 
-Internal checklist (for us) to stand up the demo the App Review team uses. Goal: a reviewer with
-no Mac and no Tailscale can connect and see a working agent chat in under a minute. Tear it down
-after the review.
+**Nothing.** That is the point of this file, and it is the second answer to the
+question — the first one was wrong and is kept below, because the reasoning is
+worth more than the conclusion.
 
-## 1. A dedicated, throwaway account
-- On a small always-on host (a VM or a spare box), create a **review-only** user, e.g. `appreview`.
-- Give it **no access** to anything real — its own home, fictional data only.
-- Install herdr for that user: `curl -fsSL https://herdr.dev/install.sh | sh` (lands in `~/.local/bin`).
+The app is a client for a machine you administer. A reviewer administers no such
+machine, so for a year the plan was to lend them one: a throwaway VM, a
+review-only Unix account, SSH exposed to the public internet for the review
+window, a private key pasted into App Store Connect, and a teardown afterwards
+that somebody has to remember to do.
 
-## 2. Reachability for the reviewer (no Tailscale)
-Production connects over Tailscale, but a reviewer can't join our tailnet. For the review window,
-make the demo host reachable directly:
-- A temporary public DNS name / IP with SSH open **only** to the demo account, key-only,
-  rate-limited, firewalled to port 22 (or a custom port).
-- OR a cloud VM spun up just for review. Either way: **review-only creds, torn down after.**
+That plan is now in git history rather than in this file, because every part of
+it was a liability:
 
-## 3. Reviewer SSH key
-- `ssh-keygen -t ed25519 -f appreview_review -N ''` → add `appreview_review.pub` to the demo
-  account's `authorized_keys`.
-- Put the **private** key (and the host/username) in App Store Connect → App Review Information.
-  Never commit it; never ship it in the app.
+- A private key in a metadata field is a private key in a metadata field.
+- Public SSH for "the review window" is public SSH until someone closes it.
+- It has to be rebuilt from scratch for **every** submission, and it rots
+  silently between them.
+- It tests a host, not the app. If the VM is unreachable the reviewer sees a
+  connection error and rejects the binary for it.
 
-## 4. A prepared "App Review" workspace
-- In herdr, create a workspace labelled **App Review** in a sample repo (fictional files).
-- Start Claude in it so there's a real transcript to show. Seed one exchange so the chat isn't empty.
-- Keep it harmless: if you script a canned agent, have it reply to `hi` and offer a simple choice
-  (so the reviewer can exercise the blocked-prompt quick replies) and run only `echo app-review-ok`.
+## What replaced it
 
-## 5. Verify the reviewer path yourself
-Install the TestFlight/App Store build on a clean device, add the demo server with the reviewer
-key, open **App Review**, send `hi`, confirm a reply + that a notification fires. Screenshot for
-the metadata set.
+A demo host compiled into the app. `HerdrTransport` has two methods, so a
+fictional host substitutes for a real one underneath the entire stack — the chat
+list, the transcript reader, the byte cursor, the blocked-prompt bar and the live
+tail all run their real code against it. See `src/lib/demo/` and the tests in
+`src/lib/__tests__/demoHost.test.ts`, which drive it through the same
+`HerdrClient` the app uses.
 
-## 6. After review
-Disable the `appreview` account, remove the public exposure, rotate/delete the key, and delete the
-VM. Note the teardown date in the changelog.
+With no hosts configured, first launch selects it. So the reviewer's setup is:
+install, open. There is no account, no credential and no host, which is why
+`demoAccountRequired` is false.
+
+## The one thing to check before submitting
+
+That the build attached to the version actually contains the demo. Build 51 went
+to review with review notes describing a demo it did not have — the notes were
+written for the following build. The reviewer followed step (a), saw an empty
+Chats tab, and there was no way for them to tell whether the app or the
+instructions were broken.
+
+The demo landed in **build 52**. Anything at or above that is fine; anything
+below it must not be submitted with these notes.
