@@ -5,7 +5,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect } from 'react';
 
 import { getPushDeviceId } from '@/features/notifications/deviceId';
-import { deviceFileId, requestPushToken, uploadPushToken } from '@/features/notifications/push';
+import { deviceFileId, existingPushToken, uploadPushToken } from '@/features/notifications/push';
 import { clientFor, useConnections } from '@/state/connections';
 import { useSettings } from '@/state/settings';
 
@@ -39,17 +39,27 @@ export function usePushTokenRefresh(): void {
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
       // Read at upload time rather than subscribed: a connections change
       // shouldn't re-run the whole effect and re-request the token.
-      for (const target of useConnections.getState().connections) {
-        try {
-          await uploadPushToken(clientFor(target).transport, id, token, bundleId);
-        } catch {
-          /* unreachable host */
-        }
-      }
+      //
+      // Concurrently, because these are independent machines and this runs at
+      // launch. Serially, each unreachable host cost a full SEND_TIMEOUT_MS
+      // before the next one was even dialled — three saved hosts off the tailnet
+      // was about a minute of startup work to write the same short file three
+      // times. Now the round takes as long as the slowest single host.
+      await Promise.all(
+        useConnections.getState().connections.map(async (target) => {
+          try {
+            await uploadPushToken(clientFor(target).transport, id, token, bundleId);
+          } catch {
+            /* unreachable host — it catches the next launch */
+          }
+        })
+      );
     };
 
     void (async () => {
-      const status = await requestPushToken();
+      // Never `requestPushToken` here: this runs off a stored setting, which is
+      // not evidence that iOS was ever asked. See existingPushToken.
+      const status = await existingPushToken();
       if (!cancelled && status.state === 'granted') await upload(status.token);
     })();
     const rotation = Notifications.addPushTokenListener((token) => {

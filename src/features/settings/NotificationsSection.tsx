@@ -12,6 +12,7 @@ import {
   deviceFileId,
   errorDetail,
   removePushToken,
+  existingPushToken,
   requestPushToken,
   uploadPushToken,
 } from '@/features/notifications/push';
@@ -52,20 +53,29 @@ export function NotificationsSection() {
         // The token itself is needed too: earlier builds wrote one file per
         // LAUNCH (named after Constants.sessionId), so removing today's file
         // leaves legacy copies the watcher still pushes to. removePushToken
-        // deletes every file carrying this token. Permission is already
-        // granted while the toggle is on, so this resolves without a prompt.
-        const status = await requestPushToken();
+        // deletes every file carrying this token.
+        //
+        // Read, never request. This said permission "is already granted while
+        // the toggle is on", which describes the setting rather than the OS: a
+        // restored database can have the toggle on with iOS never asked, and
+        // then turning notifications OFF popped a dialog asking to turn them on.
+        // Without a token removePushToken still deletes today's file, which is
+        // the common case anyway.
+        const status = await existingPushToken();
         const token = status.state === 'granted' ? status.token : null;
-        // Best-effort removal: if a host is unreachable the local switch still
-        // turns off, and a stale token there is harmless — APNs reports it as
-        // unregistered and the watcher drops it.
-        for (const target of connections) {
-          try {
-            await removePushToken(clientFor(target).transport, id, token);
-          } catch {
-            /* unreachable host */
-          }
-        }
+        // Best-effort removal, and concurrent: the switch should not sit under a
+        // spinner for one timeout per unreachable host. If a host is missed the
+        // stale token there is harmless — APNs reports it as unregistered and
+        // the watcher drops it.
+        await Promise.all(
+          connections.map(async (target) => {
+            try {
+              await removePushToken(clientFor(target).transport, id, token);
+            } catch {
+              /* unreachable host */
+            }
+          })
+        );
         persist(false);
         return;
       }

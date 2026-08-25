@@ -56,6 +56,34 @@ export function errorDetail(thrown: unknown): string | undefined {
  * be reporting a fault that doesn't exist.
  */
 export async function requestPushToken(): Promise<PushStatus> {
+  return pushToken(true);
+}
+
+/**
+ * The token this device already has — and never a permission prompt.
+ *
+ * Asking iOS for permission is a one-shot, irreversible act: decline it and the
+ * only way back is the Settings app. So it belongs to a user turning the feature
+ * ON, and to nothing else.
+ *
+ * Two callers had it by accident. The launch refresh runs whenever the stored
+ * setting says notifications are on, which is not the same claim as "iOS granted
+ * this install permission" — a SQLite file restored from backup, or a reinstall
+ * over a restored database, says yes while the OS has never been asked. That
+ * showed the system dialog seconds after launch, with nothing on screen to
+ * explain it. And the Settings opt-OUT path called it to look the token up
+ * before deleting it, so the app could prompt for permission while the user was
+ * in the act of switching notifications off.
+ *
+ * Both of those want to read the answer, not to ask the question. `denied` here
+ * means "not granted, and we did not ask", which is exactly what they should do
+ * nothing about.
+ */
+export async function existingPushToken(): Promise<PushStatus> {
+  return pushToken(false);
+}
+
+async function pushToken(mayPrompt: boolean): Promise<PushStatus> {
   if (Platform.OS !== 'ios') {
     return { state: 'unsupported', reason: 'Push notifications are iOS-only in this build.' };
   }
@@ -63,7 +91,7 @@ export async function requestPushToken(): Promise<PushStatus> {
   const granted =
     existing.granted ||
     existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
-    (await Notifications.requestPermissionsAsync()).granted;
+    (mayPrompt && (await Notifications.requestPermissionsAsync()).granted);
 
   if (!granted) return { state: 'denied' };
 
