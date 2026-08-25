@@ -70,6 +70,17 @@ export function Glass({
         glassEffectStyle={variant}
         isInteractive={interactive}
         tintColor={tintColor}
+        // Without this the glass follows the SYSTEM appearance while everything
+        // drawn on it follows the app's theme, and the two disagree the moment a
+        // user picks a theme that is not "system". Phone in light, app in dark,
+        // and the blocked bar became a near-white slab with amber text on it —
+        // the worst possible place for it, since that bar is how a waiting agent
+        // gets answered.
+        //
+        // `scheme` is already resolved past the 'system' preference by
+        // ThemeProvider, so it is exactly the answer this prop wants. The
+        // BlurView branch below has always used it; only this one ignored it.
+        colorScheme={scheme === 'dark' ? 'dark' : 'light'}
         testID={testID}>
         {children}
       </GlassView>
