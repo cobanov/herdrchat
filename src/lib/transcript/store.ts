@@ -116,18 +116,51 @@ export class TranscriptStore {
    */
   async fileProbe(path: string): Promise<FileProbe> {
     const quoted = shellQuote(path);
-    // The shell ANSWERS the "is it there" question; we do not read its mind.
-    // This used to match /no such file|not found/ against stderr, which is
-    // whatever language the host is configured in — on a non-English host every
-    // freshly-created session read `unknown` instead of `absent`, and the
-    // caller reported a broken transcript instead of waiting a beat.
+    const slash = path.lastIndexOf('/');
+    const folder = shellQuote(slash > 0 ? path.slice(0, slash) : '.');
+    /*
+      The shell ANSWERS these questions; we do not read its mind. Matching
+      /no such file|not found/ against stderr was the first version, and stderr
+      is in whatever language the host is configured in — on a non-English host
+      every freshly created session read `unknown` and the caller reported a
+      broken transcript instead of waiting a beat.
+
+      `[ -f ]` alone was the second, and it conflated from the other side: it is
+      also false when the path cannot be stat'ed at all, so a directory this SSH
+      user cannot search — a transcript owned by another user, a tightened
+      ~/.claude — reported `absent`. `absent` is the silent branch, so the thread
+      waited for a file it was never going to be allowed to see, and said
+      nothing, forever.
+
+      Four questions instead, in the order the kernel asks them. Note `-x` and
+      not `-r` on the folder: stat'ing a file needs SEARCH permission on every
+      directory above it, and a directory can be perfectly listable while its
+      contents cannot be reached.
+    */
     const result = await this.transport.exec(
-      withPath(`[ -f ${quoted} ] || exit ${ABSENT_EXIT}; wc -c < ${quoted}`),
+      withPath(
+        `[ -d ${folder} ] || exit ${ABSENT_EXIT};` +
+          ` [ -x ${folder} ] || exit ${UNSEARCHABLE_EXIT};` +
+          ` [ -e ${quoted} ] || exit ${ABSENT_EXIT};` +
+          ` [ -r ${quoted} ] || exit ${UNREADABLE_EXIT};` +
+          ` wc -c < ${quoted}`
+      ),
       POLL_TIMEOUT_MS
     );
     if (!result.ok) return { kind: 'unknown', reason: result.message };
 
+    // A missing project directory is `absent` too, and for the same reason the
+    // missing file is: Claude creates it when the session starts writing.
     if (result.exitCode === ABSENT_EXIT) return { kind: 'absent' };
+    if (result.exitCode === UNSEARCHABLE_EXIT) {
+      return {
+        kind: 'unknown',
+        reason: "this SSH user can't open the folder the transcript is in",
+      };
+    }
+    if (result.exitCode === UNREADABLE_EXIT) {
+      return { kind: 'unknown', reason: "the transcript is there but this SSH user can't read it" };
+    }
     if (result.exitCode !== 0) {
       const detail = result.stderr.trim().split('\n')[0] ?? '';
       return { kind: 'unknown', reason: detail.length > 0 ? detail : `wc exited ${result.exitCode}` };
@@ -410,8 +443,12 @@ export interface PreviewRequest {
  * The answer to "how big is this transcript".
  *
  * `absent` means the host said the file is not there — normal for a few seconds
- * after a session id arrives. `unknown` means we could not find out, which is a
- * different thing and must not be silently retried as if it were `absent`.
+ * after a session id arrives, and the branch callers retry in silence. `unknown`
+ * means we could not find out, which is a different thing and must be said out
+ * loud.
+ *
+ * Permission failures are `unknown`, not `absent`. Getting that backwards costs
+ * the user a thread that waits forever without ever explaining why.
  */
 export type FileProbe =
   | { kind: 'size'; bytes: number }
@@ -433,8 +470,18 @@ export function previewText(message: ChatMessage): string | null {
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 
-/** Exit status the size probe uses to say "the file is not there". */
+/*
+  Exit statuses the size probe uses to answer in a language the host cannot
+  localise. Chosen above the 1-125 range a real command would return, and below
+  126 where the shell's own "not executable" / "not found" codes live.
+*/
+
+/** The file, or the folder that would hold it, is not there yet. Expected. */
 const ABSENT_EXIT = 44;
+/** The folder exists but this user cannot search it, so nothing can be stat'ed. */
+const UNSEARCHABLE_EXIT = 45;
+/** The file exists and this user cannot read it. */
+const UNREADABLE_EXIT = 46;
 
 /**
  * A separator no transcript can contain by accident. Random per call, so even a

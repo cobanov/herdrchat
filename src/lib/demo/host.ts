@@ -260,9 +260,19 @@ export class DemoHost implements HerdrTransport {
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
 
-    const probe = /^\[ -f '(.+?)' \] \|\| exit (\d+); wc -c < '(.+?)'$/.exec(body);
+    // The size probe, which asks four questions before it measures anything —
+    // is the folder there, can it be searched, is the file there, can it be
+    // read. A fictional host has no permissions to get wrong, so the only two
+    // answers it can give are "here is the size" and the absent status. Matching
+    // the real shape rather than a simplification is the point: this transport
+    // exists to run the app's real code, and a probe it answered loosely would
+    // be the one place the demo stopped being the app.
+    const probe =
+      /^\[ -d '(.+?)' \] \|\| exit (\d+); \[ -x '.+?' \] \|\| exit \d+; \[ -e '(.+?)' \] \|\| exit \d+; \[ -r '.+?' \] \|\| exit \d+; wc -c < '.+?'$/.exec(
+        body
+      );
     if (probe !== null) {
-      const contents = this.read(probe[1]!);
+      const contents = this.read(probe[3]!);
       return contents === null ? exit(Number(probe[2])) : out(`${byteLength(contents)}\n`);
     }
 

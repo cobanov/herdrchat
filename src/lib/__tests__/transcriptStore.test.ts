@@ -476,13 +476,18 @@ describe('TranscriptStore.tail', () => {
 });
 
 /**
- * `fileProbe` has to answer three questions, not two.
+ * `fileProbe` has to answer three questions, not two — and it has now got that
+ * wrong from both directions.
  *
- * It used to return `-1` for both "no such file" and "the read failed", with
- * `2>/dev/null` discarding the only evidence that separated them — so a
- * permission or transport problem was indistinguishable from a session whose
- * transcript hadn't been written yet, and the thread waited silently for a file
- * that was already there.
+ * It first returned `-1` for both "no such file" and "the read failed", with
+ * `2>/dev/null` discarding the only evidence that separated them. Then it
+ * matched English stderr, which broke on any localized host. Then `[ -f ]`,
+ * which is a stat and so answers false both for "not there" and for "not
+ * allowed to look" — putting permission failures back into `absent`, the branch
+ * callers retry in silence.
+ *
+ * `absent` is the expensive one to get wrong: it costs a thread that waits
+ * forever and never says why.
  */
 describe('TranscriptStore.fileProbe', () => {
   class ProbeTransport implements HerdrTransport {
@@ -523,7 +528,7 @@ describe('TranscriptStore.fileProbe', () => {
     ).resolves.toEqual({ kind: 'absent' });
   });
 
-  it('asks the shell whether the file exists rather than reading its stderr', async () => {
+  it('asks the shell every question rather than reading its stderr', async () => {
     const commands: string[] = [];
     class Recording implements HerdrTransport {
       async exec(command: string): Promise<ExecResult> {
@@ -532,9 +537,39 @@ describe('TranscriptStore.fileProbe', () => {
       }
       async *streamLines(): AsyncIterable<string> {}
     }
-    await new TranscriptStore(new Recording()).fileProbe('/t.jsonl');
-    expect(commands[0]).toContain('[ -f ');
-    expect(commands[0]).toContain('exit 44');
+    await new TranscriptStore(new Recording()).fileProbe('/home/ada/p/t.jsonl');
+    const sent = commands[0] ?? '';
+    // `-x` on the folder, not `-r`: reaching a file needs SEARCH permission on
+    // the directories above it, and the two are independent.
+    expect(sent).toContain("[ -x '/home/ada/p' ]");
+    expect(sent).toContain("[ -e '/home/ada/p/t.jsonl' ]");
+    expect(sent).toContain("[ -r '/home/ada/p/t.jsonl' ]");
+    // `-f` was the whole probe, and it cannot distinguish the two cases below.
+    expect(sent).not.toContain('[ -f ');
+  });
+
+  // The regression this whole block exists for. `test -f` is false when the
+  // path cannot be stat'ed at all, so a directory the SSH account cannot search
+  // — a transcript owned by another user, a tightened ~/.claude — reported
+  // `absent`, and `absent` is the branch that retries without a word.
+  it('reports unknown when the folder cannot be searched', async () => {
+    const result = await probe({ ok: true, stdout: '', stderr: '', exitCode: 45 });
+    expect(result.kind).toBe('unknown');
+    expect(result.kind === 'unknown' && result.reason).toMatch(/folder/i);
+  });
+
+  it('reports unknown when the transcript is there but unreadable', async () => {
+    const result = await probe({ ok: true, stdout: '', stderr: '', exitCode: 46 });
+    expect(result.kind).toBe('unknown');
+    expect(result.kind === 'unknown' && result.reason).toMatch(/can't read/i);
+  });
+
+  // A project directory that does not exist yet is the same expected case as a
+  // file that does not exist yet: Claude creates both when the session starts.
+  it('still reports absent when the project folder has not been created', async () => {
+    await expect(probe({ ok: true, stdout: '', stderr: '', exitCode: 44 })).resolves.toEqual({
+      kind: 'absent',
+    });
   });
 
   it('reports unknown — not absent — when the read failed for another reason', async () => {
