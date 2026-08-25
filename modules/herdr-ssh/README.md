@@ -74,3 +74,26 @@ so it lives in `src/lib/herdr/shell.ts` with the quoting.
 
 Changing anything under `ios/` or `android/` here requires a native rebuild
 (`npx expo run:ios`); Fast Refresh does not reload native code.
+
+## Host key fingerprints
+
+Both platforms report OpenSSH's form: unpadded base64 of SHA-256 over the SSH
+**wire** encoding of the public key, which is the same string `ssh-keygen -lf`
+prints. That matters because the pin is meant to be compared against the machine
+by eye, and a fingerprint no other SSH tool prints cannot be.
+
+Android hashed `key.getEncoded()` until August 2026. That is X.509 SPKI DER — a
+different blob for the same key — so it produced a fingerprint that matched
+nothing, including iOS. It now hashes `Buffer.PlainBuffer().putPublicKey(key).compactData`.
+
+Verified: the algorithm reproduces `ssh-keygen -lf` exactly for an ed25519 key
+(the `.pub` blob IS the wire encoding, so SHA-256 over its base64-decoded bytes
+is the whole computation), `:app:assembleDebug` passes, and `HerdrSshModule` and
+`SshConnection` are present in the APK's dex.
+
+**Not** verified, because Android has never been run: any host pinned by an
+Android build from before that change reads as a key change on the first connect
+after it. That is the honest outcome — the two digests are over different bytes,
+so neither is derivable from the other, and silently accepting the new one would
+give away the only thing a pin is for. The key-change flow exists for exactly
+this, but nobody has watched it happen. See issue #4.
