@@ -28,6 +28,20 @@ SCHEME="HerdrChat"
 TEAM_ID="${APPLE_TEAM_ID:?set APPLE_TEAM_ID (Apple Developer > Membership)}"
 KEY_ID="${ASC_KEY_ID:?set ASC_KEY_ID (App Store Connect API key id)}"
 PROFILE_NAME="${ASC_PROFILE_NAME:-HerdrChat App Store}"
+# The SHA-1 of the certificate the profile above was issued against, NOT the
+# display name.
+#
+# "Apple Distribution" is not unique: a team accumulates several, all with the
+# same subject line, and the keychain search order decides which one `security`
+# hands over first. A second one signed for an unrelated app shadowed this one
+# and export died with "Provisioning profile doesn't include signing
+# certificate" after a fifteen-minute archive that was otherwise fine. A hash
+# cannot be shadowed.
+#
+# To rotate: read the profile's certificate id from
+# `GET /v1/profiles?include=certificates`, fetch `certificateContent`, and take
+# the SHA-1 of the decoded DER.
+SIGNING_CERT="${ASC_SIGNING_CERT:-1F671466A48210DC2D5D29B5D1ABEFBC5DCC466D}"
 KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/HerdrChat.xcarchive"
@@ -53,6 +67,24 @@ BUNDLE_ID=$(node -p "require('./app.json').expo.ios.bundleIdentifier")
 VERSION=$(node -p "require('./app.json').expo.version")
 BUILD_NUMBER=$(node -p "require('./app.json').expo.ios.buildNumber")
 
+# Resume path for the case where the archive succeeded and a later step did not.
+# The archive is the fifteen-minute part; export and upload are seconds. Signing
+# and profile problems surface at EXPORT, so without this every attempt to fix
+# one pays for a rebuild that already worked.
+if [[ -n "${SKIP_ARCHIVE:-}" ]]; then
+  if [[ ! -d "$ARCHIVE" ]]; then
+    echo "ERROR: SKIP_ARCHIVE set but no archive at $ARCHIVE" >&2
+    exit 1
+  fi
+  HAVE=$(plutil -extract ApplicationProperties.CFBundleVersion raw -o - "$ARCHIVE/Info.plist" 2>/dev/null || echo '?')
+  if [[ "$HAVE" != "$BUILD_NUMBER" ]]; then
+    echo "ERROR: archive is build $HAVE, app.json says $BUILD_NUMBER. Re-archive." >&2
+    exit 1
+  fi
+  echo "==> Reusing archive at $ARCHIVE ($VERSION build $HAVE)"
+  rm -rf "$EXPORT_DIR"
+else
+
 # ios/ is generated, so regenerate it rather than trusting whatever is on disk.
 # This is also what applies any app.json change since the last run.
 echo "==> Prebuilding ios/ from app.json ($VERSION build $BUILD_NUMBER)…"
@@ -73,6 +105,8 @@ xcodebuild archive \
   COMPILER_INDEX_STORE_ENABLE=NO \
   "${AUTH[@]}"
 
+fi
+
 # MANUAL signing, not cloud. This machine's ASC key lacks the role cloud
 # signing needs, so `-exportArchive` fails with "Cloud signing permission
 # error / No profiles were found" even though the archive signed fine. The
@@ -87,7 +121,7 @@ cat > "$PLIST" <<EOF
     <key>method</key><string>app-store-connect</string>
     <key>teamID</key><string>${TEAM_ID}</string>
     <key>signingStyle</key><string>manual</string>
-    <key>signingCertificate</key><string>Apple Distribution</string>
+    <key>signingCertificate</key><string>${SIGNING_CERT}</string>
     <key>provisioningProfiles</key>
     <dict>
         <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
