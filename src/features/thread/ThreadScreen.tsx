@@ -139,12 +139,16 @@ export default function ThreadScreen() {
    */
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const integrationKind = thread.agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
+    ?? thread.agents.find(agent => agent.agentSession === null)
+    ?? thread.agents[0];
+  const agentKind = integrationKind?.agent === 'codex' ? 'codex' : 'claude';
   const installIntegration = useCallback(() => {
     if (client === null || installing) return;
     setInstalling(true);
     setInstallError(null);
     void client
-      .installIntegration('claude')
+      .installIntegration(agentKind)
       .then(() => {
         // Deliberately no success banner. The integration binds at SessionStart,
         // so this agent keeps reporting nothing until it is restarted, and a
@@ -156,7 +160,7 @@ export default function ThreadScreen() {
         setInstallError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       })
       .finally(() => setInstalling(false));
-  }, [client, installing]);
+  }, [client, installing, agentKind]);
 
   /**
    * Whether the viewport sits at the end, measured rather than inferred.
@@ -410,6 +414,7 @@ export default function ThreadScreen() {
               onBack={() => router.back()}
               title={params.title ?? params.workspaceId}
               sessionState={thread.sessionState}
+              agentKind={agentKind}
               onInstallIntegration={client === null ? undefined : installIntegration}
               installing={installing}
               installError={installError}

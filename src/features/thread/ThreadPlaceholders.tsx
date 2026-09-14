@@ -61,6 +61,7 @@ export function ThreadPlaceholder({
   onBack,
   title,
   sessionState,
+  agentKind = 'claude',
   onInstallIntegration,
   installing,
   installError,
@@ -70,7 +71,8 @@ export function ThreadPlaceholder({
   canSend: boolean;
   onBack: () => void;
   title: string;
-  sessionState: 'ok' | 'waiting' | 'missing';
+  sessionState: 'ok' | 'waiting' | 'missing' | 'unsupported';
+  agentKind?: 'claude' | 'codex';
   onInstallIntegration?: () => void;
   installing: boolean;
   installError: string | null;
@@ -91,6 +93,13 @@ export function ThreadPlaceholder({
             Loading the conversation…
           </Text>
         </>
+      ) : sessionState === 'unsupported' ? (
+        <>
+          <Text variant="title3" style={{ textAlign: 'center' }}>Chat history is not supported for this agent</Text>
+          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+            HerdrChat can read Claude Code and Codex conversations. Open this agent in the host terminal to read its output.
+          </Text>
+        </>
       ) : sessionState === 'missing' ? (
         // The app cannot read a transcript it cannot identify, and it will not
         // guess, so this is the difference between a screen that looks broken
@@ -100,12 +109,13 @@ export function ThreadPlaceholder({
             Can&apos;t identify this chat
           </Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            The agent isn&apos;t reporting which Claude session it is, so this thread can&apos;t be
+            The agent isn&apos;t reporting which {agentKind === 'codex' ? 'Codex' : 'Claude'} session it is, so this thread can&apos;t be
             told apart from others in the same folder.
           </Text>
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
-            Installing it takes a moment. This agent has to be restarted afterwards, the integration
-            only reports at session start, so a session already running keeps saying nothing.
+            Install the integration, then resume this same session on the host when the agent is idle.
+            The integration reports at session start. Your running agent will not be restarted by this button.
+            {agentKind === 'codex' ? ' In Codex, review and trust the Herdr SessionStart hook in /hooks if prompted.' : ''}
           </Text>
           {onInstallIntegration !== undefined && (
             <View style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}>
@@ -121,7 +131,7 @@ export function ThreadPlaceholder({
             <Text variant="footnote" color="attention" style={{ textAlign: 'center' }}>
               {installError} Run{' '}
               <Text variant="footnote" mono color="attention">
-                herdr integration install claude
+                herdr integration install {agentKind}
               </Text>{' '}
               on the host instead.
             </Text>
@@ -133,6 +143,11 @@ export function ThreadPlaceholder({
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
             Waiting for the agent to report its session…
           </Text>
+          {agentKind === 'codex' && (
+            <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
+              Codex identifies its session through the Herdr SessionStart hook. An already-running session may need to be resumed after the hook is installed and trusted.
+            </Text>
+          )}
         </>
       ) : !canSend ? (
         <>

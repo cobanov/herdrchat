@@ -137,7 +137,7 @@ export interface ThreadState {
    * `missing`, long enough that the host is probably missing herdr's Claude
    *   integration, which is the only thing that reports the id.
    */
-  sessionState: 'ok' | 'waiting' | 'missing';
+  sessionState: 'ok' | 'waiting' | 'missing' | 'unsupported';
   failedIds: Set<string>;
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
@@ -195,7 +195,7 @@ export function useThread(
   const [isSending, setIsSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
-  const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing'>('ok');
+  const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing' | 'unsupported'>('ok');
   /** When the thread first saw an agent without a session id, or null while all have one. */
   const noSessionSince = useRef<number | null>(null);
   const polling = usePollGate();
@@ -315,6 +315,7 @@ export function useThread(
     if (client === null || paging.current) return;
     const source = olderSource.current;
     if (source === null || source.anchor <= 0) return;
+    const sig = boundSig.current;
 
     paging.current = true;
     setLoadingOlder(true);
@@ -325,7 +326,7 @@ export function useThread(
         if (current === null || current.anchor <= 0) break;
 
         const older = await store.older(current.path, current.label, current.anchor, OLDER_BYTES);
-        if (!alive.current) return;
+        if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
         olderSource.current = { ...current, anchor: older.startByte };
 
         const fresh = older.messages.filter((message) => !seen.current.has(message.id));
@@ -400,20 +401,30 @@ export function useThread(
       // And the map was previously keyed by cwd, which collapsed two agents in
       // one directory onto a single tail slot, so the second never streamed.
       const sessionId = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
-      if (sessionId === null || tails.current.has(sessionId)) return;
+      const tailKey = sessionSignature([agent]);
+      if (sessionId === null || tailKey === null || tails.current.has(tailKey)) return;
+      if (agent.agent !== 'claude' && agent.agent !== 'codex') return;
 
       // Reserve before the first await. An event can request another refresh
       // while the initial file probe is still running.
       const controller = new AbortController();
-      tails.current.set(sessionId, controller);
+      tails.current.set(tailKey, controller);
       const current = () => alive.current && !controller.signal.aborted;
       try {
         const store = new TranscriptStore(client.transport);
         const label = multiAgent ? agent.agent : null;
 
-        const home = await store.homeDirectory();
-        const path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
-        if (path === null || !current()) return;
+        const path = agent.agent === 'codex'
+          ? await store.codexTranscriptPath(sessionId)
+          : store.sessionTranscriptPath(await store.homeDirectory(), agent.cwd, sessionId);
+        if (!current()) return;
+        if (path === null) {
+          setLoading(false);
+          setTailError(agent.agent === 'codex'
+            ? 'The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.'
+            : 'The agent reported an invalid session id. Resume the session on the host, then reload.');
+          return;
+        }
 
         // One probe, and it answers two different questions.
         //
@@ -431,6 +442,7 @@ export function useThread(
         const probe = await store.fileProbe(path);
         if (!current()) return;
         if (probe.kind === 'absent') {
+          if (agent.agent === 'codex') store.forgetCodexTranscript(sessionId);
           // A brand-new Claude session may not write a transcript until its
           // first prompt. The agent is ready to receive that prompt now.
           setLoading(false);
@@ -448,7 +460,7 @@ export function useThread(
         setTailError(null);
         // Starting counts as a beat, so a tail that never yields a single line is
         // still measured from when it began rather than from never.
-        tailBeats.current.set(sessionId, Date.now());
+        tailBeats.current.set(tailKey, Date.now());
 
         const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
         const cached = await tailCursor(db, connectionId, workspaceId, path);
@@ -507,7 +519,7 @@ export function useThread(
 
         for await (const chunk of store.tail(path, label, followFrom)) {
           if (!current()) break;
-          tailBeats.current.set(sessionId, Date.now());
+          tailBeats.current.set(tailKey, Date.now());
           if (chunk.meta !== null) applyMeta(chunk.meta);
           if (chunk.message !== null) await ingest([chunk.message], sig);
           await setTailCursor(db, connectionId, workspaceId, path, chunk.consumedBytes);
@@ -521,9 +533,9 @@ export function useThread(
         }
       } finally {
         // A superseded stream must never delete the replacement's watchdog.
-        if (tails.current.get(sessionId) === controller) {
-          tails.current.delete(sessionId);
-          tailBeats.current.delete(sessionId);
+        if (tails.current.get(tailKey) === controller) {
+          tails.current.delete(tailKey);
+          tailBeats.current.delete(tailKey);
         }
       }
     },
@@ -563,7 +575,8 @@ export function useThread(
         const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
         setAgents(live);
 
-        const conversational = live.filter((agent) => agent.agent !== null);
+        const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex');
+        const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
         const sig = sessionSignature(conversational);
 
         // An agent that never reports a session id is almost always a host
@@ -571,7 +584,10 @@ export function useThread(
         // a transcript without it and refuses to guess, so without this it just
         // stays empty and blames nothing. Setting the same value twice is a
         // no-op in React, so this does not re-render on every poll.
-        if (conversational.length > 0 && sig === null) {
+        if (unsupported) {
+          noSessionSince.current = null;
+          setSessionState('unsupported');
+        } else if (conversational.length > 0 && sig === null) {
           const since = (noSessionSince.current ??= Date.now());
           setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
         } else {
@@ -662,7 +678,7 @@ export function useThread(
         if (working) {
           const now = Date.now();
           for (const agent of conversational) {
-            const id = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
+            const id = sessionSignature([agent]);
             if (id === null || !tails.current.has(id)) continue;
             const beat = tailBeats.current.get(id) ?? now;
             if (now - beat < TAIL_SILENCE_MS) continue;

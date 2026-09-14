@@ -71,7 +71,9 @@ export function hasSessionId(agent: AgentInfo): boolean {
 export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
     .filter((agent) => agent.agent !== null && hasSessionId(agent))
-    .map((agent) => agent.agentSession?.value ?? '')
+    .map((agent) => agent.agent === 'codex'
+      ? `codex:${agent.agentSession?.value ?? ''}`
+      : agent.agentSession?.value ?? '')
     .filter((value) => value !== '');
   if (ids.length === 0) return null;
   return [...new Set(ids)].sort().join(',');

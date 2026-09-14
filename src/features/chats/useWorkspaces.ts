@@ -288,7 +288,7 @@ export async function refreshPreviews(
     );
     if (!fullSweep && !active && previews.has(workspaceId)) continue;
 
-    requests.push({ workspaceId, cwd: agent.cwd, sessionId });
+    requests.push({ workspaceId, cwd: agent.cwd, sessionId, agent: agent.agent ?? undefined });
   }
   if (requests.length === 0) return;
 

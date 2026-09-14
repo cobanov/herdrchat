@@ -10,6 +10,7 @@ import { useThread } from '../useThread';
 let mockPolling = true;
 let mockLive = true;
 let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
+const mockCodexPath = jest.fn<Promise<string | null>, [string]>(async () => '/test/codex.jsonl');
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => mockLive }));
 jest.mock('../useReportPresence', () => ({
@@ -29,6 +30,8 @@ jest.mock('@/lib/transcript/store', () => ({
   TranscriptStore: class {
     homeDirectory = async () => '/test';
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
+    codexTranscriptPath = mockCodexPath;
+    forgetCodexTranscript = jest.fn();
     fileProbe = async () => mockProbe;
     recent = async () => ({ messages: [], consumedBytes: 0, startByte: 0 });
     sessionMeta = async () => null;
@@ -76,6 +79,7 @@ beforeEach(() => {
   mockPolling = true;
   mockLive = true;
   mockProbe = { kind: 'size', bytes: 0 };
+  mockCodexPath.mockResolvedValue('/test/codex.jsonl');
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -125,6 +129,34 @@ it('finishes loading when a new session has not created its transcript yet', asy
   expect(result.current.canSend).toBe(true);
   expect(result.current.messages).toEqual([]);
   expect(result.current.error).toBeNull();
+  await unmount();
+});
+
+it('resolves a Codex transcript by native session id and namespaces its cache', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(mockCodexPath).toHaveBeenCalledWith('session');
+  expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'codex:session');
+  expect(result.current.loading).toBe(false);
+  expect(result.current.sessionState).toBe('ok');
+  await unmount();
+});
+
+it('explains a Codex file lookup failure instead of leaving the spinner running', async () => {
+  mockCodexPath.mockResolvedValue(null);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.error).toContain('Codex session is identified');
+  await unmount();
+});
+
+it('does not treat an unsupported agent as a Claude transcript', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.sessionState).toBe('unsupported');
+  expect(result.current.loading).toBe(false);
+  expect(seedMessages).not.toHaveBeenCalled();
   await unmount();
 });
 

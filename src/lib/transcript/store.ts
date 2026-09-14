@@ -40,6 +40,7 @@ import type { SessionMeta } from './sessionMeta';
  * exists.
  */
 const homeByTransport = new WeakMap<HerdrTransport, Promise<string>>();
+const codexPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
 
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
@@ -93,6 +94,64 @@ export class TranscriptStore {
   sessionTranscriptPath(home: string, cwd: string, sessionId: string): string | null {
     if (sessionId.length === 0 || !/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
     return `${home}/.claude/projects/${projectDirName(cwd)}/${sessionId}.jsonl`;
+  }
+
+  /** Codex's filename contains a timestamp as well as its native session id.
+   * Search ONLY for that id, then verify session_meta before reading history.
+   * Never use cwd, recency, or a matching chat title to infer the owning session.
+   */
+  async codexTranscriptPath(sessionId: string): Promise<string | null> {
+    if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+    let paths = codexPathsByTransport.get(this.transport);
+    if (paths === undefined) {
+      paths = new Map();
+      codexPathsByTransport.set(this.transport, paths);
+    }
+    const cached = paths.get(sessionId);
+    if (cached !== undefined) return cached;
+    const pending = this.findCodexTranscript(sessionId);
+    paths.set(sessionId, pending);
+    const forget = () => { if (paths.get(sessionId) === pending) paths.delete(sessionId); };
+    // Missing files and failed reads must be retried when the next event arrives.
+    void pending.then(path => { if (path === null) forget(); }, forget);
+    return pending;
+  }
+
+  forgetCodexTranscript(sessionId: string): void {
+    codexPathsByTransport.get(this.transport)?.delete(sessionId);
+  }
+
+  private async findCodexTranscript(sessionId: string): Promise<string | null> {
+    const output = await this.shell(
+      'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
+      'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
+      'if [ -d "$codex_dir" ]; then ' +
+      `find "$codex_dir" -type f -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} || exit $?; ` +
+      'fi; done'
+    );
+    const paths = output.split('\n').filter(path => path.length > 0);
+    if (paths.length === 0) return null;
+    if (paths.length !== 1) {
+      throw new HerdrError('codex_session_ambiguous',
+        'More than one Codex transcript has this session id. Nothing was opened. Check the duplicate session files on the host.');
+    }
+    const path = paths[0];
+    if (path === undefined || !path.startsWith('/') || !path.endsWith(`-${sessionId}.jsonl`) || path.includes('\0')) {
+      throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
+    }
+    const header = await this.shell(`head -n 1 ${shellQuote(path)}`);
+    let valid = false;
+    try {
+      const raw: unknown = JSON.parse(header);
+      if (typeof raw === 'object' && raw !== null && 'type' in raw && raw.type === 'session_meta' &&
+          'payload' in raw && typeof raw.payload === 'object' && raw.payload !== null &&
+          'id' in raw.payload && raw.payload.id === sessionId) valid = true;
+    } catch { /* A partially written header can be retried on the next refresh. */ }
+    if (!valid) {
+      throw new HerdrError('codex_session_mismatch',
+        'This Codex file does not confirm the expected session id. Nothing was opened. Retry after the agent has finished starting.');
+    }
+    return path;
   }
 
   // There is deliberately no `newestTranscriptPath` here. Picking the newest
@@ -378,7 +437,6 @@ export class TranscriptStore {
       // Ids are interpolated into the script and the marker line, so refuse
       // anything that isn't obviously inert rather than trying to quote it.
       if (!/^[A-Za-z0-9:_-]+$/.test(request.workspaceId)) continue;
-      const dir = projectDirName(request.cwd);
 
       // Exact session file ONLY. Falling back to the newest transcript in the
       // project dir previews a foreign session's last message under a reused or
@@ -387,7 +445,15 @@ export class TranscriptStore {
       // request without a usable session id is dropped rather than guessed; the
       // row keeps its live status line until the id arrives.
       if (request.sessionId === null || !/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
-      script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
+      if (request.agent === 'codex') {
+        // One broken Codex session must not suppress every other row's preview.
+        const path = await this.codexTranscriptPath(request.sessionId).catch(() => null);
+        if (path === null) continue;
+        script += `f=${shellQuote(path)}; `;
+      } else if (request.agent === undefined || request.agent === 'claude') {
+        const dir = projectDirName(request.cwd);
+        script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
+      } else continue;
       script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
     }
@@ -437,6 +503,8 @@ export interface PreviewRequest {
   cwd: string;
   /** null when the agent hasn't reported a session id yet. */
   sessionId: string | null;
+  /** Legacy callers omit this for Claude. Other providers must opt in. */
+  agent?: string;
 }
 
 /**

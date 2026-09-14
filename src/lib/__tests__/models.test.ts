@@ -166,6 +166,11 @@ describe('session signature', () => {
     expect(sessionSignature([agent({ paneId: 'p1' }), agent({ paneId: 'p2' })])).toBe('sess-a');
   });
 
+  it('keeps Codex identity separate from a Claude session with the same id', () => {
+    expect(sessionSignature([agent({ agent: 'codex' })])).toBe('codex:sess-a');
+    expect(sessionSignature([agent({}), agent({ agent: 'codex' })])).toBe('codex:sess-a,sess-a');
+  });
+
   // Null, not "": a thread must be able to tell "no session yet" from "some
   // session", because the first means wait and the second means bind.
   it('is null until some agent reports a session id', () => {
