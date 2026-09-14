@@ -12,6 +12,8 @@ import { AboutSection } from '@/features/settings/AboutSection';
 import { DangerZone } from '@/features/settings/DangerZone';
 import { HighlightOnLink } from '@/features/settings/HighlightOnLink';
 import { HostCard } from '@/features/settings/HostCard';
+import { ConnectionCheck } from '@/features/settings/ConnectionCheck';
+import { useSelectedConnection } from '@/state/connections';
 import { NotificationsSection } from '@/features/settings/NotificationsSection';
 import { SupportSection } from '@/features/settings/SupportSection';
 import { useLinkedSection } from '@/features/settings/useLinkedSection';
@@ -36,6 +38,7 @@ import { screenPadding, size, spacing } from '@/theme/tokens';
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const settings = useSettings();
+  const connection = useSelectedConnection();
   const { colors } = useTheme();
   useTabPressHaptic();
 
@@ -68,6 +71,7 @@ export default function SettingsScreen() {
             — so this answers the question an account header actually answers:
             which machine is all of this about. */}
         <HostCard />
+        {connection !== null && <ConnectionCheck key={connection.id} connection={connection} />}
 
         <SegmentedField<ThemePreference>
           label="Appearance"
