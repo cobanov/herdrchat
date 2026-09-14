@@ -47,10 +47,8 @@ describe('withSession', () => {
     // The transcript tail goes through streamLines. Binding only `exec` would
     // read the right workspaces from the wrong session's transcript.
     const { transport, commands } = recorder();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const line of withSession(transport, 'work').streamLines('tail -f x', 1000)) {
-      /* drain */
-    }
+    const stream = withSession(transport, 'work').streamLines('tail -f x', 1000);
+    await expect(stream[Symbol.asyncIterator]().next()).resolves.toEqual({ value: undefined, done: true });
     expect(commands[0]).toBe("export HERDR_SESSION='work'; tail -f x");
   });
 

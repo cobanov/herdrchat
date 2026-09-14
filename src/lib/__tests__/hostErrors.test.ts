@@ -13,7 +13,7 @@ import { exitCodeError, herdrErrorFrom } from '../herdr/client';
  * the process exits 1.
  */
 const REAL_STDERR =
-  '{"id":"cli:api:snapshot","error":{"code":"server_not_running","message":"no herdr server is running at /Users/cobanov/.config/herdr/herdr.sock; run `herdr` to start or attach it"}}';
+  '{"id":"cli:api:snapshot","error":{"code":"server_not_running","message":"no herdr server is running at /Users/testuser/.config/herdr/herdr.sock; run `herdr` to start or attach it"}}';
 
 describe('herdrErrorFrom', () => {
   it('pulls the code out of the envelope herdr actually writes', () => {
