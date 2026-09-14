@@ -80,6 +80,7 @@ export default function ThreadScreen() {
    * list grows rather than only when someone scrolls.
    */
   const pinnedToBottom = useRef(true);
+  const anchorAfterControlsResize = useRef(false);
   const viewportHeight = useRef(0);
   const scrollOffset = useRef(0);
   // Measured height of the floating control stack, so the list can reserve
@@ -422,13 +423,6 @@ export default function ThreadScreen() {
               contentContainerStyle={{
                 paddingHorizontal: screenPadding,
                 paddingTop: spacing.sm,
-                // Room for the floating controls that overlay the list. Measured
-                // rather than guessed, because the blocked bar changes the height
-                // and a wrong value either clips the newest bubble or leaves a gap.
-                // The extra step is breathing room: the live-preview bubble grows
-                // while the agent writes, and landing flush against the composer
-                // reads as clipped even when it technically isn't.
-                paddingBottom: controlsHeight + spacing.lg,
               }}
               /**
                * The fix for "the chat isn't at the bottom".
@@ -472,6 +466,12 @@ export default function ThreadScreen() {
                * the flag can be honest without waiting for a finger.
                */
               onContentSizeChange={(_width, height) => {
+                if (anchorAfterControlsResize.current) {
+                  anchorAfterControlsResize.current = false;
+                  restoreBottom();
+                  setAtBottom(true);
+                  return;
+                }
                 const distance = height - scrollOffset.current - viewportHeight.current;
                 setAtBottom(distance <= BOTTOM_SLACK);
               }}
@@ -515,7 +515,15 @@ export default function ThreadScreen() {
                 </View>
               )}
               ListFooterComponent={
-                <View style={{ paddingTop: waiting ? spacing.md : 0 }}>
+                <View
+                  style={{
+                    paddingTop: waiting ? spacing.md : 0,
+                    // Keep the overlay clearance in the measured footer.
+                    // FlashList does not re-anchor for a container-padding-only
+                    // change, so a growing composer otherwise covers the last
+                    // bubble even though its new height has been measured.
+                    paddingBottom: controlsHeight + spacing.lg,
+                  }}>
                   {waiting &&
                     (thread.livePreview !== null ? (
                       <LivePreviewBubble text={thread.livePreview} />
@@ -565,13 +573,20 @@ export default function ThreadScreen() {
             The controls OVERLAY the list rather than sitting in a row beneath it.
             That is what gives the glass something to refract: messages scroll
             underneath the pill instead of stopping above a flat bar. It is also why
-            the list carries a matching bottom padding.
+            the list footer carries matching clearance.
           */}
           {/* No composer without a host to send to: a text field that cannot
               deliver anything is a promise the screen can't keep. */}
           {!hostGone && (
             <View
-              onLayout={(event) => setControlsHeight(event.nativeEvent.layout.height)}
+              onLayout={(event) => {
+                const height = event.nativeEvent.layout.height;
+                if (height === controlsHeight) return;
+                // Wait until the matching footer has actually been laid out.
+                // Scrolling here still uses the previous, shorter content size.
+                anchorAfterControlsResize.current = pinnedToBottom.current;
+                setControlsHeight(height);
+              }}
               style={{
                 position: 'absolute',
                 left: 0,
