@@ -4,34 +4,37 @@
 # chat list at the end is itself the assertion that SSH, the host key pin, and
 # `herdr status server` all worked end to end.
 #
-# Needs HOST, USERNAME and SSH_KEY in the environment — see .maestro/README.md.
+# Needs HOST, USERNAME and SSH_KEY in the environment, see .maestro/README.md.
 appId: dev.herdr.HerdrChat
-env:
-  HOST: 127.0.0.1
-  PORT: "22"
-  USERNAME: ""
-  SSH_KEY: ""
 ---
+- stopApp
 - launchApp
+- waitForAnimationToEnd
 - assertVisible: "Chats"
 
 - tapOn:
     id: "server-switcher"
-- tapOn: "Add a server"
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible:
+      id: "server-demo"
+    timeout: 10000
+- tapOn: "Add a host"
 
 - tapOn:
     id: "field-name"
 - inputText: "test-host"
+- assertVisible: "test-host"
 - tapOn:
     id: "field-host"
 - inputText: ${HOST}
 - tapOn:
     id: "field-username"
 - inputText: ${USERNAME}
+- assertVisible: ${USERNAME}
 
 # Scroll first: tapOn does not scroll, and tapping a field that is below the
 # fold leaves focus where it was, so the key ends up appended to the username.
-- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "field-secret"
@@ -39,10 +42,35 @@ env:
 # Password is the default, so the key path has to be selected: without this the
 # key below is typed into the password field and the test fails for the wrong reason.
 - tapOn: "Private key"
+- scrollUntilVisible:
+    element:
+      text: '(?s)OpenSSH private key.*BEGIN.*'
+    direction: DOWN
 - tapOn:
-    id: "field-secret"
-- inputText: ${SSH_KEY}
-- hideKeyboard
+    text: '(?s)OpenSSH private key.*BEGIN.*'
+- setClipboard: ${SSH_KEY}
+- pasteText
+# Drag the outer form at its right margin, not the multiline key's own scroll
+# view. This dismisses the keyboard before XCTest searches below the key.
+- swipe:
+    start: "98%, 50%"
+    end: "98%, 20%"
+    duration: 400
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: "field-herdr-path"
+    direction: DOWN
+- tapOn:
+    id: "field-herdr-path"
+- eraseText
+- inputText: ${HERDR_PATH}
+- assertVisible: ${HERDR_PATH}
+# Submit the single-line field before looking for the button. XCTest reports
+# controls behind the keyboard as visible, so a tap there would type a letter.
+- pressKey: enter
+- waitForAnimationToEnd
 
 - scrollUntilVisible:
     element:
@@ -61,4 +89,7 @@ env:
     direction: DOWN
 - tapOn:
     id: "save-server"
-- assertVisible: "Chats"
+- assertVisible: "Hosts"
+- tapOn: "Chats"
+- assertVisible:
+    id: "server-switcher"

@@ -1,0 +1,31 @@
+# A visual regression fixture for the floating composer. Inspect the screenshot:
+# the whole final HELLO bubble, including its timestamp, must clear the draft.
+# Accessibility visibility alone does not detect one view covering another.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- tapOn:
+    id: 'chat-row-${WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. HELLO,.*'
+    timeout: 20000
+- tapOn:
+    id: composer-input
+- inputText: Draft
+- eraseText
+- setClipboard: "Draft line one\nDraft line two\nDraft line three"
+- pasteText
+- waitForAnimationToEnd
+- assertVisible:
+    id: composer-send
+    enabled: true
+- assertVisible: 'Agent message. HELLO,.*'
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: composer-multiline
+# Never send this fixture. Discard the unsent draft by leaving the route.
+- tapOn:
+    id: thread-back
+- assertVisible: Chats

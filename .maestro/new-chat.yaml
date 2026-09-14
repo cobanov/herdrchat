@@ -1,7 +1,7 @@
 # The new-chat sheet: its fields, the permission-mode choice, and the two ways
 # out of it.
 #
-# Host-free on purpose. Everything asserted here is the sheet's own behaviour —
+# Host-free on purpose. Everything asserted here is the sheet's own behaviour,
 # what it accepts, what it disables, how it dismisses. Actually STARTING a chat
 # needs a reachable machine and belongs in a flow that takes credentials, the
 # way add-server.yaml does.
@@ -9,6 +9,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- waitForAnimationToEnd
 - assertVisible: "Chats"
 
 # `header-action` is the compose button. Matched by id, not by glyph: it renders
@@ -36,7 +37,7 @@ appId: dev.herdr.HerdrChat
 - inputText: "Maestro"
 
 # Dismissed by the button, not by `back` (iOS has no hardware back) and not by a
-# swipe — the button is the path VoiceOver and Switch Control actually have.
+# swipe, the button is the path VoiceOver and Switch Control actually have.
 - tapOn:
     id: "header-close"
 - assertVisible: "Chats"

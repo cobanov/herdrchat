@@ -9,10 +9,11 @@ appId: dev.herdr.HerdrChat
 # (clearState would restart cleanly but also wipes the dev client's bundler URL.)
 - stopApp
 - launchApp
+- waitForAnimationToEnd
 - assertVisible: "Chats"
 
 # The host switcher sits under the title and is the only way to change hosts from
-# the primary screen. It pushes the Hosts TAB — not a sheet, so there is no close
+# the primary screen. It pushes the Hosts TAB, not a sheet, so there is no close
 # button afterwards and the tab bar is the way back. This flow asserted a
 # "Servers" screen dismissed by `header-close` until the tab redesign, and went
 # on failing quietly because nobody re-ran it.
@@ -25,9 +26,10 @@ appId: dev.herdr.HerdrChat
 # "Settings" from Hosts matches one element; tapping it from Settings would also
 # match the large title. Reordering these steps reintroduces that ambiguity.
 - tapOn: "Settings"
-# A row only Settings renders, rather than the word "Settings" — the tab bar
+# A row only Settings renders, rather than the word "Settings", the tab bar
 # shows that from anywhere, so it would pass against a screen that never loaded.
-- assertVisible: "Cached messages"
+- assertVisible:
+    id: "toggle-tool-activity"
 
 - tapOn: "Chats"
 - assertVisible: "Chats"

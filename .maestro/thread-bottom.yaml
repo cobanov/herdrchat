@@ -1,0 +1,40 @@
+# Use a disposable chat whose final assistant reply is HELLO.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- tapOn:
+    id: 'chat-row-${WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. HELLO,.*'
+    timeout: 20000
+- assertNotVisible:
+    id: 'jump-to-bottom'
+- swipe:
+    start: '25%, 35%'
+    end: '25%, 75%'
+    duration: 500
+- assertVisible:
+    id: 'jump-to-bottom'
+- tapOn:
+    id: 'jump-to-bottom'
+- waitForAnimationToEnd
+- assertVisible: 'Agent message. HELLO,.*'
+- tapOn:
+    id: 'thread-reload'
+- extendedWaitUntil:
+    visible: 'Agent message. HELLO,.*'
+    timeout: 10000
+- assertNotVisible:
+    id: 'jump-to-bottom'
+- tapOn:
+    id: 'thread-back'
+- tapOn:
+    id: 'chat-row-${WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. HELLO,.*'
+    timeout: 10000
+- assertNotVisible:
+    id: 'jump-to-bottom'
+- takeScreenshot: thread-bottom
