@@ -127,7 +127,7 @@ describe('model naming', () => {
   });
 
   it('falls back to the raw id rather than inventing one', () => {
-    expect(modelDisplayName('some-internal-build')).toBe('Some');
+    expect(modelDisplayName('some-internal-build')).toBe('some-internal-build');
     expect(modelDisplayName(null)).toBeNull();
   });
 });

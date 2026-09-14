@@ -17,6 +17,8 @@ export interface SessionMeta {
 export function modelDisplayName(model: string | null): string | null {
   if (model === null || model.length === 0) return null;
   const base = model.split('[')[0] ?? model; // drop a "[1m]" context-window suffix
+  // Non-Claude model ids are already meaningful, including decimal versions.
+  if (!base.startsWith('claude-')) return base;
   const noPrefix = base.startsWith('claude-') ? base.slice('claude-'.length) : base;
   const tokens = noPrefix.split('-').filter((token) => token.length > 0);
   const family = tokens[0];

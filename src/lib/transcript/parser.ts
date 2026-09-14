@@ -1,4 +1,5 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
+import { codexEntry } from './codex';
 
 /**
  * Turns Claude Code transcript JSONL (one JSON object per line) into chat
@@ -51,6 +52,7 @@ export function parseTranscriptEntry(
 ): TranscriptEntry {
   const raw = parseJson(line);
   if (raw === null) return EMPTY_ENTRY;
+  if (isCodex(raw)) return codexEntry(raw, fallbackId(line), agentLabel);
   return { message: messageFrom(raw, line, agentLabel), meta: metaFrom(raw) };
 }
 
@@ -64,8 +66,7 @@ export function parseTranscriptLine(
   line: string,
   agentLabel: string | null = null
 ): ChatMessage | null {
-  const raw = parseJson(line);
-  return raw === null ? null : messageFrom(raw, line, agentLabel);
+  return parseTranscriptEntry(line, agentLabel).message;
 }
 
 /**
@@ -77,7 +78,12 @@ export function parseTranscriptLine(
  */
 export function assistantMeta(line: string): AssistantMeta | null {
   const raw = parseJson(line);
-  return raw === null ? null : metaFrom(raw);
+  if (raw === null) return null;
+  return isCodex(raw) ? codexEntry(raw, '', null).meta : metaFrom(raw);
+}
+
+function isCodex(raw: Record<string, unknown>): boolean {
+  return raw.type === 'response_item' || raw.type === 'event_msg' || raw.type === 'turn_context';
 }
 
 /**
