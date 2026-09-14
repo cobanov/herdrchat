@@ -162,6 +162,15 @@ export function parseInline(text: string): InlineSpan[] {
     const match = pattern.exec(text);
     if (match === null) break;
 
+    // Underscores inside identifiers are literal, not emphasis delimiters.
+    if (match[11] !== undefined && (
+      /[\p{L}\p{N}_]/u.test(text[match.index - 1] ?? '') ||
+      /[\p{L}\p{N}_]/u.test(text[match.index + match[0].length] ?? '')
+    )) {
+      pattern.lastIndex = match.index + 1;
+      continue;
+    }
+
     if (match.index > cursor) {
       spans.push({ kind: 'text', text: text.slice(cursor, match.index) });
     }

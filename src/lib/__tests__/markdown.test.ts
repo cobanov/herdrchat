@@ -79,6 +79,21 @@ describe('block parsing', () => {
 });
 
 describe('inline parsing', () => {
+  it('keeps underscores inside identifiers literal', () => {
+    expect(parseInline('CODEX_PHONE_OK and snake_case_name')).toEqual([
+      { kind: 'text', text: 'CODEX_PHONE_OK and snake_case_name' },
+    ]);
+    expect(parseInline('_italic_')).toEqual([{ kind: 'italic', text: 'italic' }]);
+    expect(parseInline('ürün_adı_test _italic_ **bold**')).toEqual([
+      { kind: 'text', text: 'ürün_adı_test ' },
+      { kind: 'italic', text: 'italic' },
+      { kind: 'text', text: ' ' },
+      { kind: 'bold', text: 'bold' },
+    ]);
+    expect(parseInline('_literal_suffix')).toEqual([
+      { kind: 'text', text: '_literal_suffix' },
+    ]);
+  });
   it('reads bold, italic, code and links', () => {
     expect(parseInline('a **b** c `d` [e](https://x.dev) *f*')).toEqual([
       { kind: 'text', text: 'a ' },
