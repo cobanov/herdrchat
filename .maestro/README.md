@@ -18,6 +18,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `composer` | multiline draft, keyboard and final-message clearance screenshot | **yes**, final reply `HELLO` |
 | `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
+| `codex-thread` | exact Codex history, same-folder isolation, reload and phone delivery | **yes**, two disposable Codex sessions |
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
 without a host, that is those flows doing their job, not a broken suite.
@@ -40,6 +41,25 @@ process in a workspace on a real machine. A flow that runs against a live host
 must not have that as its failure mode, so the swipe is verified by hand.
 
 ## Credentials
+
+`codex-thread.yaml` requires two disposable Codex sessions in the same folder.
+Install the official integration with `herdr integration install codex`, then
+start each session with `herdrchat-codex` inside its own Herdr pane. Confirm
+`herdr agent list --json` reports different native session IDs. Give the primary
+a table/code rendering prompt ending in `RENDERDONE`, and ask the secondary to
+reply exactly `CODEX_BETA`. Run with the test host already selected:
+
+```bash
+maestro test -e PRIMARY_WORKSPACE_ID='<primary-id>' \
+  -e SECONDARY_WORKSPACE_ID='<secondary-id>' .maestro/codex-thread.yaml
+```
+
+This flow sends one harmless prompt to the primary. Recreate that fixture before
+repeating the flow, so an old identical reply cannot satisfy its assertion.
+For session rotation, issue `/new` in the disposable primary pane, verify its
+reported native ID changes, and check that only its new conversation appears.
+Do not guess a transcript by folder or latest modification time. Inspect every
+published screenshot, and keep raw artifacts outside the repository.
 
 `add-server.yaml` needs a real host, because the whole point of that flow is
 that the connection test actually connects. It reads them from the environment

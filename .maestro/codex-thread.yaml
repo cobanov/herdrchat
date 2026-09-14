@@ -1,0 +1,75 @@
+# Two disposable Codex chats in ONE folder, already bound to distinct session IDs.
+# Primary must have a final RENDERDONE reply, secondary a CODEX_BETA reply.
+# This flow sends exactly one harmless prompt to PRIMARY_WORKSPACE_ID.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- tapOn:
+    id: 'chat-row-${SECONDARY_WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. CODEX_BETA,.*'
+    timeout: 20000
+- tapOn:
+    id: thread-reload
+- extendedWaitUntil:
+    notVisible: '.*# AGENTS.md instructions.*'
+    timeout: 20000
+- extendedWaitUntil:
+    visible: 'Agent message. CODEX_BETA,.*'
+    timeout: 20000
+- assertNotVisible: '.*# AGENTS.md instructions.*'
+- assertNotVisible: 'Agent message.*RENDERDONE.*'
+- waitForAnimationToEnd
+- takeScreenshot: codex-secondary
+- tapOn:
+    id: thread-back
+- tapOn:
+    id: 'chat-row-${PRIMARY_WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message.*RENDERDONE.*'
+    timeout: 20000
+- assertNotVisible: 'Agent message. CODEX_BETA,.*'
+- assertNotVisible:
+    id: jump-to-bottom
+- tapOn:
+    id: thread-reload
+- extendedWaitUntil:
+    visible: 'Agent message.*RENDERDONE.*'
+    timeout: 20000
+- tapOn:
+    id: composer-input
+- inputText: 'Phone delivery test. No tools or file access. Reply exactly CODEX_MOBILE_FINAL.'
+- tapOn:
+    id: composer-send
+- extendedWaitUntil:
+    visible: 'Agent message. CODEX_MOBILE_FINAL,.*'
+    timeout: 60000
+- tapOn:
+    id: thread-back
+- extendedWaitUntil:
+    visible: '.*CODEX_MOBILE_FINAL.*'
+    timeout: 20000
+- tapOn:
+    id: 'chat-row-${PRIMARY_WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. CODEX_MOBILE_FINAL,.*'
+    timeout: 20000
+- assertNotVisible: '.*Check the host before retrying.*'
+- extendedWaitUntil:
+    notVisible: '.*Conversation updates paused.*'
+    timeout: 35000
+- waitForAnimationToEnd
+- takeScreenshot: codex-phone-delivery
+- tapOn:
+    id: thread-back
+- tapOn:
+    id: 'chat-row-${SECONDARY_WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: 'Agent message. CODEX_BETA,.*'
+    timeout: 20000
+- assertNotVisible: 'Agent message. CODEX_MOBILE_FINAL,.*'
+- assertNotVisible: '.*# AGENTS.md instructions.*'
+- waitForAnimationToEnd
+- takeScreenshot: codex-secondary-after-send
