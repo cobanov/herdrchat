@@ -4,6 +4,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { HerdrClient } from '@/lib/herdr/client';
 import type { AgentInfo, Snapshot } from '@/lib/herdr/models';
 import type { FileProbe } from '@/lib/transcript/store';
+import type { ChatMessage } from '@/lib/transcript/message';
+import { HerdrError } from '@/lib/herdr/protocol';
 import { seedMessages, rebind } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
@@ -11,6 +13,15 @@ let mockPolling = true;
 let mockLive = true;
 let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
 const mockCodexPath = jest.fn<Promise<string | null>, [string]>(async () => '/test/codex.jsonl');
+let mockRecentMessages: ChatMessage[] = [];
+let mockLiveReceipt = false;
+let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
+async function* mockTail() {
+  if (mockLiveReceipt) {
+    const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
+    yield { message, meta: null, consumedBytes: 100 };
+  }
+}
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => mockLive }));
 jest.mock('../useReportPresence', () => ({
@@ -33,11 +44,9 @@ jest.mock('@/lib/transcript/store', () => ({
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
     fileProbe = async () => mockProbe;
-    recent = async () => ({ messages: [], consumedBytes: 0, startByte: 0 });
+    recent = async () => ({ messages: mockRecentMessages, consumedBytes: 0, startByte: 0 });
     sessionMeta = async () => null;
-    *tail() {
-      yield* [];
-    }
+    tail = mockTail;
   },
 }));
 
@@ -80,6 +89,9 @@ beforeEach(() => {
   mockLive = true;
   mockProbe = { kind: 'size', bytes: 0 };
   mockCodexPath.mockResolvedValue('/test/codex.jsonl');
+  mockRecentMessages = [];
+  mockLiveReceipt = false;
+  mockEmitReceipt = null;
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -155,8 +167,55 @@ it('does not treat an unsupported agent as a Claude transcript', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(result.current.sessionState).toBe('unsupported');
+  expect(result.current.canSend).toBe(false);
   expect(result.current.loading).toBe(false);
   expect(seedMessages).not.toHaveBeenCalled();
+  await unmount();
+});
+
+it('keeps a repeated prompt visible until a NEW host message acknowledges it', async () => {
+  mockRecentMessages = [{ id: 'old-prompt', role: 'user', segments: [{ kind: 'text', text: 'again' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('again'); });
+  expect(result.current.messages).toHaveLength(2);
+  expect(result.current.messages[1]?.id).toMatch(/^local-/);
+  await unmount();
+});
+
+it('accepts a Codex transcript receipt even when terminal delivery cannot be observed', async () => {
+  mockLiveReceipt = true;
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  let rejectSend: ((error: Error) => void) | undefined;
+  jest.spyOn(client, 'sendPrompt').mockImplementation(() => new Promise((_resolve, reject) => { rejectSend = reject; }));
+  const keys = jest.spyOn(client, 'sendKeys');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('Phone prompt'); });
+  await act(async () => { mockEmitReceipt?.({ id: 'host-prompt', role: 'user', segments: [{ kind: 'text', text: 'Phone prompt' }],
+    timestamp: Date.now(), agentLabel: null, isSidechain: false }); });
+  await act(async () => { rejectSend?.(new HerdrError('agent_prompt_unverifiable', 'No composer observation')); await sent; });
+  expect(result.current.messages.map(message => message.id)).toEqual(['host-prompt']);
+  expect(result.current.error).toBeNull();
+  expect(result.current.failedIds.size).toBe(0);
+  expect(keys).not.toHaveBeenCalled();
+  await unmount();
+});
+
+it('never presses Enter again when a Codex send remains unverified', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
+  const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
+  const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('Not acknowledged yet'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(keys).not.toHaveBeenCalled();
+  expect(wait).not.toHaveBeenCalled();
+  expect(result.current.error).toContain('Check the host before retrying');
   await unmount();
 });
 

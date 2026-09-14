@@ -107,6 +107,9 @@ const TAIL_SILENCE_MS = 90_000;
  * it elapses the thread says it is waiting rather than showing nothing.
  */
 const NO_SESSION_GRACE_MS = 80_000;
+const CODEX_RECEIPT_WAIT_MS = 5_000;
+const RECEIPT_CHECK_MS = 100;
+const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
 
 export interface ThreadState {
@@ -222,6 +225,9 @@ export function useThread(
   // newer messages.
   const arrivals = useRef<ChatMessage[]>([]);
   const echoes = useRef<ChatMessage[]>([]);
+  const echoBaselines = useRef(new Map<string, Set<string>>());
+  const claimedReceipts = useRef(new Set<string>());
+  const confirmedEchoIds = useRef(new Set<string>());
   const seen = useRef<Set<string>>(new Set());
   /**
    * Where scroll-up reads from, and how far back it has already gone. Recorded
@@ -261,11 +267,20 @@ export function useThread(
   }, []);
 
   const rebuild = useCallback(() => {
-    // Drop echoes the transcript has now confirmed.
-    const confirmed = new Set(
-      arrivals.current.filter((m) => m.role === 'user').map((m) => displayText(m).trim())
-    );
-    echoes.current = echoes.current.filter((echo) => !confirmed.has(displayText(echo).trim()));
+    // Only a NEW host record can acknowledge a prompt. Matching all historical
+    // text made a second "again" disappear before it had even been sent.
+    echoes.current = echoes.current.filter((echo) => {
+      const before = echoBaselines.current.get(echo.id);
+      const receipt = arrivals.current.find(message => message.role === 'user' &&
+        !before?.has(message.id) && !claimedReceipts.current.has(message.id) &&
+        displayText(message).trim() === displayText(echo).trim());
+      if (receipt === undefined) return true;
+      claimedReceipts.current.add(receipt.id);
+      confirmedEchoIds.current.add(echo.id);
+      echoBaselines.current.delete(echo.id);
+      setError(previous => previous === CODEX_DELIVERY_NOTICE ? null : previous);
+      return false;
+    });
 
     if (echoes.current.length === 0) {
       setMessages([...arrivals.current]);
@@ -365,6 +380,9 @@ export function useThread(
   const resetHistory = useCallback(() => {
     arrivals.current = [];
     echoes.current = [];
+    echoBaselines.current.clear();
+    claimedReceipts.current.clear();
+    confirmedEchoIds.current.clear();
     olderSource.current = null;
     setReachedStart(false);
     seen.current = new Set();
@@ -816,11 +834,33 @@ export function useThread(
   const deliver = useCallback(
     async (text: string, echoId: string, polled: AgentInfo) => {
       if (client === null) return;
+      const deliverySig = boundSig.current;
+      const current = () => alive.current && deliverySig === boundSig.current;
+      const confirmed = () => confirmedEchoIds.current.has(echoId);
+      const awaitCodexReceipt = async () => {
+        const deadline = Date.now() + CODEX_RECEIPT_WAIT_MS;
+        while (current() && !confirmed() && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
+        }
+        if (current() && !confirmed()) {
+          setFailedIds(previous => new Set(previous).add(echoId));
+          setError(CODEX_DELIVERY_NOTICE);
+        }
+      };
       setIsSending(true);
       try {
         const pane = await currentPane(polled);
         const wasWorking = pane.agentStatus === 'working';
         const outcome = await client.sendPrompt(pane.paneId, text);
+        if (!current() || confirmed()) return;
+
+        if (pane.agent === 'codex' && outcome !== 'delivered') {
+          // Shared-service Codex TUIs may expose no observable composer state.
+          // The native transcript is stronger evidence than an idle PTY, and
+          // another Enter could submit twice. Wait for that receipt, never resend.
+          await awaitCodexReceipt();
+          return;
+        }
 
         if (outcome === 'stalled') {
           // The host watched and nothing moved. No guessing, no second Enter.
@@ -843,6 +883,12 @@ export function useThread(
           }
         }
       } catch (thrown) {
+        if (!current() || confirmed()) return;
+        if (polled.agent === 'codex' && thrown instanceof HerdrError &&
+            thrown.code === 'agent_prompt_unverifiable') {
+          await awaitCodexReceipt();
+          return;
+        }
         setFailedIds((previous) => new Set(previous).add(echoId));
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
@@ -855,7 +901,7 @@ export function useThread(
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0 || primaryPane === null || sending.current) return;
+      if (text.length === 0 || primaryPane === null || sending.current || loading || sessionState === 'unsupported') return;
       sending.current = true;
       const echo: ChatMessage = {
         id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -865,6 +911,7 @@ export function useThread(
         agentLabel: null,
         isSidechain: false,
       };
+      echoBaselines.current.set(echo.id, new Set(arrivals.current.map(message => message.id)));
       echoes.current.push(echo);
       rebuild();
       try {
@@ -873,7 +920,7 @@ export function useThread(
         sending.current = false;
       }
     },
-    [primaryPane, rebuild, deliver]
+    [primaryPane, rebuild, deliver, loading, sessionState]
   );
 
   const retry = useCallback(
@@ -983,7 +1030,7 @@ export function useThread(
 
   return {
     loading,
-    canSend: client !== null && primaryPane !== null,
+    canSend: client !== null && primaryPane !== null && !loading && sessionState !== 'unsupported',
     messages,
     status,
     agents,
