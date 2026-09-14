@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
+import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
 import { useSettings } from '@/state/settings';
@@ -50,16 +51,26 @@ export interface WorkspacesState {
 }
 
 const POLL_INTERVAL_MS = 3000;
+/**
+ * The poll's rate while the host's event stream is delivering. Events carry
+ * every change the list cares about; this is the safety net for the ones a
+ * dropped stream would lose, and it should almost never be what updates a row.
+ */
+const LIVE_POLL_INTERVAL_MS = 30_000;
+/** Coalesce a burst of events (working → done → idle) into one refresh. */
+const EVENT_DEBOUNCE_MS = 250;
 
 /**
- * Polls the herdr host for workspaces and agent statuses and publishes chat
- * rows.
+ * Publishes chat rows: workspaces, agent statuses and per-workspace "last
+ * message" previews, refreshed in ONE batched round-trip so rows read like
+ * Messages — title, snippet, time.
  *
- * Polling rather than herdr's socket event stream: the transport is one SSH
- * connection running shell commands, and a 3-second poll is both simpler and
- * plenty responsive for a phone. Each poll also refreshes the per-workspace
- * "last message" previews in ONE batched round-trip, so rows read like Messages
- * — title, snippet, time.
+ * Refreshed on the host's word where the host can give it: one
+ * `events.subscribe` stream over the SSH connection says when an agent's status
+ * flips, a turn ends or a workspace comes and goes, and each event triggers a
+ * refresh. The poll loop stays underneath as a safety net, slowed right down
+ * while the stream is live and back at its old rate when it is not (a host
+ * with no socket bridge, or a stream between reconnects).
  */
 export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const [summaries, setSummaries] = useState<ChatSummary[]>([]);
@@ -80,6 +91,12 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
    * failing SSH round-trip every three seconds forever, on a metered radio.
    */
   const failures = useRef(0);
+
+  /** Every agent pane the last refresh saw; what the event stream watches. */
+  const [paneIds, setPaneIds] = useState<string[]>([]);
+  /** Asks the running loop for a refresh soon. Set by the effect that owns the loop. */
+  const kick = useRef<() => void>(() => undefined);
+  const live = useHostEvents(client, paneIds, polling, () => kick.current());
 
   const previews = useRef(new Map<string, ChatSummary['preview']>());
   const previewSessions = useRef(new Map<string, string>());
@@ -112,6 +129,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       if (!alive.current) return false;
 
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
+      setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
       setHerdrMissing(false);
       setServerStopped(false);
@@ -136,22 +154,40 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     // route, so without the gate both loops ran at once.
     if (client === null || !polling) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    let again = false;
 
     // A chained timeout rather than an interval: an interval on a slow host
     // stacks overlapping polls, and each one costs a round-trip.
     const loop = async () => {
+      if (inFlight) {
+        // A kick landed mid-refresh. Its cause may postdate what that refresh
+        // read, so run once more when it finishes rather than dropping it.
+        again = true;
+        return;
+      }
+      inFlight = true;
       const failed = await refresh();
+      inFlight = false;
       if (!alive.current) return;
       failures.current = failed ? failures.current + 1 : 0;
-      timer = setTimeout(() => void loop(), backoffDelay(POLL_INTERVAL_MS * pollScale, failures.current));
+      const base = live ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
+      schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
+      again = false;
     };
+    const schedule = (delayMs: number) => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => void loop(), delayMs);
+    };
+    kick.current = () => schedule(EVENT_DEBOUNCE_MS);
     void loop();
 
     return () => {
       alive.current = false;
+      kick.current = () => undefined;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [client, refresh, polling, pollScale]);
+  }, [client, refresh, polling, pollScale, live]);
 
   return {
     summaries,

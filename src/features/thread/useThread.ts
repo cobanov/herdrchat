@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { backoffDelay } from '@/lib/poll';
+import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useReportPresence } from './useReportPresence';
 import { useSettings } from '@/state/settings';
@@ -72,6 +73,16 @@ const OLDER_EMPTY_PAGES = 3;
 
 const STATUS_POLL_MS = 2000;
 /**
+ * The status poll's rate while the host's event stream is live and no agent
+ * is working. Status flips and turn ends arrive as events and trigger a poll
+ * at once; this only catches what a dropped stream would lose. While an agent
+ * IS working the fast rate stays, because the streaming preview and the tail
+ * watchdog are screen reads that no event announces.
+ */
+const LIVE_POLL_MS = 30_000;
+/** Coalesce a burst of events (working → done → idle) into one poll. */
+const EVENT_DEBOUNCE_MS = 250;
+/**
  * How long a tail may produce nothing while its agent is WORKING before it is
  * assumed dead and restarted.
  *
@@ -90,7 +101,7 @@ const TAIL_SILENCE_MS = 90_000;
  * someone whose id is about to arrive. This is comfortably past that, and until
  * it elapses the thread says it is waiting rather than showing nothing.
  */
-const NO_SESSION_POLLS = 40; // × 2s ≈ 80 seconds
+const NO_SESSION_GRACE_MS = 80_000;
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed — check the agent.';
 
 export interface ThreadState {
@@ -177,12 +188,21 @@ export function useThread(
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
   const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing'>('ok');
-  const noSessionPolls = useRef(0);
+  /** When the thread first saw an agent without a session id, or null while all have one. */
+  const noSessionSince = useRef<number | null>(null);
   const polling = usePollGate();
   // The user's own battery/data tradeoff, applied on top of each screen's rate.
   const pollScale = useSettings((state) => state.pollScale);
   /** Consecutive failed polls, for the backoff. Reset by any success. */
   const failures = useRef(0);
+  /** Asks the running status loop to poll soon. Set by the effect that owns it. */
+  const kick = useRef<() => void>(() => undefined);
+  const streamLive = useHostEvents(
+    client,
+    agents.map((agent) => agent.paneId),
+    polling,
+    () => kick.current()
+  );
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
   // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
@@ -498,8 +518,23 @@ export function useThread(
     // resume — which is what remounting this effect does.
     if (client === null || !polling) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    let again = false;
+
+    const schedule = (delayMs: number) => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => void poll(), delayMs);
+    };
 
     const poll = async () => {
+      if (inFlight) {
+        // A kick landed mid-poll. Its cause may postdate what this poll read,
+        // so go once more when it finishes rather than dropping it.
+        again = true;
+        return;
+      }
+      inFlight = true;
+      let keepFast = true;
       try {
         const snapshot = await client.snapshot();
         if (!alive.current) return;
@@ -515,10 +550,10 @@ export function useThread(
         // stays empty and blames nothing. Setting the same value twice is a
         // no-op in React, so this does not re-render on every poll.
         if (conversational.length > 0 && sig === null) {
-          noSessionPolls.current += 1;
-          setSessionState(noSessionPolls.current >= NO_SESSION_POLLS ? 'missing' : 'waiting');
+          const since = (noSessionSince.current ??= Date.now());
+          setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
         } else {
-          noSessionPolls.current = 0;
+          noSessionSince.current = null;
           setSessionState('ok');
         }
         if (sig !== null && sig !== boundSig.current) {
@@ -566,6 +601,7 @@ export function useThread(
 
         const primary = live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
         const working = live.some((agent) => agent.agentStatus === 'working');
+        keepFast = working;
         if (working && primary !== undefined) {
           const raw = await client.paneVisible(primary.paneId, 30);
           setLivePreview(extractLivePreview(raw));
@@ -608,24 +644,40 @@ export function useThread(
         failures.current += 1;
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
+        inFlight = false;
         // The banner stays up throughout: backing off must never read as
         // recovery. Only the interval changes.
         if (alive.current) {
-          timer = setTimeout(() => void poll(), backoffDelay(STATUS_POLL_MS * pollScale, failures.current));
+          const base = streamLive && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
+          schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
+          again = false;
         }
       }
     };
+    kick.current = () => schedule(EVENT_DEBOUNCE_MS);
     void poll();
 
     // Captured now: by cleanup time `tails.current` may be a different map, and
     // aborting the wrong one leaves real tails running against a dead screen.
     const live = tails.current;
     return () => {
+      kick.current = () => undefined;
       if (timer !== null) clearTimeout(timer);
       for (const controller of live.values()) controller.abort();
       live.clear();
     };
-  }, [client, db, connectionId, workspaceId, startTail, resetHistory, clearBlockedPending, polling, pollScale]);
+  }, [
+    client,
+    db,
+    connectionId,
+    workspaceId,
+    startTail,
+    resetHistory,
+    clearBlockedPending,
+    polling,
+    pollScale,
+    streamLive,
+  ]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
     ? 'blocked'
