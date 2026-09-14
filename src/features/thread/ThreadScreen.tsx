@@ -28,6 +28,7 @@ import { StopButton } from '@/features/thread/StopButton';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
+import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
@@ -149,6 +150,7 @@ export default function ThreadScreen() {
     setInstallError(null);
     void client
       .installIntegration(agentKind)
+      .then(() => agentKind === 'codex' ? installCodexLauncher(client.transport) : undefined)
       .then(() => {
         // Deliberately no success banner. The integration binds at SessionStart,
         // so this agent keeps reporting nothing until it is restarted, and a

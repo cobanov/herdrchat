@@ -115,7 +115,7 @@ export function ThreadPlaceholder({
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
             Install the integration, then resume this same session on the host when the agent is idle.
             The integration reports at session start. Your running agent will not be restarted by this button.
-            {agentKind === 'codex' ? ' In Codex, review and trust the Herdr SessionStart hook in /hooks if prompted.' : ''}
+            {agentKind === 'codex' ? ' In Codex, find the exact session id with /status. When idle, exit and run herdrchat-codex resume <session-id>. Review the Herdr hook in /hooks if prompted. The launcher carries this pane’s identity to Codex’s shared service.' : ''}
           </Text>
           {onInstallIntegration !== undefined && (
             <View style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}>
@@ -145,7 +145,7 @@ export function ThreadPlaceholder({
           </Text>
           {agentKind === 'codex' && (
             <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
-              Codex identifies its session through the Herdr SessionStart hook. An already-running session may need to be resumed after the hook is installed and trusted.
+              Codex identifies its session through the Herdr SessionStart hook. Shared-service sessions need the herdrchat-codex launcher on the host. An already-running session must be resumed through it when idle.
             </Text>
           )}
         </>
