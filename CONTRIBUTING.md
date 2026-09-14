@@ -12,9 +12,10 @@ npm ci
 npm run typecheck    # zero errors
 npm run lint         # zero errors
 npm test             # src/lib and hooks
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-CI runs these same checks on Node.js 22. A local pass is not a substitute for
+CI runs these same checks with Node.js 22 and Python 3. A local pass is not a substitute for
 checking the CI result on your pull request.
 
 For anything that changes what a screen looks like, also open the app in both

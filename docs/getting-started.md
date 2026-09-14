@@ -75,6 +75,7 @@ Run the checks before contributing:
 npm run typecheck
 npm run lint
 npm test
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 UI flows and their host fixtures are documented in [.maestro/README.md](../.maestro/README.md).
@@ -88,7 +89,10 @@ Push notifications require your own Apple **APNs auth key**, not an App Store
 Connect API key. The app registers its device token on your host over SSH;
 the [host-side notifier](../scripts/herdr-apns-notifier.py) sends notifications
 directly to APNs. Its header documents the environment variables and usage.
-Keep keys on your host and out of the repository.
+Set `APNS_KEY_ID`, `APNS_TEAM_ID` and `APNS_KEY_PATH` explicitly in
+`~/.config/herdrchat/apns.env` or the environment. The watcher does not search
+for keys or reuse App Store Connect credentials. Keep keys on your host and
+out of the repository. Verify delivery on a physical iPhone before relying on it.
 
 ## Beta limitations
 

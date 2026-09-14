@@ -17,8 +17,8 @@ every token it finds there.
 Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
     APNS_KEY_ID     10-char Key ID of your APNs auth key (required).
     APNS_TEAM_ID    Apple Team ID (required).
-    APNS_KEY_PATH   Path to the AuthKey_XXXX.p8 (default: first .p8 under
-                    ~/.config/herdrchat/ or ~/.appstoreconnect/private_keys/).
+    APNS_KEY_PATH   Explicit path to your APNs AuthKey_XXXX.p8 (required).
+                    App Store Connect API keys cannot be used for APNs.
     APNS_BUNDLE_ID  App bundle id / apns-topic (default dev.herdr.HerdrChat).
     APNS_ENV        "production" (default, TestFlight/App Store) or "sandbox".
     NOTIFY_ON       States to notify on (default "blocked,done").
@@ -54,18 +54,10 @@ def _load_env_file():
         os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
 
-def _find_key_path():
-    for base in (CONFIG_DIR, os.path.join(HOME, ".appstoreconnect", "private_keys")):
-        hits = sorted(glob.glob(os.path.join(base, "AuthKey_*.p8"))) or sorted(glob.glob(os.path.join(base, "*.p8")))
-        if hits:
-            return hits[0]
-    return None
-
-
 _load_env_file()
 KEY_ID = os.environ.get("APNS_KEY_ID")
 TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
-KEY_PATH = os.environ.get("APNS_KEY_PATH") or _find_key_path()
+KEY_PATH = os.environ.get("APNS_KEY_PATH")
 BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "dev.herdr.HerdrChat")
 APNS_HOST = "api.sandbox.push.apple.com" if os.environ.get("APNS_ENV") == "sandbox" else "api.push.apple.com"
 NOTIFY_ON = {s.strip() for s in os.environ.get("NOTIFY_ON", "blocked,done").split(",") if s.strip()}
@@ -178,8 +170,9 @@ def workspace_labels():
 
 
 def main():
-    if not KEY_ID or not KEY_PATH or not os.path.exists(KEY_PATH or ""):
-        sys.exit("APNS_KEY_ID and a readable APNS_KEY_PATH (.p8) are required — see script header.")
+    if not KEY_ID or not TEAM_ID or not KEY_PATH or not os.path.isfile(KEY_PATH) or not os.access(KEY_PATH, os.R_OK):
+        sys.exit("Set APNS_KEY_ID, APNS_TEAM_ID and a readable APNS_KEY_PATH for an APNs auth key. "
+                 "App Store Connect API keys are not supported. See the script header.")
     os.makedirs(TOKENS_DIR, exist_ok=True)
     print(f"[apns] watching herdr; key {KEY_ID}, topic {BUNDLE_ID}, host {APNS_HOST}", file=sys.stderr)
     last = {}

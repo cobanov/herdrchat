@@ -1,14 +1,5 @@
-# The gates from CLAUDE.md, run for us instead of by us.
-#
-# These three are what the project already asks a contributor to run before
-# opening a pull request. Running them here is what makes that ask checkable:
-# ten branches landed at once before this existed, each claiming green on its
-# own, and nobody had run the three of them against the merged tree.
-#
-# Deliberately no native build. An iOS archive needs a macOS runner, signing
-# credentials and about fifteen minutes, and it would tell us nothing these
-# three don't — the things a build catches that a typecheck doesn't are native
-# config changes, which are reviewed by hand anyway.
+# App checks and dependency-free host-script tests.
+# Native builds and physical-device acceptance are separate release checks.
 name: CI
 
 on:
@@ -48,3 +39,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Host script tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
