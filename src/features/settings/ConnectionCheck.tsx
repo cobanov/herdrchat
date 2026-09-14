@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 
-import { ActionRow, Section } from '@/components/SettingsList';
+import { ActionRow, ROW_INSET, Section } from '@/components/SettingsList';
 import { Text } from '@/components/Text';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, type ServerConnection } from '@/state/connections';
+import { spacing } from '@/theme/tokens';
 
 export function ConnectionCheck({ connection }: { connection: ServerConnection }) {
   const router = useRouter();
@@ -45,6 +46,7 @@ export function ConnectionCheck({ connection }: { connection: ServerConnection }
         <Text
           variant="footnote"
           color={failed ? 'attention' : 'secondary'}
+          style={{ paddingHorizontal: ROW_INSET, paddingVertical: spacing.sm }}
           testID="settings-connection-result">
           {result}
         </Text>
