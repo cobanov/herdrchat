@@ -96,7 +96,17 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   const [paneIds, setPaneIds] = useState<string[]>([]);
   /** Asks the running loop for a refresh soon. Set by the effect that owns the loop. */
   const kick = useRef<() => void>(() => undefined);
-  const live = useHostEvents(client, paneIds, polling, () => kick.current());
+  const forcePreviews = useRef(true);
+  const live = useHostEvents(client, paneIds, polling, () => {
+    // The event may report the final idle state after a fast turn. Its preview
+    // is still new, even though this agent is no longer working.
+    forcePreviews.current = true;
+    kick.current();
+  });
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
 
   const previews = useRef(new Map<string, ChatSummary['preview']>());
   const previewSessions = useRef(new Map<string, string>());
@@ -125,7 +135,9 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
 
       const store = new TranscriptStore(client.transport);
       invalidateStalePreviews(snapshot.agents, previews.current, previewSessions.current);
-      await refreshPreviews(store, snapshot.agents, previews.current, tick);
+      const force = forcePreviews.current;
+      forcePreviews.current = false;
+      await refreshPreviews(store, snapshot.agents, previews.current, tick, force);
       if (!alive.current) return false;
 
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
@@ -156,10 +168,12 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
+    let stopped = false;
 
     // A chained timeout rather than an interval: an interval on a slow host
     // stacks overlapping polls, and each one costs a round-trip.
     const loop = async () => {
+      if (stopped) return;
       if (inFlight) {
         // A kick landed mid-refresh. Its cause may postdate what that refresh
         // read, so run once more when it finishes rather than dropping it.
@@ -169,13 +183,14 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       inFlight = true;
       const failed = await refresh();
       inFlight = false;
-      if (!alive.current) return;
+      if (!alive.current || stopped) return;
       failures.current = failed ? failures.current + 1 : 0;
-      const base = live ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
+      const base = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
       schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
       again = false;
     };
     const schedule = (delayMs: number) => {
+      if (stopped) return;
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => void loop(), delayMs);
     };
@@ -183,11 +198,12 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     void loop();
 
     return () => {
+      stopped = true;
       alive.current = false;
       kick.current = () => undefined;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [client, refresh, polling, pollScale, live]);
+  }, [client, refresh, polling, pollScale]);
 
   return {
     summaries,
@@ -199,6 +215,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     // never made to wait out a penalty the user did not cause.
     refresh: useCallback(async () => {
       failures.current = 0;
+      forcePreviews.current = true;
       await refresh();
     }, [refresh]),
   };
@@ -236,14 +253,15 @@ export function buildSummaries(
  * preview-less workspaces refresh every poll; everything else joins a full sweep
  * every fifth poll, so steady-state traffic stays small.
  */
-async function refreshPreviews(
+export async function refreshPreviews(
   store: TranscriptStore,
   agents: readonly AgentInfo[],
   previews: Map<string, ChatSummary['preview']>,
-  tick: { current: number }
+  tick: { current: number },
+  force = false
 ): Promise<void> {
   tick.current += 1;
-  const fullSweep = tick.current % 5 === 1; // includes the very first poll
+  const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
 
   const byWorkspace = new Map<string, AgentInfo[]>();
   for (const agent of agents) {
@@ -260,11 +278,14 @@ async function refreshPreviews(
     // from the previous one's under the same project dir — so we never fall back
     // to the newest .jsonl here. The row shows its live status line instead of a
     // preview that might belong to a foreign conversation.
-    const agent = group.find((item) => item.focused && hasSessionId(item)) ?? group.find(hasSessionId);
+    const agent =
+      group.find((item) => item.focused && hasSessionId(item)) ?? group.find(hasSessionId);
     const sessionId = agent?.agentSession?.value ?? null;
     if (agent === undefined || sessionId === null) continue;
 
-    const active = group.some((item) => item.agentStatus !== 'idle' && item.agentStatus !== 'unknown');
+    const active = group.some(
+      (item) => item.agentStatus !== 'idle' && item.agentStatus !== 'unknown'
+    );
     if (!fullSweep && !active && previews.has(workspaceId)) continue;
 
     requests.push({ workspaceId, cwd: agent.cwd, sessionId });
