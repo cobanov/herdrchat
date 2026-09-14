@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Keyboard, ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
@@ -309,7 +309,7 @@ export default function ServerEditScreen() {
           paddingBottom: spacing.xxxl,
         }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
+        keyboardDismissMode="on-drag"
         // Without this the keyboard covers the submit button at the end of the
         // form, which is the one control the whole screen exists to reach.
         automaticallyAdjustKeyboardInsets>
@@ -361,7 +361,10 @@ export default function ServerEditScreen() {
               { value: 'privateKey', label: 'Private key' },
             ]}
             value={authKind}
-            onChange={invalidate(setAuthKind)}
+            onChange={(kind) => {
+              Keyboard.dismiss();
+              invalidate(setAuthKind)(kind);
+            }}
           />
           {authKind === 'privateKey' ? (
             <Field
