@@ -49,6 +49,17 @@ describe('Codex rollout history', () => {
       channel: 'analysis', content: [{ type: 'output_text', text: 'internal reasoning' }] }))).toBeNull();
   });
 
+  it('filters the shared app-server harness blocks without hiding a real prompt beside them', () => {
+    const input = (content: unknown[]) => line('response_item', { type: 'message', role: 'user', content });
+    const harness = [
+      { type: 'input_text', text: '# AGENTS.md instructions\n\n<INSTRUCTIONS>host rules</INSTRUCTIONS>' },
+      { type: 'input_text', text: '<environment_context>host details</environment_context>' },
+    ];
+    expect(parseTranscriptLine(input(harness))).toBeNull();
+    expect(displayText(parseTranscriptLine(input([...harness, { type: 'input_text', text: 'Real user prompt' }]))!))
+      .toBe('Real user prompt');
+  });
+
   it.each(['function_call', 'custom_tool_call'])('renders %s as tool activity', type => {
     const parsed = parseTranscriptLine(line('response_item', { type, call_id: 'call-1',
       name: 'exec_command', arguments: '{"cmd":"pwd"}', input: 'pwd' }));

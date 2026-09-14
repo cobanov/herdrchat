@@ -57,8 +57,8 @@ function responseMessage(
       if (role !== 'user' && role !== 'assistant') return null;
       // Internal analysis is not a user-facing assistant response.
       if (payload.channel === 'analysis') return null;
-      const text = contentText(payload.content);
-      if (!text.trim() || (role === 'user' && isHarnessMessage(text))) return null;
+      const text = contentText(payload.content, role === 'user');
+      if (!text.trim()) return null;
       return { role, segments: [{ kind: 'text', text }] };
     }
     case 'function_call':
@@ -85,14 +85,14 @@ function responseMessage(
   }
 }
 
-function contentText(content: unknown): string {
-  if (typeof content === 'string') return content;
+function contentText(content: unknown, omitHarness = false): string {
+  if (typeof content === 'string') return omitHarness && isHarnessMessage(content) ? '' : content;
   if (!Array.isArray(content)) return '';
   return content.flatMap((block: unknown) => {
     const value = record(block);
     if (value === null) return [];
     if (['input_text', 'output_text', 'text', 'summary_text'].includes(String(value.type))) {
-      return typeof value.text === 'string' ? [value.text] : [];
+      return typeof value.text === 'string' && !(omitHarness && isHarnessMessage(value.text)) ? [value.text] : [];
     }
     if (value.type === 'input_image') return ['[Image]'];
     return [];
@@ -101,7 +101,7 @@ function contentText(content: unknown): string {
 
 function isHarnessMessage(text: string): boolean {
   const trimmed = text.trim();
-  return trimmed.startsWith('# AGENTS.md instructions for ') ||
+  return /^# AGENTS\.md instructions(?: for [^\n]+)?\s*\n/.test(trimmed) ||
     /^<environment_context>[\s\S]*<\/environment_context>$/.test(trimmed) ||
     /^<permissions instructions>[\s\S]*<\/permissions instructions>$/.test(trimmed);
 }
