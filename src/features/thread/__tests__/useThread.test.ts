@@ -74,6 +74,7 @@ const snapshot = (agents: AgentInfo[]): Snapshot => ({
 });
 const db = {
   runAsync: jest.fn(async () => undefined),
+  withTransactionAsync: jest.fn(async (task: () => Promise<void>) => task()),
 } as unknown as SQLiteDatabase;
 const client = new HerdrClient({
   exec: async () => ({ ok: true, exitCode: 0, stdout: '', stderr: '' }),
@@ -235,6 +236,10 @@ it('reloads immediately even while the idle event stream is live', async () => {
   await act(async () => {
     await result.current.reload();
   });
+  expect(db.runAsync).toHaveBeenCalledWith(
+    'DELETE FROM messages WHERE connection_id = ? AND workspace_id = ?',
+    'host', 'chat'
+  );
   await act(async () => {
     jest.advanceTimersByTime(250);
   });

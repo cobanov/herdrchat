@@ -1016,11 +1016,17 @@ export function useThread(
     for (const controller of tails.current.values()) controller.abort();
     tails.current.clear();
     tailBeats.current.clear();
-    await db.runAsync(
-      'DELETE FROM tail_cursors WHERE connection_id = ? AND workspace_id = ?',
-      connectionId,
-      workspaceId
-    );
+    // Reload must replace the persisted messages too, otherwise a cold reopen
+    // resurrects stale parsed bubbles that the fresh host read has removed.
+    await db.withTransactionAsync(async () => {
+      for (const table of ['messages', 'tail_cursors']) {
+        await db.runAsync(
+          `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
+          connectionId,
+          workspaceId
+        );
+      }
+    });
     if (!alive.current) return;
     resetHistory();
     setLoading(true);
