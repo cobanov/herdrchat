@@ -17,7 +17,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "55",
+      "buildNumber": "56",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "versionCode": 55,
+      "versionCode": 56,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -43,9 +43,9 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
           "resizeMode": "contain",
-          "backgroundColor": "#FFFFFF",
+          "backgroundColor": "#1F1D2A",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1F1D2A"
           }
         }
       ],
