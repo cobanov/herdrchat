@@ -266,6 +266,14 @@ export function probeScript(herdr: string): string {
   ].join('; ');
 }
 
+/**
+ * Whether a command is the bridge probe. For canned hosts in tests, which count
+ * the commands a client runs and should not have to know the probe's text.
+ */
+export function isSocketProbe(command: string): boolean {
+  return command.includes('echo "BRIDGE $b"');
+}
+
 /** Exported for tests. */
 export function parseProbe(stdout: string): SocketRoute | null {
   let bridge: string | null = null;

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import { HerdrClient } from '../herdr/client';
 import { HerdrSocket } from '../herdr/socket';
 import type { HerdrTransport } from '../herdr/transport';
 
@@ -77,6 +78,14 @@ function cleanEnv(): NodeJS.ProcessEnv {
 
 live('herdr socket, live', () => {
   const socket = new HerdrSocket(localTransport, 'herdr');
+  const client = new HerdrClient(localTransport);
+
+  it('serves the client a snapshot and an agent list without the CLI', async () => {
+    const snapshot = await client.snapshot();
+    expect(snapshot.version).toMatch(/^\d+\.\d+/);
+    const agents = await client.agents();
+    expect(Array.isArray(agents)).toBe(true);
+  });
 
   it('finds a bridge and the socket path', async () => {
     const route = await socket.detect();
@@ -151,16 +160,10 @@ live('herdr socket, live', () => {
         await Promise.race([ready, new Promise((_, reject) => setTimeout(() => reject(new Error('agent never became idle')), 45000))]);
         seen.length = 0;
 
-        const prompted = (await socket.call(
-          'agent.prompt',
-          {
-            target: pane,
-            text: 'Reply with exactly the word OK and nothing else.',
-            wait: { until: ['idle', 'done'], timeout_ms: 60000 },
-          },
-          70000
-        )) as { delivery: string };
-        expect(prompted.delivery).toBe('submitted');
+        // Through the client, so what the app will call is what is verified.
+        await expect(
+          client.sendPrompt(pane, 'Reply with exactly the word OK and nothing else.')
+        ).resolves.toBe('delivered');
 
         await Promise.race([stream, new Promise((resolve) => setTimeout(resolve, 15000))]);
         expect(seen[0]).toBe('pane.agent_status_changed:working');

@@ -13,6 +13,7 @@ import {
 } from './models';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom } from './protocol';
 import { shellCommand, shellQuote, withPath } from './shell';
+import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
   LAUNCH_TIMEOUT_MS,
@@ -78,16 +79,26 @@ export class HerdrClient {
   readonly transport: HerdrTransport;
   /** The `herdr` executable name/path on the host (overridable if not on PATH). */
   private readonly herdr: string;
+  /**
+   * The socket API on the same connection. Public so hooks can hold an
+   * `events.subscribe` stream open; everything request-shaped goes through the
+   * methods below, which fall back to the CLI on a host the socket cannot be
+   * reached on.
+   */
+  readonly socket: HerdrSocket;
 
   constructor(transport: HerdrTransport, herdrPath = 'herdr') {
     this.transport = transport;
     this.herdr = herdrPath;
+    this.socket = new HerdrSocket(transport, herdrPath);
   }
 
   // MARK: - Reads
 
   async snapshot(): Promise<Snapshot> {
-    const result = await this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS);
+    const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
+      this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
+    );
     const snapshot = decodeSnapshot(field(result, 'snapshot'));
     // Remembered so the capability gates below can answer from it instead of
     // spending a round-trip on `--help`. The field has been in the snapshot all
@@ -118,17 +129,23 @@ export class HerdrClient {
   private hostVersion: string | null = null;
 
   async workspaces(): Promise<Workspace[]> {
-    const result = await this.run([this.herdr, 'workspace', 'list'], POLL_TIMEOUT_MS);
+    const result = await this.request('workspace.list', {}, POLL_TIMEOUT_MS, () =>
+      this.run([this.herdr, 'workspace', 'list'], POLL_TIMEOUT_MS)
+    );
     return asArray(field(result, 'workspaces')).map(decodeWorkspace);
   }
 
   async agents(): Promise<AgentInfo[]> {
-    const result = await this.run([this.herdr, 'agent', 'list'], POLL_TIMEOUT_MS);
+    const result = await this.request('agent.list', {}, POLL_TIMEOUT_MS, () =>
+      this.run([this.herdr, 'agent', 'list'], POLL_TIMEOUT_MS)
+    );
     return asArray(field(result, 'agents')).map(decodeAgentInfo);
   }
 
   async panes(): Promise<Pane[]> {
-    const result = await this.run([this.herdr, 'pane', 'list'], POLL_TIMEOUT_MS);
+    const result = await this.request('pane.list', {}, POLL_TIMEOUT_MS, () =>
+      this.run([this.herdr, 'pane', 'list'], POLL_TIMEOUT_MS)
+    );
     return asArray(field(result, 'panes')).map(decodePane);
   }
 
@@ -291,7 +308,17 @@ export class HerdrClient {
    * terminal's alternate screen, so `recent`/`recent-unwrapped` (scrollback)
    * come back empty; only `visible` captures the live menu.
    */
-  paneVisible(paneId: string, lines: number): Promise<string> {
+  async paneVisible(paneId: string, lines: number): Promise<string> {
+    const route = await this.socket.detect();
+    if (route !== null) {
+      const result = await this.socket.call(
+        'pane.read',
+        { pane_id: paneId, source: 'visible', lines },
+        SCREEN_TIMEOUT_MS
+      );
+      const text = field(field(result, 'read'), 'text');
+      return typeof text === 'string' ? text : '';
+    }
     return this.shell(
       shellCommand([
         this.herdr,
@@ -354,6 +381,9 @@ export class HerdrClient {
    * round-trip and removes the ambiguity.
    */
   async sendPrompt(paneId: string, text: string): Promise<PromptOutcome> {
+    if ((await this.socket.detect()) !== null) {
+      return this.sendPromptViaSocket(paneId, text);
+    }
     if (!(await this.supportsAgentPrompt())) {
       await this.sendMessage(paneId, text);
       return 'unverified';
@@ -390,6 +420,46 @@ export class HerdrClient {
       // and nothing moved. The message is still in the composer.
       if (thrown instanceof HerdrError && thrown.code === 'agent_prompt_stalled') {
         return 'stalled';
+      }
+      throw thrown;
+    }
+  }
+
+  /**
+   * `agent.prompt` on the socket. Same three answers as the CLI path, read off
+   * different fields:
+   *
+   * - the result's `delivery` is `submitted` when herdr watched the composer
+   *   accept the text, and `written_to_pty` when it only knows the bytes went
+   *   in — the caller's status watch covers that one, as it always has;
+   * - a `timeout` error is the host saying it sent the text and watched for
+   *   `working` and nothing moved, which is what `stalled` has always meant;
+   * - `invalid_request` naming an unknown variant is a herdr too old for the
+   *   verb. Nothing was sent, so the legacy path is safe to try.
+   *
+   * `until` is `working` and `blocked` — an agent that stops to ask permission
+   * has read the prompt just as surely. Not `done` or `idle`: an agent already
+   * in either state would match at once and the wait would observe nothing.
+   */
+  private async sendPromptViaSocket(paneId: string, text: string): Promise<PromptOutcome> {
+    try {
+      const result = await this.socket.call(
+        'agent.prompt',
+        {
+          target: paneId,
+          text,
+          wait: { until: ['working', 'blocked'], timeout_ms: PROMPT_WAIT_MS },
+        },
+        PROMPT_WAIT_MS + SEND_TIMEOUT_MS
+      );
+      return field(result, 'delivery') === 'submitted' ? 'delivered' : 'unverified';
+    } catch (thrown) {
+      if (thrown instanceof HerdrError) {
+        if (thrown.code === 'timeout' || thrown.code === 'agent_prompt_stalled') return 'stalled';
+        if (isUnknownMethod(thrown)) {
+          await this.sendMessage(paneId, text);
+          return 'unverified';
+        }
       }
       throw thrown;
     }
@@ -493,11 +563,13 @@ export class HerdrClient {
 
   /** Send raw keys to a pane, e.g. a quick reply to a blocked prompt. */
   async sendKeys(paneId: string, keys: readonly string[]): Promise<void> {
-    const output = await this.shell(
-      shellCommand([this.herdr, 'pane', 'send-keys', paneId, ...keys]),
-      SEND_TIMEOUT_MS
-    );
-    checkEnvelope(output);
+    await this.request('pane.send_keys', { pane_id: paneId, keys }, SEND_TIMEOUT_MS, async () => {
+      const output = await this.shell(
+        shellCommand([this.herdr, 'pane', 'send-keys', paneId, ...keys]),
+        SEND_TIMEOUT_MS
+      );
+      checkEnvelope(output);
+    });
   }
 
   /**
@@ -505,19 +577,34 @@ export class HerdrClient {
    * desktop. Follow with `startAgent` on the returned root pane.
    */
   async createWorkspace(cwd: string, label: string | null): Promise<WorkspaceCreation> {
-    const argv = [this.herdr, 'workspace', 'create', '--cwd', cwd, '--no-focus'];
-    if (label !== null && label.length > 0) argv.push('--label', label);
-    const result = await this.run(argv, LAUNCH_TIMEOUT_MS);
+    const named = label !== null && label.length > 0 ? label : null;
+    const result = await this.request(
+      'workspace.create',
+      { cwd, label: named, focus: false },
+      LAUNCH_TIMEOUT_MS,
+      () => {
+        const argv = [this.herdr, 'workspace', 'create', '--cwd', cwd, '--no-focus'];
+        if (named !== null) argv.push('--label', named);
+        return this.run(argv, LAUNCH_TIMEOUT_MS);
+      }
+    );
     return decodeWorkspaceCreation(result);
   }
 
   /** Give a workspace a new label. The chat list reads it as the chat's title. */
   async renameWorkspace(workspaceId: string, label: string): Promise<void> {
-    const output = await this.shell(
-      shellCommand([this.herdr, 'workspace', 'rename', workspaceId, label]),
-      SEND_TIMEOUT_MS
+    await this.request(
+      'workspace.rename',
+      { workspace_id: workspaceId, label },
+      SEND_TIMEOUT_MS,
+      async () => {
+        const output = await this.shell(
+          shellCommand([this.herdr, 'workspace', 'rename', workspaceId, label]),
+          SEND_TIMEOUT_MS
+        );
+        checkEnvelope(output);
+      }
     );
-    checkEnvelope(output);
   }
 
   /**
@@ -527,11 +614,18 @@ export class HerdrClient {
    * confirms first and says so in those words.
    */
   async closeWorkspace(workspaceId: string): Promise<void> {
-    const output = await this.shell(
-      shellCommand([this.herdr, 'workspace', 'close', workspaceId]),
-      LAUNCH_TIMEOUT_MS
+    await this.request(
+      'workspace.close',
+      { workspace_id: workspaceId },
+      LAUNCH_TIMEOUT_MS,
+      async () => {
+        const output = await this.shell(
+          shellCommand([this.herdr, 'workspace', 'close', workspaceId]),
+          LAUNCH_TIMEOUT_MS
+        );
+        checkEnvelope(output);
+      }
     );
-    checkEnvelope(output);
   }
 
   /**
@@ -693,6 +787,18 @@ export class HerdrClient {
    * the state is the answer the caller wants.
    */
   async waitAgentStatus(paneId: string, status: AgentStatus, timeoutMs: number): Promise<boolean> {
+    if ((await this.socket.detect()) !== null) {
+      try {
+        await this.socket.call(
+          'agent.wait',
+          { target: paneId, until: [status], timeout_ms: timeoutMs },
+          timeoutMs + SEND_TIMEOUT_MS
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }
     try {
       const result = await this.transport.exec(
         withPath(
@@ -719,6 +825,29 @@ export class HerdrClient {
   }
 
   // MARK: - Plumbing
+
+  /**
+   * One request to herdr: over the socket when this host can be reached that
+   * way, otherwise through `legacy`, the CLI command that shipped before the
+   * socket layer existed.
+   *
+   * A socket error is NOT a reason to fall back. The two paths reach the same
+   * server, so a refusal on one is a refusal on the other, and retrying a write
+   * through the CLI after the socket reported a failure is how a prompt gets
+   * sent twice. The single exception is a herdr too old to know the METHOD,
+   * which means nothing happened; `sendPromptViaSocket` handles that where it
+   * matters and the reads here simply throw, because a host that old also lacks
+   * the CLI verbs the app needs.
+   */
+  private async request(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number,
+    legacy: () => Promise<unknown>
+  ): Promise<unknown> {
+    if ((await this.socket.detect()) === null) return legacy();
+    return this.socket.call(method, params, timeoutMs);
+  }
 
   /** Run an argv (quoted, so arbitrary user text is safe) and unwrap the envelope. */
   private async run(argv: readonly string[], timeoutMs: number): Promise<unknown> {
@@ -828,6 +957,15 @@ export type HerdrLocation =
   | { kind: 'not_executable'; path: string }
   /** The probe itself failed — say nothing rather than something wrong. */
   | { kind: 'unknown' };
+
+/**
+ * herdr rejects a method it has never heard of as `invalid_request` with
+ * "unknown variant `x`" in the message. Measured on the 12 Sep build, which
+ * answered `pane.turns` that way before the handoff to a build that has it.
+ */
+function isUnknownMethod(error: HerdrError): boolean {
+  return error.code === 'invalid_request' && error.message.includes('unknown variant');
+}
 
 function field(result: unknown, key: string): unknown {
   return typeof result === 'object' && result !== null

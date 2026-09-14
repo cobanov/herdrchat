@@ -1,5 +1,6 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import { HerdrClient } from '../herdr/client';
+import { isSocketProbe } from '../herdr/socket';
 import type { HerdrTransport } from '../herdr/transport';
 import { JS_DEADLINE_GRACE_MS, POLL_TIMEOUT_MS, withJsDeadline } from '../herdr/timeouts';
 
@@ -59,8 +60,8 @@ describe('HerdrClient under a timeout', () => {
   /** A host that accepts commands and never answers any of them. */
   class SilentTransport implements HerdrTransport {
     readonly budgets: number[] = [];
-    async exec(_command: string, timeoutMs: number): Promise<ExecResult> {
-      this.budgets.push(timeoutMs);
+    async exec(command: string, timeoutMs: number): Promise<ExecResult> {
+      if (!isSocketProbe(command)) this.budgets.push(timeoutMs);
       return { ok: false, code: 'timeout', message: "The host didn't answer in time." };
     }
     async *streamLines(): AsyncIterable<string> {}
@@ -115,6 +116,7 @@ describe('HerdrClient.interrupt', () => {
     readonly sent: string[] = [];
     constructor(private readonly accept: (command: string) => boolean) {}
     async exec(command: string): Promise<ExecResult> {
+      if (isSocketProbe(command)) return { ok: true, stdout: 'BRIDGE none', stderr: '', exitCode: 0 };
       this.sent.push(command);
       return this.accept(command)
         ? { ok: true, stdout: '', stderr: '', exitCode: 0 }

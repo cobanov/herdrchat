@@ -1,4 +1,5 @@
 import { HerdrClient } from '../herdr/client';
+import { isSocketProbe } from '../herdr/socket';
 import type { HerdrTransport } from '../herdr/transport';
 
 /**
@@ -24,7 +25,8 @@ function host({ hasAgentPrompt }: { hasAgentPrompt: boolean }) {
   return { transport, commands, client: new HerdrClient(transport) };
 }
 
-const sends = (commands: string[]) => commands.filter((c) => !c.includes('--help'));
+const sends = (commands: string[]) =>
+  commands.filter((c) => !c.includes('--help') && !isSocketProbe(c));
 
 describe('sendPrompt', () => {
   it('uses the agent-aware verb when the host has it, and says so', async () => {
@@ -386,7 +388,8 @@ describe('capability memo provenance', () => {
     return { commands, client: new HerdrClient(transport) };
   }
 
-  const sends = (commands: string[]) => commands.filter((c) => !c.includes('--help'));
+  const sends = (commands: string[]) =>
+  commands.filter((c) => !c.includes('--help') && !isSocketProbe(c));
 
   it('recovers from a transport-failed probe once a snapshot reports 0.8.0', async () => {
     // One blip before the first poll must not downgrade the host for the
