@@ -63,8 +63,9 @@ A public link needs **Beta App Review**, which requires more than a build:
 
 - App description, and a **privacy policy URL** (required for a public link).
 - Beta App Review notes explaining that the app connects to the tester's *own*
-  machine over SSH, plus a working demo host and credentials in the review
-  fields — never in the repo. See `AppStoreReview/`.
+  machine over SSH, plus the built-in Demo host working in the submitted build.
+  Review requires no account or SSH credentials. Keep review notes consistent
+  with that exact build and keep account-specific correspondence out of git.
 - An export-compliance answer. The app uses only standard SSH cryptography, so
   `ITSAppUsesNonExemptEncryption` is `false` in `app.json`. Re-confirm this if
   you ever add your own cryptography.
@@ -72,4 +73,5 @@ A public link needs **Beta App Review**, which requires more than a build:
 ## Android
 
 There is no Android release path in this repo. The module builds and the app
-compiles, but it has not been runtime-verified — see the README status list.
+compiles, but it has not been runtime-verified. See the
+[current limitations](docs/getting-started.md#beta-limitations).

@@ -14,8 +14,8 @@ import type { HerdrTransport } from './transport';
  * `events.subscribe` exists at all — the CLI has no streaming verb, which is
  * why the app has been polling.
  *
- * Measured 2026-09-14 against upstream 0.9.0 and the jerryfane preview; see
- * `docs/research/herdr-socket-api-measurements.md`. The socket is single-shot:
+ * Measured 2026-09-14 against upstream 0.9.0 and the jerryfane preview.
+ * The socket is single-shot:
  * one request per connection. Only `events.subscribe` keeps it open.
  *
  * HOW A REQUEST GETS TO THE SOCKET. Nothing on the phone can open a Unix

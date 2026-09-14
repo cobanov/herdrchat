@@ -43,8 +43,7 @@ shared service without replacing the global `codex` command or bypassing trust.
 
 For manual host setup, run `herdr integration install codex` and install this
 repo's [named launcher](../scripts/herdr-codex.sh) as `herdrchat-codex` on the
-host's PATH. The helper needs Python 3 and Codex. More detail is in the
-[Codex support report](codex-pass-2026-09-14.md#host-setup-and-existing-sessions).
+host's PATH. The helper needs Python 3 and Codex.
 
 ## Connect the phone
 
@@ -58,7 +57,7 @@ host's PATH. The helper needs Python 3 and Codex. More detail is in the
 
 ## Build the iOS app
 
-On a Mac with Node.js and Xcode installed, clone this repository and run:
+On a Mac with Node.js 22+ and Xcode installed, clone this repository and run:
 
 ```bash
 npm ci
@@ -99,5 +98,4 @@ Keep keys on your host and out of the repository.
 - Physical-device APNs delivery and recovery from a real Tailscale interruption
   still need acceptance testing. Simulator checks are not proof of either.
 - Reconnect banners and waiting/live-preview presentation are being refined.
-  Current test evidence and remaining work are in the [UI report](ui-pass-2026-09-14.md),
-  [Codex report](codex-pass-2026-09-14.md) and [issues](https://github.com/cobanov/herdrchat/issues).
+  Report problems in [issues](https://github.com/cobanov/herdrchat/issues).

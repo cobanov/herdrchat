@@ -14,7 +14,8 @@ npm run lint         # zero errors
 npm test             # src/lib and hooks
 ```
 
-CI runs exactly these three. If they pass locally they pass there.
+CI runs these same checks on Node.js 22. A local pass is not a substitute for
+checking the CI result on your pull request.
 
 For anything that changes what a screen looks like, also open the app in both
 light and dark mode. A screenshot you did not look at is not a check.
@@ -63,3 +64,14 @@ possible, the refactor is its own pull request.
 
 If you are planning something large, open an issue first. It is cheaper to
 disagree about an approach in an issue than in a finished branch.
+
+## Repository housekeeping
+
+- Public docs explain how to use, build, test and contribute to the app.
+  Keep internal handoffs, research, release correspondence and raw test artifacts
+  in the maintainer's private notes, outside this repository.
+- Keep build output, test coverage, deployment caches, logs and credentials out
+  of git. Update `.gitignore` when a tool adds a new generated directory.
+- Keep only curated, non-sensitive demo screenshots in `docs/screenshots/`.
+  Use GitHub issues for public bugs and feature requests.
+- When moving a document, update its relative links and references in other files.

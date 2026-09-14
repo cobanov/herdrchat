@@ -8,8 +8,7 @@ import type { HerdrSocket, SocketEvent, Subscription } from './socket';
  * each answer a full SSH round-trip, most of them "no". With the feed, herdr
  * says when something changed and the poll becomes a slow safety net.
  *
- * Subscriptions are pane-scoped and there is no wildcard (measured; see
- * `docs/research/herdr-socket-api-measurements.md`), so the feed has to know
+ * Subscriptions are pane-scoped and there is no wildcard, so the feed has to know
  * which panes to watch and start a fresh connection when that set changes. It
  * also watches the workspace lifecycle, which needs no pane id, so a chat
  * created or closed on the desktop shows up without waiting for a poll.

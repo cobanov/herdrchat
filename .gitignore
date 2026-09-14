@@ -9,6 +9,8 @@ expo-env.d.ts
 /ios/
 /android/
 *.tsbuildinfo
+coverage/
+.wrangler/
 
 # === Native build output ===
 build/
@@ -21,9 +23,15 @@ DerivedData/
 .DS_Store
 *.pem
 *.key
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
 secrets.plist
 .env
-.env.local
+.env.*
+!.env.example
+*.log
 __pycache__/
 *.pyc
 
@@ -32,3 +40,19 @@ __pycache__/
 *.keystore
 # Google Play service-account key for automated uploads.
 play-service-account*.json
+
+# Internal notes and raw QA artifacts belong outside the public repository.
+/AppStoreReview/
+/HERDR_*_FINDINGS.md
+/tasks.md
+/docs/app-store-review/
+/docs/archive/
+/docs/prompts/
+/docs/research/
+/docs/superpowers/
+/docs/handoff-*.md
+/docs/*-pass-*.md
+/docs/*-pass-*/
+/private/
+/.maestro/tests/
+/.maestro/screenshots/
