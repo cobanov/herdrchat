@@ -4,8 +4,10 @@ The UI pass shipped first as iOS 0.7.9 (57), source `71ed13a`. Apple accepted
 that build (`VALID`, internal `IN_BETA_TESTING`). Codex support is a separate
 change for build 58, source
 [`523cbc8`](https://github.com/cobanov/herdrchat/commit/523cbc8).
-Its archive, signed export, Apple package validation and upload passed. Final
-TestFlight availability will be recorded after Apple processing.
+Its archive, signed export, Apple package validation and upload passed. At
+18:33 TRT, Apple reported upload `COMPLETE`, build `VALID`, and internal
+`IN_BETA_TESTING`, with no upload errors or warnings. Build 58 is available to
+the existing internal test group. Release notes include the host launcher setup.
 Neither build was submitted to external Beta App Review in this pass.
 
 ## Root cause and fix
