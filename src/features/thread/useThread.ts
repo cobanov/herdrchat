@@ -430,8 +430,14 @@ export function useThread(
         // again for the resume arithmetic below. Same answer, two round-trips.
         const probe = await store.fileProbe(path);
         if (!current()) return;
-        if (probe.kind === 'absent') return;
+        if (probe.kind === 'absent') {
+          // A brand-new Claude session may not write a transcript until its
+          // first prompt. The agent is ready to receive that prompt now.
+          setLoading(false);
+          return;
+        }
         if (probe.kind === 'unknown') {
+          setLoading(false);
           setTailError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
           return;
         }

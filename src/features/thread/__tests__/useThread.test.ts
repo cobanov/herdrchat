@@ -3,11 +3,13 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import type { AgentInfo, Snapshot } from '@/lib/herdr/models';
+import type { FileProbe } from '@/lib/transcript/store';
 import { seedMessages, rebind } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
 let mockPolling = true;
 let mockLive = true;
+let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => mockLive }));
 jest.mock('../useReportPresence', () => ({
@@ -27,7 +29,7 @@ jest.mock('@/lib/transcript/store', () => ({
   TranscriptStore: class {
     homeDirectory = async () => '/test';
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
-    fileProbe = async () => ({ kind: 'exists', bytes: 0 });
+    fileProbe = async () => mockProbe;
     recent = async () => ({ messages: [], consumedBytes: 0, startByte: 0 });
     sessionMeta = async () => null;
     *tail() {
@@ -73,6 +75,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPolling = true;
   mockLive = true;
+  mockProbe = { kind: 'size', bytes: 0 };
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -111,6 +114,26 @@ it('does not offer sending into an empty shell', async () => {
   });
   expect(send).not.toHaveBeenCalled();
   expect(result.current.messages).toEqual([]);
+  await unmount();
+});
+
+it('finishes loading when a new session has not created its transcript yet', async () => {
+  mockProbe = { kind: 'absent' };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.canSend).toBe(true);
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.error).toBeNull();
+  await unmount();
+});
+
+it('ends the initial spinner when the transcript probe reports a read failure', async () => {
+  mockProbe = { kind: 'unknown', reason: 'Permission denied' };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.error).toContain('Permission denied');
   await unmount();
 });
 

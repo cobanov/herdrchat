@@ -1,0 +1,20 @@
+# A new, unprompted Claude session. Its transcript may not exist until the
+# first message, but the UI must already offer a usable empty conversation.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- tapOn:
+    id: 'chat-row-${EMPTY_WORKSPACE_ID}'
+- extendedWaitUntil:
+    visible: No messages yet
+    timeout: 30000
+- assertVisible:
+    id: composer-input
+- assertVisible:
+    id: composer-send
+    enabled: false
+- takeScreenshot: thread-empty
+- tapOn:
+    id: thread-back

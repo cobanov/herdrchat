@@ -16,6 +16,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `thread-back` | that a thread can be left by swiping, not only by the chevron | **yes** |
 | `thread-bottom` | initial bottom, jump, reload and reopen | **yes**, final reply `HELLO` |
 | `composer` | multiline draft, keyboard and final-message clearance screenshot | **yes**, final reply `HELLO` |
+| `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
@@ -62,7 +63,8 @@ upload those raw artifacts to CI or a public issue.
 
 For the full suite, also pass `WORKSPACE_ID` (a disposable thread with enough
 history to scroll and a final `HELLO` reply) and `BLOCKED_WORKSPACE_ID` (a
-different disposable thread with a pending two-option question). Select that
+different disposable thread with a pending two-option question), and
+`EMPTY_WORKSPACE_ID` (a third, newly started agent with no prompts). Select that
 host in the app before starting. Do not use production conversations as fixtures.
 Open the `composer-multiline` screenshot after running: the full final bubble
 and its timestamp must be above the composer. A green accessibility assertion
