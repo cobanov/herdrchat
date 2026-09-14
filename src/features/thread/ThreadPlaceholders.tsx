@@ -10,7 +10,7 @@ import { spacing } from '@/theme/tokens';
  *
  * Both are presentational: everything they know arrives as props, and neither
  * reads the transport, the database or a store. That is what lets them live
- * here rather than in the route — see CLAUDE.md on route thinness.
+ * here rather than in the route, see CLAUDE.md on route thinness.
  */
 
 /**
@@ -35,8 +35,8 @@ export function MissingHost({ onBack, onHosts }: { onBack: () => void; onHosts: 
         This chat&apos;s host is gone
       </Text>
       <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-        The connection this conversation belongs to isn&apos;t on this device any
-        more, so there is nothing to read it from and nothing to send to.
+        The connection this conversation belongs to isn&apos;t on this device any more, so there is
+        nothing to read it from and nothing to send to.
       </Text>
       <View style={{ marginTop: spacing.sm, alignSelf: 'stretch', gap: spacing.sm }}>
         <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />
@@ -56,6 +56,9 @@ export function MissingHost({ onBack, onHosts }: { onBack: () => void; onHosts: 
  */
 export function ThreadPlaceholder({
   waiting,
+  loading,
+  canSend,
+  onBack,
   title,
   sessionState,
   onInstallIntegration,
@@ -63,6 +66,9 @@ export function ThreadPlaceholder({
   installError,
 }: {
   waiting: boolean;
+  loading: boolean;
+  canSend: boolean;
+  onBack: () => void;
   title: string;
   sessionState: 'ok' | 'waiting' | 'missing';
   onInstallIntegration?: () => void;
@@ -78,7 +84,7 @@ export function ThreadPlaceholder({
         paddingHorizontal: spacing.xxl,
         gap: spacing.sm,
       }}>
-      {waiting ? (
+      {loading ? (
         <>
           <WaitingBar />
           <Text variant="subhead" color="secondary">
@@ -87,20 +93,19 @@ export function ThreadPlaceholder({
         </>
       ) : sessionState === 'missing' ? (
         // The app cannot read a transcript it cannot identify, and it will not
-        // guess — so this is the difference between a screen that looks broken
+        // guess, so this is the difference between a screen that looks broken
         // and one that tells you which command fixes it.
         <>
           <Text variant="title3" style={{ textAlign: 'center' }}>
             Can&apos;t identify this chat
           </Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            The agent isn&apos;t reporting which Claude session it is, so this
-            thread can&apos;t be told apart from others in the same folder.
+            The agent isn&apos;t reporting which Claude session it is, so this thread can&apos;t be
+            told apart from others in the same folder.
           </Text>
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
-            Installing it takes a moment. This agent has to be restarted
-            afterwards — the integration only reports at session start, so a
-            session already running keeps saying nothing.
+            Installing it takes a moment. This agent has to be restarted afterwards, the integration
+            only reports at session start, so a session already running keeps saying nothing.
           </Text>
           {onInstallIntegration !== undefined && (
             <View style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}>
@@ -129,11 +134,28 @@ export function ThreadPlaceholder({
             Waiting for the agent to report its session…
           </Text>
         </>
+      ) : !canSend ? (
+        <>
+          <Text variant="title3" style={{ textAlign: 'center' }}>
+            No agent is running
+          </Text>
+          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+            Start an agent on the host, or return to Chats to start a new conversation.
+          </Text>
+          <Button title="Back to chats" variant="tinted" onPress={onBack} />
+        </>
+      ) : waiting ? (
+        <>
+          <WaitingBar />
+          <Text variant="subhead" color="secondary">
+            The agent is working. Its reply will appear here.
+          </Text>
+        </>
       ) : (
         <>
           <Text variant="title3">No messages yet</Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            Send your first message — {title} is ready.
+            Send your first message, {title} is ready.
           </Text>
         </>
       )}

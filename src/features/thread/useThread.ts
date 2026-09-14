@@ -9,7 +9,12 @@ import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { hasSessionId, sessionSignature, type AgentInfo, type AgentStatus } from '@/lib/herdr/models';
+import {
+  hasSessionId,
+  sessionSignature,
+  type AgentInfo,
+  type AgentStatus,
+} from '@/lib/herdr/models';
 import { TranscriptStore } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
@@ -86,8 +91,8 @@ const EVENT_DEBOUNCE_MS = 250;
  * How long a tail may produce nothing while its agent is WORKING before it is
  * assumed dead and restarted.
  *
- * Generous on purpose. A working agent can genuinely go quiet for a while — a
- * long build, a slow test run, one tool call that takes a minute — and the cost
+ * Generous on purpose. A working agent can genuinely go quiet for a while, a
+ * long build, a slow test run, one tool call that takes a minute, and the cost
  * of waiting is a late restart, while the cost of firing early is a stream
  * needlessly torn down and re-established over SSH.
  */
@@ -96,15 +101,17 @@ const TAIL_SILENCE_MS = 90_000;
  * How long an agent may go without reporting a session id before the thread
  * stops waiting and says the integration is probably missing.
  *
- * A freshly started Claude takes the better part of a minute to report — 48
- * seconds, measured — so accusing the host too early is a false alarm shown to
+ * A freshly started Claude takes the better part of a minute to report, 48
+ * seconds, measured, so accusing the host too early is a false alarm shown to
  * someone whose id is about to arrive. This is comfortably past that, and until
  * it elapses the thread says it is waiting rather than showing nothing.
  */
 const NO_SESSION_GRACE_MS = 80_000;
-const BLOCKED_PENDING_ERROR = 'The reply may not have landed — check the agent.';
+const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
 
 export interface ThreadState {
+  loading: boolean;
+  canSend: boolean;
   messages: ChatMessage[];
   status: AgentStatus;
   agents: AgentInfo[];
@@ -120,14 +127,14 @@ export interface ThreadState {
   /** Fetch one page of history above the oldest message on screen. */
   loadOlder: () => Promise<void>;
   loadingOlder: boolean;
-  /** True once the top of the transcript is on screen — nothing left to fetch. */
+  /** True once the top of the transcript is on screen, nothing left to fetch. */
   reachedStart: boolean;
   /**
    * Whether this thread can be read at all.
    *
-   * `ok` — an agent has reported its session, so the transcript is targetable.
-   * `waiting` — an agent is here but has not reported yet; normal for a minute.
-   * `missing` — long enough that the host is probably missing herdr's Claude
+   * `ok`, an agent has reported its session, so the transcript is targetable.
+   * `waiting`, an agent is here but has not reported yet; normal for a minute.
+   * `missing`, long enough that the host is probably missing herdr's Claude
    *   integration, which is the only thing that reports the id.
    */
   sessionState: 'ok' | 'waiting' | 'missing';
@@ -145,8 +152,8 @@ export interface ThreadState {
  * Drives one workspace thread: tails the transcript into bubbles, tracks live
  * blocked/working state, and sends replies back through herdr.
  *
- * Transcripts are targeted by the agent's native session reference — herdr's
- * `agent_session.value` IS the Claude transcript filename — rather than by
+ * Transcripts are targeted by the agent's native session reference, herdr's
+ * `agent_session.value` IS the Claude transcript filename, rather than by
  * guessing the newest file in the project directory, because that guess opens a
  * previous session's history under a reused workspace.
  */
@@ -158,11 +165,12 @@ export function useThread(
   initialAgents: readonly AgentInfo[]
 ): ThreadState {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(client !== null);
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
   const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
   const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
   // Mirrors the state for the poll closure and for the synchronous double-tap
-  // guard in sendKeys — a second tap can land before React re-renders.
+  // guard in sendKeys, a second tap can land before React re-renders.
   const blockedPendingRef = useRef<BlockedPending | null>(null);
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
@@ -173,7 +181,7 @@ export function useThread(
     `setError(null)` and a tail that rejected earlier in the SAME iteration was
     wiped by it a few hundred milliseconds after appearing.
 
-    `startTail` is fired without await and its first await — `homeDirectory()` —
+    `startTail` is fired without await and its first await, `homeDirectory()` :
     is serialized ahead of the poll's own `paneVisible` calls on one connection,
     so its rejection lands first almost every time. And when no agent is blocked
     and none is working, the poll has no awaits left at all between the two, so
@@ -203,6 +211,10 @@ export function useThread(
     polling,
     () => kick.current()
   );
+  const streamLiveRef = useRef(streamLive);
+  useEffect(() => {
+    streamLiveRef.current = streamLive;
+  }, [streamLive]);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
 
   // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
@@ -216,7 +228,11 @@ export function useThread(
    * from the first tail only: a workspace with two agents has two transcripts,
    * and paging the focused one is what "load older" means to a reader.
    */
-  const olderSource = useRef<{ path: string; label: string | null; anchor: number } | null>(null);
+  const olderSource = useRef<{
+    path: string;
+    label: string | null;
+    anchor: number;
+  } | null>(null);
   const boundSig = useRef<string | null>(null);
   const tails = useRef(new Map<string, AbortController>());
   /**
@@ -227,6 +243,8 @@ export function useThread(
   /** The header is seeded from disk once per bound session; the tail does the rest. */
   const metaSeeded = useRef(false);
   const alive = useRef(true);
+  const paging = useRef(false);
+  const sending = useRef(false);
 
   /**
    * Fold one assistant line's metadata into the header.
@@ -256,9 +274,7 @@ export function useThread(
     // Merge the two time-ordered lists, carrying the last known timestamp
     // forward for arrivals that have none.
     const merged: ChatMessage[] = [];
-    const pending = [...echoes.current].sort(
-      (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
-    );
+    const pending = [...echoes.current].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
     let index = 0;
     let last = 0;
     for (const message of arrivals.current) {
@@ -276,6 +292,7 @@ export function useThread(
 
   const ingest = useCallback(
     async (incoming: readonly ChatMessage[], sig: string) => {
+      if (!alive.current || sig !== boundSig.current) return;
       const fresh = incoming.filter((message) => !seen.current.has(message.id));
       if (fresh.length === 0) return;
       for (const message of fresh) seen.current.add(message.id);
@@ -295,10 +312,11 @@ export function useThread(
    * live for this visit; reopening starts from the recent window again.
    */
   const loadOlder = useCallback(async () => {
-    if (client === null) return;
+    if (client === null || paging.current) return;
     const source = olderSource.current;
     if (source === null || source.anchor <= 0) return;
 
+    paging.current = true;
     setLoadingOlder(true);
     try {
       const store = new TranscriptStore(client.transport);
@@ -329,6 +347,7 @@ export function useThread(
       // The reader can pull again; surfacing a banner for it would push the
       // conversation down to report that nothing happened.
     } finally {
+      paging.current = false;
       if (alive.current) setLoadingOlder(false);
     }
   }, [client, rebuild]);
@@ -356,44 +375,25 @@ export function useThread(
     setSessionMeta(null);
   }, []);
 
-  // Seed from the disk cache so reopening is instant, then let the tails correct
-  // it. Only seeds when the cached session matches the live one.
+  // Cache reads happen after the snapshot identifies the live session. A route
+  // opens without initial agents, so seeding here could flash a recycled chat.
   useEffect(() => {
     alive.current = true;
-    void (async () => {
-      const sig = sessionSignature(initialAgents);
-      if (sig !== null) {
-        const dropped = await rebind(db, connectionId, workspaceId, sig);
-        if (dropped) resetHistory();
-        boundSig.current = sig;
-      }
-      const [cached, ids] = await Promise.all([
-        seedMessages(db, connectionId, workspaceId),
-        seenIds(db, connectionId, workspaceId),
-      ]);
-      if (!alive.current || cached.length === 0) return;
-      arrivals.current = cached;
-      // The FULL seen set, not just the seeded slice, so the tail can't re-add
-      // the history we deliberately trimmed away.
-      seen.current = ids;
-      rebuild();
-    })();
     return () => {
       alive.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, connectionId, workspaceId]);
+  }, []);
 
   const startTail = useCallback(
     async (agent: AgentInfo, multiAgent: boolean) => {
       if (client === null) return;
 
       // Keyed by the Claude session id, because that is the only unique thing
-      // here — and both halves of this matter:
+      // here, and both halves of this matter:
       //
       // No session id means there is nothing safe to open. "Newest .jsonl in
-      // the project dir" is a guess, and two chats sharing a folder — the same
-      // folder you would naturally give the same name — makes it a guess that
+      // the project dir" is a guess, and two chats sharing a folder, the same
+      // folder you would naturally give the same name, makes it a guess that
       // shows the other conversation's history. Returning costs one poll; the
       // status poll calls this again every couple of seconds.
       //
@@ -402,111 +402,124 @@ export function useThread(
       const sessionId = hasSessionId(agent) ? (agent.agentSession?.value ?? null) : null;
       if (sessionId === null || tails.current.has(sessionId)) return;
 
-      const store = new TranscriptStore(client.transport);
-      const label = multiAgent ? agent.agent : null;
-
-      const home = await store.homeDirectory();
-      const path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
-      if (path === null || !alive.current) return;
-
-      // One probe, and it answers two different questions.
-      //
-      // `absent` is expected: herdr reports a session id a moment before Claude
-      // creates the file, so returning and letting the next poll retry is
-      // correct and should be silent.
-      //
-      // `unknown` is not expected — a permission problem, or the transport
-      // failing. It used to arrive as the same `-1` as `absent` and put the
-      // thread into a quiet wait for a file that was already there. It gets
-      // said out loud now.
-      //
-      // Previously this measured the file twice: once to test existence and
-      // again for the resume arithmetic below. Same answer, two round-trips.
-      const probe = await store.fileProbe(path);
-      if (!alive.current) return;
-      if (probe.kind === 'absent') return;
-      if (probe.kind === 'unknown') {
-        setTailError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
-        return;
-      }
-      const size = probe.bytes;
-
+      // Reserve before the first await. An event can request another refresh
+      // while the initial file probe is still running.
       const controller = new AbortController();
       tails.current.set(sessionId, controller);
-      // A tail that starts is the only evidence that clears a tail complaint.
-      // The poll's own `setError(null)` must not do it — that is the bug above.
-      setTailError(null);
-      // Starting counts as a beat, so a tail that never yields a single line is
-      // still measured from when it began rather than from never.
-      tailBeats.current.set(sessionId, Date.now());
+      const current = () => alive.current && !controller.signal.aborted;
+      try {
+        const store = new TranscriptStore(client.transport);
+        const label = multiAgent ? agent.agent : null;
 
-      const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
-      const cached = await tailCursor(db, connectionId, workspaceId, path);
-      const canResume = cached !== null && size >= cached;
+        const home = await store.homeDirectory();
+        const path = store.sessionTranscriptPath(home, agent.cwd, sessionId);
+        if (path === null || !current()) return;
 
-      let followFrom: number;
-      let anchor: number | null = null;
-      if (canResume) {
-        followFrom = Math.max(0, cached - RESUME_REWIND);
-        // The cache does not record where its oldest message sat in the file,
-        // so scroll-up anchors at the cursor instead. That first page back is
-        // the cached window itself and dedupes to nothing, which is why
-        // loadOlder keeps going until a page yields something — an
-        // over-estimate wastes a read, an under-estimate would open a hole in
-        // the history that nothing later fills.
-        anchor = cached;
-      } else {
-        await resetTailCursor(db, connectionId, workspaceId, path);
-        const recent = await loadRecent(store, path, label, size);
-        if (recent !== null) {
-          await ingest(recent.messages, sig);
-          await setTailCursor(db, connectionId, workspaceId, path, recent.consumedBytes);
-          followFrom = recent.consumedBytes;
-          anchor = recent.startByte;
-        } else {
-          followFrom = 0;
+        // One probe, and it answers two different questions.
+        //
+        // `absent` is expected: herdr reports a session id a moment before Claude
+        // creates the file, so returning and letting the next poll retry is
+        // correct and should be silent.
+        //
+        // `unknown` is not expected, a permission problem, or the transport
+        // failing. It used to arrive as the same `-1` as `absent` and put the
+        // thread into a quiet wait for a file that was already there. It gets
+        // said out loud now.
+        //
+        // Previously this measured the file twice: once to test existence and
+        // again for the resume arithmetic below. Same answer, two round-trips.
+        const probe = await store.fileProbe(path);
+        if (!current()) return;
+        if (probe.kind === 'absent') return;
+        if (probe.kind === 'unknown') {
+          setTailError(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+          return;
         }
-      }
+        const size = probe.bytes;
 
-      if (olderSource.current === null && anchor !== null) {
-        olderSource.current = { path, label, anchor };
-        if (anchor <= 0) setReachedStart(true);
-      }
+        // A tail that starts is the only evidence that clears a tail complaint.
+        // The poll's own `setError(null)` must not do it, that is the bug above.
+        setTailError(null);
+        // Starting counts as a beat, so a tail that never yields a single line is
+        // still measured from when it began rather than from never.
+        tailBeats.current.set(sessionId, Date.now());
 
-      // Seed the header once. The tail keeps it current from here, but a thread
-      // resuming from its cached cursor can sit for minutes before the agent
-      // next speaks, and a blank model line for that long reads as broken.
-      // `prev ?? seeded` because this read raced the tail the moment it started:
-      // if a live line already answered the question, it is the newer answer.
-      if (!metaSeeded.current) {
-        metaSeeded.current = true;
-        void store
-          .sessionMeta(path)
-          .then((seeded) => {
-            if (seeded !== null && alive.current) setSessionMeta((prev) => prev ?? seeded);
-          })
-          .catch(() => {
-            /* the header simply stays blank until the agent's next turn */
-          });
-      }
+        const sig = boundSig.current ?? sessionSignature([agent]) ?? 'unknown';
+        const cached = await tailCursor(db, connectionId, workspaceId, path);
+        if (!current()) return;
+        const canResume = cached !== null && size >= cached;
 
-      void (async () => {
-        try {
-          for await (const chunk of store.tail(path, label, followFrom)) {
-            if (controller.signal.aborted || !alive.current) break;
-            tailBeats.current.set(sessionId, Date.now());
-            if (chunk.meta !== null) applyMeta(chunk.meta);
-            if (chunk.message !== null) await ingest([chunk.message], sig);
-            await setTailCursor(db, connectionId, workspaceId, path, chunk.consumedBytes);
+        let followFrom: number;
+        let anchor: number | null = null;
+        if (canResume) {
+          followFrom = Math.max(0, cached - RESUME_REWIND);
+          // The cache does not record where its oldest message sat in the file,
+          // so scroll-up anchors at the cursor instead. That first page back is
+          // the cached window itself and dedupes to nothing, which is why
+          // loadOlder keeps going until a page yields something, an
+          // over-estimate wastes a read, an under-estimate would open a hole in
+          // the history that nothing later fills.
+          anchor = cached;
+        } else {
+          await resetTailCursor(db, connectionId, workspaceId, path);
+          const recent = await loadRecent(store, path, label, size);
+          if (!current()) return;
+          if (recent !== null) {
+            await ingest(recent.messages, sig);
+            await setTailCursor(db, connectionId, workspaceId, path, recent.consumedBytes);
+            followFrom = recent.consumedBytes;
+            anchor = recent.startByte;
+          } else {
+            followFrom = 0;
           }
-        } catch {
-          // The tail died (host slept, network moved). The status poll notices
-          // the missing tail and restarts it.
-        } finally {
+        }
+
+        if (!current()) return;
+        setLoading(false);
+
+        if (olderSource.current === null && anchor !== null) {
+          olderSource.current = { path, label, anchor };
+          if (anchor <= 0) setReachedStart(true);
+        }
+
+        // Seed the header once. The tail keeps it current from here, but a thread
+        // resuming from its cached cursor can sit for minutes before the agent
+        // next speaks, and a blank model line for that long reads as broken.
+        // `prev ?? seeded` because this read raced the tail the moment it started:
+        // if a live line already answered the question, it is the newer answer.
+        if (!metaSeeded.current) {
+          metaSeeded.current = true;
+          void store
+            .sessionMeta(path)
+            .then((seeded) => {
+              if (seeded !== null && current()) setSessionMeta((prev) => prev ?? seeded);
+            })
+            .catch(() => {
+              /* the header simply stays blank until the agent's next turn */
+            });
+        }
+
+        for await (const chunk of store.tail(path, label, followFrom)) {
+          if (!current()) break;
+          tailBeats.current.set(sessionId, Date.now());
+          if (chunk.meta !== null) applyMeta(chunk.meta);
+          if (chunk.message !== null) await ingest([chunk.message], sig);
+          await setTailCursor(db, connectionId, workspaceId, path, chunk.consumedBytes);
+        }
+      } catch (thrown) {
+        if (current()) {
+          setLoading(false);
+          setTailError(
+            `Conversation updates paused. Reconnecting. ${thrown instanceof Error ? thrown.message : String(thrown)}`
+          );
+        }
+      } finally {
+        // A superseded stream must never delete the replacement's watchdog.
+        if (tails.current.get(sessionId) === controller) {
           tails.current.delete(sessionId);
           tailBeats.current.delete(sessionId);
         }
-      })();
+      }
     },
     [client, db, connectionId, workspaceId, ingest, applyMeta]
   );
@@ -515,18 +528,21 @@ export function useThread(
   useEffect(() => {
     // Backgrounded: iOS suspends these timers anyway, but the socket usually
     // dies with them, so the honest thing is to stop and re-poll immediately on
-    // resume — which is what remounting this effect does.
+    // resume, which is what remounting this effect does.
     if (client === null || !polling) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
+    let stopped = false;
 
     const schedule = (delayMs: number) => {
+      if (stopped) return;
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => void poll(), delayMs);
     };
 
     const poll = async () => {
+      if (stopped) return;
       if (inFlight) {
         // A kick landed mid-poll. Its cause may postdate what this poll read,
         // so go once more when it finishes rather than dropping it.
@@ -537,7 +553,7 @@ export function useThread(
       let keepFast = true;
       try {
         const snapshot = await client.snapshot();
-        if (!alive.current) return;
+        if (!alive.current || stopped) return;
         const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
         setAgents(live);
 
@@ -556,6 +572,7 @@ export function useThread(
           noSessionSince.current = null;
           setSessionState('ok');
         }
+        if (sig === null) setLoading(false);
         if (sig !== null && sig !== boundSig.current) {
           // Rotation, or a new chat reusing this workspace. Drop the old
           // history rather than appending a different conversation to it.
@@ -563,7 +580,17 @@ export function useThread(
           tails.current.clear();
           tailBeats.current.clear();
           if (await rebind(db, connectionId, workspaceId, sig)) resetHistory();
+          if (stopped) return;
           boundSig.current = sig;
+          const [cached, ids] = await Promise.all([
+            seedMessages(db, connectionId, workspaceId),
+            seenIds(db, connectionId, workspaceId),
+          ]);
+          if (stopped) return;
+          arrivals.current = cached;
+          seen.current = ids;
+          rebuild();
+          if (cached.length > 0) setLoading(false);
         }
 
         for (const agent of conversational) {
@@ -599,7 +626,8 @@ export function useThread(
           if (resolution === 'delivered' || resolution === 'superseded') clearBlockedPending();
         }
 
-        const primary = live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
+        const primary =
+          live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
         const working = live.some((agent) => agent.agentStatus === 'working');
         keepFast = working;
         if (working && primary !== undefined) {
@@ -614,8 +642,8 @@ export function useThread(
 
           `startTail` returns early for a session already in `tails`, and that
           entry is removed only when the generator finishes or throws. A stream
-          that dies WITHOUT throwing — a half-open TCP after the host sleeps or
-          the phone changes network — therefore leaves the entry in place
+          that dies WITHOUT throwing, a half-open TCP after the host sleeps or
+          the phone changes network, therefore leaves the entry in place
           forever, and the restart the catch block promises can never happen.
           The thread just stops receiving messages and looks idle.
 
@@ -623,7 +651,7 @@ export function useThread(
           lines for hours, legitimately. Silence *while working* does, because a
           working agent is by definition appending turns. A false positive costs
           one restarted tail, which resumes from the persisted cursor and dedupes
-          whatever it re-reads — so the check is allowed to be wrong.
+          whatever it re-reads, so the check is allowed to be wrong.
         */
         if (working) {
           const now = Date.now();
@@ -640,15 +668,17 @@ export function useThread(
         setError(null);
         failures.current = 0;
       } catch (thrown) {
-        if (!alive.current) return;
+        if (!alive.current || stopped) return;
+        setLoading(false);
         failures.current += 1;
         setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
         inFlight = false;
         // The banner stays up throughout: backing off must never read as
         // recovery. Only the interval changes.
-        if (alive.current) {
-          const base = streamLive && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
+        if (alive.current && !stopped) {
+          const base =
+            streamLiveRef.current && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
           schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
           again = false;
         }
@@ -661,6 +691,7 @@ export function useThread(
     // aborting the wrong one leaves real tails running against a dead screen.
     const live = tails.current;
     return () => {
+      stopped = true;
       kick.current = () => undefined;
       if (timer !== null) clearTimeout(timer);
       for (const controller of live.values()) controller.abort();
@@ -676,7 +707,7 @@ export function useThread(
     clearBlockedPending,
     polling,
     pollScale,
-    streamLive,
+    rebuild,
   ]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
@@ -690,7 +721,9 @@ export function useThread(
           : 'idle';
 
   const primaryPane =
-    agents.find((a) => a.focused) ?? agents.find((a) => a.agent !== null) ?? agents[0] ?? null;
+    agents.find((a) => a.focused && a.agent !== null) ??
+    agents.find((a) => a.agent !== null) ??
+    null;
   const blockedPane = agents.find((a) => a.agentStatus === 'blocked') ?? null;
 
   // Publish "driven from a phone, on this model" to the host's sidebar. Gated on
@@ -706,8 +739,8 @@ export function useThread(
    * The pane to send to, re-read at the moment of sending.
    *
    * `primaryPane` comes from the poll, so by the time someone taps send it can
-   * be two seconds old. A pane id that has changed in that window — an agent
-   * restarted, a layout redrawn — sends the message somewhere it will not be
+   * be two seconds old. A pane id that has changed in that window, an agent
+   * restarted, a layout redrawn, sends the message somewhere it will not be
    * read, and `pane run` succeeds against whatever is there, so the failure is
    * silent. This is the same trap the Raycast extension's reviewers caught in
    * its split targeting: don't act on an id you sampled a moment ago.
@@ -741,14 +774,14 @@ export function useThread(
    * it saw. Its help: "when submission starts from a non-working state, --wait
    * first requires an observed state change within 5000ms; otherwise it returns
    * agent_prompt_stalled." That named error is exactly the stuck-in-the-composer
-   * case the blind Enter was written to guess at — observed by the process that
+   * case the blind Enter was written to guess at, observed by the process that
    * owns the terminal, rather than inferred here from a fixed sleep.
    *
    * So on a modern host there are two outcomes and neither needs us to guess:
    * `delivered` returns immediately, `stalled` fails the bubble honestly.
    *
    * `unverified` is the legacy path, for hosts with no `agent prompt`. There
-   * `pane run` only means keystrokes were sent, so the old dance survives —
+   * `pane run` only means keystrokes were sent, so the old dance survives :
    * including the blind second Enter, which is unsafe in principle (if the first
    * send DID land it submits an empty line into a live agent) but is also the
    * only thing that recovers a stuck composer on a host with no alternative.
@@ -770,7 +803,7 @@ export function useThread(
         if (outcome === 'stalled') {
           // The host watched and nothing moved. No guessing, no second Enter.
           setFailedIds((previous) => new Set(previous).add(echoId));
-          setError('The agent never picked that up — it may be stuck at a prompt. Try again.');
+          setError('The agent never picked that up, it may be stuck at a prompt. Try again.');
           return;
         }
 
@@ -783,7 +816,7 @@ export function useThread(
           if (!accepted) {
             setFailedIds((previous) => new Set(previous).add(echoId));
             setError(
-              "Couldn't confirm delivery — the message may be stuck in the terminal. Try again."
+              "Couldn't confirm delivery, the message may be stuck in the terminal. Try again."
             );
           }
         }
@@ -800,7 +833,8 @@ export function useThread(
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0 || primaryPane === null) return;
+      if (text.length === 0 || primaryPane === null || sending.current) return;
+      sending.current = true;
       const echo: ChatMessage = {
         id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         role: 'user',
@@ -811,7 +845,11 @@ export function useThread(
       };
       echoes.current.push(echo);
       rebuild();
-      await deliver(text, echo.id, primaryPane);
+      try {
+        await deliver(text, echo.id, primaryPane);
+      } finally {
+        sending.current = false;
+      }
     },
     [primaryPane, rebuild, deliver]
   );
@@ -836,7 +874,7 @@ export function useThread(
    * When the target is a blocked agent, the reply is marked pending BEFORE it
    * is sent, and stays pending until a poll observes the agent act on it. The
    * poll is what removes the bar, and at the slowest setting it runs every ten
-   * seconds — without the pending state that whole window accepts a second tap,
+   * seconds, without the pending state that whole window accepts a second tap,
    * which sends a second digit + Enter into an agent that already moved on.
    *
    * The ref check is synchronous on purpose: the disabled prop the pending
@@ -860,11 +898,14 @@ export function useThread(
         // The banner is raised from here rather than from the poll: the poll's
         // success path clears the error state, so a banner it raised itself
         // would not survive its own iteration.
-        blockedPendingTimer.current = setTimeout(() => {
-          if (!alive.current || blockedPendingRef.current !== pending) return;
-          clearBlockedPending();
-          setError(BLOCKED_PENDING_ERROR);
-        }, blockedPendingTimeout(STATUS_POLL_MS * pollScale));
+        blockedPendingTimer.current = setTimeout(
+          () => {
+            if (!alive.current || blockedPendingRef.current !== pending) return;
+            clearBlockedPending();
+            setError(BLOCKED_PENDING_ERROR);
+          },
+          blockedPendingTimeout(STATUS_POLL_MS * pollScale)
+        );
       }
 
       try {
@@ -905,10 +946,22 @@ export function useThread(
   const reload = useCallback(async () => {
     for (const controller of tails.current.values()) controller.abort();
     tails.current.clear();
+    tailBeats.current.clear();
+    await db.runAsync(
+      'DELETE FROM tail_cursors WHERE connection_id = ? AND workspace_id = ?',
+      connectionId,
+      workspaceId
+    );
+    if (!alive.current) return;
     resetHistory();
-  }, [resetHistory]);
+    setLoading(true);
+    failures.current = 0;
+    kick.current();
+  }, [db, connectionId, workspaceId, resetHistory]);
 
   return {
+    loading,
+    canSend: client !== null && primaryPane !== null,
     messages,
     status,
     agents,
@@ -946,7 +999,11 @@ async function loadRecent(
   path: string,
   label: string | null,
   size: number
-): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number } | null> {
+): Promise<{
+  messages: ChatMessage[];
+  consumedBytes: number;
+  startByte: number;
+} | null> {
   try {
     const first = await store.recent(path, label, RECENT_BYTES, RECENT_MESSAGES);
     if (first.messages.length >= THIN_HISTORY || size <= RECENT_BYTES) return first;

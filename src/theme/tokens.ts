@@ -173,6 +173,11 @@ export const composerLineHeight = 44;
  */
 export const composerMaxHeight = composerLineHeight * 4;
 
+export const threadLayout = {
+  bottomSlack: 48,
+  initialControlsHeight: 96,
+} as const;
+
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
 
