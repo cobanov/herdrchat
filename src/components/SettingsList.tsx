@@ -114,7 +114,12 @@ export function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={rowLayout}>
       <Text variant="body">{label}</Text>
-      <Text variant="body" color="secondary" numberOfLines={1}>
+      <Text
+        variant="body"
+        color="secondary"
+        numberOfLines={1}
+        ellipsizeMode="middle"
+        style={{ flexShrink: 1, textAlign: 'right' }}>
         {value}
       </Text>
     </View>
