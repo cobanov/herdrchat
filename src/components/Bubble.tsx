@@ -10,6 +10,7 @@ import { copyOptions } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
+import { displayText } from '@/lib/transcript/message';
 import { useSettings } from '@/state/settings';
 
 /**
@@ -96,8 +97,12 @@ export const Bubble = memo(function Bubble({
         // stay a tap on whatever it landed on.
         delayLongPress={400}
         accessibilityRole="button"
-        accessibilityLabel={outgoing ? 'Your message' : 'Agent message'}
+        accessibilityLabel={`${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${timeLabel ? `, ${timeLabel}` : ''}`}
         accessibilityHint="Long press to copy"
+        accessibilityActions={[{ name: 'longpress', label: 'Copy message' }]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'longpress') copy();
+        }}
         testID={`bubble-${message.id}`}
         style={[
           {

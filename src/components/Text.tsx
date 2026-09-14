@@ -1,6 +1,5 @@
 import {
   Text as RNText,
-  useWindowDimensions,
   type TextProps as RNTextProps,
   type TextStyle,
 } from 'react-native';
@@ -26,20 +25,11 @@ export interface TextProps extends RNTextProps {
  * out of its way to break accessibility rather than getting it wrong by
  * omission.
  *
- * LINE HEIGHT IS SCALED BY HAND, and it has to be. React Native applies the
- * user's Dynamic Type factor to `fontSize` and leaves `lineHeight` exactly as
- * written — so a token pair of 34/41 rendered 60pt glyphs inside a 41pt line box
- * at the largest accessibility size, and the overflow collided with whatever was
- * next to it. The screen header and the empty state underneath it were drawn on
- * top of each other.
- *
- * Which made the claim above quietly false: Dynamic Type was never switched off,
- * and was broken anyway. Honouring a rule in letter while defeating it in effect
- * is apparently this codebase's favourite mistake.
- *
- * `useWindowDimensions` rather than `PixelRatio.getFontScale()` because it is
- * reactive: changing the setting in iOS Settings re-renders, instead of leaving
- * the app correct only until the next cold start.
+ * React Native 0.86 scales both font size and line height natively. Fabric's
+ * RCTAttributedTextUtils multiplies lineHeight by the effective font multiplier.
+ * Multiplying it here as well made a three-line reply occupy half the screen
+ * at accessibility-large. Layout boxes beside text still use useScaledLine;
+ * text metrics are left to the renderer, including maxFontSizeMultiplier.
  */
 export function Text({
   variant = 'body',
@@ -50,11 +40,9 @@ export function Text({
   ...rest
 }: TextProps) {
   const { colors } = useTheme();
-  const { fontScale } = useWindowDimensions();
   const scale = typography[variant];
   // Display sizes are capped; content is not. See `maxFontScale`.
   const cap = maxFontScale[variant];
-  const effective = cap === undefined ? fontScale : Math.min(fontScale, cap);
 
   const palette: Record<ColorRole, string> = {
     label: colors.label,
@@ -72,7 +60,7 @@ export function Text({
       style={[
         {
           fontSize: scale.fontSize,
-          lineHeight: scale.lineHeight * effective,
+          lineHeight: scale.lineHeight,
           fontWeight: weight ?? (scale.fontWeight as TextStyle['fontWeight']),
           color: palette[color],
         },

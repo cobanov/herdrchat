@@ -8,13 +8,13 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
-  composerLineHeight,
   composerMaxHeight,
   minTouchTarget,
   motion,
   radius,
   spacing,
   typography,
+  useComposerMinHeight,
 } from '@/theme/tokens';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -53,6 +53,7 @@ export function Composer({
   onDraftChange: (text: string) => void;
 }) {
   const { colors, reduceMotion } = useTheme();
+  const minHeight = useComposerMinHeight();
   const [focused, setFocused] = useState(false);
   const canSend = draft.trim().length > 0 && !disabled;
 
@@ -95,7 +96,7 @@ export function Composer({
         multiline
         style={{
           flex: 1,
-          minHeight: composerLineHeight,
+          minHeight,
           // Four lines, then it scrolls — see `composerMaxHeight`.
           maxHeight: composerMaxHeight,
           paddingLeft: spacing.lg,

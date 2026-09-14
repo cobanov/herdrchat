@@ -173,6 +173,12 @@ export const composerLineHeight = 44;
  */
 export const composerMaxHeight = composerLineHeight * 4;
 
+/** A scaled line plus padding, so the empty placeholder cannot be clipped. */
+export function useComposerMinHeight(): number {
+  const { fontScale } = useWindowDimensions();
+  return Math.max(composerLineHeight, typography.body.lineHeight * fontScale + spacing.md * 2);
+}
+
 export const threadLayout = {
   bottomSlack: 48,
   initialControlsHeight: 96,

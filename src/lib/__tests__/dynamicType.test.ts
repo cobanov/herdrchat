@@ -49,11 +49,9 @@ function grepSource(pattern: string, exclude: string[] = []): string[] {
 }
 
 describe('Dynamic Type', () => {
-  it('scales line height with the font, in the one component that sets it', () => {
-    const source = execFileSync('cat', ['src/components/Text.tsx'], { encoding: 'utf8' });
-    // A bare `lineHeight: scale.lineHeight` is the bug. It has to be multiplied.
-    expect(source).toMatch(/lineHeight: scale\.lineHeight \* \w+/);
-  });
+  // Text scaling is checked on the simulator at default and accessibility-large.
+  // A source regex previously required multiplying lineHeight in JS, even
+  // though RN 0.86's native renderer already scales it. It enforced the bug.
 
   it('lets no other component set a raw lineHeight', () => {
     // Anything setting its own lineHeight bypasses the scaling above. The avatar

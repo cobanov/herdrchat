@@ -35,7 +35,14 @@ describe('block parsing', () => {
 
   it('groups consecutive list items into one block', () => {
     expect(parseMarkdown('- a\n- b\n- c')).toEqual([{ kind: 'bullet', items: ['a', 'b', 'c'] }]);
-    expect(parseMarkdown('1. a\n2. b')).toEqual([{ kind: 'numbered', items: ['a', 'b'] }]);
+    expect(parseMarkdown('1. a\n2. b')).toEqual([{ kind: 'numbered', start: 1, items: ['a', 'b'] }]);
+  });
+
+  it('keeps the starting number when a reply separates list items with blank lines', () => {
+    expect(parseMarkdown('11. Before\n\n12. Last')).toEqual([
+      { kind: 'numbered', start: 11, items: ['Before'] },
+      { kind: 'numbered', start: 12, items: ['Last'] },
+    ]);
   });
 
   it('reads a GFM table with its alignment row', () => {

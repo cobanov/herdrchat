@@ -54,7 +54,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
       return (
         <View style={{ gap: spacing.xs }}>
           {block.items.map((item, index) => (
-            <ListRow key={index} marker={`${index + 1}.`} text={item} onTint={onTint} />
+            <ListRow key={index} marker={`${block.start + index}.`} text={item} onTint={onTint} />
           ))}
         </View>
       );

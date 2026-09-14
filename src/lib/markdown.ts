@@ -18,7 +18,7 @@ export type MarkdownBlock =
   | { kind: 'paragraph'; text: string }
   | { kind: 'heading'; level: number; text: string }
   | { kind: 'bullet'; items: string[] }
-  | { kind: 'numbered'; items: string[] }
+  | { kind: 'numbered'; start: number; items: string[] }
   | { kind: 'quote'; text: string }
   | { kind: 'code'; language: string | null; content: string }
   | { kind: 'table'; headers: string[]; rows: string[][] }
@@ -100,6 +100,7 @@ export function parseMarkdown(text: string): MarkdownBlock[] {
     const numbered = parseNumberedItem(line);
     if (numbered !== null) {
       flush();
+      const start = Number(/^\s*(\d+)/.exec(line)?.[1]);
       const items = [numbered];
       index += 1;
       for (;;) {
@@ -108,7 +109,7 @@ export function parseMarkdown(text: string): MarkdownBlock[] {
         items.push(next);
         index += 1;
       }
-      blocks.push({ kind: 'numbered', items });
+      blocks.push({ kind: 'numbered', start, items });
       continue;
     }
 
