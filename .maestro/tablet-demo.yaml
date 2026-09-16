@@ -14,6 +14,7 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: settings-section-appearance
 - tapOn: '${APPEARANCE}'
+- waitForAnimationToEnd
 - takeScreenshot: tablet-settings
 - tapOn:
     id: settings-section-conversations
