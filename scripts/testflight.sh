@@ -89,6 +89,7 @@ else
 # This is also what applies any app.json change since the last run.
 echo "==> Prebuilding ios/ from app.json ($VERSION build $BUILD_NUMBER)…"
 npx expo prebuild --platform ios --clean
+python3 scripts/check_ios_scene.py "ios/$SCHEME/Info.plist"
 
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p "$BUILD_DIR"
@@ -153,6 +154,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 unzip -q -o "$IPA" -d "$WORK"
 APP="$(/bin/ls -d "$WORK"/Payload/*.app | head -1)"
+python3 scripts/check_ios_scene.py "$APP/Info.plist"
 if [[ -d "$APP/EXDevLauncher.bundle" ]]; then
   echo "ERROR: EXDevLauncher.bundle is inside the .ipa — this is not a release build." >&2
   exit 1

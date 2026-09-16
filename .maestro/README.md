@@ -9,6 +9,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | Flow | Covers | Needs a host |
 |------|--------|--------------|
 | `smoke` | launch, all three tabs, the host switcher | no |
+| `scene-lifecycle` | Release launch, background return, warm and cold links on iOS 27 and older runtimes | no, selects Demo explicitly |
 | `settings` | host anchor, support, legal, danger zone | no |
 | `new-chat` | the sheet's fields, permission mode, both exits | no |
 | `folder-picker` | opening over the sheet, abandon vs. commit | no |

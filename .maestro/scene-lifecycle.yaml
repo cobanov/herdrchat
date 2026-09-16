@@ -1,0 +1,38 @@
+# Run a Release build on iOS 27 and an older runtime. Demo only, no real prompts.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- assertVisible: Chats
+- tapOn:
+    id: server-switcher
+- tapOn:
+    id: server-demo
+- openLink: herdrchat://chat/w2?title=Notes
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: thread-messages
+- assertVisible:
+    id: composer-input
+- pressKey: Home
+- launchApp
+- assertVisible:
+    id: thread-messages
+- openLink: herdrchat://chat/w3?title=Docs
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: bubble-d3-1
+- stopApp
+- openLink: herdrchat://chat/w2?title=Notes
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: thread-messages
+- assertVisible:
+    id: composer-input
+- takeScreenshot: scene-cold-link

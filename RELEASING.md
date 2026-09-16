@@ -44,6 +44,13 @@ enforced rather than trusted:
 - Both halves of the SSH module are present — the native symbols in the binary
   and the module name in the JS bundle. Autolinking says nothing when it
   doesn't happen, and without the transport every screen is an error state.
+- The generated app and exported IPA declare an application scene delegate.
+  Xcode 27 builds without one crash immediately on iOS 27, even if they passed
+  tests on an older simulator. SDK 57 uses Expo's official scene support opt-in
+  in `expo-build-properties`; keep Expo at 57.0.23 or newer. See the
+  [Expo migration guide](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md#staying-on-sdk-57-with-xcode-27).
+  Run the Release launch, foreground/background and cold deep-link checks on
+  iOS 27 as well as the older supported runtime before uploading.
 
 ### Gotchas learned the hard way
 
