@@ -99,6 +99,8 @@ cannot detect overlapping views by itself.
 
 ## Notes for writing flows here
 
+- `launchApp` restarts by default. Use `launchApp: { stopApp: false }` after
+  Home when testing a background return, otherwise the test checks a cold start.
 - **Don't use `clearState`.** On a development build it also wipes the dev
   client's saved bundler URL, so the app launches into the launcher's server
   picker instead of the app.

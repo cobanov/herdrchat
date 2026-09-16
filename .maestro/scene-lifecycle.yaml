@@ -17,7 +17,8 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: composer-input
 - pressKey: Home
-- launchApp
+- launchApp:
+    stopApp: false
 - assertVisible:
     id: thread-messages
 - openLink: herdrchat://chat/w3?title=Docs
