@@ -41,7 +41,7 @@ export default function ServersScreen() {
     await setSetting(db, SELECTED_KEY, connection.id);
     // Straight back to the conversations on the host you just picked — choosing
     // a server is always in service of reading its chats.
-    router.push('/');
+    router.navigate('/');
   };
 
   const confirmDelete = (connection: ServerConnection) => {

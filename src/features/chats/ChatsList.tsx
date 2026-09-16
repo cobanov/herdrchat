@@ -1,9 +1,8 @@
 import { FlashList } from '@shopify/flash-list';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Keyboard, Pressable, RefreshControl, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
@@ -12,7 +11,7 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { ActionRow } from '@/components/SettingsList';
+import { openChat } from './navigation';
 import { groupChats, type ChatGroupId } from './chatGroups';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
@@ -26,6 +25,7 @@ import { haptics } from '@/lib/haptics';
 import { isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { useChatEdits } from '@/state/chatEdits';
+import { useChatSelection } from '@/state/chatSelection';
 import {
   clientFor,
   loadHostKeyPin,
@@ -54,8 +54,8 @@ export default function ChatsList({ selectedWorkspaceId }: { selectedWorkspaceId
 
 function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string }) {
   const router = useRouter();
-  const { title } = useLocalSearchParams<{ title?: string }>();
-  const insets = useSafeAreaInsets();
+  const selection = useChatSelection((state) => state.selection);
+  const select = useChatSelection((state) => state.select);
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const connection = useSelectedConnection();
@@ -90,15 +90,17 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     db,
     refresh,
     onClosed: useCallback((workspaceId: string) => {
-      if (workspaceId === selectedWorkspaceId) router.back();
-    }, [selectedWorkspaceId, router]),
+      if (workspaceId === selectedWorkspaceId) select(null);
+    }, [selectedWorkspaceId, select]),
   });
 
   // Renaming from the persistent sidebar must also update the open header.
   const selectedTitle = summaries.find((item) => item.workspaceId === selectedWorkspaceId)?.title;
   useEffect(() => {
-    if (selectedTitle !== undefined && selectedTitle !== title) router.setParams({ title: selectedTitle });
-  }, [selectedTitle, title, router]);
+    if (selection !== null && selectedTitle !== undefined && selectedTitle !== selection.title) {
+      select({ ...selection, title: selectedTitle });
+    }
+  }, [selectedTitle, selection, select]);
 
   const editsDirty = useChatEdits((state) => state.dirty);
   const clearEdits = useChatEdits((state) => state.clear);
@@ -185,7 +187,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       <Header
         title="Chats"
         subtitle={connection?.name ?? null}
-        onSubtitlePress={() => router.push('/hosts')}
+        onSubtitlePress={() => router.navigate('/hosts')}
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
@@ -316,14 +318,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 unread={item.workspaceId !== selectedWorkspaceId && isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
                 onPress={() => {
                   Keyboard.dismiss();
-                  if (selectedWorkspaceId !== undefined) {
-                    router.setParams({ workspaceId: item.workspaceId, title: item.title });
-                    return;
-                  }
-                  router.push({
-                    pathname: '/chat/[workspaceId]',
-                    params: { workspaceId: item.workspaceId, title: item.title },
-                  });
+                  openChat(connection.id, item.workspaceId, item.title);
                 }}
                 onLongPress={() => actions.manageChat(item)}
                 onSwiped={markHintSeen}
@@ -346,11 +341,6 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             />
           }
         />
-      )}
-      {selectedWorkspaceId !== undefined && (
-        <View style={{ paddingBottom: insets.bottom }}>
-          <ActionRow label="Settings" testID="sidebar-settings" onPress={() => router.push('/settings')} />
-        </View>
       )}
     </Screen>
   );

@@ -1,10 +1,10 @@
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect } from 'react';
 
 import { getPushDeviceId } from '@/features/notifications/deviceId';
+import { openChat } from '@/features/chats/navigation';
 import { deviceFileId, existingPushToken, uploadPushToken } from '@/features/notifications/push';
 import { clientFor, useConnections } from '@/state/connections';
 import { useSettings } from '@/state/settings';
@@ -109,8 +109,6 @@ function targetOf(response: Notifications.NotificationResponse): PushTarget | nu
  * which is the shipped setup.
  */
 export function useNotificationRouting(): void {
-  const router = useRouter();
-
   useEffect(() => {
     const route = (response: Notifications.NotificationResponse) => {
       // Deduplicate on the tap, not on the code path that delivered it — see
@@ -122,13 +120,7 @@ export function useNotificationRouting(): void {
 
       const target = targetOf(response);
       if (target === null) return;
-      router.push({
-        pathname: '/chat/[workspaceId]',
-        params:
-          target.label !== undefined
-            ? { workspaceId: target.workspace, title: target.label }
-            : { workspaceId: target.workspace },
-      });
+      openChat(useConnections.getState().selectedId ?? '', target.workspace, target.label);
     };
 
     void Notifications.getLastNotificationResponseAsync().then((response) => {
@@ -136,7 +128,7 @@ export function useNotificationRouting(): void {
     });
     const tap = Notifications.addNotificationResponseReceivedListener(route);
     return () => tap.remove();
-  }, [router]);
+  }, []);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { Platform } from 'react-native';
 
 import { useBadge } from '@/state/badge';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -33,7 +34,7 @@ export default function TabsLayout() {
       badgeBackgroundColor={colors.attention}
       // The bar shrinks out of the way as the chat list scrolls, then comes
       // back on scroll-up — the iOS 26 behaviour people already expect.
-      minimizeBehavior="onScrollDown">
+      minimizeBehavior={Platform.OS === 'ios' && Platform.isPad ? 'never' : 'onScrollDown'}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} />
         <NativeTabs.Trigger.Label>Chats</NativeTabs.Trigger.Label>
