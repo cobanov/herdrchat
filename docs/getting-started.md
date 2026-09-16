@@ -28,18 +28,22 @@ then restart or resume it so the session-start hook can run.
 
 Open the unreported Codex chat in HerdrChat and use **Install it on the host**
 when offered. This installs the official Herdr integration and the
-`herdrchat-codex` helper. It does not restart a running agent.
+Codex launcher in `~/.local/bin`. It does not restart a running agent.
 
-Start future Codex sessions inside their Herdr pane with:
+Start future Codex sessions normally inside their Herdr pane:
 
 ```sh
-herdrchat-codex
+codex
 ```
 
 For an existing session, get its exact ID with `/status`. When the agent is
 idle, exit and run `herdrchat-codex resume <session-id>`. Review the Herdr hook
 in `/hooks` if requested. The helper carries the pane identity into Codex's
-shared service without replacing the global `codex` command or bypassing trust.
+shared service. The `codex` entry point forwards to your original executable;
+outside Herdr it passes your arguments through unchanged. It never changes
+Codex settings or hook trust, and refuses to overwrite an unrelated launcher.
+Keep `~/.local/bin` before the original Codex directory on PATH, or use
+`herdrchat-codex` explicitly. A brand-new chat reports its ID after its first message.
 
 For manual host setup, run `herdr integration install codex` and install this
 repo's [named launcher](../scripts/herdr-codex.sh) as `herdrchat-codex` on the

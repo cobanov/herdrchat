@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { CODEX_LAUNCHER_SCRIPT } from '../herdr/codexLauncherScript';
@@ -43,10 +43,66 @@ it('carries only pane-scoped context and preserves caller arguments and safety s
 });
 
 it('refuses to start outside an identified Herdr pane', () => {
-  const result = spawnSync('bash', [launcher], { encoding: 'utf8', env: { ...process.env,
+  const named = join(dir, 'herdrchat-codex');
+  writeFileSync(named, CODEX_LAUNCHER_SCRIPT, { mode: 0o755 });
+  const result = spawnSync('bash', [named], { encoding: 'utf8', env: { ...process.env,
     PATH: `${dir}:${process.env.PATH ?? ''}`, HERDR_ENV: '', HERDR_PANE_ID: '', HERDR_SOCKET_PATH: '' } });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('inside the Herdr pane');
+});
+
+it('normal codex forwards pane identity without recursing through managed aliases or duplicate PATH entries', () => {
+  const shimDir = join(dir, 'shim');
+  mkdirSync(shimDir);
+  const shim = join(shimDir, 'codex');
+  writeFileSync(shim, CODEX_LAUNCHER_SCRIPT, { mode: 0o755 });
+  symlinkSync(shim, join(shimDir, 'herdrchat-codex'));
+  const env = { ...process.env, PATH: `${shimDir}:${shimDir}:${dir}:/usr/bin:/bin`,
+    HERDR_ENV: '1', HERDR_PANE_ID: 'w2:p1', HERDR_SOCKET_PATH: '/tmp/herdr.sock' };
+  for (const entry of [shim, join(shimDir, 'herdrchat-codex')]) {
+    const args: unknown = JSON.parse(execFileSync(entry, ['resume', 'exact-id'], { env, encoding: 'utf8' }));
+    expect(args).toContain('shell_environment_policy.set.HERDR_PANE_ID="w2:p1"');
+    expect(args).toEqual(expect.arrayContaining(['resume', 'exact-id']));
+  }
+});
+
+it('leaves normal Codex outside Herdr unchanged', () => {
+  const result = execFileSync('bash', [launcher, '--sandbox', 'read-only'], {
+    encoding: 'utf8', env: { ...process.env, PATH: `${dir}:/usr/bin:/bin`,
+      HERDR_ENV: '', HERDR_PANE_ID: '', HERDR_SOCKET_PATH: '' },
+  });
+  expect(JSON.parse(result)).toEqual(['--sandbox', 'read-only']);
+});
+
+it('installs both entry points, but does not overwrite an existing unrelated codex', async () => {
+  const testRoot = join(dir, 'install-root');
+  const bin = join(testRoot, '.local/bin');
+  mkdirSync(bin, { recursive: true });
+  const transport: HerdrTransport = {
+    exec: async (command) => {
+      const result = spawnSync('/bin/sh', ['-c', command.replaceAll('$HOME', testRoot)], { encoding: 'utf8' });
+      return { ok: true, stdout: result.stdout, stderr: result.stderr, exitCode: result.status ?? 1 };
+    },
+    streamLines: async function* () {},
+  };
+  writeFileSync(join(bin, 'codex'), 'unrelated');
+  await expect(installCodexLauncher(transport)).rejects.toMatchObject({ code: 'codex_launcher_conflict' });
+  expect(readFileSync(join(bin, 'codex'), 'utf8')).toBe('unrelated');
+  rmSync(join(bin, 'codex'));
+  await installCodexLauncher(transport);
+  await installCodexLauncher(transport);
+  expect(readFileSync(join(bin, 'codex'), 'utf8')).toBe(CODEX_LAUNCHER_SCRIPT);
+  expect(readFileSync(join(bin, 'herdrchat-codex'), 'utf8')).toBe(CODEX_LAUNCHER_SCRIPT);
+});
+
+it('fails clearly if PATH contains only the managed launcher', () => {
+  const shim = join(dir, 'codex');
+  writeFileSync(shim, CODEX_LAUNCHER_SCRIPT, { mode: 0o755 });
+  const result = spawnSync('/bin/bash', [shim], {
+    encoding: 'utf8', env: { ...process.env, PATH: dir, HERDR_ENV: '' },
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('original Codex executable is not on PATH');
 });
 
 it('quotes unusual socket names without evaluating their shell syntax', () => {
