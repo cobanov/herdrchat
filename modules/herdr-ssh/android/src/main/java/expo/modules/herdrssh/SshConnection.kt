@@ -25,9 +25,8 @@ class SshFailure(val code: String, override val message: String) : Exception(mes
  *
  * Ported from the Compose app's `core.net.SshTransport`. The connection is
  * opened lazily and reused; a cached client is liveness-checked before use, and
- * a command that fails at the connection level drops the client, reconnects and
- * retries once — so a stale connection (network change, background suspension,
- * NAT timeout) heals transparently rather than erroring until app restart.
+ * a command that fails at the connection level drops the client. The next call
+ * reconnects, but a possibly applied command is never automatically replayed.
  */
 class SshConnection(private val config: SshConfigRecord) {
 
@@ -48,20 +47,22 @@ class SshConnection(private val config: SshConfigRecord) {
       fresh.addHostKeyVerifier(hostKeyVerifier())
       try {
         fresh.connect(config.host, config.port)
+        // Survive NAT/router idle timeouts on a long-lived connection.
+        fresh.connection.keepAlive.keepAliveInterval = 20
+        authenticate(fresh)
+        client = fresh
+        fresh
       } catch (error: Exception) {
+        runCatching { fresh.disconnect() }
         if (hostKeyMismatch) {
           throw SshFailure(
             "host_key_changed",
             "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin.",
           )
         }
+        if (error is SshFailure) throw error
         throw SshFailure("connect_failed", error.message ?: "Couldn't reach the host.")
       }
-      // Survive NAT/router idle timeouts on a long-lived connection.
-      fresh.connection.keepAlive.keepAliveInterval = 20
-      authenticate(fresh)
-      client = fresh
-      fresh
     }
   }
 
@@ -79,7 +80,7 @@ class SshConnection(private val config: SshConfigRecord) {
       val wire = Buffer.PlainBuffer().putPublicKey(key).compactData
       val digest = MessageDigest.getInstance("SHA-256").digest(wire)
       val fingerprint = Base64.encodeToString(digest, Base64.NO_WRAP).trimEnd('=')
-      val pin = config.hostKeyFingerprint?.takeIf { it.isNotEmpty() }
+      val pin = config.hostKeyFingerprint?.takeIf { it.isNotEmpty() } ?: acceptedFingerprint
       // Recorded only on acceptance. Assigning before the comparison published
       // a REJECTED key as the one we accepted, which is exactly the key a
       // "trust the new key" flow must never be handed for free.
@@ -131,13 +132,8 @@ class SshConnection(private val config: SshConfigRecord) {
   data class CommandOutput(val stdout: String, val stderr: String, val exitCode: Int)
 
   /**
-   * Run a command to completion. A non-zero exit is a RESULT, not an error — the
-   * caller decides what exit 127 means. Only connection-level failures retry.
-   *
-   * A timeout is NOT retried: spending a second full deadline before the caller
-   * hears anything is the difference, on a wedged host, between a slow refresh
-   * and a UI that looks dead. `keepAliveInterval` above would eventually notice
-   * a dropped socket, but "eventually" is not a deadline.
+   * Run once. A non-zero exit is a result. A lost reply is ambiguous, not
+   * permission to execute a possibly applied command a second time.
    */
   suspend fun exec(command: String, timeoutMs: Int): CommandOutput =
     try {
@@ -146,11 +142,7 @@ class SshConnection(private val config: SshConfigRecord) {
       throw failure   // auth / host key / bad key / timeout: retrying changes nothing
     } catch (error: IOException) {
       resetClient()
-      try {
-        withDeadline(timeoutMs) { execOnce(command) }
-      } catch (retry: IOException) {
-        throw SshFailure("transport_failed", retry.message ?: "The connection dropped.")
-      }
+      throw SshFailure("transport_failed", error.message ?: "The connection dropped.")
     }
 
   /**

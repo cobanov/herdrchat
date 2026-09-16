@@ -22,12 +22,14 @@ const mockOlder = jest.fn(async (_path: string, _label: string | null, _anchor: 
   messages: [] as ChatMessage[], startByte: 0, reachedStart: true,
 }));
 const mockTailStarts: { path: string; from: number }[] = [];
+const mockTailSignals: (AbortSignal | undefined)[] = [];
 const mockSessionMeta = jest.fn<Promise<SessionMeta | null>, [string, string | null]>();
 let mockLiveMeta: SessionMeta[] = [];
 let mockLiveReceipt = false;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
-async function* mockTail(path: string, _label: string | null, from: number) {
+async function* mockTail(path: string, _label: string | null, from: number, signal?: AbortSignal) {
   mockTailStarts.push({ path, from });
+  mockTailSignals.push(signal);
   for (const meta of mockLiveMeta) yield { message: null, meta, consumedBytes: from };
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
@@ -110,6 +112,7 @@ beforeEach(() => {
   jest.mocked(seedMessages).mockResolvedValue([]);
   jest.mocked(tailCursor).mockResolvedValue(null);
   mockTailStarts.length = 0;
+  mockTailSignals.length = 0;
   mockSessionMeta.mockReset().mockResolvedValue(null);
   mockLiveMeta = [];
   mockLiveReceipt = false;
@@ -118,6 +121,15 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
   jest.useRealTimers();
+});
+
+it('passes cancellation into a silent transcript reader when the thread leaves', async () => {
+  mockLiveReceipt = true;
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(mockTailSignals[0]?.aborted).toBe(false);
+  await unmount();
+  expect(mockTailSignals[0]?.aborted).toBe(true);
 });
 
 it('waits for the live session before reading a workspace cache', async () => {

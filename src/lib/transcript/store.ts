@@ -374,7 +374,8 @@ export class TranscriptStore {
   async *tail(
     path: string,
     agentLabel: string | null,
-    startByte: number
+    startByte: number,
+    signal?: AbortSignal
   ): AsyncGenerator<
     { message: ChatMessage | null; meta: SessionMeta | null; consumedBytes: number },
     void,
@@ -382,7 +383,7 @@ export class TranscriptStore {
   > {
     let consumed = startByte;
     const command = withPath(`tail -c +${startByte + 1} -f ${shellQuote(path)}`);
-    for await (const line of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS)) {
+    for await (const line of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS, signal)) {
       consumed += byteLength(line) + 1; // + the newline the framing stripped
       const entry = parseTranscriptEntry(line, agentLabel);
       yield { message: entry.message, meta: entry.meta, consumedBytes: consumed };

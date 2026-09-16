@@ -32,7 +32,7 @@ export class SshHerdrTransport implements HerdrTransport {
      */
     private readonly loadConfig: () => Promise<SshConfig>,
     /** Called with the accepted fingerprint so first contact can be persisted. */
-    private readonly onFingerprint?: (fingerprint: string) => void
+    private readonly onFingerprint?: (fingerprint: string) => void | Promise<void>
   ) {}
 
   /**
@@ -44,27 +44,27 @@ export class SshHerdrTransport implements HerdrTransport {
     if (this.opening === null) {
       this.opening = this.loadConfig()
         .then((config) => connect(this.id, config))
-        .then((result): ConnectResult => {
+        .then(async (result): Promise<ConnectResult> => {
           if (result.ok) {
             // A connection we cannot name is a connection we cannot pin. Storing
             // an empty fingerprint would read back as "no pin" — trust-on-first-
             // use, re-armed on every connect — so this is a failure to surface,
             // not a value to persist.
             if (result.fingerprint.length === 0) {
-              this.opening = null;
               // Drop the native session too. It authenticated, so the module has
               // it cached and the next connect short-circuits on it — the host
               // key would never be validated again and this same refusal would
               // repeat for the life of the process. Forgetting it here is what
               // makes the next attempt a real handshake.
-              void disconnect(this.id);
+              await disconnect(this.id);
+              this.opening = null;
               return {
                 ok: false,
                 code: 'connect_failed',
                 message: "The host connected but reported no key fingerprint, so its identity can't be checked.",
               };
             }
-            this.onFingerprint?.(result.fingerprint);
+            await this.onFingerprint?.(result.fingerprint);
           } else {
             // Let the next call retry rather than caching a failure forever —
             // the usual reason is that the phone wasn't on the tailnet yet.
@@ -72,12 +72,15 @@ export class SshHerdrTransport implements HerdrTransport {
           }
           return result;
         })
-        .catch((thrown: unknown): ConnectResult => {
+        .catch(async (thrown: unknown): Promise<ConnectResult> => {
           // Everything before the handshake can throw — reading the config, a
           // keychain that will not answer. Without this the REJECTED promise
           // stays in `opening` and every later command on this host rejects
           // from cache until the app restarts, which is the one failure mode a
           // transport must not have. Same shape as any other expected failure.
+          // In particular, a failed pin write must not leave an authenticated
+          // native connection usable by the next caller.
+          await disconnect(this.id).catch(() => undefined);
           this.opening = null;
           return {
             ok: false,
@@ -95,12 +98,14 @@ export class SshHerdrTransport implements HerdrTransport {
     return withJsDeadline(exec(this.id, command, timeoutMs), timeoutMs);
   }
 
-  async *streamLines(command: string, startTimeoutMs: number): AsyncIterable<string> {
+  async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
+    if (signal?.aborted) return;
     const opened = await this.open();
+    if (signal?.aborted) return;
     if (!opened.ok) {
       throw new Error(opened.message);
     }
-    yield* streamLines(this.id, command, startTimeoutMs);
+    yield* streamLines(this.id, command, startTimeoutMs, signal);
   }
 
   async close(): Promise<void> {

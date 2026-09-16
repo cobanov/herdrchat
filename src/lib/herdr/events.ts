@@ -2,7 +2,8 @@ import { HerdrError } from './protocol';
 import type { HerdrSocket, SocketEvent, Subscription } from './socket';
 
 /**
- * One `events.subscribe` connection per host, kept open, with reconnection.
+ * One `events.subscribe` per mounted consumer, with reconnection. An iPad may
+ * mount both the list and thread; superseded streams are cancelled immediately.
  *
  * What it replaces: two poll loops asking "anything new?" every few seconds,
  * each answer a full SSH round-trip, most of them "no". With the feed, herdr
@@ -23,6 +24,7 @@ export class EventFeed {
   private failures = 0;
   private live = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private controller: AbortController | null = null;
 
   constructor(
     private readonly socket: HerdrSocket,
@@ -36,13 +38,7 @@ export class EventFeed {
    * connection is dropped and a new one opened, because a subscription cannot
    * be amended once started.
    *
-   * "Dropped" means: the next line it delivers is discarded and the loop exits,
-   * which closes the remote command. An async generator parked on a read cannot
-   * be interrupted from outside (its `return()` queues behind the pending
-   * await), so a superseded connection lingers until the host says something
-   * on it. Every pane it watched is also watched by its successor, so that is
-   * at most one idle bridge process per change of pane set, gone on the next
-   * status flip anywhere on the host.
+   * Abort reaches the native reader even when the host is completely silent.
    */
   watch(paneIds: readonly string[]): void {
     const next = [...new Set(paneIds)].sort();
@@ -57,6 +53,8 @@ export class EventFeed {
   stop(): void {
     this.running = false;
     this.generation += 1;
+    this.controller?.abort();
+    this.controller = null;
     if (this.retryTimer !== null) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -66,6 +64,8 @@ export class EventFeed {
 
   private restart(): void {
     this.generation += 1;
+    this.controller?.abort();
+    this.setLive(false);
     if (this.retryTimer !== null) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -75,8 +75,10 @@ export class EventFeed {
 
   private async run(generation: number): Promise<void> {
     const subscriptions = subscriptionsFor(this.panes);
+    const controller = new AbortController();
+    this.controller = controller;
     try {
-      for await (const raw of this.socket.subscribe(subscriptions, SUBSCRIBE_START_TIMEOUT_MS)) {
+      for await (const raw of this.socket.subscribe(subscriptions, SUBSCRIBE_START_TIMEOUT_MS, controller.signal)) {
         // A newer connection has taken over, or stop() was called: this loop's
         // job is only to let go, and breaking out closes the remote command.
         if (generation !== this.generation) break;

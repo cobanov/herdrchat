@@ -47,7 +47,7 @@ export function withSession(
 
   return {
     exec: (command, timeoutMs) => transport.exec(prefix + command, timeoutMs),
-    streamLines: (command, startTimeoutMs) =>
-      transport.streamLines(prefix + command, startTimeoutMs),
+    streamLines: (command, startTimeoutMs, signal) =>
+      transport.streamLines(prefix + command, startTimeoutMs, signal),
   };
 }

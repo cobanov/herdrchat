@@ -24,5 +24,5 @@ export interface HerdrTransport {
    * `startTimeoutMs` bounds getting the command running, not the stream, which
    * is unbounded by design.
    */
-  streamLines(command: string, startTimeoutMs: number): AsyncIterable<string>;
+  streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string>;
 }

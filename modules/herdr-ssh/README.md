@@ -16,10 +16,9 @@ learned:
 
 - **Lazy, reused connection.** One SSH connection per host, opened on first use
   and kept. Cached clients are liveness-checked before reuse.
-- **Retry-once heal.** A command that fails at the connection level (network
-  change, background suspension, NAT idle timeout) drops the client, reconnects
-  and retries exactly once, so a stale connection heals instead of erroring
-  until app restart.
+- **No ambiguous replay.** A connection-level failure drops the client; the
+  next request reconnects. The failed command is never automatically repeated,
+  because the host may have applied it before losing the reply.
 - **Route-change invalidation.** iOS watches `NWPathMonitor`; when the interface
   set changes (wifi↔cellular, Tailscale up/down) the cached client is dropped so
   the next command dials on the new route rather than stalling on a dead socket.
@@ -40,8 +39,9 @@ tested. A non-zero exit status is likewise a *result*, not an error: `exit 127`
 meaning "herdr isn't installed here" is an interpretation, and interpretations
 belong in `src/lib`.
 
-It also holds no secrets. The private key and the host-key pin are passed in per
-connect from `expo-secure-store`; nothing is cached natively.
+It writes no secrets to disk. Credentials are passed in from `expo-secure-store`
+and kept in memory for the connection lifetime. An accepted key remains pinned
+across native reconnects, including before the first pin has been saved to disk.
 
 ## API
 
@@ -53,12 +53,13 @@ const result = await connect('server-1', {
   auth: { kind: 'privateKey', pem: '-----BEGIN OPENSSH PRIVATE KEY-----\n…' },
   hostKeyFingerprint: storedPin ?? null,
 });
-if (result.ok) persistPin(result.fingerprint);
+if (result.ok) await persistPin(result.fingerprint);
 
-const { stdout, exitCode } = await exec('server-1', 'herdr api snapshot');
+const output = await exec('server-1', 'herdr api snapshot', 10_000);
 
-for await (const line of streamLines('server-1', 'tail -f session.jsonl')) {
-  // breaking out of the loop stops the remote command
+const controller = new AbortController();
+for await (const line of streamLines('server-1', 'tail -f session.jsonl', 10_000, controller.signal)) {
+  // Break to stop after a line, or controller.abort() to stop even a silent read.
 }
 ```
 
@@ -74,6 +75,15 @@ so it lives in `src/lib/herdr/shell.ts` with the quoting.
 
 Changing anything under `ios/` or `android/` here requires a native rebuild
 (`npx expo run:ios`); Fast Refresh does not reload native code.
+
+`swift run --package-path modules/herdr-ssh NativeChecks` exercises the production
+pin policy on macOS. Optional `<test-key> <test-directory>` arguments run actual
+SSH checks with an isolated loopback sshd on port 22264: nonzero exit status,
+20 silent stream cancellations, a lost reply, and a changed host key. The test
+starts and stops its own sshd. The directory must contain `config` (bound to
+127.0.0.1:22264 with an absolute HostKey path ending in `/host_a`), a second
+`host_b` key, and the test client's public key in AuthorizedKeysFile. Use only
+disposable keys and a writable directory below `/tmp`; no real host is needed.
 
 ## Host key fingerprints
 

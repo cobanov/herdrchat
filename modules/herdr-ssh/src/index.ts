@@ -66,13 +66,16 @@ let streamCounter = 0;
  * immediately, and without the buffer those lines would be dropped between the
  * subscription and the first `next()`.
  *
- * Breaking out of the loop (or calling `.return()`) stops the remote command.
+ * Breaking out stops the command. AbortSignal also interrupts an idle read;
+ * `.return()` alone queues behind a pending `next()` and cannot do that.
  */
 export async function* streamLines(
   id: string,
   command: string,
-  startTimeoutMs: number
+  startTimeoutMs: number,
+  signal?: AbortSignal
 ): AsyncGenerator<string, void, void> {
+  if (signal?.aborted) return;
   const streamId = `s${++streamCounter}`;
 
   const pending: string[] = [];
@@ -109,13 +112,25 @@ export async function* streamLines(
     subscriptions.forEach((subscription) => subscription.remove());
   };
 
+  const stop = () => HerdrSshModule.stopStream(streamId).catch(() => undefined);
+  const abort = () => {
+    finished = true;
+    pending.length = 0;
+    wake();
+    // Also stop when the consumer is paused at a yield, not only at next().
+    void stop();
+  };
+  signal?.addEventListener('abort', abort);
+
   try {
     const started = await HerdrSshModule.startStream(id, streamId, command, startTimeoutMs);
+    if (signal?.aborted) return;
     if (!started.ok) {
       throw new SshStreamError(started);
     }
 
     for (;;) {
+      if (signal?.aborted) return;
       while (pending.length > 0) {
         // Non-null: guarded by the length check, and nothing else shifts here.
         yield pending.shift() as string;
@@ -127,11 +142,11 @@ export async function* streamLines(
       });
     }
   } finally {
+    signal?.removeEventListener('abort', abort);
     cleanup();
-    await HerdrSshModule.stopStream(streamId).catch(() => {
-      // The stream may already be gone (host dropped, app suspended). Tearing
-      // down an absent stream is the expected case here, not a problem.
-    });
+    // Repeat after an aborted start: native may have registered the handle
+    // only after the first stop request. Stopping an absent stream is safe.
+    await stop();
   }
 }
 
