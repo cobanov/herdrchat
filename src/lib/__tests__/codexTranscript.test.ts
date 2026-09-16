@@ -91,7 +91,12 @@ describe('Codex rollout history', () => {
   });
 
   it('gets model and last-request input usage without double-counting cache', () => {
-    expect(assistantMeta(line('turn_context', { model: 'gpt-5.6' }))).toEqual({ model: 'gpt-5.6', contextTokens: null });
+    expect(assistantMeta(line('turn_context', { model: 'gpt-5.6', effort: 'high' })))
+      .toEqual({ model: 'gpt-5.6', effort: 'high', contextTokens: null });
+    for (const effort of [undefined, null, 5, 'high\nprivate text']) {
+      expect(assistantMeta(line('turn_context', { model: 'gpt-5.6', effort })))
+        .toEqual({ model: 'gpt-5.6', effort: null, contextTokens: null });
+    }
     const event = line('event_msg', { type: 'token_count', info: {
       total_token_usage: { input_tokens: 90_000 },
       last_token_usage: { input_tokens: 12_000, cached_input_tokens: 10_000, output_tokens: 300 },

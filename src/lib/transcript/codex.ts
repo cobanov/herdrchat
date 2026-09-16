@@ -19,7 +19,9 @@ export function codexEntry(
 
   if (raw.type === 'turn_context') {
     const model = typeof payload.model === 'string' ? payload.model : null;
-    return { message: null, meta: model === null ? null : { model, contextTokens: null } };
+    const effort = typeof payload.effort === 'string' && /^[a-z]{1,16}$/.test(payload.effort)
+      ? payload.effort : null;
+    return { message: null, meta: model === null ? null : { model, effort, contextTokens: null } };
   }
   if (raw.type === 'event_msg' && payload.type === 'token_count') {
     const usage = record(record(payload.info)?.last_token_usage);

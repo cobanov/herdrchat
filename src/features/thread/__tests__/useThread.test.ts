@@ -5,6 +5,7 @@ import { HerdrClient } from '@/lib/herdr/client';
 import type { AgentInfo, Snapshot } from '@/lib/herdr/models';
 import type { FileProbe } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
+import type { SessionMeta } from '@/lib/transcript/sessionMeta';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
 import { useThread } from '../useThread';
@@ -21,10 +22,13 @@ const mockOlder = jest.fn(async (_path: string, _label: string | null, _anchor: 
   messages: [] as ChatMessage[], startByte: 0, reachedStart: true,
 }));
 const mockTailStarts: { path: string; from: number }[] = [];
+const mockSessionMeta = jest.fn<Promise<SessionMeta | null>, [string, string | null]>();
+let mockLiveMeta: SessionMeta[] = [];
 let mockLiveReceipt = false;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
 async function* mockTail(path: string, _label: string | null, from: number) {
   mockTailStarts.push({ path, from });
+  for (const meta of mockLiveMeta) yield { message: null, meta, consumedBytes: from };
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
     yield { message, meta: null, consumedBytes: 100 };
@@ -53,7 +57,7 @@ jest.mock('@/lib/transcript/store', () => ({
     fileProbe = async () => mockProbe;
     recent = mockRecent;
     older = mockOlder;
-    sessionMeta = async () => null;
+    sessionMeta = mockSessionMeta;
     tail = mockTail;
   },
 }));
@@ -106,6 +110,8 @@ beforeEach(() => {
   jest.mocked(seedMessages).mockResolvedValue([]);
   jest.mocked(tailCursor).mockResolvedValue(null);
   mockTailStarts.length = 0;
+  mockSessionMeta.mockReset().mockResolvedValue(null);
+  mockLiveMeta = [];
   mockLiveReceipt = false;
   mockEmitReceipt = null;
 });
@@ -164,9 +170,56 @@ it('resolves a Codex transcript by native session id and namespaces its cache', 
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(mockCodexPath).toHaveBeenCalledWith('session');
+  expect(mockSessionMeta).toHaveBeenCalledWith('/test/codex.jsonl', 'codex');
   expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'codex:session');
   expect(result.current.loading).toBe(false);
   expect(result.current.sessionState).toBe('ok');
+  await unmount();
+});
+
+it.each([
+  { live: { model: null, contextTokens: 200 }, model: 'gpt-old', effort: 'high' },
+  { live: { model: 'gpt-new', effort: 'low', contextTokens: null }, model: 'gpt-new', effort: 'low' },
+  { live: { model: 'gpt-new', effort: null, contextTokens: null }, model: 'gpt-new', effort: null },
+])('merges a late metadata seed without losing live usage or mixing turn settings: $model/$effort', async ({ live, model, effort }) => {
+  let resolveSeed!: (meta: SessionMeta) => void;
+  mockSessionMeta.mockImplementation(() => new Promise(resolve => { resolveSeed = resolve; }));
+  mockLiveMeta = [live];
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { resolveSeed({ model: 'gpt-old', effort: 'high', contextTokens: 100 }); });
+  expect(result.current.sessionMeta).toEqual({ model, effort, contextTokens: live.contextTokens ?? 100 });
+  await unmount();
+});
+
+it('preserves effort on usage events but clears it when the next model does not report it', async () => {
+  mockLiveMeta = [
+    { model: 'gpt-old', effort: 'high', contextTokens: null },
+    { model: null, contextTokens: 200 },
+  ];
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const first = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(first.result.current.sessionMeta).toEqual({ model: 'gpt-old', effort: 'high', contextTokens: 200 });
+  await first.unmount();
+  mockLiveMeta.push({ model: 'gpt-new', effort: null, contextTokens: null });
+  const second = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(second.result.current.sessionMeta).toEqual({ model: 'gpt-new', effort: null, contextTokens: 200 });
+  await second.unmount();
+});
+
+it('keeps sibling agents metadata separate and follows the focused pane', async () => {
+  const sibling = { ...agent, focused: false, paneId: 'sibling',
+    agentSession: { ...agent.agentSession!, value: 'sibling-session' } };
+  let focused = [agent, sibling];
+  jest.spyOn(client, 'snapshot').mockImplementation(async () => snapshot(focused));
+  mockSessionMeta.mockImplementation(async path => ({
+    model: path.includes('sibling') ? 'sibling-model' : 'primary-model', contextTokens: 100,
+  }));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.sessionMeta?.model).toBe('primary-model');
+  focused = [{ ...agent, focused: false }, { ...sibling, focused: true }];
+  await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
+  expect(result.current.sessionMeta?.model).toBe('sibling-model');
   await unmount();
 });
 

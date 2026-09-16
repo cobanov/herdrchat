@@ -178,7 +178,7 @@ export function useThread(
   // guard in sendKeys, a second tap can land before React re-renders.
   const blockedPendingRef = useRef<BlockedPending | null>(null);
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
+  const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /*
@@ -249,7 +249,7 @@ export function useThread(
    */
   const tailBeats = useRef(new Map<string, number>());
   /** The header is seeded from disk once per bound session; the tail does the rest. */
-  const metaSeeded = useRef(false);
+  const metaSeeded = useRef(new Set<string>());
   const alive = useRef(true);
   const paging = useRef(false);
   const sending = useRef(false);
@@ -261,10 +261,15 @@ export function useThread(
    * usage on a line whose model field is absent, and blanking the other half
    * each time would make the header flicker between complete and half-empty.
    */
-  const applyMeta = useCallback((next: SessionMeta) => {
-    setSessionMeta((prev) => ({
-      model: next.model ?? prev?.model ?? null,
-      contextTokens: next.contextTokens ?? prev?.contextTokens ?? null,
+  const applyMeta = useCallback((key: string, next: SessionMeta) => {
+    setSessionMetadata((prev) => ({
+      ...prev,
+      [key]: {
+        model: next.model ?? prev[key]?.model ?? null,
+        // Model and effort belong to one turn, never to a sibling agent.
+        effort: next.model !== null ? next.effort ?? null : prev[key]?.effort ?? null,
+        contextTokens: next.contextTokens ?? prev[key]?.contextTokens ?? null,
+      },
     }));
   }, []);
 
@@ -392,8 +397,8 @@ export function useThread(
     setFailedIds(new Set());
     // A different session means a different model and a different context; the
     // old header would otherwise persist over the new conversation.
-    metaSeeded.current = false;
-    setSessionMeta(null);
+    metaSeeded.current.clear();
+    setSessionMetadata({});
   }, []);
 
   // Cache reads happen after the snapshot identifies the live session. A route
@@ -449,7 +454,7 @@ export function useThread(
           }
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
           const cached = await tailCursor(db, connectionId, workspaceId, path);
-          return { key, path, label, size: probe.bytes, cached };
+          return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
         } catch (thrown) {
           release(sessionSignature([agent])!);
           openingError = thrown instanceof Error ? thrown.message : String(thrown);
@@ -491,10 +496,17 @@ export function useThread(
           olderSource.current = { path: source.path, label: source.label, anchor };
           setReachedStart(anchor <= 0);
         }
-        if (!metaSeeded.current) {
-          metaSeeded.current = true;
-          void store.sessionMeta(source.path).then(seeded => {
-            if (seeded !== null && current()) setSessionMeta(prev => prev ?? seeded);
+        if (!metaSeeded.current.has(source.key)) {
+          metaSeeded.current.add(source.key);
+          void store.sessionMeta(source.path, source.agent).then(seeded => {
+            if (seeded !== null && current()) setSessionMetadata(prev => ({
+              ...prev,
+              [source.key]: {
+                model: prev[source.key]?.model ?? seeded.model,
+                effort: prev[source.key]?.model != null ? prev[source.key]?.effort : seeded.effort,
+                contextTokens: prev[source.key]?.contextTokens ?? seeded.contextTokens,
+              },
+            }));
           }).catch(() => { /* The next live turn can fill the header. */ });
         }
         tailBeats.current.set(source.key, Date.now());
@@ -503,7 +515,7 @@ export function useThread(
             for await (const chunk of store.tail(source.path, source.label, followFrom)) {
               if (!current()) break;
               tailBeats.current.set(source.key, Date.now());
-              if (chunk.meta !== null) applyMeta(chunk.meta);
+              if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
               if (chunk.message !== null) await ingest([chunk.message], sig);
               if (!current()) break;
               await setTailCursor(db, connectionId, workspaceId, source.path, chunk.consumedBytes);
@@ -729,6 +741,8 @@ export function useThread(
     agents.find((a) => a.agent !== null) ??
     null;
   const blockedPane = agents.find((a) => a.agentStatus === 'blocked') ?? null;
+  const sessionMeta = primaryPane === null ? null
+    : sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
 
   // Publish "driven from a phone, on this model" to the host's sidebar. Gated on
   // `polling` so a backgrounded app stops claiming presence it does not have.

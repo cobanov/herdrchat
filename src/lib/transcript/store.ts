@@ -400,22 +400,37 @@ export class TranscriptStore {
    *
    * Null when the tail holds no assistant turn with usage yet.
    */
-  async sessionMeta(path: string, tailBytes = 262_144): Promise<SessionMeta | null> {
+  async sessionMeta(path: string, agent: string | null = null, tailBytes = 262_144): Promise<SessionMeta | null> {
     const text = await this.shell(`tail -c ${tailBytes} ${shellQuote(path)} 2>/dev/null`);
     let model: string | null = null;
+    let effort: string | null = null;
     let contextTokens: number | null = null;
 
     const lines = text.split('\n');
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const meta = assistantMeta(lines[index] ?? '');
       if (meta === null) continue;
-      if (model === null) model = meta.model;
+      if (model === null && meta.model !== null) {
+        model = meta.model;
+        effort = meta.effort ?? null;
+      }
       if (contextTokens === null) contextTokens = meta.contextTokens;
       if (model !== null && contextTokens !== null) break;
     }
 
+    if (model === null && agent === 'codex') {
+      // ponytail: one host-side scan only when a long turn outgrows the tail.
+      // Return one context record, not the history. A host metadata index can
+      // replace this if very large sessions make the one-off scan expensive.
+      const context = await this.shell(
+        `awk '/"type"[[:space:]]*:[[:space:]]*"turn_context"/ { latest = $0 } END { print latest }' ${shellQuote(path)}`
+      );
+      const meta = assistantMeta(context.trim());
+      model = meta?.model ?? null;
+      effort = meta?.effort ?? null;
+    }
     if (model === null && contextTokens === null) return null;
-    return { model, contextTokens };
+    return { model, effort, contextTokens };
   }
 
   /**
