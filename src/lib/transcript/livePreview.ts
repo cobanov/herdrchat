@@ -29,7 +29,7 @@ export function extractLivePreview(raw: string): string | null {
 
   const collected: string[] = [];
   let index = end - 1;
-  while (index >= 0 && collected.length < 8) {
+  while (index >= 0) {
     const line = lines[index] ?? '';
     if (line.length === 0) {
       if (collected.length === 0) {
@@ -46,7 +46,10 @@ export function extractLivePreview(raw: string): string | null {
     index -= 1;
   }
 
-  let text = collected.join('\n').trim();
+  // Tool output already has transcript rows. Do not present Codex's terminal
+  // tool block as a second, often much taller, in-progress answer.
+  if (collected.some(line => /^• (?:Ran\b|Viewed Image\b|Explored\b|Searched\b)/.test(line))) return null;
+  let text = collected.slice(-8).join('\n').trim();
   for (const bullet of ['⏺', '●', '⏵']) {
     if (text.startsWith(bullet)) {
       text = text.slice(bullet.length).trim();
@@ -80,6 +83,8 @@ function scrub(line: string): string {
  */
 function isStatusLine(line: string): boolean {
   if (line.length === 0) return false;
+  // The Codex footer contains middle dots but is not the working spinner.
+  if (line.toLowerCase().includes('for agents')) return false;
   for (const glyph of SPINNER_GLYPHS) {
     if (line.includes(glyph)) return true;
   }
