@@ -12,11 +12,12 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Icon } from '@/components/Icon';
+import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { TypingDots, WaitingBar } from '@/components/Activity';
 import { BlockedBar } from '@/features/thread/BlockedBar';
@@ -244,7 +245,7 @@ export default function ThreadScreen() {
   const bottomInset = keyboardUp ? spacing.md : Math.max(insets.bottom, spacing.md);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
+    <Screen>
       {/* A conversation header, not a screen header: a centred title with a
           back affordance, so it reads as "inside something" rather than as
           another top-level page. It still starts at the same screen margin as
@@ -379,6 +380,9 @@ export default function ThreadScreen() {
       */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // Screen's inner width-capped view starts below the status bar. The
+        // keyboard reports window coordinates, so include that outer inset.
+        keyboardVerticalOffset={insets.top}
         style={{ flex: 1 }}>
         {/*
           The controls anchor to this wrapper, NOT to the avoider itself.
@@ -625,7 +629,7 @@ export default function ThreadScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

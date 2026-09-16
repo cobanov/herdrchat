@@ -16,6 +16,13 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertVisible: "Chats"
 - tapOn: "Settings"
+- runFlow:
+    when:
+      visible:
+        id: settings-section-connection
+    commands:
+      - tapOn:
+          id: settings-section-connection
 
 # The anchor, at the top, before anything else. One of the two variants is
 # present depending on whether a host is configured; both answer the same
@@ -37,6 +44,13 @@ appId: dev.herdr.HerdrChat
 
 # Support. Diagnostics is asserted by its effect, the row relabels to "Copied"
 #, because the clipboard itself is not in the view hierarchy.
+- runFlow:
+    when:
+      visible:
+        id: settings-section-support
+    commands:
+      - tapOn:
+          id: settings-section-support
 - scrollUntilVisible:
     element:
       id: "support-diagnostics"
@@ -50,6 +64,13 @@ appId: dev.herdr.HerdrChat
 # Legal. Tapping either leaves the app for Safari, so this asserts they are
 # reachable and does not follow them, a flow that ends in another app cannot
 # assert its way back.
+- runFlow:
+    when:
+      visible:
+        id: settings-section-about
+    commands:
+      - tapOn:
+          id: settings-section-about
 - scrollUntilVisible:
     element:
       id: "legal-privacy"
@@ -61,6 +82,13 @@ appId: dev.herdr.HerdrChat
 # tapped: one erases every key on the device. That is the point of the flow,
 # they are at the bottom, below everything, where scrolling for something else
 # does not land on them.
+- runFlow:
+    when:
+      visible:
+        id: settings-section-danger
+    commands:
+      - tapOn:
+          id: settings-section-danger
 - scrollUntilVisible:
     element:
       id: "reset-app"

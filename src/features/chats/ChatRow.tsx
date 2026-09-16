@@ -1,201 +1,89 @@
-import { memo, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { memo } from 'react';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 
-import { PresenceAvatar } from '@/components/PresenceAvatar';
+import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { TypingDots } from '@/components/Activity';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, size, spacing, subtitleTwoLines, useScaledLine } from '@/theme/tokens';
+import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import type { ChatSummary } from './useWorkspaces';
 
-/**
- * Exported, because the loading skeleton draws the same row and used to carry
- * its own copy of these numbers. A placeholder that stops matching the thing it
- * stands in for is worse than no placeholder: the list jumps at exactly the
- * moment the data arrives, which is the one thing a skeleton exists to prevent.
- */
-export const AVATAR_SIZE = size.avatar;
-/** The avatar's ring adds 4pt on each side. */
-const AVATAR_BOX = AVATAR_SIZE + spacing.sm;
-const GAP = spacing.md;
+/** Shared with the loading skeleton so content does not jump on arrival. */
+export const AVATAR_SIZE = size.chatBadge;
 
-/**
- * Where a row's TEXT begins, measured from the screen edge.
- *
- * Exported so the list separator can start at exactly the same x. A separator
- * that stops short of, or overshoots, the text it divides is the kind of
- * misalignment nobody can name but everybody sees.
- */
-export const CHAT_ROW_TEXT_INSET = screenPadding + AVATAR_BOX + GAP;
-
-/**
- * One workspace row, Messages anatomy: a presence-ring avatar, then title plus
- * time on the first line and the last message beneath.
- *
- * Live agent activity OVERRIDES the preview line — "working…" or "waiting for
- * you" — because when an agent is mid-task, what it last said matters less than
- * what it is doing.
- */
 export const ChatRow = memo(function ChatRow({
-  summary,
-  unread,
-  onPress,
-  onLongPress,
+  summary, unread, selected = false, onPress, onLongPress,
 }: {
   summary: ChatSummary;
   unread: boolean;
+  selected?: boolean;
   onPress: () => void;
-  /** Manage this chat — rename, or close it on the host. */
   onLongPress?: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, reduceMotion } = useTheme();
+  const previewHeight = useScaledLine(typography.footnote.lineHeight);
   const attention = summary.status === 'blocked';
+  const working = summary.status === 'working';
+  const agent = summary.agents.find((item) => item.focused && item.agent !== null)
+    ?? summary.agents.find((item) => item.agent !== null);
+  const provider = agent?.agent === 'claude' ? 'Claude' : agent?.agent === 'codex' ? 'Codex' : agent?.agent ?? 'Terminal';
+  const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
+  const context = [provider, folder].filter(Boolean).join(' · ');
+  const status = attention ? 'Waiting for you' : working ? 'Working' : summary.status === 'unknown' ? 'Status unknown' : summary.status === 'done' ? 'Done' : 'Idle';
+  const preview = summary.preview === null ? status
+    : `${summary.preview.fromUser ? 'You: ' : ''}${summary.preview.text}`;
 
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel(summary, unread)}
+      accessibilityState={{ selected }}
+      accessibilityLabel={[summary.title || summary.workspaceId, context, status, unread ? 'Unread' : '', summary.preview?.text].filter(Boolean).join(', ')}
       testID={`chat-row-${summary.workspaceId}`}
       style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: GAP,
-        paddingHorizontal: screenPadding,
-        paddingVertical: spacing.md,
-        backgroundColor: pressed ? colors.fillSubtle : 'transparent',
+        flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+        padding: spacing.md, borderRadius: radius.sm, borderWidth: 1,
+        borderColor: attention ? colors.attentionBorder : selected ? colors.tint : 'transparent',
+        backgroundColor: selected ? colors.tintMuted : pressed ? colors.fillSubtle : colors.chatCard,
       })}>
-      <View>
-        <PresenceAvatar
-          colorKey={summary.title.length > 0 ? summary.title : summary.workspaceId}
-          status={summary.status}
-          size={AVATAR_SIZE}
-        />
-        {/* A badge on the avatar rather than a separate leading column. The old
-            column reserved space on every row for a dot almost none of them
-            have, which pushed all the content right and left a ragged gutter. */}
-        {(attention || unread) && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: size.unreadDot,
-              height: size.unreadDot,
-              borderRadius: radius.full,
-              borderWidth: 2,
-              borderColor: colors.systemBackground,
-              backgroundColor: attention ? colors.attention : colors.tint,
-            }}
-          />
-        )}
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.sm, backgroundColor: colors.tintMuted, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={agent?.agent === 'claude' ? 'asterisk' : 'chevron.left.forwardslash.chevron.right'} size={22} tintColor={colors.tint} />
       </View>
 
-      <View style={{ flex: 1, gap: spacing.xxs }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
-          <Text variant="headline" numberOfLines={1} style={{ flexShrink: 1 }}>
-            {summary.title.length > 0 ? summary.title : summary.workspaceId}
-          </Text>
-          <View style={{ flex: 1 }} />
-          {summary.preview?.timestamp != null && (
-            <Text variant="footnote" color="secondary">
-              {formatListTime(summary.preview.timestamp)}
-            </Text>
-          )}
-        </View>
-        <Subtitle summary={summary} />
+      <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
+        <Text variant="headline" numberOfLines={2}>{summary.title || summary.workspaceId}</Text>
+        <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
+        <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
+          {attention ? 'Waiting for your input' : preview}
+        </Text>
+      </View>
+
+      <View style={{ alignItems: 'center', gap: spacing.sm }}>
+        {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
+          <Icon
+            name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
+            size={18}
+            tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
+          />
+        )}
+        {working ? <Text variant="caption2" color="tint">now</Text> : summary.preview?.timestamp != null && (
+          <Text variant="caption2" color="secondary">{formatListTime(summary.preview.timestamp)}</Text>
+        )}
       </View>
     </Pressable>
   );
 });
 
-/**
- * Every variant reserves the SAME height — two subhead lines — because they swap
- * live as agents start and stop working. Without a fixed reservation a row
- * visibly changes height, and nudges every row under it, each time an agent
- * begins working.
- */
-function Subtitle({ summary }: { summary: ChatSummary }) {
-  const { colors } = useTheme();
-
-  return (
-    <Reserved>
-      {summary.status === 'working' ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          {/* "working", not "typing": an agent isn't composing at a keyboard,
-              it's running tools and thinking. The messaging word oversold it. */}
-          <Text variant="subhead" color="tint">
-            working…
-          </Text>
-          <TypingDots color={colors.tint} size={4.5} />
-        </View>
-      ) : summary.status === 'blocked' ? (
-        <Text variant="subhead" color="attention">
-          waiting for you
-        </Text>
-      ) : (
-        <Text variant="subhead" color="secondary" numberOfLines={2}>
-          {previewLine(summary)}
-        </Text>
-      )}
-    </Reserved>
-  );
-}
-
-/**
- * Reserves two subhead lines and centres its child vertically inside them.
- *
- * A column wrapper specifically: the previous version put `justifyContent:
- * 'center'` on the row that holds "working…" and its dots, where it centres
- * HORIZONTALLY — which shoved the live state into the middle of the row while
- * every other variant stayed left. Separating the two axes makes that
- * impossible.
- *
- * The reservation matters because these variants swap live as agents start and
- * stop working; without it a row changes height, and nudges every row under it,
- * each time an agent begins.
- */
-function Reserved({ children }: { children: ReactNode }) {
-  const reserved = useScaledLine(subtitleTwoLines);
-  return (
-    <View style={{ minHeight: reserved, justifyContent: 'center', alignItems: 'flex-start' }}>
-      {children}
-    </View>
-  );
-}
-
-function previewLine(summary: ChatSummary): string {
-  if (summary.preview === null) {
-    return summary.status === 'done' ? 'done' : summary.agents.length === 0 ? 'idle' : 'online';
-  }
-  return summary.preview.fromUser ? `You: ${summary.preview.text}` : summary.preview.text;
-}
-
-function accessibilityLabel(summary: ChatSummary, unread: boolean): string {
-  const parts = [summary.title];
-  if (summary.status === 'blocked') parts.push('waiting for you');
-  else if (summary.status === 'working') parts.push('working');
-  else if (unread) parts.push('unread');
-  if (summary.preview !== null) parts.push(summary.preview.text);
-  return parts.join(', ');
-}
-
-/**
- * Messages-style row timestamp: time today, "Yesterday", weekday inside a week,
- * date beyond that.
- */
 export function formatListTime(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
-  const startOfDay = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-
-  if (days === 0) {
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  }
+  if (days === 0) return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   if (days === 1) return 'Yesterday';
-  if (days < 7) return date.toLocaleDateString('en-US', { weekday: 'long' });
-  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+  if (days < 7) return date.toLocaleDateString('en-US', { weekday: 'short' });
+  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
 }

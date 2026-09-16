@@ -14,15 +14,12 @@ export function SkeletonRows() {
   return (
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, gap: spacing.lg }}>
       {[0, 1, 2, 3].map((index) => (
-        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          {/* The real avatar's size, imported rather than copied — and
-              `radius.full` rather than half of it, so the circle stays a circle
-              without a second number to keep in step. */}
+        <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.sm, backgroundColor: colors.chatCard }}>
           <View
             style={{
               width: AVATAR_SIZE,
               height: AVATAR_SIZE,
-              borderRadius: radius.full,
+              borderRadius: radius.sm,
               backgroundColor: colors.fillSubtle,
             }}
           />

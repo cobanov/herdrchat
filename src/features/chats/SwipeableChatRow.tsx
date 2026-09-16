@@ -9,7 +9,7 @@ import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, spacing } from '@/theme/tokens';
+import { minTouchTarget, radius, spacing } from '@/theme/tokens';
 import { ChatRow } from './ChatRow';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -35,6 +35,7 @@ const ACTION_WIDTH = 76;
 export const SwipeableChatRow = memo(function SwipeableChatRow({
   summary,
   unread,
+  selected,
   onPress,
   onLongPress,
   onRename,
@@ -43,6 +44,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
 }: {
   summary: ChatSummary;
   unread: boolean;
+  selected?: boolean;
   onPress: () => void;
   onLongPress: () => void;
   onRename: () => void;
@@ -109,6 +111,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
 
   return (
     <ReanimatedSwipeable
+      containerStyle={{ borderRadius: radius.sm, overflow: 'hidden', marginBottom: spacing.sm }}
       ref={swipeable}
       friction={2}
       // Both actions have to be reachable before the panel snaps open, so the
@@ -128,6 +131,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
       <ChatRow
         summary={summary}
         unread={unread}
+        selected={selected}
         onPress={onPress}
         onLongPress={onLongPress}
       />

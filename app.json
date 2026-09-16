@@ -18,7 +18,8 @@
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
       "buildNumber": "58",
-      "supportsTablet": false,
+      "supportsTablet": true,
+      "requireFullScreen": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Local network access is needed to reach herdr servers over Tailscale."

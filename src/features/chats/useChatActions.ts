@@ -20,11 +20,13 @@ export function useChatActions({
   connectionId,
   db,
   refresh,
+  onClosed,
 }: {
   client: HerdrClient | null;
   connectionId: string | null;
   db: SQLite.SQLiteDatabase;
   refresh: () => Promise<void>;
+  onClosed?: (workspaceId: string) => void;
 }): {
   /** Failures from rename/close, which happen outside the poll's own error path. */
   error: string | null;
@@ -66,12 +68,13 @@ export function useChatActions({
             // chat to land in this slot must not open showing this one's
             // messages.
             .then(() => forgetWorkspace(db, connectionId, summary.workspaceId))
+            .then(() => onClosed?.(summary.workspaceId))
             .then(refresh)
             .catch((thrown: unknown) => setError(errorText(thrown)));
         },
       });
     },
-    [client, connectionId, db, refresh]
+    [client, connectionId, db, refresh, onClosed]
   );
 
   /**

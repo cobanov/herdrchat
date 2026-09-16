@@ -44,8 +44,14 @@ export const spacing = {
  * unrelated to touch.
  */
 export const size = {
+  /** Readable tablet column; narrow windows and phones still use their full width. */
+  contentMaxWidth: 840,
+  tabletBreakpoint: 768,
+  tabletSidebarWidth: 320,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
+  /** Compact provider badge in the grouped chat cards. */
+  chatBadge: 40,
   /** The unread / attention dot on an avatar. */
   unreadDot: 14,
   /** The status dot beside a thread's subtitle. */
@@ -282,17 +288,6 @@ export function useScaledLine(base: number): number {
 }
 
 /**
- * The height a chat row reserves for its subtitle: two subhead lines.
- *
- * Reserved rather than measured, because the variants swap live as agents start
- * and stop working — without a fixed height a row changes size, and nudges every
- * row under it, each time an agent begins. Derived from the type scale so it
- * follows Dynamic Type instead of being a number that was right once.
- */
-export const subtitleTwoLines = typography.subhead.lineHeight * 2;
-
-
-/**
  * Brand ink: a mid periwinkle, `#6E74E6`, drawn from the app logo's indigo-navy
  * and lavender. One accent, used sparingly — outgoing bubbles, the send control,
  * working presence.
@@ -345,6 +340,8 @@ export interface Palette {
   /** Subtle fills: tool chips, code blocks, inactive controls. */
   fillSubtle: string;
   separator: string;
+  chatCard: string;
+  attentionBorder: string;
   /**
    * The track of an OFF switch.
    *
@@ -410,6 +407,8 @@ export const lightPalette: Palette = {
   bubbleOutgoing: '#6167E4', // white on this: 4.60:1
   fillSubtle: 'rgba(84, 89, 212, 0.10)',
   separator: '#CDD1E2',
+  chatCard: '#EBEDF7',
+  attentionBorder: '#A05C08',
   // Apple's own off-track is #E9E9EA, which works because it sits on a white
   // card. Ours sits on a card that is already a shade off white, so the same
   // value would leave a white knob on an almost-white capsule. This keeps the
@@ -441,6 +440,8 @@ export const darkPalette: Palette = {
   bubbleOutgoing: '#6067EC', // white on this: 4.52:1
   fillSubtle: 'rgba(118, 118, 128, 0.24)',
   separator: 'rgba(84, 84, 88, 0.65)',
+  chatCard: '#161824',
+  attentionBorder: 'rgba(255, 159, 10, 0.55)',
   controlTrack: '#3A3A41', // the system's dark off-track, lifted off our card
 
   glassFallback: 'rgba(30, 30, 34, 0.92)',
