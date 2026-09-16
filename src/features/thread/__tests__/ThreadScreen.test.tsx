@@ -11,6 +11,7 @@ const mockList = jest.fn((props: {
   renderItem: (info: { item: unknown; index: number }) => ReactElement;
 }) => props.renderItem({ item: props.data[0], index: 0 }));
 let mockLoading = true;
+let mockSessionMeta = { model: 'claude-opus-4-6', effort: null as string | null };
 jest.mock('@shopify/flash-list', () => ({ FlashList: (props: Parameters<typeof mockList>[0]) => mockList(props) }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
@@ -33,7 +34,7 @@ jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: [],
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
-    sessionMeta: { model: 'claude-opus-4-6' },
+    sessionMeta: mockSessionMeta,
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
     isBlocked: false, isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
@@ -74,4 +75,7 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(screen.getByText('Beginning of conversation')).toBeOnTheScreen();
   expect(screen.queryByTestId('thread-back')).toBeNull();
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
+  mockSessionMeta = { model: 'gpt-5.6', effort: 'high' };
+  await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high · project-with-a-long-folder-name · online');
 });

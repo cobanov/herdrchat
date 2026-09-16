@@ -1,11 +1,11 @@
 /**
- * Lightweight session facts for the chat header: which Claude model is answering
- * and how full the context window is. Sourced from the newest assistant turn in
- * the transcript.
+ * Session facts from the transcript, never the host's global model defaults.
  */
 export interface SessionMeta {
   /** Raw model id, e.g. "claude-opus-4-8". */
   model: string | null;
+  /** Codex turn setting. Absent on usage-only events; null means not reported. */
+  effort?: string | null;
   /** Tokens currently in the context window (last request's prompt size). */
   contextTokens: number | null;
 }

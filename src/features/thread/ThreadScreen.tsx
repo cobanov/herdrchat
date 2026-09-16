@@ -213,6 +213,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
+    thread.sessionMeta?.effort ?? null,
     thread.workingDirName,
     statusWord(thread.status),
   ]

@@ -1,5 +1,6 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
+import type { SessionMeta } from './sessionMeta';
 
 /**
  * Turns Claude Code transcript JSONL (one JSON object per line) into chat
@@ -29,12 +30,7 @@ export function parseTranscript(contents: string, agentLabel: string | null = nu
  */
 export interface TranscriptEntry {
   message: ChatMessage | null;
-  meta: AssistantMeta | null;
-}
-
-export interface AssistantMeta {
-  model: string | null;
-  contextTokens: number | null;
+  meta: SessionMeta | null;
 }
 
 /**
@@ -76,7 +72,7 @@ export function parseTranscriptLine(
  * tiers) — i.e. how full the context window is right now. Null for non-assistant
  * lines or lines without usage.
  */
-export function assistantMeta(line: string): AssistantMeta | null {
+export function assistantMeta(line: string): SessionMeta | null {
   const raw = parseJson(line);
   if (raw === null) return null;
   return isCodex(raw) ? codexEntry(raw, '', null).meta : metaFrom(raw);
@@ -132,7 +128,7 @@ function messageFrom(
   };
 }
 
-function metaFrom(raw: Record<string, unknown>): AssistantMeta | null {
+function metaFrom(raw: Record<string, unknown>): SessionMeta | null {
   if (raw.type !== 'assistant') return null;
   const message = asRecord(raw.message);
   if (message === null) return null;
