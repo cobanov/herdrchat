@@ -42,7 +42,7 @@ jest.mock('@/features/thread/useThread', () => ({
   }),
 }));
 
-it('keeps warnings and actions in the floating glass header, reserving its measured height', async () => {
+it('extends header material to the window edge, insets only controls, and reserves measured clearance', async () => {
   const onBack = jest.fn();
   const screen = await render(<ThreadScreen workspaceId="w1" title="A long conversation title" onBack={onBack} />);
   const header = within(screen.getByTestId('thread-header'));
@@ -50,7 +50,11 @@ it('keeps warnings and actions in the floating glass header, reserving its measu
   expect(header.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
   expect(header.getByTestId('error-banner')).toHaveTextContent('Conversation updates paused. Reconnecting.');
   expect(screen.getAllByTestId('error-banner')).toHaveLength(1);
-  expect(screen.getByTestId('thread-header-overlay')).toHaveStyle({ position: 'absolute', top: 0 });
+  expect(screen.getByTestId('thread-header')).toHaveProp('edgeAttached', true);
+  expect(screen.getByTestId('thread-header-safe-area')).toHaveProp('edges', ['top', 'left', 'right']);
+  expect(screen.getByTestId('thread-header-overlay')).toHaveStyle({ position: 'absolute', top: 0, left: 0, right: 0 });
+  expect(screen.getByTestId('screen-content').props.style.maxWidth).toBeUndefined();
+  expect(screen.getByText('Loading the conversation…').parent?.parent).toHaveStyle({ paddingTop: 139 });
   await fireEvent(screen.getByTestId('thread-header-overlay'), 'layout', { nativeEvent: { layout: { height: 140 } } });
   expect(screen.getByText('Loading the conversation…').parent?.parent).toHaveStyle({ paddingTop: 140 });
   await fireEvent.press(header.getByRole('button', { name: 'Dismiss' }));

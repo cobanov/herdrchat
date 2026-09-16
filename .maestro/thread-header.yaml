@@ -34,5 +34,7 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: thread-header
 - assertVisible:
+    id: thread-header-safe-area
+- assertVisible:
     id: thread-reload
 - takeScreenshot: header-over-history

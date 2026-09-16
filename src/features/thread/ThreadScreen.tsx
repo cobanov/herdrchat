@@ -12,7 +12,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
@@ -90,7 +90,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // Measured height of the floating control stack, so the list can reserve
   // exactly that much room underneath its content.
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
-  const [headerHeight, setHeaderHeight] = useState<number>(threadLayout.initialHeaderHeight);
+  const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
   const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
 
@@ -248,115 +248,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const bottomInset = keyboardUp ? spacing.md : Math.max(insets.bottom, spacing.md);
 
   return (
-    <Screen>
-      {/* Float over the transcript so the glass can refract scrolling messages.
-          Measure the whole surface, including warnings and Dynamic Type. */}
-      <View
-        testID="thread-header-overlay"
-        pointerEvents="box-none"
-        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
-        style={{
-          position: 'absolute',
-          zIndex: 1,
-          top: 0,
-          left: 0,
-          right: 0,
-          paddingHorizontal: screenPadding,
-          paddingVertical: spacing.sm,
-        }}>
-        <Glass
-          testID="thread-header"
-          style={{
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.separator,
-            overflow: 'hidden',
-          }}>
-          {/* Only compact layouts need Back; iPad keeps its sidebar and tabs. */}
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-            minHeight: minTouchTarget,
-          }}>
-            {onBack !== undefined && (
-              <Pressable
-                onPress={onBack}
-                accessibilityRole="button"
-                accessibilityLabel="Back to chats"
-                testID="thread-back"
-                hitSlop={spacing.md}
-                style={{
-                  width: size.headerControl,
-                  height: minTouchTarget,
-                  alignItems: 'flex-start',
-                  justifyContent: 'center',
-                }}>
-                <Icon name="chevron.left" size={20} tintColor={colors.tint} fallback={<Text color="tint">‹</Text>} />
-              </Pressable>
-            )}
-
-            <View style={{ flex: 1, minWidth: 0, alignItems: onBack === undefined ? 'flex-start' : 'center', gap: spacing.xxs }}>
-              <Text testID="thread-title" variant="headline" numberOfLines={1}>
-                {title || workspaceId}
-              </Text>
-              {subtitle.length > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%', gap: spacing.xs }}>
-                  <View style={{
-                    width: size.statusDot,
-                    height: size.statusDot,
-                    borderRadius: radius.full,
-                    backgroundColor: statusColor(thread.status, colors),
-                  }} />
-                  <Text
-                    testID="thread-meta"
-                    variant="caption2"
-                    color={thread.status === 'blocked' ? 'attention' : 'secondary'}
-                    style={{ flexShrink: 1 }}
-                    numberOfLines={1}>
-                    {subtitle}
-                  </Text>
-                  {thread.status === 'working' && <TypingDots size={3.5} />}
-                </View>
-              )}
-            </View>
-
-            {/* Stop and Reload share the same width so the title never shifts. */}
-            {thread.status === 'working' ? (
-              <StopButton onStop={(hard) => void thread.interrupt(hard)} />
-            ) : (
-              <Pressable
-                onPress={() => {
-                  haptics.light();
-                  // Reload drops this thread's cursors, then re-anchor its new history.
-                  void thread.reload().then(() => {
-                    setAtBottom(true);
-                    listRef.current?.scrollToEnd({ animated: false });
-                  });
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Reload this conversation"
-                testID="thread-reload"
-                hitSlop={spacing.md}
-                style={({ pressed }) => ({
-                  width: size.headerControl,
-                  height: minTouchTarget,
-                  alignItems: 'flex-end',
-                  justifyContent: 'center',
-                  opacity: pressed ? 0.5 : 1,
-                })}>
-                <Icon name="arrow.clockwise" size={19} tintColor={colors.tint} fallback={<Text color="tint">↻</Text>} />
-              </Pressable>
-            )}
-          </View>
-          {/* Keep warnings with the status, away from the newest reply/input. */}
-          {thread.error !== null && (
-            <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
-          )}
-        </Glass>
-      </View>
-
+    <Screen presentation="edge-to-edge">
       {/*
         The keyboard avoider is the whole conversation area, not just the
         composer.
@@ -379,10 +271,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
       */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        // Screen's inner width-capped view starts below the status bar. The
-        // keyboard reports window coordinates, so include that outer inset.
-        keyboardVerticalOffset={insets.top}
-        style={{ flex: 1 }}>
+        // The viewport now starts at the window edge, not below the status bar.
+        keyboardVerticalOffset={0}
+        style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
         {/*
           The controls anchor to this wrapper, NOT to the avoider itself.
 
@@ -635,6 +526,75 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
           )}
         </View>
       </KeyboardAvoidingView>
+      {/* Render after the list so native blur samples its scrolling content.
+          The material reaches the screen edge; only the controls take insets. */}
+      <View
+        testID="thread-header-overlay"
+        pointerEvents="box-none"
+        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <Glass edgeAttached testID="thread-header">
+          <SafeAreaView testID="thread-header-safe-area" edges={['top', 'left', 'right']}>
+            <View style={{ width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.md,
+                paddingHorizontal: screenPadding,
+                paddingVertical: spacing.sm,
+              }}>
+                {onBack !== undefined && (
+                  <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+                    <Pressable
+                      onPress={onBack}
+                      accessibilityRole="button"
+                      accessibilityLabel="Back to chats"
+                      testID="thread-back"
+                      style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="chevron.left" size={20} tintColor={colors.label} fallback={<Text>‹</Text>} />
+                    </Pressable>
+                  </Glass>
+                )}
+                <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
+                  <Text testID="thread-title" variant="title3" numberOfLines={1}>
+                    {title || workspaceId}
+                  </Text>
+                  {subtitle.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: statusColor(thread.status, colors) }} />
+                      <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
+                        {subtitle}
+                      </Text>
+                      {thread.status === 'working' && <TypingDots size={3.5} />}
+                    </View>
+                  )}
+                </View>
+                <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+                  {thread.status === 'working' ? (
+                    <StopButton onStop={(hard) => void thread.interrupt(hard)} />
+                  ) : (
+                    <Pressable
+                      onPress={() => {
+                        haptics.light();
+                        void thread.reload().then(() => {
+                          setAtBottom(true);
+                          listRef.current?.scrollToEnd({ animated: false });
+                        });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Reload this conversation"
+                      testID="thread-reload"
+                      style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="arrow.clockwise" size={19} tintColor={colors.label} fallback={<Text>↻</Text>} />
+                    </Pressable>
+                  )}
+                </Glass>
+              </View>
+              {thread.error !== null && <ErrorBanner message={thread.error} onDismiss={thread.clearError} />}
+            </View>
+          </SafeAreaView>
+        </Glass>
+      </View>
     </Screen>
   );
 }

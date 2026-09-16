@@ -41,4 +41,10 @@ describe('tablet support', () => {
     expect(size.contentMaxWidth).toBeGreaterThan(600);
     expect(screen.getByText('Conversation')).toBeOnTheScreen();
   });
+
+  it('lets edge-attached chrome fill the window without changing other screen modes', async () => {
+    const screen = await render(<Screen presentation="edge-to-edge"><Text>Conversation</Text></Screen>);
+    expect(screen.getByTestId('screen-content').props.style.maxWidth).toBeUndefined();
+    expect(screen.getByTestId('screen-content')).toHaveStyle({ flex: 1, width: '100%' });
+  });
 });

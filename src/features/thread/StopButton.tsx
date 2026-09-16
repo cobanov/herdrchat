@@ -4,7 +4,7 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, size, spacing } from '@/theme/tokens';
+import { minTouchTarget } from '@/theme/tokens';
 
 /**
  * Stop the agent.
@@ -22,8 +22,7 @@ import { minTouchTarget, size, spacing } from '@/theme/tokens';
  * session, so it asks first and says what it costs. Making them look the same
  * would invite the destructive one by accident.
  *
- * It occupies the slot that previously held an empty spacer balancing the back
- * chevron, so the title stays optically centred whether or not it is showing.
+ * It shares Reload's full-size touch target inside the header's glass control.
  */
 export function StopButton({ onStop }: { onStop: (hard: boolean) => void }) {
   const { colors } = useTheme();
@@ -51,11 +50,10 @@ export function StopButton({ onStop }: { onStop: (hard: boolean) => void }) {
       accessibilityLabel="Stop the agent"
       accessibilityHint="Interrupts the current turn. Touch and hold to force quit the agent."
       testID="thread-stop"
-      hitSlop={spacing.md}
       style={{
-        width: size.headerControl,
+        width: minTouchTarget,
         height: minTouchTarget,
-        alignItems: 'flex-end',
+        alignItems: 'center',
         justifyContent: 'center',
       }}>
       <Icon
