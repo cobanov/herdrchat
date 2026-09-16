@@ -109,7 +109,12 @@ function targetOf(response: Notifications.NotificationResponse): PushTarget | nu
  * which is the shipped setup.
  */
 export function useNotificationRouting(): void {
+  const hydrated = useConnections((state) => state.hydrated);
   useEffect(() => {
+    // A launching notification may arrive before the saved host has loaded.
+    // Do not bind the tablet selection to an empty connection id or mark that
+    // tap as routed until we know which host owns it.
+    if (!hydrated) return;
     const route = (response: Notifications.NotificationResponse) => {
       // Deduplicate on the tap, not on the code path that delivered it — see
       // `routed`. Marked before the target check so a payload we cannot route
@@ -128,7 +133,7 @@ export function useNotificationRouting(): void {
     });
     const tap = Notifications.addNotificationResponseReceivedListener(route);
     return () => tap.remove();
-  }, []);
+  }, [hydrated]);
 }
 
 /**

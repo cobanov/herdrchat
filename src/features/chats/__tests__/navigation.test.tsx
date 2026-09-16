@@ -3,14 +3,22 @@ import { useState } from 'react';
 import * as Native from 'react-native';
 
 import ChatsScreen from '../../../../app/(tabs)/index';
+import ThreadRoute from '../../../../app/chat/[workspaceId]';
 import { openChat } from '../navigation';
 import { useChatSelection } from '@/state/chatSelection';
 
 let mockConnectionId = 'host-a';
+let mockHydrated = true;
 const mockPush = jest.fn();
 const mockDismissTo = jest.fn();
 
 jest.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({ workspaceId: 'w2', title: 'Notes' }),
+  useRouter: () => ({ back: jest.fn() }),
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+    useEffect(effect, [effect]);
+  },
   router: { push: (...args: unknown[]) => mockPush(...args), dismissTo: (...args: unknown[]) => mockDismissTo(...args) },
 }));
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -19,7 +27,10 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: { systemBackground: '#000', separator: '#333' } }),
 }));
-jest.mock('@/state/connections', () => ({ useSelectedConnection: () => ({ id: mockConnectionId }) }));
+jest.mock('@/state/connections', () => ({
+  useSelectedConnection: () => ({ id: mockConnectionId }),
+  useConnections: (selector: (state: { hydrated: boolean }) => unknown) => selector({ hydrated: mockHydrated }),
+}));
 jest.mock('@/features/chats/ChatsList', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('@/components/EmptyState', () => ({ EmptyState: () => null }));
@@ -45,6 +56,7 @@ beforeEach(() => {
   windowAt(1032);
   useChatSelection.getState().select({ connectionId: 'host-a', workspaceId: 'w2', title: 'Notes' });
   mockConnectionId = 'host-a';
+  mockHydrated = true;
   mockPush.mockClear();
   mockDismissTo.mockClear();
 });
@@ -92,6 +104,20 @@ it('does not open a same-id workspace on a different host', async () => {
   mockConnectionId = 'host-b';
   await screen.rerender(<ChatsScreen />);
   expect(screen.queryByTestId('thread')).toBeNull();
+});
+
+it('waits for the saved host before redirecting a cold tablet deep link', async () => {
+  mockHydrated = false;
+  mockConnectionId = '';
+  useChatSelection.getState().select(null);
+  const screen = await render(<ThreadRoute />);
+  expect(mockDismissTo).not.toHaveBeenCalled();
+  expect(useChatSelection.getState().selection).toBeNull();
+  mockConnectionId = 'host-a';
+  mockHydrated = true;
+  await screen.rerender(<ThreadRoute />);
+  expect(mockDismissTo).toHaveBeenCalledWith('/');
+  expect(useChatSelection.getState().selection?.connectionId).toBe('host-a');
 });
 
 it('changes only the selected detail and does not carry a draft into another chat', async () => {

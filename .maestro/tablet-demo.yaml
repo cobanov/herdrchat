@@ -168,3 +168,15 @@ appId: dev.herdr.HerdrChat
 - assertVisible: Settings
 - assertNotVisible:
     id: thread-back
+# The saved host loads asynchronously on a cold launch.
+- stopApp
+- openLink: herdrchat://chat/w2?title=Notes
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: thread-messages
+- assertVisible: Hosts
+- assertVisible: Settings
+- assertNotVisible:
+    id: thread-back
