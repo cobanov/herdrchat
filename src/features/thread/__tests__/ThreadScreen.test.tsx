@@ -1,13 +1,17 @@
 import { fireEvent, render, within } from '@testing-library/react-native';
+import type { ReactElement } from 'react';
 import { View as MockView, type ViewProps } from 'react-native';
 
 import ThreadScreen from '../ThreadScreen';
 
 const mockReload = jest.fn(() => Promise.resolve());
 const mockClearError = jest.fn();
-const mockList = jest.fn((_props: unknown) => null);
+const mockList = jest.fn((props: {
+  data: unknown[];
+  renderItem: (info: { item: unknown; index: number }) => ReactElement;
+}) => props.renderItem({ item: props.data[0], index: 0 }));
 let mockLoading = true;
-jest.mock('@shopify/flash-list', () => ({ FlashList: (props: unknown) => mockList(props) }));
+jest.mock('@shopify/flash-list', () => ({ FlashList: (props: Parameters<typeof mockList>[0]) => mockList(props) }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-router', () => ({ useRouter: () => ({}), useFocusEffect: jest.fn() }));
@@ -32,6 +36,7 @@ jest.mock('@/features/thread/useThread', () => ({
     sessionMeta: { model: 'claude-opus-4-6' },
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
     isBlocked: false, isSending: false, canSend: true, loading: mockLoading,
+    reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
     reload: mockReload, clearError: mockClearError,
   }),
@@ -57,9 +62,12 @@ it('keeps warnings and actions in the floating glass header, reserving its measu
   mockLoading = false;
   await screen.rerender(<ThreadScreen workspaceId="w1" title="A long conversation title" />);
   expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({
-    ListHeaderComponentStyle: { paddingTop: 140 },
+    ListHeaderComponentStyle: { height: 140 },
     scrollIndicatorInsets: { top: 140 },
   }));
+  // The mock renders only a data row, not ListHeaderComponent: this label must
+  // follow the first bubble when short histories are bottom-aligned.
+  expect(screen.getByText('Beginning of conversation')).toBeOnTheScreen();
   expect(screen.queryByTestId('thread-back')).toBeNull();
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
 });

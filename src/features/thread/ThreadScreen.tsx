@@ -469,11 +469,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 // reader drags, so onStartReached will not fire a second time.
                 if (scrollOffset.current <= 0) void thread.loadOlder();
               }}
-              ListHeaderComponent={
-                <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
-              }
-              // FlashList's bottom anchor measures the header, not container padding.
-              ListHeaderComponentStyle={{ paddingTop: headerHeight }}
+              // A measured spacer keeps the first message clear of the overlay.
+              ListHeaderComponent={<View />}
+              ListHeaderComponentStyle={{ height: headerHeight }}
               onScroll={onScroll}
               onLayout={(event) => {
                 viewportHeight.current = event.nativeEvent.layout.height;
@@ -501,11 +499,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 const distance = height - scrollOffset.current - viewportHeight.current;
                 setAtBottom(distance <= BOTTOM_SLACK);
               }}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <View
                   style={{
                     paddingTop: item.startsGroup ? spacing.md : spacing.xxs,
                   }}>
+                  {/* FlashList bottom-aligns rows but not its ListHeader. Keep
+                      this label with the oldest bubble, not above the glass. */}
+                  {index === 0 && (
+                    <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
+                  )}
                   {item.startsGroup &&
                     item.message.agentLabel !== null &&
                     item.message.role !== 'user' && (
