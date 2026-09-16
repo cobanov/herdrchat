@@ -8,11 +8,11 @@ export const CHAT_GROUPS = [
 export type ChatGroupId = (typeof CHAT_GROUPS)[number]['id'];
 
 export type ChatListItem =
-  | { kind: 'group'; id: ChatGroupId; title: string; count: number; collapsed: boolean }
+  | { kind: 'group'; id: ChatGroupId; title: string; count: number }
   | { kind: 'chat'; summary: ChatSummary };
 
 /** Keep the host's order within each group, including chats without an agent. */
-export function groupChats(summaries: readonly ChatSummary[], query: string, collapsed: readonly ChatGroupId[]): ChatListItem[] {
+export function groupChats(summaries: readonly ChatSummary[], query: string): ChatListItem[] {
   const needle = query.trim().toLowerCase();
   const matches = summaries.filter((chat) =>
     [chat.title, chat.workspaceId, ...chat.agents.map((agent) => `${agent.agent ?? ''} ${agent.cwd}`)]
@@ -23,11 +23,9 @@ export function groupChats(summaries: readonly ChatSummary[], query: string, col
       (chat.status === 'blocked' ? 'needs-you' : chat.status === 'working' ? 'working' : 'idle') === id
     );
     if (chats.length === 0) return [];
-    // Searching reveals matches even in a group the reader previously folded.
-    const hidden = needle.length === 0 && collapsed.includes(id);
     return [
-      { kind: 'group', id, title, count: chats.length, collapsed: hidden },
-      ...(!hidden ? chats.map((summary): ChatListItem => ({ kind: 'chat', summary })) : []),
+      { kind: 'group', id, title, count: chats.length },
+      ...chats.map((summary): ChatListItem => ({ kind: 'chat', summary })),
     ];
   });
 }

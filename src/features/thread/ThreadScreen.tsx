@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
@@ -89,6 +90,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // Measured height of the floating control stack, so the list can reserve
   // exactly that much room underneath its content.
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
+  const [headerHeight, setHeaderHeight] = useState<number>(threadLayout.initialHeaderHeight);
 
   const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
 
@@ -247,113 +249,112 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   return (
     <Screen>
-      {/* Only a compact layout needs a back control. The iPad sidebar is
-          already the conversation switcher, and its tabs remain visible. */}
+      {/* Float over the transcript so the glass can refract scrolling messages.
+          Measure the whole surface, including warnings and Dynamic Type. */}
       <View
+        testID="thread-header-overlay"
+        pointerEvents="box-none"
+        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          position: 'absolute',
+          zIndex: 1,
+          top: 0,
+          left: 0,
+          right: 0,
           paddingHorizontal: screenPadding,
-          paddingBottom: spacing.sm,
-          minHeight: minTouchTarget,
+          paddingVertical: spacing.sm,
         }}>
-        {onBack !== undefined && <Pressable
-          onPress={onBack}
-          accessibilityRole="button"
-          accessibilityLabel="Back to chats"
-          testID="thread-back"
-          hitSlop={spacing.md}
+        <Glass
+          testID="thread-header"
           style={{
-            width: size.headerControl,
-            height: minTouchTarget,
-            alignItems: 'flex-start',
-            justifyContent: 'center',
+            borderRadius: radius.lg,
+            borderWidth: 1,
+            borderColor: colors.separator,
+            overflow: 'hidden',
           }}>
-          <Icon
-            name="chevron.left"
-            size={20}
-            tintColor={colors.tint}
-            fallback={<Text color="tint">‹</Text>}
-          />
-        </Pressable>}
-
-        <View style={{ flex: 1, alignItems: onBack === undefined ? 'flex-start' : 'center', gap: 1 }}>
-          <Text variant="headline" numberOfLines={1}>
-            {title || workspaceId}
-          </Text>
-          {subtitle.length > 0 && (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.xs,
-              }}>
-              <View
+          {/* Only compact layouts need Back; iPad keeps its sidebar and tabs. */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            minHeight: minTouchTarget,
+          }}>
+            {onBack !== undefined && (
+              <Pressable
+                onPress={onBack}
+                accessibilityRole="button"
+                accessibilityLabel="Back to chats"
+                testID="thread-back"
+                hitSlop={spacing.md}
                 style={{
-                  width: size.statusDot,
-                  height: size.statusDot,
-                  borderRadius: radius.full,
-                  backgroundColor: statusColor(thread.status, colors),
-                }}
-              />
-              <Text
-                variant="caption2"
-                color={thread.status === 'blocked' ? 'attention' : 'secondary'}
-                numberOfLines={1}>
-                {subtitle}
+                  width: size.headerControl,
+                  height: minTouchTarget,
+                  alignItems: 'flex-start',
+                  justifyContent: 'center',
+                }}>
+                <Icon name="chevron.left" size={20} tintColor={colors.tint} fallback={<Text color="tint">‹</Text>} />
+              </Pressable>
+            )}
+
+            <View style={{ flex: 1, minWidth: 0, alignItems: onBack === undefined ? 'flex-start' : 'center', gap: spacing.xxs }}>
+              <Text testID="thread-title" variant="headline" numberOfLines={1}>
+                {title || workspaceId}
               </Text>
-              {thread.status === 'working' && <TypingDots size={3.5} />}
+              {subtitle.length > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%', gap: spacing.xs }}>
+                  <View style={{
+                    width: size.statusDot,
+                    height: size.statusDot,
+                    borderRadius: radius.full,
+                    backgroundColor: statusColor(thread.status, colors),
+                  }} />
+                  <Text
+                    testID="thread-meta"
+                    variant="caption2"
+                    color={thread.status === 'blocked' ? 'attention' : 'secondary'}
+                    style={{ flexShrink: 1 }}
+                    numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                  {thread.status === 'working' && <TypingDots size={3.5} />}
+                </View>
+              )}
             </View>
+
+            {/* Stop and Reload share the same width so the title never shifts. */}
+            {thread.status === 'working' ? (
+              <StopButton onStop={(hard) => void thread.interrupt(hard)} />
+            ) : (
+              <Pressable
+                onPress={() => {
+                  haptics.light();
+                  // Reload drops this thread's cursors, then re-anchor its new history.
+                  void thread.reload().then(() => {
+                    setAtBottom(true);
+                    listRef.current?.scrollToEnd({ animated: false });
+                  });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Reload this conversation"
+                testID="thread-reload"
+                hitSlop={spacing.md}
+                style={({ pressed }) => ({
+                  width: size.headerControl,
+                  height: minTouchTarget,
+                  alignItems: 'flex-end',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.5 : 1,
+                })}>
+                <Icon name="arrow.clockwise" size={19} tintColor={colors.tint} fallback={<Text color="tint">↻</Text>} />
+              </Pressable>
+            )}
+          </View>
+          {/* Keep warnings with the status, away from the newest reply/input. */}
+          {thread.error !== null && (
+            <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
           )}
-        </View>
-
-        {/*
-          Stop while the agent is working, Refresh the rest of the time. Both are
-          exactly the back control's width, so the title stays optically centred
-          and does not shift when the agent starts or finishes.
-
-          Refresh is not decoration: the live tail can drift, the thread scrolls
-          to a stale spot, or the newest messages are missing, and this drops the
-          in-memory history and byte cursors and re-reads the transcript for THIS
-          thread only. It existed in the SwiftUI app (build 21) and was lost in
-          the Expo rewrite; `useThread.reload` survived with nothing calling it.
-        */}
-        {thread.status === 'working' ? (
-          <StopButton onStop={(hard) => void thread.interrupt(hard)} />
-        ) : (
-          <Pressable
-            onPress={() => {
-              haptics.light();
-              // Re-anchor to the newest message afterwards. The SwiftUI original
-              // did this in the same handler (`didInitialScroll = false`) and it
-              // was not ported: reload drops the history and re-reads it, so the
-              // scroll position it leaves behind refers to content that no longer
-              // exists, which shows as the conversation resting somewhere above
-              // the composer with dead space beneath it.
-              void thread.reload().then(() => {
-                setAtBottom(true);
-                listRef.current?.scrollToEnd({ animated: false });
-              });
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Reload this conversation"
-            testID="thread-reload"
-            hitSlop={spacing.md}
-            style={({ pressed }) => ({
-              width: size.headerControl,
-              height: minTouchTarget,
-              alignItems: 'flex-end',
-              justifyContent: 'center',
-              opacity: pressed ? 0.5 : 1,
-            })}>
-            <Icon
-              name="arrow.clockwise"
-              size={19}
-              tintColor={colors.tint}
-              fallback={<Text color="tint">↻</Text>}
-            />
-          </Pressable>
-        )}
+        </Glass>
       </View>
 
       {/*
@@ -409,20 +410,24 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
             anchoring do its job instead of fighting it from JS.
           */}
           {hostGone ? (
-            <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+            <View style={{ flex: 1, paddingTop: headerHeight }}>
+              <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+            </View>
           ) : thread.loading || rows.length === 0 ? (
-            <ThreadPlaceholder
-              waiting={waiting}
-              loading={thread.loading}
-              canSend={thread.canSend}
-              onBack={onBack}
-              title={title || workspaceId}
-              sessionState={thread.sessionState}
-              agentKind={agentKind}
-              onInstallIntegration={client === null ? undefined : installIntegration}
-              installing={installing}
-              installError={installError}
-            />
+            <View style={{ flex: 1, paddingTop: headerHeight }}>
+              <ThreadPlaceholder
+                waiting={waiting}
+                loading={thread.loading}
+                canSend={thread.canSend}
+                onBack={onBack}
+                title={title || workspaceId}
+                sessionState={thread.sessionState}
+                agentKind={agentKind}
+                onInstallIntegration={client === null ? undefined : installIntegration}
+                installing={installing}
+                installError={installError}
+              />
+            </View>
           ) : (
             <FlashList
               key={thread.historyVersion}
@@ -432,8 +437,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               keyExtractor={(row) => row.message.id}
               contentContainerStyle={{
                 paddingHorizontal: screenPadding,
-                paddingTop: spacing.sm,
+                paddingTop: headerHeight,
               }}
+              scrollIndicatorInsets={{ top: headerHeight }}
               /**
                * The fix for "the chat isn't at the bottom".
                *
@@ -574,18 +580,6 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               onPress={jumpToBottom}
             />
           </View>
-
-          {thread.error !== null && (
-            <View
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: controlsHeight,
-              }}>
-              <ErrorBanner message={thread.error} onDismiss={thread.clearError} />
-            </View>
-          )}
 
           {/*
             The controls OVERLAY the list rather than sitting in a row beneath it.

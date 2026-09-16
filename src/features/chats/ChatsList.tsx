@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Keyboard, Pressable, RefreshControl, TextInput, View } from 'react-native';
+import { Keyboard, RefreshControl, TextInput, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
@@ -12,7 +12,7 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { groupChats, type ChatGroupId } from './chatGroups';
+import { groupChats } from './chatGroups';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { SwipeHint } from '@/features/chats/SwipeHint';
@@ -63,8 +63,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
 
   const { summaries, loading, error, herdrMissing, serverStopped, refresh } = useWorkspaces(client);
   const [query, setQuery] = useState('');
-  const [collapsed, setCollapsed] = useState<ChatGroupId[]>([]);
-  const rows = useMemo(() => groupChats(summaries, query, collapsed), [summaries, query, collapsed]);
+  const rows = useMemo(() => groupChats(summaries, query), [summaries, query]);
   /** One flag for both recovery actions, only one is ever offered at a time. */
   const [fixing, setFixing] = useState(false);
   // A key change is not one failure among many: it is the only one where the
@@ -296,19 +295,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           ListEmptyComponent={<EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />}
           renderItem={({ item: row }) => {
             if (row.kind === 'group') return (
-              <Pressable
+              <View
                 testID={`chat-group-${row.id}`}
-                accessibilityRole="button"
+                accessibilityRole="header"
                 accessibilityLabel={`${row.title}, ${row.count} chats`}
-                accessibilityState={{ expanded: !row.collapsed }}
-                disabled={query.trim().length > 0}
-                onPress={() => setCollapsed((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id])}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: minTouchTarget, paddingVertical: spacing.sm }}>
                 <Text variant="caption" mono color={row.id === 'needs-you' ? 'attention' : 'secondary'}>{row.title.toUpperCase()}</Text>
-                <Icon name={row.collapsed ? 'chevron.right' : 'chevron.down'} size={10} tintColor={colors.secondaryLabel} />
                 <View style={{ height: 1, flex: 1, backgroundColor: row.id === 'needs-you' ? colors.attentionBorder : colors.separator }} />
                 <Text variant="caption" mono color="secondary">{row.count}</Text>
-              </Pressable>
+              </View>
             );
             const item = row.summary;
             return (
