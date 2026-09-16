@@ -15,7 +15,15 @@ appId: dev.herdr.HerdrChat
 - tapOn: '${APPEARANCE}'
 - tapOn: Chats
 - tapOn:
+    id: chat-group-idle
+- assertVisible:
     id: chat-row-w2
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: thread-header
+- assertVisible:
+    id: thread-meta
 - assertVisible:
     id: bubble-d2-2
 - assertNotVisible:

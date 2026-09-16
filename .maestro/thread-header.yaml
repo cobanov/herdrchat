@@ -1,0 +1,38 @@
+# iPhone, local Demo only. Never send these fixtures to a real agent.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: thread-opening.yaml
+- openLink: herdrchat://chat/w2?title=A%20long%20conversation%20title%20that%20must%20not%20cover%20the%20controls
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: thread-title
+- assertVisible:
+    id: thread-reload
+- takeScreenshot: header-long-title
+- repeat:
+    times: 2
+    commands:
+      - tapOn:
+          id: composer-input
+      - evalScript: ${output.prompt = 'Glass header check ' + Date.now()}
+      - inputText: '${output.prompt}'
+      - tapOn:
+          id: composer-send
+      - extendedWaitUntil:
+          visible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
+          timeout: 20000
+- assertVisible:
+    id: thread-header
+- takeScreenshot: header-keyboard
+- hideKeyboard
+- swipe:
+    start: '25%, 40%'
+    end: '25%, 55%'
+    duration: 500
+- assertVisible:
+    id: thread-header
+- assertVisible:
+    id: thread-reload
+- takeScreenshot: header-over-history

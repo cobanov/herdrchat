@@ -187,6 +187,7 @@ export function useComposerMinHeight(): number {
 
 export const threadLayout = {
   bottomSlack: 48,
+  initialHeaderHeight: 80,
   initialControlsHeight: 96,
 } as const;
 
