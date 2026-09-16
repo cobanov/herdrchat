@@ -103,6 +103,29 @@ describe('blocked prompt parsing', () => {
 });
 
 describe('live preview extraction', () => {
+  it('does not duplicate a long Codex tool block as a live answer', () => {
+    const screen = [
+      '• Ran a command', ...Array.from({ length: 15 }, (_, i) => `command output line ${i}`),
+      '', '• Working (40s • esc to interrupt)', '', '⠁         ⢀      ⠄',
+      '› Ask Codex to do anything', '⠁       ⢀   ⠄',
+      'gpt-6-astra xhigh · project · ← for agents',
+    ].join('\n');
+    expect(extractLivePreview(screen)).toBeNull();
+    expect(extractLivePreview(screen.replace('command output line 10', '\nWaiting for flows to complete...'))).toBeNull();
+    expect(extractLivePreview(screen.replace('• Ran', '• Running'))).toBeNull();
+    expect(extractLivePreview(screen.replace(/• Ran a command[\s\S]*?\n\n/, '• The real answer should stay visible.\n\n')))
+      .toBe('• The real answer should stay visible.');
+  });
+  it('ignores the standalone Codex braille animation without dropping real prose', () => {
+    const dots = '⠁             ⠄                 ⠁ ⢀\n       ⢀⠐        ⠄           ⡀';
+    expect(extractLivePreview(dots)).toBeNull();
+    expect(extractLivePreview('The real answer should stay visible.\n' + dots)).toBe('The real answer should stay visible.');
+  });
+  it('removes the Codex queued-input panel and its whole footer', () => {
+    const footer = '\n• Queued follow-up inputs\n? 5 questions\n⌥ + ↑ to answer\n·   ·\n› Ask Codex to do anything';
+    expect(extractLivePreview(footer)).toBeNull();
+    expect(extractLivePreview('The real answer should stay visible.' + footer)).toBe('The real answer should stay visible.');
+  });
   it('takes the prose above the spinner line', () => {
     const screen = [
       '⏺ Looking at the transcript parser now, the byte window is the part that matters.',

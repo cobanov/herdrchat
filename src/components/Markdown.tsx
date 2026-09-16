@@ -1,4 +1,4 @@
-import { Linking, ScrollView, View } from 'react-native';
+import { Alert, Linking, ScrollView, View } from 'react-native';
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -302,8 +302,11 @@ function Span({
               : { color: colors.tint }
           }
           accessibilityRole="link"
+          accessibilityHint={span.href}
           onPress={() => {
-            void Linking.openURL(span.href);
+            void Linking.openURL(span.href).catch(() => {
+              Alert.alert("Couldn't open link", 'No browser could open this address. Please try again.');
+            });
           }}>
           {span.text}
         </Text>

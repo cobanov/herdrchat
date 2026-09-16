@@ -176,7 +176,14 @@ export function parseInline(text: string): InlineSpan[] {
     }
 
     if (match[2] !== undefined && match[3] !== undefined) {
-      spans.push({ kind: 'link', text: match[2], href: match[3] });
+      // Agent output is untrusted. Never dispatch app/file/script schemes.
+      let safe = false;
+      try {
+        const url = new URL(match[3]);
+        safe = (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.length > 0;
+      } catch { /* Relative paths stay readable, not actionable. */ }
+      spans.push(safe ? { kind: 'link', text: match[2], href: match[3] }
+        : { kind: 'text', text: `${match[2]} (${match[3]})` });
     } else if (match[5] !== undefined) {
       spans.push({ kind: 'code', text: match[5] });
     } else if (match[7] !== undefined) {

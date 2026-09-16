@@ -1,8 +1,9 @@
 {
   "name": "herdrchat",
-  "version": "0.7.7",
+  "version": "0.7.9",
   "main": "expo-router/entry",
   "private": true,
+  "workspaces": ["modules/query-string-compat"],
   "scripts": {
     "start": "expo start --dev-client",
     "ios": "expo run:ios",
@@ -13,6 +14,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "query-string": "9.5.1",
     "@shopify/flash-list": "2.0.2",
     "expo": "~57.0.23",
     "expo-blur": "~57.0.3",
@@ -53,7 +55,14 @@
     "typescript": "~6.0.3"
   },
   "overrides": {
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "expo-router": {
+      "query-string": "9.5.1"
+    },
+    "image-size": "2.0.3",
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   },
   "jest": {
     "preset": "jest-expo",
@@ -62,7 +71,8 @@
       "<rootDir>/modules"
     ],
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1"
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^uuid$": "<rootDir>/node_modules/uuid/dist/cjs/index.js"
     }
   }
 }

@@ -113,9 +113,12 @@ export class HerdrSocket {
    */
   async *subscribe(
     subscriptions: readonly Subscription[],
-    startTimeoutMs: number
+    startTimeoutMs: number,
+    signal?: AbortSignal
   ): AsyncIterable<SocketEvent> {
+    if (signal?.aborted) return;
     const route = await this.detect();
+    if (signal?.aborted) return;
     if (route === null) {
       throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
     }
@@ -123,7 +126,8 @@ export class HerdrSocket {
     let started = false;
     for await (const line of this.transport.streamLines(
       commandFor(route, request, this.herdr),
-      startTimeoutMs
+      startTimeoutMs,
+      signal
     )) {
       const text = line.trim();
       if (text.length === 0) continue;

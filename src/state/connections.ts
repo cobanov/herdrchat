@@ -229,7 +229,7 @@ export function clientFor(connection: ServerConnection): HerdrClient {
     (fingerprint) => {
       // First contact: remember what we trusted, so a later key change is
       // detectable rather than silently accepted.
-      void saveHostKeyPin(connection.id, fingerprint);
+      return saveHostKeyPin(connection.id, fingerprint);
     }
   );
   // Bound here and nowhere else: everything that reaches the host — the client,

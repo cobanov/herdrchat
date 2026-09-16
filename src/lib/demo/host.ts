@@ -225,14 +225,14 @@ export class DemoHost implements HerdrTransport {
    * arrives after it opened. Like the real thing this never ends on its own;
    * the consumer abandons the iterator when the thread goes away.
    */
-  async *streamLines(command: string, _startTimeoutMs: number): AsyncIterable<string> {
+  async *streamLines(command: string, _startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
     const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
     if (follow === null) return;
 
     const path = follow[2]!;
     let cursor = Number(follow[1]) - 1;
 
-    for (;;) {
+    while (!signal?.aborted) {
       this.materialise();
       const contents = this.read(path);
       if (contents !== null) {

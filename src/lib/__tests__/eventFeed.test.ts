@@ -11,6 +11,7 @@ class ScriptedSocket {
   private readonly scripts: ('hang' | 'end' | HerdrError | SocketEvent[])[];
   /** Resolvers for connections left hanging, so a test can end them. */
   readonly hanging: (() => void)[] = [];
+  active = 0;
 
   constructor(scripts: ('hang' | 'end' | HerdrError | SocketEvent[])[]) {
     this.scripts = scripts;
@@ -18,7 +19,9 @@ class ScriptedSocket {
 
   subscribe = async function* (
     this: ScriptedSocket,
-    subscriptions: readonly Subscription[]
+    subscriptions: readonly Subscription[],
+    _timeout: number,
+    signal?: AbortSignal
   ): AsyncIterable<SocketEvent> {
     this.calls.push([...subscriptions]);
     const script = this.scripts.shift() ?? 'hang';
@@ -28,7 +31,14 @@ class ScriptedSocket {
       yield* script;
       return;
     }
-    await new Promise<void>((resolve) => this.hanging.push(resolve));
+    this.active += 1;
+    try {
+      await new Promise<void>((resolve) => {
+        this.hanging.push(resolve);
+        if (signal?.aborted) resolve();
+        else signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+    } finally { this.active -= 1; }
   }.bind(this) as HerdrSocket['subscribe'];
 
   asSocket(): HerdrSocket {
@@ -81,6 +91,20 @@ describe('interpret', () => {
 describe('EventFeed', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
+
+  it('replaces and stops silent subscriptions without accumulating bridges', async () => {
+    const socket = new ScriptedSocket([]);
+    const feed = new EventFeed(socket.asSocket(), () => undefined, () => undefined);
+    for (let i = 0; i < 20; i += 1) {
+      feed.watch([`w${i}:p1`]);
+      await flush();
+      expect(socket.active).toBe(1);
+    }
+    feed.stop();
+    await flush();
+    expect(socket.active).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
+  });
 
   it('delivers events and reports the stream live on the first one', async () => {
     const socket = new ScriptedSocket([[statusEvent('w1:p1', 'working'), statusEvent('w1:p1', 'done')]]);

@@ -512,7 +512,7 @@ export function useThread(
         tailBeats.current.set(source.key, Date.now());
         void (async () => {
           try {
-            for await (const chunk of store.tail(source.path, source.label, followFrom)) {
+            for await (const chunk of store.tail(source.path, source.label, followFrom, controller.signal)) {
               if (!current()) break;
               tailBeats.current.set(source.key, Date.now());
               if (chunk.meta !== null) applyMeta(source.key, chunk.meta);

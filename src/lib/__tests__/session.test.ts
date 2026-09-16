@@ -29,6 +29,13 @@ describe('isNamedSession', () => {
 });
 
 describe('withSession', () => {
+  it('passes cancellation through the named-session wrapper', () => {
+    const { transport } = recorder();
+    const follow = jest.spyOn(transport, 'streamLines');
+    const controller = new AbortController();
+    withSession(transport, 'work').streamLines('tail', 1000, controller.signal);
+    expect(follow).toHaveBeenCalledWith("export HERDR_SESSION='work'; tail", 1000, controller.signal);
+  });
   it('returns the same transport when there is no named session', () => {
     // Identity, not a wrapper: nothing to add, and a pass-through layer would
     // appear in every stack trace for no reason.

@@ -16,12 +16,20 @@ import { clean } from './ansi';
 
 export function extractLivePreview(raw: string): string | null {
   const lines = raw.split('\n').map(scrub);
+  // Codex's queued-input panel is UI, not a response or an approval prompt.
+  // Cut the whole footer before looking for a spinner, including its dot grid.
+  const queued = lines.findIndex(line => /^(?:[•●]\s*)?Queued follow-up inputs$/i.test(line));
+  if (queued >= 0) lines.splice(queued);
 
   // Anchor: the last status/spinner line (Claude prints one while working).
   const anchor = lastIndexWhere(lines, isStatusLine);
   // Otherwise stop at the composer input line near the bottom.
-  const composer = lastIndexWhere(lines, (line) => line.startsWith('❯'));
+  const composer = lastIndexWhere(lines, (line) => /^[❯›]/.test(line));
   const end = anchor ?? composer ?? lines.length;
+  // Codex tool output may contain blank lines. Identify the terminal entry
+  // before selecting its final prose block, so output is not a second answer.
+  const entry = lastIndexWhere(lines.slice(0, end), line => /^• /.test(line));
+  if (entry !== null && /^• (?:Ran\b|Running\b|Viewed Image\b|Explored\b|Searched\b)/.test(lines[entry] ?? '')) return null;
 
   const collected: string[] = [];
   let index = end - 1;
@@ -76,6 +84,8 @@ function scrub(line: string): string {
  */
 function isStatusLine(line: string): boolean {
   if (line.length === 0) return false;
+  // The Codex footer contains middle dots but is not the working spinner.
+  if (line.toLowerCase().includes('for agents')) return false;
   for (const glyph of SPINNER_GLYPHS) {
     if (line.includes(glyph)) return true;
   }
@@ -93,8 +103,10 @@ function isStatusLine(line: string): boolean {
  * prompt or herdr footer, mode hints.
  */
 function isChrome(line: string): boolean {
-  if (line.startsWith('❯') || line.startsWith('>')) return true;
+  if (/^[❯›>]/.test(line)) return true;
   if (/^[-─=]+$/.test(line)) return true;
+  // Codex animates a braille-dot field even without the queued-input panel.
+  if (/^[\s\u2800-\u28ff]+$/u.test(line)) return true;
   const lower = line.toLowerCase();
   return (
     lower.includes('manual mode') ||

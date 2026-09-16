@@ -38,8 +38,8 @@ struct SshFailure: Error {
 /// Ported from the SwiftUI app's `HerdrNet.SSHTransport`, which earned every one
 /// of these behaviours in the field: the connection is opened lazily and reused
 /// across commands, a cached client is liveness-checked before use, a command
-/// that fails at the connection level (network change, background suspension,
-/// NAT timeout) drops the client and retries once, and the network path is
+/// that fails at the connection level drops the client without replaying a
+/// possibly applied command, and the network path is
 /// watched so a route change (wifi↔cellular, Tailscale up/down) invalidates the
 /// socket instead of stalling on a dead one.
 ///
@@ -64,7 +64,8 @@ actor SshConnection {
   private var client: SSHClient?
   /// The host key fingerprint this connection accepted, reported back to JS so
   /// first contact can be persisted as the pin.
-  private(set) var acceptedFingerprint: String?
+  private let hostKeyPin: HostKeyPin
+  var acceptedFingerprint: String? { hostKeyPin.fingerprint }
 
   private let pathMonitor = NWPathMonitor()
   private var pathMonitorStarted = false
@@ -72,6 +73,7 @@ actor SshConnection {
 
   init(config: SshConfigRecord) {
     self.config = config
+    self.hostKeyPin = HostKeyPin(config.hostKeyFingerprint)
   }
 
   // MARK: - Lifecycle
@@ -127,7 +129,7 @@ actor SshConnection {
     // SSHAuthenticationMethod isn't Sendable but is effectively immutable once
     // built, so the capture is safe.
     nonisolated(unsafe) let auth = try Self.authMethod(for: config)
-    let observer = HostKeyObserver(pin: config.hostKeyFingerprint)
+    let observer = HostKeyObserver(pin: hostKeyPin)
 
     let settings = SSHClientSettings(
       host: config.host,
@@ -139,7 +141,6 @@ actor SshConnection {
     do {
       let newClient = try await SSHClient.connect(to: settings)
       client = newClient
-      acceptedFingerprint = observer.seen
       return newClient
     } catch {
       if observer.mismatched {
@@ -178,12 +179,11 @@ actor SshConnection {
   /// Written once on the SSH event loop during the handshake, read after
   /// `connect` returns or throws.
   private final class HostKeyObserver: @unchecked Sendable {
-    let pin: String?
-    var seen: String?
+    let pin: HostKeyPin
     var mismatched = false
 
-    init(pin: String?) {
-      self.pin = pin?.isEmpty == true ? nil : pin
+    init(pin: HostKeyPin) {
+      self.pin = pin
     }
   }
 
@@ -204,13 +204,7 @@ actor SshConnection {
       // the key. Dropping the "=" is what makes this string equal to what
       // `ssh-keygen -lf` prints, so the two can be compared by eye.
       let fingerprint = Data(digest).base64EncodedString().replacingOccurrences(of: "=", with: "")
-      observer.seen = fingerprint
-
-      guard let pin = observer.pin else {
-        validationCompletePromise.succeed(())   // first contact: trust and record
-        return
-      }
-      if pin == fingerprint {
+      if observer.pin.accept(fingerprint) {
         validationCompletePromise.succeed(())
       } else {
         observer.mismatched = true
@@ -230,23 +224,17 @@ actor SshConnection {
   }
 
   /// Run a command to completion. A non-zero exit is a RESULT, not an error:
-  /// the caller decides what exit 127 means. Only connection-level failures
-  /// throw, and those are retried once against a fresh connection first.
-  ///
-  /// A `timeout` is NOT retried, and that is deliberate. Retrying a command
-  /// that already burned its deadline costs the caller a second full deadline
-  /// before it hears anything, which on a wedged host is the difference between
-  /// a slow refresh and a UI that looks dead.
+  /// the caller decides what exit 127 means. Never replay a failed command:
+  /// the host may have applied it before its reply was lost.
   func exec(_ command: String, timeoutMs: Int) async throws -> CommandOutput {
     do {
       return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
     } catch let failure as SshFailure {
-      guard failure.code == "transport_failed" else { throw failure }
-      await resetClient()
-      return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
+      if failure.code == "transport_failed" { await resetClient() }
+      throw failure
     } catch {
       await resetClient()
-      return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
+      throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
     }
   }
 
@@ -317,52 +305,62 @@ actor SshConnection {
     onEnd: @escaping @Sendable (Int) -> Void,
     onError: @escaping @Sendable (String, String) -> Void
   ) async throws -> Task<Void, Never> {
-    // Only STARTING is bounded. The stream that follows is a `tail -f` and is
-    // meant to outlive any deadline; a stream that dies quietly is the tail
-    // watchdog's job, not this one's.
-    let stream = try await withDeadline(startTimeoutMs) {
-      let client: SSHClient
-      do {
-        client = try await self.connected()
-      } catch let failure as SshFailure where failure.code == "transport_failed" {
-        await self.resetClient()
-        client = try await self.connected()
-      }
-      do {
-        return try await client.executeCommandStream(command)
-      } catch let failure as SshFailure {
-        throw failure
-      } catch {
-        throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
-      }
-    }
-
-    return Task {
+    let ready = AsyncThrowingStream<Void, Error>.makeStream()
+    let task = Task {
       var buffer = Data()
       do {
-        for try await chunk in stream {
-          guard case .stdout(let data) = chunk else { continue }
-          buffer.append(contentsOf: data.readableBytesView)
-          // Emit whole lines only; a chunk boundary lands mid-line often enough
-          // that splitting per chunk would corrupt transcript JSON.
-          while let newline = buffer.firstIndex(of: 0x0A) {
-            let line = buffer[buffer.startIndex..<newline]
-            onLine(String(decoding: line, as: UTF8.self))
-            buffer.removeSubrange(buffer.startIndex...newline)
+        let client = try await connected()
+        // Citadel's plain executeCommandStream has no cancellation cleanup.
+        // withExec owns the channel and closes it when this task is cancelled.
+        var started = false
+        var readError: Error?
+        do {
+          try await client.withExec(command) { stream, _ in
+            started = true
+            do {
+              try Task.checkCancellation()
+              ready.continuation.finish()
+              for try await chunk in stream {
+                try Task.checkCancellation()
+                guard case .stdout(let data) = chunk else { continue }
+                buffer.append(contentsOf: data.readableBytesView)
+                while let newline = buffer.firstIndex(of: 0x0A) {
+                  let line = buffer[buffer.startIndex..<newline]
+                  onLine(String(decoding: line, as: UTF8.self))
+                  buffer.removeSubrange(buffer.startIndex...newline)
+                }
+              }
+              try Task.checkCancellation()
+            } catch { readError = error }
           }
+        } catch ChannelError.alreadyClosed where started {
+          // The host may close first. Citadel 0.12.1 closes again in withExec;
+          // do not replace the read's real exit/cancellation with alreadyClosed.
         }
+        if let readError { throw readError }
         if !buffer.isEmpty {
           onLine(String(decoding: buffer, as: UTF8.self))
         }
         onEnd(0)
       } catch let failed as SSHClient.CommandFailed {
+        ready.continuation.finish(throwing: failed)
         if !buffer.isEmpty { onLine(String(decoding: buffer, as: UTF8.self)) }
         onEnd(failed.exitCode)
       } catch is CancellationError {
-        // Intentional stop; the consumer already knows.
+        ready.continuation.finish(throwing: CancellationError())
       } catch {
+        ready.continuation.finish(throwing: error)
         onError("transport_failed", SshFailure.friendly(error))
       }
+    }
+    do {
+      try await withDeadline(startTimeoutMs) {
+        for try await _ in ready.stream { }
+      }
+      return task
+    } catch {
+      task.cancel()
+      throw error
     }
   }
 
