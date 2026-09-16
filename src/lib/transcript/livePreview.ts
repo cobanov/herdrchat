@@ -26,10 +26,14 @@ export function extractLivePreview(raw: string): string | null {
   // Otherwise stop at the composer input line near the bottom.
   const composer = lastIndexWhere(lines, (line) => /^[❯›]/.test(line));
   const end = anchor ?? composer ?? lines.length;
+  // Codex tool output may contain blank lines. Identify the terminal entry
+  // before selecting its final prose block, so output is not a second answer.
+  const entry = lastIndexWhere(lines.slice(0, end), line => /^• /.test(line));
+  if (entry !== null && /^• (?:Ran\b|Running\b|Viewed Image\b|Explored\b|Searched\b)/.test(lines[entry] ?? '')) return null;
 
   const collected: string[] = [];
   let index = end - 1;
-  while (index >= 0) {
+  while (index >= 0 && collected.length < 8) {
     const line = lines[index] ?? '';
     if (line.length === 0) {
       if (collected.length === 0) {
@@ -46,10 +50,7 @@ export function extractLivePreview(raw: string): string | null {
     index -= 1;
   }
 
-  // Tool output already has transcript rows. Do not present Codex's terminal
-  // tool block as a second, often much taller, in-progress answer.
-  if (collected.some(line => /^• (?:Ran\b|Viewed Image\b|Explored\b|Searched\b)/.test(line))) return null;
-  let text = collected.slice(-8).join('\n').trim();
+  let text = collected.join('\n').trim();
   for (const bullet of ['⏺', '●', '⏵']) {
     if (text.startsWith(bullet)) {
       text = text.slice(bullet.length).trim();

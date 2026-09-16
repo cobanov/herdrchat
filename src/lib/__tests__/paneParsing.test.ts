@@ -111,6 +111,8 @@ describe('live preview extraction', () => {
       'gpt-6-astra xhigh · project · ← for agents',
     ].join('\n');
     expect(extractLivePreview(screen)).toBeNull();
+    expect(extractLivePreview(screen.replace('command output line 10', '\nWaiting for flows to complete...'))).toBeNull();
+    expect(extractLivePreview(screen.replace('• Ran', '• Running'))).toBeNull();
     expect(extractLivePreview(screen.replace(/• Ran a command[\s\S]*?\n\n/, '• The real answer should stay visible.\n\n')))
       .toBe('• The real answer should stay visible.');
   });
