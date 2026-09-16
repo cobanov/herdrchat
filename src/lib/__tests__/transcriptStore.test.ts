@@ -95,6 +95,56 @@ describe('recent window', () => {
     expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
   });
 
+  it('can page into messages omitted by the cap without a hole in history', async () => {
+    const file = transcript(500);
+    const { store: subject } = store(file);
+    const recent = await subject.recent('/t.jsonl', null, 100_000, 150);
+    const older = await subject.older('/t.jsonl', null, recent.startByte, 100_000);
+    expect([...older.messages, ...recent.messages].map(message => displayText(message)))
+      .toEqual(Array.from({ length: 500 }, (_, index) => `turn ${index}`));
+    expect(older.reachedStart).toBe(true);
+  });
+
+  it('leaves a partial final line for the tail to complete', async () => {
+    const complete = transcript(3);
+    const partial = '{"type":"user","uuid":"next","message":{"role":"user","content":"';
+    const host = new LossyTailTransport(complete + partial);
+    const subject = new TranscriptStore(host);
+    const recent = await subject.recent('/t.jsonl', null, 100_000, 150);
+    expect(recent.consumedBytes).toBe(Buffer.byteLength(complete));
+    host.append('arrived 🎉"}}\n');
+    const messages: string[] = [];
+    for await (const chunk of subject.tail('/t.jsonl', null, recent.consumedBytes)) {
+      if (chunk.message !== null) messages.push(displayText(chunk.message));
+    }
+    expect(messages).toEqual(['arrived 🎉']);
+  });
+
+  it('caps the read at the probed size even if the transcript grows mid-request', async () => {
+    const initial = transcript(3);
+    class GrowingHost extends FakeTransport {
+      override async exec(command: string): Promise<ExecResult> {
+        if (command.includes('wc -c')) return ok(String(Buffer.byteLength(initial)));
+        return super.exec(command);
+      }
+    }
+    const host = new GrowingHost(initial + transcript(50));
+    const recent = await new TranscriptStore(host).recent('/t.jsonl', null, 100_000, 150);
+    expect(recent.messages).toHaveLength(3);
+    expect(recent.consumedBytes).toBe(Buffer.byteLength(initial));
+  });
+
+  it('rejects a short read rather than persisting a cursor beyond a truncated file', async () => {
+    class ShrinkingHost extends FakeTransport {
+      override async exec(command: string): Promise<ExecResult> {
+        if (command.includes('wc -c')) return ok('100000');
+        return super.exec(command);
+      }
+    }
+    await expect(new TranscriptStore(new ShrinkingHost(transcript(3))).recent('/t.jsonl', null, 100_000, 150))
+      .rejects.toMatchObject({ code: 'transcript_changed' });
+  });
+
   // A byte window that starts mid-file lands mid-line. That fragment must be
   // dropped rather than parsed into a half-formed bubble.
   it('drops a partial first line', async () => {

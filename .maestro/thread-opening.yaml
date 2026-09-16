@@ -1,0 +1,57 @@
+# iPhone, Demo only. Run with APPEARANCE=Dark, then Light.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- tapOn:
+    id: server-switcher
+- tapOn:
+    id: server-demo
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      text: '${APPEARANCE}'
+    direction: DOWN
+- tapOn: '${APPEARANCE}'
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: bubble-d2-2
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: thread-open
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- assertVisible:
+    id: bubble-d2-2
+- assertNotVisible:
+    id: jump-to-bottom
+- tapOn:
+    id: thread-back
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: bubble-d2-2
+- assertNotVisible:
+    id: jump-to-bottom
+- tapOn:
+    id: composer-input
+- inputText: Unsent opening check
+- takeScreenshot: thread-keyboard
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- assertVisible: Unsent opening check
+- tapOn:
+    id: composer-input
+- eraseText
+- hideKeyboard
+- tapOn:
+    id: thread-reload
+- assertVisible:
+    id: bubble-d2-2
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: thread-reloaded

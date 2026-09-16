@@ -276,10 +276,13 @@ export class DemoHost implements HerdrTransport {
       return contents === null ? exit(Number(probe[2])) : out(`${byteLength(contents)}\n`);
     }
 
-    const from = /^tail -c \+(\d+) '(.+?)'$/.exec(body);
+    const from = /^tail -c \+(\d+) '(.+?)'(?: \| head -c (\d+))?$/.exec(body);
     if (from !== null) {
       const contents = this.read(from[2]!);
-      return contents === null ? exit(1) : out(sliceFromByte(contents, Number(from[1]) - 1));
+      if (contents === null) return exit(1);
+      const rest = sliceFromByte(contents, Number(from[1]) - 1);
+      return out(from[3] === undefined ? rest
+        : rest.slice(0, rest.length - sliceFromByte(rest, Number(from[3])).length));
     }
 
     const last = /^tail -c (\d+) '(.+?)' 2>\/dev\/null$/.exec(body);

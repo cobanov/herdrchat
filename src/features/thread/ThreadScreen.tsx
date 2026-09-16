@@ -60,6 +60,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
   const listRef = useRef<FlashListRef<Row>>(null);
+  const historyInteraction = useRef<number | null>(null);
 
   /**
    * This route outlives its host: delete the connection, or follow a deep link
@@ -409,7 +410,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
           */}
           {hostGone ? (
             <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
-          ) : rows.length === 0 ? (
+          ) : thread.loading || rows.length === 0 ? (
             <ThreadPlaceholder
               waiting={waiting}
               loading={thread.loading}
@@ -424,6 +425,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
             />
           ) : (
             <FlashList
+              key={thread.historyVersion}
               testID="thread-messages"
               ref={listRef}
               data={rows}
@@ -451,8 +453,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               // than once: loadOlder walks a single anchor, so a repeat call either
               // finds the previous one still running or continues from where it
               // left off, it cannot fetch the same page twice.
-              onStartReached={() => void thread.loadOlder()}
+              onStartReached={() => {
+                if (historyInteraction.current === thread.historyVersion) void thread.loadOlder();
+              }}
               onStartReachedThreshold={0.5}
+              onScrollBeginDrag={() => {
+                historyInteraction.current = thread.historyVersion;
+                // A short first window may already be at the top before the
+                // reader drags, so onStartReached will not fire a second time.
+                if (scrollOffset.current <= 0) void thread.loadOlder();
+              }}
               ListHeaderComponent={
                 <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
               }

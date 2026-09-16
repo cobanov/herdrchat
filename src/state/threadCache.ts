@@ -36,20 +36,6 @@ export async function seedMessages(
     .filter((message): message is ChatMessage => message !== null);
 }
 
-/** Every message id this thread has ever seen, so a tail can't re-add history. */
-export async function seenIds(
-  db: SQLite.SQLiteDatabase,
-  connectionId: string,
-  workspaceId: string
-): Promise<Set<string>> {
-  const rows = await db.getAllAsync<{ message_id: string }>(
-    'SELECT message_id FROM messages WHERE connection_id = ? AND workspace_id = ?',
-    connectionId,
-    workspaceId
-  );
-  return new Set(rows.map((row) => row.message_id));
-}
-
 export async function appendMessages(
   db: SQLite.SQLiteDatabase,
   connectionId: string,
@@ -60,20 +46,41 @@ export async function appendMessages(
   if (messages.length === 0) return;
   const start = await nextSeq(db, connectionId, workspaceId);
   await db.withTransactionAsync(async () => {
-    for (const [offset, message] of messages.entries()) {
-      await db.runAsync(
-        `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`,
-        connectionId,
-        workspaceId,
-        sessionSig,
-        message.id,
-        start + offset,
-        JSON.stringify(message)
-      );
-    }
+    await insertMessages(db, connectionId, workspaceId, sessionSig, messages, start);
   });
+}
+
+/** Replace the cached window only after the new host snapshot was read. */
+export async function replaceMessages(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string,
+  messages: readonly ChatMessage[]
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM messages WHERE connection_id = ? AND workspace_id = ?',
+      connectionId, workspaceId);
+    await insertMessages(db, connectionId, workspaceId, sessionSig, messages, 0);
+  });
+}
+
+async function insertMessages(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string,
+  messages: readonly ChatMessage[],
+  start: number
+): Promise<void> {
+  for (const [offset, message] of messages.entries()) {
+    await db.runAsync(
+      `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`,
+      connectionId, workspaceId, sessionSig, message.id, start + offset, JSON.stringify(message)
+    );
+  }
 }
 
 /**
@@ -144,20 +151,6 @@ export async function setTailCursor(
     workspaceId,
     path,
     consumed
-  );
-}
-
-export async function resetTailCursor(
-  db: SQLite.SQLiteDatabase,
-  connectionId: string,
-  workspaceId: string,
-  path: string
-): Promise<void> {
-  await db.runAsync(
-    'DELETE FROM tail_cursors WHERE connection_id = ? AND workspace_id = ? AND path = ?',
-    connectionId,
-    workspaceId,
-    path
   );
 }
 

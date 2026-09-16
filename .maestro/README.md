@@ -16,6 +16,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `add-server` | that the connection test really connects | **yes** |
 | `thread-back` | that a thread can be left by swiping, not only by the chevron | **yes** |
 | `thread-bottom` | initial bottom, jump, reload and reopen | **yes**, final reply `HELLO` |
+| `thread-opening` | iPhone initial bottom, background return, reopen, draft and reload in both themes | no, selects Demo explicitly |
 | `composer` | multiline draft, keyboard and final-message clearance screenshot | **yes**, final reply `HELLO` |
 | `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
