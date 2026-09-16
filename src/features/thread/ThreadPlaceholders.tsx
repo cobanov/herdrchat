@@ -20,7 +20,7 @@ import { spacing } from '@/theme/tokens';
  * This one is about there being no host to ask, so it offers the two places
  * worth going instead of a message field that cannot send.
  */
-export function MissingHost({ onBack, onHosts }: { onBack: () => void; onHosts: () => void }) {
+export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts: () => void }) {
   return (
     <View
       testID="thread-host-missing"
@@ -40,7 +40,7 @@ export function MissingHost({ onBack, onHosts }: { onBack: () => void; onHosts: 
       </Text>
       <View style={{ marginTop: spacing.sm, alignSelf: 'stretch', gap: spacing.sm }}>
         <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />
-        <Button title="Back to chats" variant="tinted" onPress={onBack} testID="thread-host-back" />
+        {onBack !== undefined && <Button title="Back to chats" variant="tinted" onPress={onBack} testID="thread-host-back" />}
       </View>
     </View>
   );
@@ -69,7 +69,7 @@ export function ThreadPlaceholder({
   waiting: boolean;
   loading: boolean;
   canSend: boolean;
-  onBack: () => void;
+  onBack?: () => void;
   title: string;
   sessionState: 'ok' | 'waiting' | 'missing' | 'unsupported';
   agentKind?: 'claude' | 'codex';
@@ -155,9 +155,9 @@ export function ThreadPlaceholder({
             No agent is running
           </Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            Start an agent on the host, or return to Chats to start a new conversation.
+            Start an agent on the host, or choose another conversation in Chats.
           </Text>
-          <Button title="Back to chats" variant="tinted" onPress={onBack} />
+          {onBack !== undefined && <Button title="Back to chats" variant="tinted" onPress={onBack} />}
         </>
       ) : waiting ? (
         <>

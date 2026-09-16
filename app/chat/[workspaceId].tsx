@@ -1,18 +1,26 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback } from 'react';
+import { Platform } from 'react-native';
 
+import { AdaptiveColumns } from '@/components/AdaptiveColumns';
 import ThreadScreen from '@/features/thread/ThreadScreen';
-import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
-import ChatsList from '@/features/chats/ChatsList';
+import { openChat } from '@/features/chats/navigation';
 import { useSelectedConnection } from '@/state/connections';
 
 export default function ThreadRoute() {
-  const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
+  const { workspaceId, title } = useLocalSearchParams<{ workspaceId: string; title?: string }>();
+  const router = useRouter();
   const connection = useSelectedConnection();
-  const wide = useTabletLayout();
+  const tablet = Platform.OS === 'ios' && Platform.isPad;
+  // Keep existing notification/deep-link URLs valid without opening a second
+  // tablet navigation shell above the tabs.
+  useFocusEffect(useCallback(() => {
+    if (tablet) openChat(connection?.id ?? '', workspaceId, title);
+  }, [tablet, connection?.id, workspaceId, title]));
+  if (tablet) return null;
   return (
-    <AdaptiveColumns sidebar={<ChatsList selectedWorkspaceId={workspaceId} />}>
-      <Stack.Screen options={{ gestureEnabled: !wide }} />
-      <ThreadScreen key={`${connection?.id ?? ''}:${workspaceId}`} />
+    <AdaptiveColumns sidebar={null}>
+      <ThreadScreen key={`${connection?.id ?? ''}:${workspaceId}`} workspaceId={workspaceId} title={title} onBack={() => router.back()} />
     </AdaptiveColumns>
   );
 }

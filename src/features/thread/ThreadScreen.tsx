@@ -1,5 +1,5 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -48,15 +48,15 @@ import { minTouchTarget, radius, screenPadding, size, spacing, threadLayout } fr
 const BOTTOM_SLACK = threadLayout.bottomSlack;
 
 /** One workspace conversation. */
-export default function ThreadScreen() {
+export default function ThreadScreen({ workspaceId, title, onBack }: {
+  workspaceId: string;
+  title?: string;
+  onBack?: () => void;
+}) {
   const router = useRouter();
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{
-    workspaceId: string;
-    title?: string;
-  }>();
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
   const listRef = useRef<FlashListRef<Row>>(null);
@@ -89,7 +89,7 @@ export default function ThreadScreen() {
   // exactly that much room underneath its content.
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', params.workspaceId, []);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
 
   // The agents array is rebuilt by every status poll, so it cannot go in the
   // dependency list below, the effect would re-run every couple of seconds and
@@ -110,13 +110,13 @@ export default function ThreadScreen() {
         // the chat that actually lands in this workspace slot.
         const sig = sessionSignature(agentsRef.current);
         if (sig === null) return;
-        void markThreadRead(db, connectionId, params.workspaceId, sig, Date.now());
+        void markThreadRead(db, connectionId, workspaceId, sig, Date.now());
       };
       stamp();
       // Again on the way out, so a message that arrived while you were reading
       // it counts as seen rather than re-lighting the row you just left.
       return stamp;
-    }, [db, connection, params.workspaceId])
+    }, [db, connection, workspaceId])
   );
 
   const rows = useMemo(
@@ -246,11 +246,8 @@ export default function ThreadScreen() {
 
   return (
     <Screen>
-      {/* A conversation header, not a screen header: a centred title with a
-          back affordance, so it reads as "inside something" rather than as
-          another top-level page. It still starts at the same screen margin as
-          every other page, the back chevron's optical left edge lines up with
-          the large titles elsewhere. */}
+      {/* Only a compact layout needs a back control. The iPad sidebar is
+          already the conversation switcher, and its tabs remain visible. */}
       <View
         style={{
           flexDirection: 'row',
@@ -259,8 +256,8 @@ export default function ThreadScreen() {
           paddingBottom: spacing.sm,
           minHeight: minTouchTarget,
         }}>
-        <Pressable
-          onPress={() => router.back()}
+        {onBack !== undefined && <Pressable
+          onPress={onBack}
           accessibilityRole="button"
           accessibilityLabel="Back to chats"
           testID="thread-back"
@@ -277,11 +274,11 @@ export default function ThreadScreen() {
             tintColor={colors.tint}
             fallback={<Text color="tint">‹</Text>}
           />
-        </Pressable>
+        </Pressable>}
 
-        <View style={{ flex: 1, alignItems: 'center', gap: 1 }}>
+        <View style={{ flex: 1, alignItems: onBack === undefined ? 'flex-start' : 'center', gap: 1 }}>
           <Text variant="headline" numberOfLines={1}>
-            {params.title ?? params.workspaceId}
+            {title || workspaceId}
           </Text>
           {subtitle.length > 0 && (
             <View
@@ -411,14 +408,14 @@ export default function ThreadScreen() {
             anchoring do its job instead of fighting it from JS.
           */}
           {hostGone ? (
-            <MissingHost onBack={() => router.back()} onHosts={() => router.push('/hosts')} />
+            <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
           ) : rows.length === 0 ? (
             <ThreadPlaceholder
               waiting={waiting}
               loading={thread.loading}
               canSend={thread.canSend}
-              onBack={() => router.back()}
-              title={params.title ?? params.workspaceId}
+              onBack={onBack}
+              title={title || workspaceId}
               sessionState={thread.sessionState}
               agentKind={agentKind}
               onInstallIntegration={client === null ? undefined : installIntegration}

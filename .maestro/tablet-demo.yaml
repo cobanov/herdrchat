@@ -56,6 +56,22 @@ appId: dev.herdr.HerdrChat
     id: thread-messages
 - assertVisible:
     id: tablet-sidebar
+- assertNotVisible:
+    id: thread-back
+- assertVisible: Hosts
+- assertVisible: Settings
+- tapOn:
+    id: composer-input
+- inputText: Unsent tablet draft
+- tapOn: Settings
+- tapOn: Chats
+- assertVisible: Unsent tablet draft
+- tapOn: Hosts
+- tapOn: Chats
+- assertVisible: Unsent tablet draft
+- tapOn:
+    id: composer-input
+- eraseText
 - tapOn:
     id: chat-row-w3
 - assertVisible:
@@ -93,14 +109,19 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - takeScreenshot: tablet-keyboard-portrait
-- tapOn:
-    id: thread-back
-- tapOn:
-    id: chat-row-w2
+- tapOn: Settings
+- assertVisible:
+    id: settings-section-connection
+- tapOn: Chats
 - assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - takeScreenshot: tablet-thread-reopened
-- tapOn:
+- assertNotVisible:
     id: thread-back
+- tapOn: Hosts
+- assertVisible:
+    id: server-demo
+- tapOn: Chats
+- assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - setOrientation: LANDSCAPE_LEFT
 - tapOn:
     id: header-action
@@ -112,8 +133,7 @@ appId: dev.herdr.HerdrChat
 - setOrientation: PORTRAIT
 - tapOn:
     id: chat-row-w2
-- tapOn:
-    id: sidebar-settings
+- tapOn: Settings
 - assertVisible:
     id: settings-section-connection
 - tapOn: Chats
@@ -137,3 +157,14 @@ appId: dev.herdr.HerdrChat
     id: thread-messages
 - assertVisible:
     id: chat-row-w3
+# Existing deep links must select inside the same tab shell, not cover it.
+- openLink: herdrchat://chat/w2?title=Notes
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: composer-input
+- assertVisible: Hosts
+- assertVisible: Settings
+- assertNotVisible:
+    id: thread-back

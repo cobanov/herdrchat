@@ -9,6 +9,7 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { agentName } from '@/lib/herdr/agentName';
+import { openChat } from '@/features/chats/navigation';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   DEFAULT_PERMISSION_MODE,
@@ -109,13 +110,7 @@ export default function NewChatScreen() {
 
       clearPicked();
       router.dismissAll();
-      router.push({
-        pathname: '/chat/[workspaceId]',
-        params: {
-          workspaceId: creation.workspace.workspaceId,
-          title: creation.workspace.label,
-        },
-      });
+      openChat(connection.id, creation.workspace.workspaceId, creation.workspace.label);
     } catch (thrown) {
       setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       setCreating(false);

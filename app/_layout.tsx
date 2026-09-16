@@ -115,8 +115,8 @@ function RootStack() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.systemBackground },
         }}>
-        {/* The tab bar lives inside this group, so a conversation
-            pushed from here covers it — the way Messages does. */}
+        {/* iPad keeps its selected conversation inside the Chats tab. Only
+            phones push the standalone thread route above this group. */}
         <Stack.Screen name="(tabs)" />
         {/* `gestureEnabled` is the native-stack default, and it is stated here
             anyway. This is the only pushed screen in the app, its back control
