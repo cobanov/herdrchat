@@ -17,7 +17,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "58",
+      "buildNumber": "59",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
