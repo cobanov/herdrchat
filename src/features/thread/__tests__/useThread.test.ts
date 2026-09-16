@@ -6,7 +6,7 @@ import type { AgentInfo, Snapshot } from '@/lib/herdr/models';
 import type { FileProbe } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { seedMessages, rebind } from '@/state/threadCache';
+import { seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
 let mockPolling = true;
@@ -14,9 +14,17 @@ let mockLive = true;
 let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
 const mockCodexPath = jest.fn<Promise<string | null>, [string]>(async () => '/test/codex.jsonl');
 let mockRecentMessages: ChatMessage[] = [];
+const mockRecent = jest.fn(async (_path: string, _label: string | null, _bytes: number, _limit: number) => ({
+  messages: mockRecentMessages, consumedBytes: mockProbe.kind === 'size' ? mockProbe.bytes : 0, startByte: 0,
+}));
+const mockOlder = jest.fn(async (_path: string, _label: string | null, _anchor: number, _bytes: number) => ({
+  messages: [] as ChatMessage[], startByte: 0, reachedStart: true,
+}));
+const mockTailStarts: { path: string; from: number }[] = [];
 let mockLiveReceipt = false;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
-async function* mockTail() {
+async function* mockTail(path: string, _label: string | null, from: number) {
+  mockTailStarts.push({ path, from });
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
     yield { message, meta: null, consumedBytes: 100 };
@@ -31,9 +39,8 @@ jest.mock('@/state/settings', () => ({ useSettings: () => 1 }));
 jest.mock('@/state/threadCache', () => ({
   appendMessages: jest.fn(async () => undefined),
   rebind: jest.fn(async () => false),
-  resetTailCursor: jest.fn(async () => undefined),
+  replaceMessages: jest.fn(async () => undefined),
   seedMessages: jest.fn(async () => []),
-  seenIds: jest.fn(async () => new Set<string>()),
   setTailCursor: jest.fn(async () => undefined),
   tailCursor: jest.fn(async () => null),
 }));
@@ -44,7 +51,8 @@ jest.mock('@/lib/transcript/store', () => ({
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
     fileProbe = async () => mockProbe;
-    recent = async () => ({ messages: mockRecentMessages, consumedBytes: 0, startByte: 0 });
+    recent = mockRecent;
+    older = mockOlder;
     sessionMeta = async () => null;
     tail = mockTail;
   },
@@ -91,6 +99,13 @@ beforeEach(() => {
   mockProbe = { kind: 'size', bytes: 0 };
   mockCodexPath.mockResolvedValue('/test/codex.jsonl');
   mockRecentMessages = [];
+  mockRecent.mockReset().mockImplementation(async () => ({
+    messages: mockRecentMessages, consumedBytes: mockProbe.kind === 'size' ? mockProbe.bytes : 0, startByte: 0,
+  }));
+  mockOlder.mockReset().mockResolvedValue({ messages: [], startByte: 0, reachedStart: true });
+  jest.mocked(seedMessages).mockResolvedValue([]);
+  jest.mocked(tailCursor).mockResolvedValue(null);
+  mockTailStarts.length = 0;
   mockLiveReceipt = false;
   mockEmitReceipt = null;
 });
@@ -280,5 +295,136 @@ it('does not resurrect a backgrounded poll after its request finishes', async ()
     jest.advanceTimersByTime(60_000);
   });
   expect(fetch).toHaveBeenCalledTimes(1);
+  await unmount();
+});
+
+const turn = (id: string, timestamp = 1): ChatMessage => ({
+  id, role: 'assistant', segments: [{ kind: 'text', text: id }],
+  timestamp, agentLabel: null, isSidechain: false,
+});
+
+it.each(['claude', 'codex'])('opens a stale %s cache with one recent window, not a backlog replay', async kind => {
+  mockProbe = { kind: 'size', bytes: 8_000_000 };
+  jest.mocked(seedMessages).mockResolvedValue([turn('last-visit')]);
+  jest.mocked(tailCursor).mockResolvedValue(10_000);
+  const newest = Array.from({ length: 150 }, (_, index) => turn(`recent-${index}`, index + 100));
+  let finish: ((value: Awaited<ReturnType<typeof mockRecent>>) => void) | undefined;
+  mockRecent.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: kind }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.loading).toBe(true);
+  expect(mockTailStarts).toEqual([]);
+  expect(mockRecent).toHaveBeenCalledWith(expect.any(String), null, 384_000, 150);
+  await act(async () => {
+    finish?.({ messages: newest, consumedBytes: 8_000_000, startByte: 7_900_000 });
+  });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.messages).toEqual(newest);
+  expect(result.current.historyVersion).toBe(1);
+  expect(replaceMessages).toHaveBeenCalledTimes(1);
+  expect(mockTailStarts).toEqual([{ path: expect.any(String), from: 8_000_000 }]);
+  expect(result.current.reachedStart).toBe(false);
+  // Previously cached records must still be eligible for scroll-up paging.
+  mockOlder.mockResolvedValue({ messages: [turn('last-visit')], startByte: 0, reachedStart: true });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(mockOlder).toHaveBeenCalledWith(expect.any(String), null, 7_900_000, 128_000);
+  expect(result.current.messages[0]?.id).toBe('last-visit');
+  await unmount();
+});
+
+it('uses the cache without a bulk read when the host file has not changed', async () => {
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
+  jest.mocked(tailCursor).mockResolvedValue(50_000);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.messages.map(message => message.id)).toEqual(['cached']);
+  expect(mockRecent).not.toHaveBeenCalled();
+  expect(replaceMessages).not.toHaveBeenCalled();
+  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 4096 }]);
+  await unmount();
+});
+
+it('keeps readable cache on a failed bulk read and never falls back to byte zero', async () => {
+  mockProbe = { kind: 'size', bytes: 8_000_000 };
+  jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
+  jest.mocked(tailCursor).mockResolvedValue(10_000);
+  mockRecent.mockRejectedValue(new Error('Read timed out'));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.messages.map(message => message.id)).toEqual(['cached']);
+  expect(result.current.loading).toBe(false);
+  expect(result.current.error).toBe('Read timed out');
+  expect(replaceMessages).not.toHaveBeenCalled();
+  expect(setTailCursor).not.toHaveBeenCalled();
+  expect(mockTailStarts).toEqual([]);
+  await unmount();
+});
+
+it('refreshes a long background gap in one window while preserving the draft echo', async () => {
+  mockRecentMessages = [turn('before-background')];
+  mockProbe = { kind: 'size', bytes: 1000 };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  const { result, rerender, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('Keep the unconfirmed echo'); });
+  mockPolling = false;
+  await rerender(undefined);
+  mockRecentMessages = Array.from({ length: 150 }, (_, i) => turn(`while-away-${i}`, i + 100));
+  mockProbe = { kind: 'size', bytes: 9_000_000 };
+  mockPolling = true;
+  await rerender(undefined);
+  expect(result.current.messages).toHaveLength(151);
+  expect(result.current.messages[0]?.id).toBe('while-away-0');
+  expect(result.current.messages.at(-1)?.id).toMatch(/^local-/);
+  expect(result.current.historyVersion).toBe(2);
+  expect(mockTailStarts.at(-1)?.from).toBe(9_000_000);
+  await unmount();
+});
+
+it('publishes both exact same-folder sessions together before starting either live tail', async () => {
+  mockProbe = { kind: 'size', bytes: 1000 };
+  mockRecent.mockImplementation(async path => ({
+    messages: [turn(path)], consumedBytes: 1000, startByte: 0,
+  }));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([
+    agent,
+    { ...agent, paneId: 'second-pane', agentSession: { ...agent.agentSession!, value: 'second-session' } },
+  ]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.messages.map(message => message.id)).toEqual(['/test/session.jsonl', '/test/second-session.jsonl']);
+  expect(replaceMessages).toHaveBeenCalledTimes(1);
+  expect(mockTailStarts).toEqual([
+    { path: '/test/session.jsonl', from: 1000 },
+    { path: '/test/second-session.jsonl', from: 1000 },
+  ]);
+  await unmount();
+});
+
+it('discards a snapshot that finishes after its session has rotated', async () => {
+  let finishOld: ((value: Awaited<ReturnType<typeof mockRecent>>) => void) | undefined;
+  mockRecent.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  fetch.mockResolvedValue(snapshot([{ ...agent, agentSession: { ...agent.agentSession!, value: 'new-session' } }]));
+  mockRecentMessages = [turn('new-session-message')];
+  await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
+  await act(async () => { finishOld?.({ messages: [turn('foreign-old-message')], consumedBytes: 100, startByte: 0 }); });
+  expect(result.current.messages.map(message => message.id)).toEqual(['new-session-message']);
+  expect(replaceMessages).toHaveBeenCalledTimes(1);
+  expect(mockTailStarts.every(source => source.path === '/test/new-session.jsonl')).toBe(true);
+  await unmount();
+});
+
+it('still opens the healthy transcript when another agent cannot resolve its file', async () => {
+  mockCodexPath.mockResolvedValue(null);
+  mockRecentMessages = [turn('healthy-claude')];
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([
+    agent, { ...agent, agent: 'codex', paneId: 'second-pane' },
+  ]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.messages.map(message => message.id)).toEqual(['healthy-claude']);
+  expect(result.current.error).toContain('Codex session is identified');
+  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 0 }]);
   await unmount();
 });

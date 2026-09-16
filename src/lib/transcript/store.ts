@@ -263,45 +263,47 @@ export class TranscriptStore {
   ): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number }> {
     const size = await this.sizeOrThrow(path);
     const start = size > maxBytes ? size - maxBytes : 0;
-    const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)}`);
+    // Freeze the end at the probe: an active agent must not turn this bounded
+    // snapshot into an unbounded catch-up read while the command runs.
+    const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)} | head -c ${size - start}`);
+    if (byteLength(body) < size - start || body.endsWith('\uFFFD')) {
+      // A truncated file or a final half UTF-8 character cannot provide a
+      // trustworthy byte boundary. Retry the snapshot, never advance past it.
+      throw new HerdrError('transcript_changed', 'The transcript changed during the read. Retrying.');
+    }
 
-    let text = body;
-    let startByte = start;
+    const lastNewline = body.lastIndexOf('\n');
+    // Leave a partially written final line for the live reader to finish.
+    const consumedBytes = lastNewline < 0 ? start : size - byteLength(body.slice(lastNewline + 1));
+    let text = body.slice(0, lastNewline + 1);
     // A window that starts mid-file almost always starts mid-line. Drop that
     // fragment explicitly rather than relying on it failing to parse — a
     // truncated line can still decode into a half-formed bubble.
     if (start > 0) {
       const firstNewline = text.indexOf('\n');
       if (firstNewline >= 0) {
-        startByte = start + byteLength(text.slice(0, firstNewline + 1));
         text = text.slice(firstNewline + 1);
       }
     }
 
-    let messages = parseTranscript(text, agentLabel);
-    if (maxMessages !== undefined && messages.length > maxMessages) {
-      messages = messages.slice(messages.length - maxMessages);
+    // Count backwards from the known byte boundary. A lossy UTF-8 fragment at
+    // the beginning cannot move either cursor past the actual host bytes.
+    let startByte = consumedBytes - byteLength(text);
+    const messages: ChatMessage[] = [];
+    const lines = text.length === 0 ? [] : text.slice(0, -1).split('\n');
+    let offset = consumedBytes;
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index]!;
+      offset -= byteLength(line) + 1;
+      const message = parseTranscriptEntry(line, agentLabel).message;
+      if (message !== null) messages.push(message);
+      if (maxMessages !== undefined && messages.length >= maxMessages) {
+        // Older paging must include the messages omitted by the display cap.
+        startByte = offset;
+        break;
+      }
     }
-
-    // Consumed is the whole WINDOW regardless of what we kept or dropped: the
-    // tail must resume at the real end of file, not at the first bubble shown,
-    // or every trimmed message is re-read and re-appended as if it were new.
-    //
-    // But `start` is an arbitrary byte, not a boundary — it can land inside a
-    // code point, and the host decodes the stranded bytes LOSSILY into U+FFFD.
-    // A U+FFFD is 3 bytes and can replace fewer, so summing decoded lengths
-    // can drift PAST the real end of file; a tail started there begins inside
-    // the next line and silently loses it. When the decode shows damage,
-    // anchor the cursor to the probed size instead: every byte up to `size`
-    // was read here, so a tail from there at worst re-enters a line it already
-    // saw — a partial fragment the tail's parser drops — and never skips one.
-    //
-    // `startByte` runs the other way — it is where this window BEGAN, which is
-    // the anchor `older()` reads backwards from. Note it is the window start,
-    // not the first kept message: anything `maxMessages` trimmed was never
-    // shown, so letting the first older page serve it again is correct.
-    const summed = start + byteLength(body);
-    const consumedBytes = body.includes(REPLACEMENT_CHAR) ? Math.min(summed, size) : summed;
+    messages.reverse();
     return { messages, consumedBytes, startByte };
   }
 
@@ -561,9 +563,6 @@ function randomMarker(): string {
     .padStart(8, '0');
   return `${MARKER_PREFIX}-${hex}`;
 }
-
-/** What a lossy UTF-8 decode leaves behind where the real bytes were cut. */
-const REPLACEMENT_CHAR = '�';
 
 /**
  * UTF-8 byte length. Offsets are byte offsets on the host, and `String.length`
