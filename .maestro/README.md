@@ -9,6 +9,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | Flow | Covers | Needs a host |
 |------|--------|--------------|
 | `smoke` | launch, all three tabs, the host switcher | no |
+| `scene-lifecycle` | Release launch, background return, warm and cold links on iOS 27 and older runtimes | no, selects Demo explicitly |
 | `settings` | host anchor, support, legal, danger zone | no |
 | `new-chat` | the sheet's fields, permission mode, both exits | no |
 | `folder-picker` | opening over the sheet, abandon vs. commit | no |
@@ -98,6 +99,8 @@ cannot detect overlapping views by itself.
 
 ## Notes for writing flows here
 
+- `launchApp` restarts by default. Use `launchApp: { stopApp: false }` after
+  Home when testing a background return, otherwise the test checks a cold start.
 - **Don't use `clearState`.** On a development build it also wipes the dev
   client's saved bundler URL, so the app launches into the launcher's server
   picker instead of the app.

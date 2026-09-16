@@ -17,7 +17,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "59",
+      "buildNumber": "60",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -54,7 +54,8 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "17.0"
+            "deploymentTarget": "17.0",
+            "enableSceneSupport": true
           }
         }
       ],
