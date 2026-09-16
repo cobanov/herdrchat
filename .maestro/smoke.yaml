@@ -26,6 +26,13 @@ appId: dev.herdr.HerdrChat
 # "Settings" from Hosts matches one element; tapping it from Settings would also
 # match the large title. Reordering these steps reintroduces that ambiguity.
 - tapOn: "Settings"
+- runFlow:
+    when:
+      visible:
+        id: settings-section-conversations
+    commands:
+      - tapOn:
+          id: settings-section-conversations
 # A row only Settings renders, rather than the word "Settings", the tab bar
 # shows that from anywhere, so it would pass against a screen that never loaded.
 - assertVisible:

@@ -1,0 +1,138 @@
+# Run on an iPad simulator with -e APPEARANCE=Dark (then Light).
+# Select the built-in Demo before sending: never use a real host as a fixture.
+# Inspect the screenshots for rotation, readable width and keyboard clearance.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- setOrientation: PORTRAIT
+- launchApp
+- tapOn:
+    id: server-switcher
+- tapOn:
+    id: server-demo
+- tapOn: Settings
+- tapOn:
+    id: settings-section-appearance
+- tapOn: '${APPEARANCE}'
+- takeScreenshot: tablet-settings
+- tapOn:
+    id: settings-section-conversations
+- assertVisible:
+    id: toggle-tool-activity
+- takeScreenshot: tablet-settings-conversations
+- tapOn:
+    id: settings-section-notifications
+- assertVisible:
+    id: toggle-notifications
+- tapOn:
+    id: settings-section-storage
+- assertVisible: Cached messages
+- tapOn: Chats
+- assertVisible:
+    id: chat-group-needs-you
+- tapOn:
+    id: chat-group-idle
+- assertNotVisible:
+    id: chat-row-w2
+- tapOn:
+    id: chat-group-idle
+- tapOn:
+    id: chat-search
+- inputText: notes
+- assertVisible:
+    id: chat-row-w2
+- assertNotVisible:
+    id: chat-row-w1
+- eraseText
+- inputText: no-match-fixture
+- assertVisible: No matching chats
+- eraseText
+- pressKey: enter
+- takeScreenshot: tablet-chats-portrait
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: thread-messages
+- assertVisible:
+    id: tablet-sidebar
+- tapOn:
+    id: chat-row-w3
+- assertVisible:
+    id: bubble-d3-1
+- assertVisible:
+    id: tablet-sidebar
+- tapOn:
+    id: chat-row-w2
+- tapOn:
+    id: thread-reload
+# Demo restarts its in-memory transcript on launch. Discard only this demo
+# thread's previous-run cache before testing a fresh reply.
+- takeScreenshot: tablet-thread-portrait
+- setOrientation: LANDSCAPE_LEFT
+- waitForAnimationToEnd
+- assertVisible:
+    id: composer-input
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: tablet-thread-landscape
+- tapOn:
+    id: composer-input
+- evalScript: ${output.prompt = 'Tablet check ' + Date.now()}
+- inputText: '${output.prompt}'
+- takeScreenshot: tablet-keyboard-landscape
+- tapOn:
+    id: composer-send
+- extendedWaitUntil:
+    visible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
+    timeout: 20000
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: tablet-reply-landscape
+- setOrientation: PORTRAIT
+- waitForAnimationToEnd
+- assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
+- takeScreenshot: tablet-keyboard-portrait
+- tapOn:
+    id: thread-back
+- tapOn:
+    id: chat-row-w2
+- assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
+- takeScreenshot: tablet-thread-reopened
+- tapOn:
+    id: thread-back
+- setOrientation: LANDSCAPE_LEFT
+- tapOn:
+    id: header-action
+- assertVisible:
+    id: field-cwd
+- takeScreenshot: tablet-sheet-landscape
+- tapOn:
+    id: header-close
+- setOrientation: PORTRAIT
+- tapOn:
+    id: chat-row-w2
+- tapOn:
+    id: sidebar-settings
+- assertVisible:
+    id: settings-section-connection
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w3
+- longPressOn:
+    id: chat-row-w3
+- tapOn: Rename…
+- assertVisible:
+    id: field-rename
+- takeScreenshot: tablet-rename-sheet
+- tapOn:
+    id: rename-cancel
+- longPressOn:
+    id: chat-row-w3
+- tapOn: Close chat
+# iPad's native popover omits Cancel; tapping the backdrop dismisses it.
+- tapOn:
+    point: '90%, 20%'
+- assertVisible:
+    id: thread-messages
+- assertVisible:
+    id: chat-row-w3

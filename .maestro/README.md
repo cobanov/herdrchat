@@ -19,6 +19,12 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
 | `codex-thread` | exact Codex history, same-folder isolation, reload and phone delivery | **yes**, two disposable Codex sessions |
+| `tablet-demo` | iPad split chats/settings, rotation, composer, reply and action sheets (cancelled) | no, selects Demo explicitly |
+
+Run `tablet-demo` on an iPad simulator with `-e APPEARANCE=Dark`, then `Light`.
+Use `--test-output-dir` outside the repository and open its screenshots: the
+keyboard must not cover the composer or final reply, and content must stay
+readable in portrait and landscape. This is demo acceptance, not an SSH test.
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
 without a host, that is those flows doing their job, not a broken suite.
@@ -35,7 +41,7 @@ maestro test -e BLOCKED_WORKSPACE_ID='<workspace-id>' .maestro/blocked-replies.y
 `agent wait` exiting 0 is the synchronisation point. Do not substitute a sleep,
 polling the screen for a prompt is what makes this class of test flaky.
 
-**Also not covered:** the chat-row swipe actions. Maestro's `swipe` can open the
+**Not covered against a real host:** the chat-row swipe actions. Maestro's `swipe` can open the
 panel, but the actions behind it are Rename and Close, one of which stops every
 process in a workspace on a real machine. A flow that runs against a live host
 must not have that as its failure mode, so the swipe is verified by hand.
