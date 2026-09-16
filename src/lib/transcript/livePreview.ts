@@ -16,11 +16,15 @@ import { clean } from './ansi';
 
 export function extractLivePreview(raw: string): string | null {
   const lines = raw.split('\n').map(scrub);
+  // Codex's queued-input panel is UI, not a response or an approval prompt.
+  // Cut the whole footer before looking for a spinner, including its dot grid.
+  const queued = lines.findIndex(line => /^(?:[•●]\s*)?Queued follow-up inputs$/i.test(line));
+  if (queued >= 0) lines.splice(queued);
 
   // Anchor: the last status/spinner line (Claude prints one while working).
   const anchor = lastIndexWhere(lines, isStatusLine);
   // Otherwise stop at the composer input line near the bottom.
-  const composer = lastIndexWhere(lines, (line) => line.startsWith('❯'));
+  const composer = lastIndexWhere(lines, (line) => /^[❯›]/.test(line));
   const end = anchor ?? composer ?? lines.length;
 
   const collected: string[] = [];
@@ -93,7 +97,7 @@ function isStatusLine(line: string): boolean {
  * prompt or herdr footer, mode hints.
  */
 function isChrome(line: string): boolean {
-  if (line.startsWith('❯') || line.startsWith('>')) return true;
+  if (/^[❯›>]/.test(line)) return true;
   if (/^[-─=]+$/.test(line)) return true;
   const lower = line.toLowerCase();
   return (

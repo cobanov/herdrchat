@@ -79,6 +79,9 @@ describe('block parsing', () => {
 });
 
 describe('inline parsing', () => {
+  it.each(['javascript:alert', 'file:///private/test', 'intent://test', 'shortcuts://run-shortcut', '//host/path', 'docs/readme.md'])('keeps unsafe link %s readable but inert', href => {
+    expect(parseInline(`[link](${href})`)).toEqual([{ kind: 'text', text: `link (${href})` }]);
+  });
   it('keeps underscores inside identifiers literal', () => {
     expect(parseInline('CODEX_PHONE_OK and snake_case_name')).toEqual([
       { kind: 'text', text: 'CODEX_PHONE_OK and snake_case_name' },

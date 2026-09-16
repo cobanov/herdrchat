@@ -103,6 +103,11 @@ describe('blocked prompt parsing', () => {
 });
 
 describe('live preview extraction', () => {
+  it('removes the Codex queued-input panel and its whole footer', () => {
+    const footer = '\n• Queued follow-up inputs\n? 5 questions\n⌥ + ↑ to answer\n·   ·\n› Ask Codex to do anything';
+    expect(extractLivePreview(footer)).toBeNull();
+    expect(extractLivePreview('The real answer should stay visible.' + footer)).toBe('The real answer should stay visible.');
+  });
   it('takes the prose above the spinner line', () => {
     const screen = [
       '⏺ Looking at the transcript parser now, the byte window is the part that matters.',

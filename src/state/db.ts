@@ -286,65 +286,11 @@ export async function clearCachedMessages(db: SQLite.SQLiteDatabase): Promise<vo
   await db.withTransactionAsync(async () => {
     await db.runAsync('DELETE FROM messages');
     await db.runAsync('DELETE FROM tail_cursors');
+    await db.runAsync('DELETE FROM previews');
   });
 }
 
-// MARK: - Prompt history
-//
-// Typing on a phone is far more expensive than typing at a desk, and the same
-// handful of instructions come up over and over — "run the tests", "commit and
-// push", "keep going". Re-sending one should not mean retyping it.
-
-/** How many prompts to keep per host. Enough to find one, few enough to scan. */
-const PROMPT_HISTORY_LIMIT = 20;
-
-/**
- * Record a prompt, newest first.
- *
- * Re-sending an identical prompt moves it back to the top rather than adding a
- * duplicate — the primary key does the deduplication and `created_at` does the
- * ordering, so a favourite instruction stays reachable instead of being pushed
- * out by its own repetitions.
- */
-export async function rememberPrompt(
-  db: SQLite.SQLiteDatabase,
-  connectionId: string,
-  text: string
-): Promise<void> {
-  const trimmed = text.trim();
-  // Multi-line prompts are real, but a whole pasted file is not a shortcut.
-  if (trimmed.length === 0 || trimmed.length > 2_000) return;
-
-  await db.runAsync(
-    `INSERT INTO prompts (connection_id, text, created_at) VALUES (?, ?, ?)
-     ON CONFLICT(connection_id, text) DO UPDATE SET created_at = excluded.created_at`,
-    connectionId,
-    trimmed,
-    Date.now()
-  );
-  await db.runAsync(
-    `DELETE FROM prompts WHERE connection_id = ? AND text NOT IN (
-       SELECT text FROM prompts WHERE connection_id = ? ORDER BY created_at DESC LIMIT ?
-     )`,
-    connectionId,
-    connectionId,
-    PROMPT_HISTORY_LIMIT
-  );
-}
-
-export async function recentPrompts(
-  db: SQLite.SQLiteDatabase,
-  connectionId: string
-): Promise<string[]> {
-  const rows = await db.getAllAsync<{ text: string }>(
-    `SELECT text FROM prompts WHERE connection_id = ? ORDER BY created_at DESC LIMIT ?`,
-    connectionId,
-    PROMPT_HISTORY_LIMIT
-  );
-  return rows.map((row) => row.text);
-}
-
-/** Forget everything typed on this host. Offered because it is the user's own words. */
+/** Keep the deletion path for prompt history saved by older versions. */
 export async function clearPrompts(
   db: SQLite.SQLiteDatabase,
   connectionId: string
