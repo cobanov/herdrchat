@@ -44,6 +44,8 @@ export const spacing = {
  * unrelated to touch.
  */
 export const size = {
+  /** Readable tablet column; narrow windows and phones still use their full width. */
+  contentMaxWidth: 840,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
   /** The unread / attention dot on an avatar. */

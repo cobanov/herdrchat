@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/theme/ThemeProvider';
+import { size } from '@/theme/tokens';
 
 /**
  * The outermost element of every screen.
@@ -28,13 +29,21 @@ export function Screen({
   presentation?: 'full' | 'sheet';
 }) {
   const { colors } = useTheme();
+  // Let Yoga adapt to rotation and window resizing without device detection.
+  const content = (
+    <View
+      testID="screen-content"
+      style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
+      {children}
+    </View>
+  );
 
   if (presentation === 'sheet') {
-    return <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>{children}</View>;
+    return <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>{content}</View>;
   }
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top']}>
-      {children}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.systemBackground }} edges={['top', 'left', 'right']}>
+      {content}
     </SafeAreaView>
   );
 }
