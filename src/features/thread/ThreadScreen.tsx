@@ -437,7 +437,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               keyExtractor={(row) => row.message.id}
               contentContainerStyle={{
                 paddingHorizontal: screenPadding,
-                paddingTop: headerHeight,
+                paddingTop: spacing.sm,
               }}
               scrollIndicatorInsets={{ top: headerHeight }}
               /**
@@ -472,6 +472,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               ListHeaderComponent={
                 <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
               }
+              // FlashList's bottom anchor measures the header, not container padding.
+              ListHeaderComponentStyle={{ paddingTop: headerHeight }}
               onScroll={onScroll}
               onLayout={(event) => {
                 viewportHeight.current = event.nativeEvent.layout.height;

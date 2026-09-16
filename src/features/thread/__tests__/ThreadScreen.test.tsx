@@ -5,6 +5,9 @@ import ThreadScreen from '../ThreadScreen';
 
 const mockReload = jest.fn(() => Promise.resolve());
 const mockClearError = jest.fn();
+const mockList = jest.fn((_props: unknown) => null);
+let mockLoading = true;
+jest.mock('@shopify/flash-list', () => ({ FlashList: (props: unknown) => mockList(props) }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-router', () => ({ useRouter: () => ({}), useFocusEffect: jest.fn() }));
@@ -24,9 +27,11 @@ jest.mock('@/state/connections', () => ({
 }));
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
-    agents: [], messages: [], sessionMeta: { model: 'claude-opus-4-6' },
+    agents: [],
+    messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
+    sessionMeta: { model: 'claude-opus-4-6' },
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
-    isBlocked: false, isSending: false, canSend: true, loading: true,
+    isBlocked: false, isSending: false, canSend: true, loading: mockLoading,
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
     reload: mockReload, clearError: mockClearError,
   }),
@@ -49,7 +54,12 @@ it('keeps warnings and actions in the floating glass header, reserving its measu
   expect(mockReload).toHaveBeenCalledTimes(1);
   await fireEvent.press(header.getByTestId('thread-back'));
   expect(onBack).toHaveBeenCalledTimes(1);
+  mockLoading = false;
   await screen.rerender(<ThreadScreen workspaceId="w1" title="A long conversation title" />);
+  expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({
+    ListHeaderComponentStyle: { paddingTop: 140 },
+    scrollIndicatorInsets: { top: 140 },
+  }));
   expect(screen.queryByTestId('thread-back')).toBeNull();
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
 });
