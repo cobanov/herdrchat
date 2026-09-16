@@ -8,6 +8,7 @@ import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'reac
 import type { ReactNode } from 'react';
 
 import { useTheme } from '@/theme/ThemeProvider';
+import { glass } from '@/theme/tokens';
 
 /**
  * The ONLY file in the app that imports `expo-glass-effect`.
@@ -21,6 +22,9 @@ import { useTheme } from '@/theme/ThemeProvider';
  *   1. Liquid Glass  — iOS 26+ where the runtime API is actually present
  *   2. BlurView      — older iOS, which has no Liquid Glass but does have blur
  *   3. Solid surface — Android, and anywhere Reduce Transparency is on
+ *
+ * Edge-attached navigation chrome uses the system blur material on iOS;
+ * Liquid Glass remains reserved for its floating controls.
  */
 
 export type GlassVariant = 'regular' | 'clear';
@@ -31,6 +35,8 @@ export interface GlassProps {
   variant?: GlassVariant;
   /** Reacts to touch. Only for surfaces that are themselves a control. */
   interactive?: boolean;
+  /** Continuous navigation chrome, not a floating Liquid Glass lens. */
+  edgeAttached?: boolean;
   tintColor?: string;
   testID?: string;
 }
@@ -50,6 +56,7 @@ export function Glass({
   style,
   variant = 'regular',
   interactive = false,
+  edgeAttached = false,
   tintColor,
   testID,
 }: GlassProps) {
@@ -63,7 +70,7 @@ export function Glass({
     );
   }
 
-  if (Platform.OS === 'ios' && isGlassEffectAPIAvailable()) {
+  if (Platform.OS === 'ios' && !edgeAttached && isGlassEffectAPIAvailable()) {
     return (
       <GlassView
         style={style}
@@ -88,12 +95,15 @@ export function Glass({
   }
 
   if (Platform.OS === 'ios') {
-    // iOS below 26: no Liquid Glass, but blur still reads as a floating surface.
+    // Edge-attached chrome uses system navigation material, not a rounded lens.
+    // The same BlurView also backs floating surfaces on iOS below 26.
     return (
       <View style={[styles.clip, style]} testID={testID}>
         <BlurView
-          intensity={variant === 'clear' ? 40 : 70}
-          tint={scheme === 'dark' ? 'dark' : 'light'}
+          intensity={edgeAttached ? glass.chromeIntensity : variant === 'clear' ? 40 : 70}
+          tint={edgeAttached
+            ? scheme === 'dark' ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight'
+            : scheme === 'dark' ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
         {children}

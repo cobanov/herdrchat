@@ -191,6 +191,9 @@ export const threadLayout = {
   initialControlsHeight: 96,
 } as const;
 
+/** System navigation material, continuous through the status-bar safe area. */
+export const glass = { chromeIntensity: 100 } as const;
+
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
 
