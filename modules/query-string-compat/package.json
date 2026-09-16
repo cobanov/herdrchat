@@ -1,0 +1,9 @@
+{
+  "name": "query-string",
+  "version": "9.5.1",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "query-string-modern": "npm:query-string@9.5.1"
+  }
+}
