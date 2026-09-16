@@ -69,7 +69,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
               backgroundColor: onTint ? 'rgba(255,255,255,0.4)' : colors.tertiaryLabel,
             }}
           />
-          <View style={{ flex: 1 }}>
+          <View style={{ flexShrink: 1 }}>
             <Inline text={block.text} onTint={onTint} italic />
           </View>
         </View>
@@ -126,7 +126,8 @@ function ListRow({
         style={{ fontVariant: ['tabular-nums'] }}>
         {marker}
       </Text>
-      <View style={{ flex: 1 }}>
+      {/* Keep the text's intrinsic width inside a content-sized chat bubble. */}
+      <View style={{ flexShrink: 1 }}>
         <Inline text={text} onTint={onTint} />
       </View>
     </View>

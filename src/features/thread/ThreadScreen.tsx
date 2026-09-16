@@ -380,6 +380,9 @@ export default function ThreadScreen() {
       */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // Screen's inner width-capped view starts below the status bar. The
+        // keyboard reports window coordinates, so include that outer inset.
+        keyboardVerticalOffset={insets.top}
         style={{ flex: 1 }}>
         {/*
           The controls anchor to this wrapper, NOT to the avoider itself.
