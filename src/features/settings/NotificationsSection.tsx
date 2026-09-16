@@ -17,7 +17,7 @@ import {
   uploadPushToken,
 } from '@/features/notifications/push';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
+import { clientFor, isDemo, useConnections, useSelectedConnection } from '@/state/connections';
 import { setSetting } from '@/state/db';
 import { encodeBool, useSettings } from '@/state/settings';
 import { spacing } from '@/theme/tokens';
@@ -44,6 +44,10 @@ export function NotificationsSection() {
   } | null>(null);
 
   const toggle = async (next: boolean) => {
+    if (next && (connection === null || isDemo(connection.id))) {
+      setNote({ message: 'Select your own host first. The Demo host cannot send notifications.' });
+      return;
+    }
     setBusy(true);
     setNote(null);
     try {
@@ -69,6 +73,7 @@ export function NotificationsSection() {
         // the watcher drops it.
         await Promise.all(
           connections.map(async (target) => {
+            if (isDemo(target.id)) return;
             try {
               await removePushToken(clientFor(target).transport, id, token);
             } catch {
@@ -96,10 +101,7 @@ export function NotificationsSection() {
         });
         return;
       }
-      if (connection === null) {
-        setNote({ message: 'Add a host first — the token is stored on your own machine.' });
-        return;
-      }
+      if (connection === null) return;
 
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
       await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId);

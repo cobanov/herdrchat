@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { openChat } from '@/features/chats/navigation';
 import { deviceFileId, existingPushToken, uploadPushToken } from '@/features/notifications/push';
-import { clientFor, useConnections } from '@/state/connections';
+import { clientFor, isDemo, useConnections } from '@/state/connections';
 import { useSettings } from '@/state/settings';
 
 /**
@@ -47,6 +47,7 @@ export function usePushTokenRefresh(): void {
       // times. Now the round takes as long as the slowest single host.
       await Promise.all(
         useConnections.getState().connections.map(async (target) => {
+          if (isDemo(target.id)) return;
           try {
             await uploadPushToken(clientFor(target).transport, id, token, bundleId);
           } catch {
