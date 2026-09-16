@@ -103,6 +103,11 @@ describe('blocked prompt parsing', () => {
 });
 
 describe('live preview extraction', () => {
+  it('ignores the standalone Codex braille animation without dropping real prose', () => {
+    const dots = '⠁             ⠄                 ⠁ ⢀\n       ⢀⠐        ⠄           ⡀';
+    expect(extractLivePreview(dots)).toBeNull();
+    expect(extractLivePreview('The real answer should stay visible.\n' + dots)).toBe('The real answer should stay visible.');
+  });
   it('removes the Codex queued-input panel and its whole footer', () => {
     const footer = '\n• Queued follow-up inputs\n? 5 questions\n⌥ + ↑ to answer\n·   ·\n› Ask Codex to do anything';
     expect(extractLivePreview(footer)).toBeNull();

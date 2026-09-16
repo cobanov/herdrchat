@@ -99,6 +99,8 @@ function isStatusLine(line: string): boolean {
 function isChrome(line: string): boolean {
   if (/^[❯›>]/.test(line)) return true;
   if (/^[-─=]+$/.test(line)) return true;
+  // Codex animates a braille-dot field even without the queued-input panel.
+  if (/^[\s\u2800-\u28ff]+$/u.test(line)) return true;
   const lower = line.toLowerCase();
   return (
     lower.includes('manual mode') ||
