@@ -16,11 +16,11 @@
 </p>
 
 Your agents keep running on your computer. HerdrChat turns their
-[herdr](https://herdr.dev) workspaces into readable conversations on your iPhone,
+[herdr](https://herdr.dev) workspaces into readable conversations on your iPhone or iPad,
 connected directly over SSH. No HerdrChat account. No relay server.
 
 <p align="center">
-  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode chat list showing agents waiting, online and finished" width="280"></a>
+  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode agent cards grouped by status, with chat search" width="280"></a>
   <a href="docs/screenshots/thread-blocked-dark.png"><img src="docs/screenshots/thread-blocked-dark.png" alt="Dark-mode conversation with a tool call and tappable approval choices" width="280"></a>
   <br>
   <sub>Demo conversations, captured in the iOS simulator. Tap a screenshot to zoom.</sub>
@@ -29,6 +29,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 ## Less terminal. More conversation.
 
 - **Pick up where you left off.** Read Claude Code and Codex history, including replies started at your desk.
+- **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
 - **Keep your machine yours.** Connect over SSH, usually through Tailscale. Credentials stay in the iOS Keychain; host keys are pinned.
