@@ -71,6 +71,71 @@ describe('DemoHost as a filesystem', () => {
 });
 
 describe('DemoHost as an agent', () => {
+  it('keeps replies independent when two sample chats are used together', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendKeys('w1:p1', ['1', 'Enter']);
+    await client.sendPrompt('w2:p1', 'a separate conversation');
+    now += 10_000;
+
+    for (const index of [0, 1]) {
+      const { store, path } = await transcriptOf(host, index);
+      const { messages } = await store.recent(path, 'claude', 262_144);
+      expect(messages.at(-1)?.role).toBe('assistant');
+      expect(JSON.stringify(messages.at(-1)?.segments))
+        .toContain(index === 0 ? 'Going ahead' : 'a separate conversation');
+      expect((await client.workspaces())[index]?.agentStatus).toBe('idle');
+    }
+  });
+
+  it('keeps both messages in one chat and stays working until the last reply', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'first message');
+    now += 1_000;
+    await client.sendPrompt('w2:p1', 'second message');
+    now += 500;
+    expect((await client.workspaces())[1]?.agentStatus).toBe('working');
+    now += 1_000;
+    expect((await client.workspaces())[1]?.agentStatus).toBe('idle');
+    const { store, path } = await transcriptOf(host, 1);
+    const { messages } = await store.recent(path, 'claude', 262_144);
+    const replies = messages.filter(message => message.role === 'assistant');
+    expect(JSON.stringify(replies.at(-2)?.segments)).toContain('first message');
+    expect(JSON.stringify(replies.at(-1)?.segments)).toContain('second message');
+  });
+
+  it('explains that workspace management needs a real host instead of claiming success', async () => {
+    const client = new HerdrClient(new DemoHost());
+    for (const operation of [
+      () => client.createWorkspace('/home/demo/example', 'Example'),
+      () => client.renameWorkspace('w2', 'Changed'),
+      () => client.closeWorkspace('w2'),
+    ]) {
+      await expect(operation()).rejects.toThrow('Select your own host');
+    }
+    expect((await client.workspaces()).map(workspace => workspace.label))
+      .toEqual(['herdrchat', 'notes', 'scratch']);
+  });
+
+  it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'cancel this reply');
+    await client.sendPrompt('w3:p1', 'keep this reply');
+    await (hard ? client.interruptHard('w2:p1') : client.interrupt('w2:p1'));
+    now += 10_000;
+    const { store, path } = await transcriptOf(host, 1);
+    expect((await store.recent(path, 'claude', 262_144)).messages.at(-1)?.role).toBe('user');
+    const other = await transcriptOf(host, 2);
+    expect((await other.store.recent(other.path, 'claude', 262_144)).messages.at(-1)?.role)
+      .toBe('assistant');
+    expect((await client.workspaces())[1]?.agentStatus).toBe('idle');
+  });
+
   it('reports a session id per pane, so a thread can find its transcript', async () => {
     const client = new HerdrClient(new DemoHost());
     const snapshot = await client.snapshot();
