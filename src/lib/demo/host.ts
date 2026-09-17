@@ -175,7 +175,7 @@ export class DemoHost implements HerdrTransport {
   private readonly paths = new Map<string, string>();
   /** Agent status by pane, mutable because answering a prompt unblocks it. */
   private readonly statuses = new Map<string, string>();
-  private pending: Pending | null = null;
+  private pending: Pending[] = [];
   private counter = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {
@@ -198,12 +198,15 @@ export class DemoHost implements HerdrTransport {
 
   /** Write any reply whose moment has arrived. Called before every read. */
   private materialise(): void {
-    const due = this.pending;
-    if (due === null || this.now() < due.dueAt) return;
-    this.pending = null;
-    const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
-    this.append(due.paneId, replyLine(text, this.uuid(), this.stamp()));
-    this.statuses.set(due.paneId, 'idle');
+    const now = this.now();
+    const ready = this.pending.filter(reply => reply.dueAt <= now);
+    this.pending = this.pending.filter(reply => reply.dueAt > now);
+    for (const due of ready) {
+      const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
+      this.append(due.paneId, replyLine(text, this.uuid(), this.stamp()));
+      this.statuses.set(due.paneId,
+        this.pending.some(reply => reply.paneId === due.paneId) ? 'working' : 'idle');
+    }
   }
 
   private append(paneId: string, jsonLine: string): void {
@@ -339,6 +342,13 @@ export class DemoHost implements HerdrTransport {
     if (verb === 'workspace list') return ok({ workspaces: this.workspaceRows() });
     if (verb === 'agent list') return ok({ agents: this.agentRows() });
 
+    if (argv[1] === 'workspace' && ['create', 'rename', 'close'].includes(argv[2] ?? '')) {
+      return out(JSON.stringify({ error: {
+        code: 'demo_action_unavailable',
+        message: 'Select your own host to create, rename or close chats. Demo contains sample conversations only.',
+      } }));
+    }
+
     if (verb === 'api snapshot') {
       return ok({
         snapshot: {
@@ -363,9 +373,14 @@ export class DemoHost implements HerdrTransport {
     if (argv[1] === 'pane' && argv[2] === 'send-keys') {
       const paneId = argv[3] ?? '';
       const choice = argv[4] ?? '';
+      if (['Escape', 'escape', 'Esc', 'ctrl+c', 'C-c'].includes(choice)) {
+        this.pending = this.pending.filter(reply => reply.paneId !== paneId);
+        this.statuses.set(paneId, 'idle');
+        return silent();
+      }
       if (this.statusOf(paneId) === 'blocked') {
         this.statuses.set(paneId, 'working');
-        this.pending = { paneId, prompt: '', answer: choice, dueAt: this.now() + REPLY_DELAY_MS };
+        this.pending.push({ paneId, prompt: '', answer: choice, dueAt: this.now() + REPLY_DELAY_MS });
       }
       return silent();
     }
@@ -379,7 +394,7 @@ export class DemoHost implements HerdrTransport {
       const text = argv[4] ?? '';
       this.append(paneId, userLine(text, this.uuid(), this.stamp()));
       this.statuses.set(paneId, 'working');
-      this.pending = { paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS };
+      this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
     }
 

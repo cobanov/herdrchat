@@ -42,7 +42,7 @@
 <div class="wrap prose">
 
   <h1>Privacy Policy</h1>
-  <p class="stamp">HerdrChat · last updated 21 August 2026</p>
+  <p class="stamp">HerdrChat · last updated 17 September 2026</p>
 
   <div class="callout">
     <p>
@@ -104,11 +104,20 @@
 
   <h2>Where your data goes</h2>
   <p>
-    Only to the machine you point the app at. The connection is a direct SSH
-    session from your phone to your host — in normal use across a private
-    network such as Tailscale, so it is not exposed to the internet at all.
+    HerdrChat sends your input directly to the machine you configure over SSH.
+    Use a private network such as Tailscale to reach it without opening SSH to
+    the public internet. Your network configuration determines how the host
+    is exposed.
     Host keys are pinned the first time you connect, and a changed host key
     refuses the connection rather than silently trusting it.
+  </p>
+  <p>
+    Agent tools running on that computer, such as Claude Code and Codex, may
+    send prompts, files and other context to Anthropic, OpenAI or another
+    provider you configure. Those tools use your separate accounts and follow
+    their own settings and privacy policies. HerdrChat does not make model API
+    requests itself. The built-in Demo uses local fictional conversations and
+    sends no prompts to a host or AI provider.
   </p>
 
   <h2>Notifications</h2>
