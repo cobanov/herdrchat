@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { HerdrClient } from '../herdr/client';
+import { subscriptionsFor } from '../herdr/events';
 import { HerdrSocket } from '../herdr/socket';
 import type { HerdrTransport } from '../herdr/transport';
 
@@ -130,18 +131,13 @@ live('herdr socket, live', () => {
         const readiness: { resolve: (() => void) | null } = { resolve: null };
         const ready = new Promise<void>((resolve) => (readiness.resolve = resolve));
         const stream = (async () => {
-          for await (const event of socket.subscribe(
-            [
-              { type: 'pane.agent_status_changed', pane_id: pane },
-              { type: 'pane.turn_completed', pane_id: pane },
-            ],
-            5000
-          )) {
+          // Exactly what the app subscribes to, so a type the host refuses fails here.
+          for await (const event of socket.subscribe(subscriptionsFor([pane]), 5000)) {
             if (event.kind !== 'event') continue;
-            const status = String(event.data['agent_status'] ?? event.data['outcome']);
+            const status = String(event.data['agent_status']);
             seen.push(`${event.event}:${status}`);
-            // First idle: the agent is up. Second idle: the turn is over.
-            if (event.event === 'pane.agent_status_changed' && status === 'idle') {
+            // First rest: the agent is up. Second rest: the turn is over.
+            if (event.event === 'pane.agent_status_changed' && (status === 'idle' || status === 'done')) {
               if (readiness.resolve !== null) {
                 readiness.resolve();
                 readiness.resolve = null;
@@ -167,7 +163,7 @@ live('herdr socket, live', () => {
 
         await Promise.race([stream, new Promise((resolve) => setTimeout(resolve, 15000))]);
         expect(seen[0]).toBe('pane.agent_status_changed:working');
-        expect(seen).toContain('pane.turn_completed:completed');
+        expect(seen.slice(1).some((s) => /agent_status_changed:(idle|done)$/.test(s))).toBe(true);
       } finally {
         await socket.call('workspace.close', { workspace_id: workspaceId }, 5000);
       }

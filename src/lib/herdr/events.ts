@@ -9,10 +9,11 @@ import type { HerdrSocket, SocketEvent, Subscription } from './socket';
  * each answer a full SSH round-trip, most of them "no". With the feed, herdr
  * says when something changed and the poll becomes a slow safety net.
  *
- * Subscriptions are pane-scoped and there is no wildcard, so the feed has to know
- * which panes to watch and start a fresh connection when that set changes. It
- * also watches the workspace lifecycle, which needs no pane id, so a chat
- * created or closed on the desktop shows up without waiting for a poll.
+ * Agent status subscriptions are pane-scoped and there is no wildcard, so the
+ * feed has to know which panes to watch and start a fresh connection when that
+ * set changes. It also watches a few host-wide events, which take no pane id,
+ * so a chat created or closed on the desktop shows up without waiting for a
+ * poll.
  *
  * No React in here. `onEvent` and `onLive` are plain callbacks, so this can be
  * driven by a test with a scripted socket, and a hook wraps it in one effect.
@@ -128,20 +129,27 @@ export interface HostEvent {
   readonly data: Record<string, unknown>;
 }
 
-/** Pane events the app reacts to. Each needs its own subscription entry per pane. */
-export const PANE_EVENTS = [
-  'pane.agent_status_changed',
-  'pane.turn_completed',
-  'pane.agent_detected',
-  'pane.exited',
-] as const;
+/** Pane events that need their own subscription entry per pane. */
+export const PANE_EVENTS = ['pane.agent_status_changed'] as const;
 
-/** Workspace lifecycle. No pane id; one entry each covers the whole host. */
-export const WORKSPACE_EVENTS = [
+/**
+ * Host-wide events: one entry each, no pane id. herdr's schema gives agent
+ * detection and pane exit no pane filter, so a pane id there is ignored and N
+ * panes would mean N identical host-wide entries.
+ *
+ * Only event types upstream herdr knows belong in either list. The server
+ * refuses the whole request over one unknown type, which is how
+ * `pane.turn_completed` (an addition in the jerryfane/herdr fork) kept the feed
+ * from ever starting on stock herdr (#75). A finished turn also changes the
+ * agent's status, so the status subscription already covers it.
+ */
+export const HOST_EVENTS = [
   'workspace.created',
   'workspace.closed',
   'workspace.renamed',
   'workspace.updated',
+  'pane.agent_detected',
+  'pane.exited',
 ] as const;
 
 /**
@@ -155,7 +163,7 @@ const RECONNECT_CEILING_MS = 30_000;
 
 /** The subscription list for a set of panes. Exported for tests. */
 export function subscriptionsFor(paneIds: readonly string[]): Subscription[] {
-  const entries: Subscription[] = WORKSPACE_EVENTS.map((type) => ({ type }));
+  const entries: Subscription[] = HOST_EVENTS.map((type) => ({ type }));
   for (const paneId of paneIds) {
     for (const type of PANE_EVENTS) entries.push({ type, pane_id: paneId });
   }
@@ -167,21 +175,25 @@ export function subscriptionsFor(paneIds: readonly string[]): Subscription[] {
  * act on. A per-pane refusal (the pane closed between the list and the
  * subscribe) is not an event; the next `workspace.closed` or poll covers it.
  *
- * `pane.turn_completed` nests the pane record under `pane`; the others carry
- * `pane_id` at the top. Both shapes were observed on the wire.
+ * Some events carry `pane_id` / `workspace_id` at the top, others nest the
+ * whole record under `pane` or `workspace` (`workspace.created` and
+ * `workspace.updated` do, and the fork's pane events did). Both are read.
  */
 export function interpret(raw: SocketEvent): HostEvent | null {
   if (raw.kind !== 'event') return null;
-  const nested =
-    typeof raw.data['pane'] === 'object' && raw.data['pane'] !== null
-      ? (raw.data['pane'] as Record<string, unknown>)
-      : null;
-  const paneId = stringOrNull(raw.data['pane_id']) ?? stringOrNull(nested?.['pane_id']);
+  const pane = record(raw.data['pane']);
+  const workspace = record(raw.data['workspace']);
+  const paneId = stringOrNull(raw.data['pane_id']) ?? stringOrNull(pane?.['pane_id']);
   const workspaceId =
     stringOrNull(raw.data['workspace_id']) ??
-    stringOrNull(nested?.['workspace_id']) ??
+    stringOrNull(pane?.['workspace_id']) ??
+    stringOrNull(workspace?.['workspace_id']) ??
     (paneId !== null ? paneId.split(':')[0] ?? null : null);
   return { event: raw.event, paneId, workspaceId, data: raw.data };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 function stringOrNull(value: unknown): string | null {

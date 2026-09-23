@@ -57,11 +57,43 @@ const flush = async () => {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 };
 
+/**
+ * Every subscription type upstream herdr accepts, from `Subscription` in
+ * src/api/schema/events.rs (v0.9.0 through master 23479dd1). The server refuses
+ * the whole request over one type outside this list (#75).
+ */
+const UPSTREAM_SUBSCRIPTION_TYPES = new Set([
+  'workspace.created', 'workspace.updated', 'workspace.metadata_updated', 'workspace.renamed',
+  'workspace.moved', 'workspace.reordered', 'workspace.closed', 'workspace.focused',
+  'worktree.created', 'worktree.opened', 'worktree.removed',
+  'tab.created', 'tab.closed', 'tab.focused', 'tab.renamed', 'tab.moved',
+  'pane.created', 'pane.closed', 'pane.updated', 'pane.focused', 'pane.moved', 'pane.exited',
+  'pane.agent_detected', 'pane.output_matched', 'pane.agent_status_changed', 'pane.scroll_changed',
+  'layout.updated',
+]);
+/** The upstream types that take a `pane_id`. Every other type is host-wide. */
+const UPSTREAM_PANE_SCOPED = new Set(['pane.output_matched', 'pane.agent_status_changed', 'pane.scroll_changed']);
+
 describe('subscriptionsFor', () => {
-  it('asks for the workspace lifecycle once and each pane event per pane', () => {
-    const entries = subscriptionsFor(['w1:p1', 'w2:p1']);
-    expect(entries.filter((e) => e.type.startsWith('workspace.')).every((e) => e.pane_id === undefined)).toBe(true);
-    expect(entries.filter((e) => e.type === 'pane.turn_completed').map((e) => e.pane_id)).toEqual(['w1:p1', 'w2:p1']);
+  const entries = subscriptionsFor(['w1:p1', 'w2:p1']);
+
+  it('asks only for event types upstream herdr knows', () => {
+    expect(entries.filter((e) => !UPSTREAM_SUBSCRIPTION_TYPES.has(e.type))).toEqual([]);
+  });
+
+  it('gives a pane id to pane-scoped types only, and lists host-wide types once', () => {
+    for (const entry of entries) {
+      expect(entry.pane_id !== undefined).toBe(UPSTREAM_PANE_SCOPED.has(entry.type));
+    }
+    const hostWide = entries.filter((e) => e.pane_id === undefined).map((e) => e.type);
+    expect(new Set(hostWide).size).toBe(hostWide.length);
+  });
+
+  it('watches the agent status of every pane', () => {
+    expect(entries.filter((e) => e.type === 'pane.agent_status_changed').map((e) => e.pane_id)).toEqual([
+      'w1:p1',
+      'w2:p1',
+    ]);
   });
 });
 
@@ -74,13 +106,22 @@ describe('interpret', () => {
     });
   });
 
-  it('finds them inside the nested pane record of turn_completed', () => {
+  it('finds them inside a nested pane record', () => {
     const raw: SocketEvent = {
       kind: 'event',
-      event: 'pane.turn_completed',
-      data: { turn: 1, outcome: 'completed', pane: { pane_id: 'w3:p1', workspace_id: 'w3' } },
+      event: 'pane.updated',
+      data: { pane: { pane_id: 'w3:p1', workspace_id: 'w3' } },
     };
     expect(interpret(raw)).toMatchObject({ paneId: 'w3:p1', workspaceId: 'w3' });
+  });
+
+  it('finds the workspace inside a nested workspace record', () => {
+    const raw: SocketEvent = {
+      kind: 'event',
+      event: 'workspace.created',
+      data: { type: 'workspace_created', workspace: { workspace_id: 'w4', label: 'new' } },
+    };
+    expect(interpret(raw)).toMatchObject({ paneId: null, workspaceId: 'w4' });
   });
 
   it('drops per-subscription refusals', () => {

@@ -102,11 +102,15 @@ export class HerdrSocket {
    * Hold `events.subscribe` open and yield each event as it arrives.
    *
    * The first line the server sends is the `subscription_started` envelope;
-   * it is consumed here, so the iterable yields events only. A per-subscription
-   * refusal (a pane that no longer exists) arrives as an error envelope with an
-   * id of the form `<id>:sub:<n>:probe` and is yielded as a `refused` event
-   * rather than thrown, because the other subscriptions on the connection are
-   * still live and the caller may want them.
+   * it is consumed here, so the iterable yields events only.
+   *
+   * Refusals: an entry herdr cannot parse (an unknown event type, for one)
+   * makes it refuse the whole request, so the first line is an error envelope
+   * and this throws. Older builds reported an entry that failed its start
+   * probe (a pane that closed between the list and the subscribe) mid-stream,
+   * with an id of the form `<id>:sub:<n>:probe`; that is yielded as a
+   * `refused` event rather than thrown. Newer builds (herdr #4353) refuse the
+   * whole request with the original id instead.
    *
    * @throws {HerdrError} `socket_unavailable` when the host has no bridge, or
    * whatever the server said when it refused the subscription outright.
