@@ -300,6 +300,60 @@ it('never presses Enter again when a Codex send remains unverified', async () =>
   await unmount();
 });
 
+it('never presses Enter into an agent that went blocked after an unverified send (#76)', async () => {
+  // The agent read the prompt and opened a permission menu. Enter there picks
+  // the highlighted option, usually "Yes".
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockImplementation(async () => {
+    fetch.mockResolvedValue(snapshot([{ ...agent, agentStatus: 'blocked' }]));
+    return 'unverified';
+  });
+  const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
+  const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('Refactor the parser'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(wait).toHaveBeenCalledWith(agent.paneId, ['working', 'blocked'], expect.any(Number));
+  expect(keys).not.toHaveBeenCalled();
+  expect(result.current.failedIds.size).toBe(0);
+  await unmount();
+});
+
+it('presses Enter once when an unverified prompt is still sitting in an idle composer', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
+  const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('Run the tests'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(keys).toHaveBeenCalledTimes(1);
+  expect(keys).toHaveBeenCalledWith(agent.paneId, ['Enter']);
+  expect(wait).toHaveBeenCalledTimes(2);
+  expect(result.current.failedIds.size).toBe(0);
+  await unmount();
+});
+
+it('presses nothing when the pane state cannot be read after an unverified send', async () => {
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockImplementation(async () => {
+    fetch.mockRejectedValue(new HerdrError('timeout', 'no answer'));
+    return 'unverified';
+  });
+  jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
+  const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('Anything'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(keys).not.toHaveBeenCalled();
+  expect(result.current.failedIds.size).toBe(1);
+  expect(result.current.error).toContain("Couldn't confirm delivery");
+  await unmount();
+});
+
 it('ends the initial spinner when the transcript probe reports a read failure', async () => {
   mockProbe = { kind: 'unknown', reason: 'Permission denied' };
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));

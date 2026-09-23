@@ -111,6 +111,9 @@ const RECEIPT_CHECK_MS = 100;
 const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
 
+/** States that prove the agent read a prompt: it started, or it stopped to ask. */
+const REACTED = ['working', 'blocked'] as const;
+
 export interface ThreadState {
   loading: boolean;
   /** Changes only when a bounded host snapshot replaces the visible window. */
@@ -798,11 +801,16 @@ export function useThread(
    * So on a modern host there are two outcomes and neither needs us to guess:
    * `delivered` returns immediately, `stalled` fails the bubble honestly.
    *
-   * `unverified` is the legacy path, for hosts with no `agent prompt`. There
-   * `pane run` only means keystrokes were sent, so the old dance survives :
-   * including the blind second Enter, which is unsafe in principle (if the first
-   * send DID land it submits an empty line into a live agent) but is also the
-   * only thing that recovers a stuck composer on a host with no alternative.
+   * `unverified` is the legacy path, for hosts with no `agent prompt` (and the
+   * fork's `written_to_pty`). There `pane run` only means keystrokes were sent,
+   * so the old dance survives, including the second Enter, which is unsafe in
+   * principle (if the first send DID land it submits an empty line into a live
+   * agent) but is also the only thing that recovers a stuck composer on a host
+   * with no alternative. It is narrowed to the one case it is for: the agent
+   * still sitting idle. An agent that went `blocked` read the prompt and opened
+   * a menu, and Enter there picks the highlighted option, usually "Yes", which
+   * approved a tool call nobody saw (#76). So the wait accepts `blocked` as a
+   * reaction, and the status is read again right before any Enter.
    *
    * `wasWorking` still guards all of it, and herdr's own caveat is why: --wait
    * "does not track turns: if the agent is already working, that active turn's
@@ -812,6 +820,19 @@ export function useThread(
   const deliver = useCallback(
     async (text: string, echoId: string, polled: AgentInfo) => {
       if (client === null) return;
+      // What the pane is doing right now. `idle` only when the host positively
+      // says so; a failed read or a vanished pane is `unknown`, never `idle`.
+      const paneState = async (paneId: string): Promise<'idle' | 'reacted' | 'unknown'> => {
+        try {
+          const snapshot = await client.snapshot();
+          const status = snapshot.agents.find((agent) => agent.paneId === paneId)?.agentStatus;
+          if (status === 'idle' || status === 'done') return 'idle';
+          if (status === 'working' || status === 'blocked') return 'reacted';
+          return 'unknown';
+        } catch {
+          return 'unknown';
+        }
+      };
       const deliverySig = boundSig.current;
       const current = () => alive.current && deliverySig === boundSig.current;
       const confirmed = () => confirmedEchoIds.current.has(echoId);
@@ -848,10 +869,18 @@ export function useThread(
         }
 
         if (outcome === 'unverified' && !wasWorking) {
-          let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
+          let accepted = await client.waitAgentStatus(pane.paneId, REACTED, 3500);
           if (!accepted) {
-            await client.sendKeys(pane.paneId, ['Enter']);
-            accepted = await client.waitAgentStatus(pane.paneId, 'working', 2500);
+            // Enter only into a composer the host says is idle. It may have
+            // reacted just after the wait gave up; if its state is unknown, an
+            // Enter is not safe to guess and the bubble says so instead.
+            const state = await paneState(pane.paneId);
+            if (state === 'idle') {
+              await client.sendKeys(pane.paneId, ['Enter']);
+              accepted = await client.waitAgentStatus(pane.paneId, REACTED, 2500);
+            } else {
+              accepted = state === 'reacted';
+            }
           }
           if (!accepted) {
             setFailedIds((previous) => new Set(previous).add(echoId));

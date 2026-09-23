@@ -79,6 +79,27 @@ describe('HerdrClient over the socket', () => {
       });
     });
 
+    it("reads upstream's plain success as delivered", async () => {
+      // Upstream herdr has no `delivery` field: `{ agent }` after an observed
+      // working/blocked. Treating that as unverified sent every upstream prompt
+      // down the fallback-Enter path (#76).
+      const { client } = socketHost({
+        'agent.prompt': '{"id":"x","result":{"type":"agent_info","agent":{"pane_id":"w1:p1","agent_status":"blocked"}}}',
+      });
+      await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('delivered');
+    });
+
+    it('explains an upstream agent_blocked refusal in words a person can act on', async () => {
+      const { client, commands } = socketHost({
+        'agent.prompt': '{"id":"x","error":{"code":"agent_blocked","message":"agent is blocked"}}',
+      });
+      await expect(client.sendPrompt('w1:p1', 'hi')).rejects.toMatchObject({
+        code: 'agent_blocked',
+        message: expect.stringContaining('waiting on a question'),
+      });
+      expect(commands).toHaveLength(1);
+    });
+
     it('leaves written_to_pty for the caller to verify', async () => {
       const { client } = socketHost({ 'agent.prompt': prompted('written_to_pty') });
       await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('unverified');
