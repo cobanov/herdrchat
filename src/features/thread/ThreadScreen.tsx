@@ -30,6 +30,7 @@ import { StopButton } from '@/features/thread/StopButton';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { sessionSignature } from '@/lib/herdr/models';
+import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -129,10 +130,22 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 
   /**
-   * The draft lives here rather than inside the composer because the send
-   * handler needs it and the composer should stay presentational.
+   * The draft lives in a store rather than inside the composer: the send
+   * handler needs it, the composer should stay presentational, and it has to
+   * outlive this screen so leaving a chat doesn't lose half a prompt (#113).
    */
-  const [draft, setDraft] = useState('');
+  /**
+   * What the chat is called. The host's current label wins over the one the
+   * link carried, which may be stale after a rename. Without either, 'Chat'
+   * rather than an internal id like 'w7' (#113).
+   */
+  const heading = thread.workspaceLabel ?? (title !== undefined && title.length > 0 ? title : 'Chat');
+
+  const key = draftKey(connection?.id ?? '', workspaceId);
+  const sessionSig = sessionSignature(thread.agents);
+  const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
+  const saveDraft = useDrafts((state) => state.save);
+  const setDraft = (text: string) => saveDraft(key, text, sessionSig);
 
   /**
    * Installing herdr's Claude integration from here.
@@ -312,7 +325,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 loading={thread.loading}
                 canSend={thread.canSend}
                 onBack={onBack}
-                title={title || workspaceId}
+                title={heading}
                 sessionState={thread.sessionState}
                 agentKind={agentKind}
                 onInstallIntegration={client === null ? undefined : installIntegration}
@@ -561,7 +574,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 )}
                 <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
                   <Text testID="thread-title" variant="title3" numberOfLines={1}>
-                    {title || workspaceId}
+                    {heading}
                   </Text>
                   {subtitle.length > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>

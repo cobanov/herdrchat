@@ -146,6 +146,11 @@ export interface ThreadState {
   messages: ChatMessage[];
   status: AgentStatus;
   agents: AgentInfo[];
+  /**
+   * The workspace's name on the host, from the last snapshot. A deep link or a
+   * notification may arrive without one, and a rename elsewhere changes it.
+   */
+  workspaceLabel: string | null;
   blockedPrompt: BlockedPrompt | null;
   /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
   blockedPending: BlockedPending | null;
@@ -207,6 +212,7 @@ export function useThread(
   const [loading, setLoading] = useState(client !== null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
+  const [workspaceLabel, setWorkspaceLabel] = useState<string | null>(null);
   const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
   const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
   // Mirrors the state for the poll closure and for the synchronous double-tap
@@ -666,6 +672,8 @@ export function useThread(
         if (!alive.current || stopped) return;
         const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
         setAgents(live);
+        const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
+        if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
         const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex');
         const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
@@ -1235,6 +1243,7 @@ export function useThread(
     messages,
     status,
     agents,
+    workspaceLabel,
     blockedPrompt,
     blockedPending,
     isBlocked: blockedPane !== null,

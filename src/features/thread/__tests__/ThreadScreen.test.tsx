@@ -33,9 +33,11 @@ jest.mock('@/state/connections', () => ({
   useConnections: () => false,
   useSelectedConnection: () => null,
 }));
+let mockWorkspaceLabel: string | null = null;
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: [],
+    workspaceLabel: mockWorkspaceLabel,
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
@@ -81,4 +83,20 @@ it('extends header material to the window edge, insets only controls, and reserv
   mockSessionMeta = { model: 'gpt-5.6', effort: 'high' };
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
   expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high · project-with-a-long-folder-name · online');
+});
+
+it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = null;
+  const screen = await render(<ThreadScreen workspaceId="w9" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Chat');
+  mockWorkspaceLabel = 'Parser refactor';
+  await screen.rerender(<ThreadScreen workspaceId="w9" title="Old name" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Parser refactor');
+  await fireEvent.changeText(screen.getByTestId('composer-input'), 'half a thought');
+  await screen.unmount();
+  const again = await render(<ThreadScreen workspaceId="w9" />);
+  expect(again.getByTestId('composer-input')).toHaveProp('value', 'half a thought');
+  const other = await render(<ThreadScreen workspaceId="w10" />);
+  expect(other.getAllByTestId('composer-input').at(-1)).toHaveProp('value', '');
 });
