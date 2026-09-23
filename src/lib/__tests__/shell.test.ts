@@ -70,7 +70,13 @@ describe('untilChannelCloses', () => {
       expect(running(`sleep ${marker}`)).toBe(false);
       expect(existsSync(`${dir}/done`) && readFileSync(`${dir}/done`, 'utf8').trim()).toBe('cleaned');
     } finally {
-      exec('sh', ['-c', `pkill -f "sleep ${marker}"; true`]);
+      // pkill itself, not through a shell: on Linux the pattern matched the
+      // shell's own command line and pkill killed its parent.
+      try {
+        exec('pkill', ['-f', `sleep ${marker}`]);
+      } catch {
+        // Nothing left to stop, which is the point of the test.
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });

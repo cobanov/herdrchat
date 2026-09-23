@@ -84,7 +84,8 @@ export function watcherStatusCommand(): string {
     // A watcher someone started by hand from the repository. The brackets keep
     // the pattern from matching this very command line.
     'if pgrep -f "[h]erdr-apns-notifier.py" >/dev/null 2>&1; then echo "MANUAL yes"; fi',
-    'if command -v loginctl >/dev/null 2>&1; then echo "LINGER $(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)"; fi',
+    // systemd's lingering, so asked only where systemd is.
+    'if [ "$(uname)" != Darwin ] && command -v loginctl >/dev/null 2>&1; then echo "LINGER $(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)"; fi',
     'true',
   ].join('\n');
 }
