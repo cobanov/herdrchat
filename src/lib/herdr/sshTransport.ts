@@ -84,7 +84,7 @@ export class SshHerdrTransport implements HerdrTransport {
           this.opening = null;
           return {
             ok: false,
-            code: 'connect_failed',
+            code: thrown instanceof MissingCredentialsError ? 'credentials_missing' : 'connect_failed',
             message: thrown instanceof Error ? thrown.message : String(thrown),
           };
         });
@@ -112,4 +112,15 @@ export class SshHerdrTransport implements HerdrTransport {
     this.opening = null;
     await disconnect(this.id);
   }
+}
+
+/**
+ * Thrown by a config loader when the host's key or password is not on this
+ * device. Restoring a backup to a new iPhone brings back the hosts (they live
+ * in SQLite) but not their secrets (device-only keychain items), and
+ * connecting with an empty password only produced a generic authentication
+ * failure (#98).
+ */
+export class MissingCredentialsError extends Error {
+  readonly code = 'credentials_missing';
 }

@@ -1,11 +1,28 @@
 import type * as SQLite from 'expo-sqlite';
 
+import { getPushDeviceId } from '@/features/notifications/deviceId';
+import { deviceFileId, removePushToken } from '@/features/notifications/push';
 import {
   clearSecrets,
+  clientFor,
+  DEMO_CONNECTION_ID,
   invalidateClient,
   type ServerConnection,
 } from '@/state/connections';
-import { clearCachedMessages, clearPrompts, deleteConnection } from '@/state/db';
+import { SELECTED_KEY } from '@/state/Hydrate';
+import {
+  clearCachedMessages,
+  clearConnectionSettings,
+  clearPrompts,
+  deleteConnection,
+  deleteSetting,
+} from '@/state/db';
+
+/**
+ * How long erasing waits for hosts to forget this device's push token. A host
+ * that is off must not hold the erase up, so the attempt is bounded.
+ */
+const PUSH_CLEANUP_MS = 4_000;
 
 /**
  * Erase everything this app has stored on the device.
@@ -43,6 +60,18 @@ export async function resetAppData(
    */
   const remaining: ServerConnection[] = [];
 
+  // Before the clients close: ask every host to drop this device's push token,
+  // or an erased host's watcher kept notifying this phone (#90). In parallel
+  // and bounded; an unreachable host is not a reason to keep the user waiting.
+  const hosts = connections.filter((connection) => connection.id !== DEMO_CONNECTION_ID);
+  if (hosts.length > 0) {
+    const deviceId = deviceFileId(await getPushDeviceId(db));
+    await Promise.race([
+      Promise.allSettled(hosts.map((host) => removePushToken(clientFor(host).transport, deviceId))),
+      new Promise((resolve) => setTimeout(resolve, PUSH_CLEANUP_MS)),
+    ]);
+  }
+
   for (const connection of connections) {
     try {
       await invalidateClient(connection.id);
@@ -52,6 +81,7 @@ export async function resetAppData(
       // mechanism the secrets ordering above avoids. They are the user's own
       // words, which is the reason this is offered at all.
       await clearPrompts(db, connection.id);
+      await clearConnectionSettings(db, connection.id);
       await deleteConnection(db, connection.id);
     } catch {
       remaining.push(connection);
@@ -62,6 +92,9 @@ export async function resetAppData(
   // so a host that failed above does not skip it. Cached messages from a host
   // you just erased are the thing you least want left behind.
   await clearCachedMessages(db);
+  // The selection and the notifications switch describe hosts that are gone.
+  await deleteSetting(db, SELECTED_KEY);
+  await deleteSetting(db, 'notifications');
 
   return { remaining };
 }

@@ -250,6 +250,30 @@ export class HerdrClient {
    * `installHerdr`, which pipes a remote script into a shell — this runs a
    * subcommand of a binary already trusted enough to be driving the machine.
    */
+  /**
+   * The integrations this app relies on (Claude, Codex) that the host reports
+   * as `outdated`. herdr 0.9.1 moved the Claude integration from v9 to v10
+   * (when its SessionStart hook fires) and says to reinstall, and nothing
+   * tells a user who upgraded herdr that theirs is now stale (#93).
+   *
+   * Null when the host cannot be asked: no socket, or a herdr without
+   * `integration.list`. Best effort, so any failure is also null, never a
+   * banner of its own.
+   */
+  async outdatedIntegrations(): Promise<('claude' | 'codex')[] | null> {
+    if ((await this.socket.detect()) === null) return null;
+    try {
+      const result = await this.socket.call('integration.list', {}, POLL_TIMEOUT_MS);
+      return asArray(field(result, 'integrations')).flatMap((item) => {
+        if (typeof item !== 'object' || item === null) return [];
+        const { target, state } = item as { target?: unknown; state?: unknown };
+        return (target === 'claude' || target === 'codex') && state === 'outdated' ? [target] : [];
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async installIntegration(name = 'claude'): Promise<void> {
     const output = await this.shell(
       shellCommand([this.herdr, 'integration', 'install', name]),

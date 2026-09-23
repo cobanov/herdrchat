@@ -591,7 +591,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   )}
                 </Glass>
               </View>
-              {thread.error !== null && <ErrorBanner message={thread.error} onDismiss={thread.clearError} />}
+              {thread.error !== null && (
+                <ErrorBanner
+                  message={
+                    thread.offline && rows.length > 0
+                      ? `Showing saved messages. ${thread.error}`
+                      : thread.error
+                  }
+                  onDismiss={thread.clearError}
+                />
+              )}
             </View>
           </SafeAreaView>
         </Glass>

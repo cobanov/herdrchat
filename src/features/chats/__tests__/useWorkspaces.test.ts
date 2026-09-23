@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import { decodeSnapshot } from '@/lib/herdr/models';
+import { HerdrError } from '@/lib/herdr/protocol';
 import { useWorkspaces } from '../useWorkspaces';
 import type { ChatMessage } from '@/lib/transcript/message';
 
@@ -63,6 +64,71 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
   jest.useRealTimers();
+});
+
+// #88: a kick that lands while a poll is in flight must not be lost when
+// that poll finishes and schedules its own next round.
+it('honours an event that arrives while a poll is in flight', async () => {
+  const fetch = jest.spyOn(client, 'snapshot').mockImplementation(
+    () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 100))
+  );
+  const { unmount } = await renderHook(() => useWorkspaces(client));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); }); // first poll done
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(300); }); // poll #2 in flight
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(1_700); }); // event mid-poll
+  expect(fetch).toHaveBeenCalledTimes(3);
+  await unmount();
+});
+
+// #86: a chat's identity is its session, not its workspace slot.
+it('never shows the previous chat\'s preview in a reused workspace slot', async () => {
+  const withSession = snapshot;
+  const closed = decodeSnapshot({ version: '0.9.0', workspaces: [], agents: [] });
+  const recycledNoSession = decodeSnapshot({
+    version: '0.9.0',
+    workspaces: [{ workspace_id: 'chat', label: 'New chat', number: 1, agent_status: 'working' }],
+    agents: [{ workspace_id: 'chat', pane_id: 'p9', agent: 'claude', agent_status: 'working', cwd: '/b' }],
+  });
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(withSession);
+  mockLive = false;
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.summaries[0]?.preview?.text).toBe('Before');
+
+  fetch.mockResolvedValue(closed);
+  await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+  fetch.mockResolvedValue(recycledNoSession);
+  await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+  expect(result.current.summaries[0]?.title).toBe('New chat');
+  expect(result.current.summaries[0]?.preview).toBeNull();
+  await unmount();
+});
+
+it('drops the preview the moment the slot reports a different session', async () => {
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  mockLive = false;
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.summaries[0]?.preview?.text).toBe('Before');
+  const other = decodeSnapshot({
+    version: '0.9.0',
+    workspaces: [{ workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' }],
+    agents: [{ workspace_id: 'chat', pane_id: 'pane', agent: 'claude', agent_status: 'idle', cwd: '/test',
+      agent_session: { kind: 'id', value: 'another-session' } }],
+  });
+  fetch.mockResolvedValue(other);
+  mockPreview = 'New chat line';
+  await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+  expect(result.current.summaries[0]?.preview?.text).toBe('New chat line');
+  await unmount();
+});
+
+// #96: the list needs the failure's code to offer the matching way out.
+it('reports why the host could not be listed', async () => {
+  jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'The server rejected these credentials.'));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.error).toContain('rejected');
+  expect(result.current.errorCode).toBe('auth_failed');
+  expect(result.current.summaries).toEqual([]);
+  await unmount();
 });
 
 it('refreshes an idle chat preview on the event that finished its turn', async () => {

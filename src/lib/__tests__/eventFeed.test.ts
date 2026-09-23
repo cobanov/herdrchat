@@ -1,4 +1,4 @@
-import { EventFeed, interpret, subscriptionsFor, type HostEvent } from '../herdr/events';
+import { EventFeed, interpret, RESYNC_EVENT, subscriptionsFor, type HostEvent } from '../herdr/events';
 import { HerdrError } from '../herdr/protocol';
 import type { HerdrSocket, SocketEvent, Subscription } from '../herdr/socket';
 
@@ -156,6 +156,27 @@ describe('EventFeed', () => {
     await flush();
     expect(events.map((e) => e.data['agent_status'])).toEqual(['working', 'done']);
     expect(liveness[0]).toBe(true);
+    feed.stop();
+  });
+
+  // #94: herdr does not replay events, so a (re)started stream and a stream
+  // the server is closing for falling behind both mean "re-read the state".
+  it('asks for a resync when the stream starts and when events were lost', async () => {
+    const socket = new ScriptedSocket([[
+      { kind: 'started' },
+      statusEvent('w1:p1', 'working'),
+      { kind: 'refused', code: 'events_lost', message: 'subscriber fell behind' },
+      { kind: 'refused', code: 'pane_not_found', message: 'gone' },
+    ]]);
+    const events: HostEvent[] = [];
+    const feed = new EventFeed(socket.asSocket(), (e) => events.push(e), () => undefined);
+    feed.watch(['w1:p1']);
+    await flush();
+    expect(events.map((e) => e.event)).toEqual([
+      RESYNC_EVENT.event,
+      'pane.agent_status_changed',
+      RESYNC_EVENT.event,
+    ]);
     feed.stop();
   });
 

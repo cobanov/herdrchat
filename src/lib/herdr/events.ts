@@ -89,6 +89,14 @@ export class EventFeed {
           this.failures = 0;
           this.setLive(true);
         }
+        // herdr does not replay events. A stream that just started, or one the
+        // server is closing because it fell behind (`events_lost`, herdr
+        // #4225), has missed whatever happened meanwhile, so the consumers
+        // re-read the state now instead of at the next slow poll (#94).
+        if (raw.kind === 'started' || (raw.kind === 'refused' && raw.code === 'events_lost')) {
+          this.onEvent(RESYNC_EVENT);
+          continue;
+        }
         const event = interpret(raw);
         if (event !== null) this.onEvent(event);
       }
@@ -128,6 +136,12 @@ export interface HostEvent {
   readonly workspaceId: string | null;
   readonly data: Record<string, unknown>;
 }
+
+/**
+ * Not a herdr event: the feed's own "re-read everything", sent when a stream
+ * starts or reports lost events. Consumers treat it like any event, a refresh.
+ */
+export const RESYNC_EVENT: HostEvent = { event: 'herdrchat.resync', paneId: null, workspaceId: null, data: {} };
 
 /** Pane events that need their own subscription entry per pane. */
 export const PANE_EVENTS = ['pane.agent_status_changed'] as const;

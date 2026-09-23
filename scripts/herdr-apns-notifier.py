@@ -112,13 +112,17 @@ def apns_jwt() -> str:
 
 
 def device_tokens():
-    """All registered APNs device tokens (hex strings)."""
+    """Registered devices: (APNs token, the app's connection id for this host).
+
+    The connection id is how a tap on the phone knows which of its hosts sent
+    the push. Token files from app builds before it have none (None here)."""
     out = []
     for path in glob.glob(os.path.join(TOKENS_DIR, "*.json")):
         try:
-            tok = json.load(open(path)).get("token")
+            data = json.load(open(path))
+            tok = data.get("token")
             if tok:
-                out.append(tok)
+                out.append((tok, data.get("connection")))
         except (OSError, ValueError):
             continue
     return out
@@ -190,8 +194,13 @@ def main():
                     name = a.get("agent") or "agent"
                     title, body = (t.format(label=label, name=name) for t in STYLES[status])
                     extra = {"workspace": a.get("workspace_id"), "label": label}
-                    for tok in tokens:
-                        send_push(tok, title, body, extra)
+                    session = a.get("agent_session") or {}
+                    if session.get("kind") == "id" and session.get("value"):
+                        # Lets the app tell this chat from a later one in the
+                        # same workspace slot.
+                        extra["session"] = session["value"]
+                    for tok, connection in tokens:
+                        send_push(tok, title, body, dict(extra, connection=connection) if connection else extra)
                 last[pane] = status
             seeded = True
         time.sleep(POLL_SECONDS)

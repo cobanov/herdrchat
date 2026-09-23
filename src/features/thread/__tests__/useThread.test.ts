@@ -54,6 +54,8 @@ jest.mock('@/lib/transcript/store', () => ({
   TranscriptStore: class {
     homeDirectory = async () => '/test';
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
+    claudeTranscriptPath = async (_cwd: string, id: string) => `/test/${id}.jsonl`;
+    findClaudeTranscript = async () => null;
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
     fileProbe = async () => mockProbe;
@@ -412,6 +414,74 @@ it('says a message may have arrived when the connection drops mid-send (#83)', a
   await act(async () => { await jest.advanceTimersByTimeAsync(8_200); await sent; });
   expect(result.current.failedIds.size).toBe(1);
   expect(result.current.error).toContain('may have arrived');
+  await unmount();
+});
+
+// #87: the host closed and recreated the workspace while the thread was open.
+it('clears the old history and holds sending when a new agent takes the slot', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'old conversation' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['old-1']);
+
+  fetch.mockResolvedValue(snapshot([{ ...agent, paneId: 'new-pane', agentSession: null }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.sessionState).toBe('replaced');
+  expect(result.current.canSend).toBe(false);
+  await act(async () => { await result.current.send('reply meant for the old chat'); });
+  expect(prompt).not.toHaveBeenCalled();
+  await unmount();
+});
+
+it('clears the old history when the workspace loses its agents', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'old conversation' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages).toHaveLength(1);
+  fetch.mockResolvedValue(snapshot([]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.canSend).toBe(false);
+  await unmount();
+});
+
+it('keeps the thread bound when the same session moves to another pane', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'same chat' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  fetch.mockResolvedValue(snapshot([{ ...agent, paneId: 'resumed-pane' }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['old-1']);
+  expect(result.current.sessionState).toBe('ok');
+  await unmount();
+});
+
+// #97: an unreachable host used to leave the thread saying "No agent is
+// running" over a conversation the phone had on disk.
+it('shows the saved history, read-only, when the host cannot be reached', async () => {
+  const saved: ChatMessage[] = [{ id: 'saved-1', role: 'assistant', segments: [{ kind: 'text', text: 'from the cache' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  jest.mocked(seedMessages).mockResolvedValue(saved);
+  jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('timeout', "The host didn't answer.", { transport: true }));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [agent]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['saved-1']);
+  expect(result.current.offline).toBe(true);
+  expect(result.current.canSend).toBe(false);
   await unmount();
 });
 

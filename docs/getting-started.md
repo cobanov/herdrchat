@@ -90,8 +90,13 @@ a native rebuild. See [conventions](../CLAUDE.md) and [release setup](../RELEASI
 
 ## Optional notifications
 
-Push notifications require your own Apple **APNs auth key**, not an App Store
-Connect API key. The app registers its device token on your host over SSH;
+Push notifications require an Apple **APNs auth key from the team that signed
+the app** (not an App Store Connect API key). Apple rejects a push signed by any
+other team, so today this works with a build you sign yourself, under your own
+team and bundle identifier. The App Store build cannot be set up this way yet;
+see [#95](https://github.com/cobanov/herdrchat/issues/95).
+
+The app registers its device token on your host over SSH;
 the [host-side notifier](../scripts/herdr-apns-notifier.py) sends notifications
 directly to APNs. Its header documents the environment variables and usage.
 Set `APNS_KEY_ID`, `APNS_TEAM_ID` and `APNS_KEY_PATH` explicitly in

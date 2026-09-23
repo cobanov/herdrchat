@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Keyboard, RefreshControl, TextInput, View } from 'react-native';
+import { Keyboard, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
@@ -17,10 +17,13 @@ import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
+import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
+import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegrations';
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
+import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
@@ -61,7 +64,9 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  const { summaries, loading, error, herdrMissing, serverStopped, refresh } = useWorkspaces(client);
+  const { summaries, loading, error, errorCode, herdrMissing, serverStopped, refresh } =
+    useWorkspaces(client);
+  const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
   const rows = useMemo(() => groupChats(summaries, query), [summaries, query]);
   /** One flag for both recovery actions, only one is ever offered at a time. */
@@ -199,7 +204,9 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         <ErrorBanner message={actions.error} onDismiss={actions.clearError} />
       )}
 
-      {error !== null &&
+      {/* With nothing listed, the failure is the whole screen (below), not a
+          banner above an empty state that pretends the host has no chats. */}
+      {error !== null && (summaries.length > 0 || keyChanged) &&
         (keyChanged ? (
           <HostKeyChangedBanner
             pin={storedPin}
@@ -230,6 +237,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             }
           />
         ))}
+
+      {error === null && integrations.outdated.length > 0 && (
+        <IntegrationBanner
+          outdated={integrations.outdated}
+          updating={integrations.updating}
+          error={integrations.error}
+          onUpdate={() => void integrations.update()}
+        />
+      )}
 
       {connection !== null && summaries.length > 0 && (
         <View style={{ paddingHorizontal: screenPadding, paddingBottom: spacing.sm }}>
@@ -270,13 +286,46 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         loading ? (
           <SkeletonRows />
         ) : (
-          <EmptyState
-            symbol="tray"
-            title="No workspaces"
-            body={`Workspaces you open in herdr on ${connection.name} appear here.`}
-            actionLabel="Start a chat"
-            onAction={() => router.push('/new-chat')}
-          />
+          // Scrollable only so it can be pulled to refresh; an empty list used to
+          // offer no way to ask again at all.
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={false}
+                onRefresh={() => {
+                  haptics.light();
+                  void refresh();
+                }}
+                tintColor={colors.tint}
+              />
+            }>
+            {error !== null && !keyChanged ? (
+              // A host that could not be reached is not a host with no chats
+              // (#96). Say which failure it was and offer the fix that matches.
+              <EmptyState
+                symbol="exclamationmark.triangle"
+                title={connectionRecovery(errorCode ?? '').title}
+                body={error}
+                actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+                onAction={fixing ? undefined : () => {
+                  const { action } = connectionRecovery(errorCode ?? '');
+                  if (action === 'install') confirmInstallHerdr();
+                  else if (action === 'start') void fixHost('start');
+                  else if (action === 'retry') void refresh();
+                  else router.push({ pathname: '/server/[id]', params: { id: connection.id } });
+                }}
+              />
+            ) : error === null ? (
+              <EmptyState
+                symbol="tray"
+                title="No workspaces"
+                body={`Workspaces you open in herdr on ${connection.name} appear here.`}
+                actionLabel="Start a chat"
+                onAction={() => router.push('/new-chat')}
+              />
+            ) : null}
+          </ScrollView>
         )
       ) : (
         <FlashList

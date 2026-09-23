@@ -183,7 +183,7 @@ describe('subscribe', () => {
     return new HerdrSocket(transport, 'herdr');
   }
 
-  it('swallows subscription_started and yields events and refusals', async () => {
+  it('reports subscription_started once, then yields events and refusals', async () => {
     const socket = streamingHost([
       '{"id":"hc:events.subscribe:1","result":{"type":"subscription_started"}}',
       '',
@@ -196,6 +196,7 @@ describe('subscribe', () => {
       events.push(event);
     }
     expect(events).toEqual([
+      { kind: 'started' },
       {
         kind: 'event',
         event: 'pane.agent_status_changed',
@@ -208,6 +209,16 @@ describe('subscribe', () => {
         data: { turn: 1, outcome: 'completed', pane: { pane_id: 'w1:p1' } },
       },
     ]);
+  });
+
+  it('throws when the stream ends before the subscription started (#104)', async () => {
+    const socket = streamingHost([]);
+    const consume = async () => {
+      const seen = [];
+      for await (const event of socket.subscribe([{ type: 'workspace.created' }], 1000)) seen.push(event);
+      return seen;
+    };
+    await expect(consume()).rejects.toMatchObject({ code: 'subscription_ended' });
   });
 
   it('throws when the server refuses the subscription outright', async () => {

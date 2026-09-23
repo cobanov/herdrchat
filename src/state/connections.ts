@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
-import { SshHerdrTransport } from '@/lib/herdr/sshTransport';
+import { MissingCredentialsError, SshHerdrTransport } from '@/lib/herdr/sshTransport';
 import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 
@@ -128,18 +128,24 @@ export const useConnections = create<ConnectionsState>((set) => ({
   connections: [],
   selectedId: null,
   hydrated: false,
-  setAll: (connections, selectedId) =>
+  setAll: (connections, selectedId) => {
+    // The demo is appended rather than stored: it exists for every install,
+    // survives a reset, and never occupies a row in SQLite. Last, so it never
+    // displaces a real host someone added.
+    const all = [...connections, demoConnection()];
+    // A remembered id that is no longer in the list (its host was deleted) is
+    // treated as nothing remembered. Accepting it left Chats saying "No hosts
+    // yet" while other hosts and the demo were right there (#90).
+    const remembered = selectedId !== null && all.some((connection) => connection.id === selectedId);
     set({
-      // The demo is appended rather than stored: it exists for every install,
-      // survives a reset, and never occupies a row in SQLite. Last, so it never
-      // displaces a real host someone added.
-      connections: [...connections, demoConnection()],
+      connections: all,
       // With no hosts and nothing remembered, the demo is the selection. An
       // empty chat list explains nothing; a working conversation explains the
       // whole app, and is also the only thing an App Review device can reach.
-      selectedId: selectedId ?? connections[0]?.id ?? DEMO_CONNECTION_ID,
+      selectedId: remembered ? selectedId : connections[0]?.id ?? DEMO_CONNECTION_ID,
       hydrated: true,
-    }),
+    });
+  },
   select: (id) => set({ selectedId: id }),
   upsert: (connection) =>
     set((state) => {
@@ -155,7 +161,8 @@ export const useConnections = create<ConnectionsState>((set) => ({
       const connections = state.connections.filter((existing) => existing.id !== id);
       return {
         connections,
-        selectedId: state.selectedId === id ? (connections[0]?.id ?? null) : state.selectedId,
+        selectedId:
+          state.selectedId === id ? (connections[0]?.id ?? DEMO_CONNECTION_ID) : state.selectedId,
       };
     }),
 }));
@@ -224,7 +231,14 @@ export function clientFor(connection: ServerConnection): HerdrClient {
         loadSecret(connection.id),
         loadHostKeyPin(connection.id),
       ]);
-      return sshConfig(connection, secret ?? '', pin);
+      if (secret === null || secret.length === 0) {
+        throw new MissingCredentialsError(
+          connection.authKind === 'password'
+            ? `The password for ${connection.name || connection.host} isn't on this device. Restoring a backup brings back hosts but not their passwords. Enter it again.`
+            : `The private key for ${connection.name || connection.host} isn't on this device. Restoring a backup brings back hosts but not their keys. Add it again.`
+        );
+      }
+      return sshConfig(connection, secret, pin);
     },
     (fingerprint) => {
       // First contact: remember what we trusted, so a later key change is

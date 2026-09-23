@@ -42,5 +42,43 @@ class ApnsConfigTests(unittest.TestCase):
                     notifier.main()
 
 
+class RoutingPayloadTests(unittest.TestCase):
+    """#91: a push names the phone's connection for this host and the session."""
+
+    def run_one_change(self, notifier, token_files):
+        seen = []
+        agents = [
+            [{"pane_id": "w1:p1", "workspace_id": "w1", "agent": "claude", "agent_status": "working",
+              "agent_session": {"kind": "id", "value": "sess-1"}}],
+            [{"pane_id": "w1:p1", "workspace_id": "w1", "agent": "claude", "agent_status": "blocked",
+              "agent_session": {"kind": "id", "value": "sess-1"}}],
+        ]
+
+        def snapshots():
+            if not agents:
+                raise KeyboardInterrupt
+            return agents.pop(0)
+
+        with patch.multiple(notifier, KEY_ID="k", TEAM_ID="t", KEY_PATH=__file__), \
+                patch("os.path.isfile", return_value=True), patch("os.access", return_value=True), \
+                patch.object(notifier.os, "makedirs"), \
+                patch.object(notifier, "snapshot_agents", side_effect=snapshots), \
+                patch.object(notifier, "workspace_labels", return_value={"w1": "api"}), \
+                patch.object(notifier, "device_tokens", return_value=token_files), \
+                patch.object(notifier, "send_push", side_effect=lambda tok, t, b, extra=None: seen.append((tok, extra))), \
+                patch.object(notifier.time, "sleep"):
+            with self.assertRaises(KeyboardInterrupt):
+                notifier.main()
+        return seen
+
+    def test_each_device_gets_its_own_connection_and_the_session(self):
+        notifier = load_notifier()
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a"), ("tok-b", None)])
+        self.assertEqual(seen, [
+            ("tok-a", {"workspace": "w1", "label": "api", "session": "sess-1", "connection": "conn-a"}),
+            ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}),
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()

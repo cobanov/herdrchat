@@ -104,10 +104,10 @@ export function NotificationsSection() {
       if (connection === null) return;
 
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
-      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId);
+      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId, connection.id);
       persist(true);
       setNote({
-        message: `Registered with ${connection.name}. Run the watcher on that machine.`,
+        message: `Registered with ${connection.name}. The watcher on that machine needs the push key of the team that signed this build.`,
       });
     } catch (thrown) {
       // A HerdrError already says something a person can act on. Anything else
@@ -135,7 +135,10 @@ export function NotificationsSection() {
   return (
     <Section
       title="Notifications"
-      footer="Your phone registers its push token on the host over SSH, and a watcher there notifies you when an agent blocks or finishes. Nothing passes through a server of ours — you run the watcher yourself. See scripts/herdr-apns-notifier.py.">
+      // Says what it takes before anyone flips the switch (#95). Apple accepts a
+      // push only with a key from the team that signed the app, so a watcher can
+      // reach a build its owner signed, and cannot yet reach the App Store build.
+      footer="Your phone registers its push token on the host over SSH, and a watcher you run there sends the push straight to Apple. Nothing passes through a server of ours. Apple only accepts pushes signed with the push key of the team that built the app, so this works with a build you sign yourself; the App Store version can't be set up this way yet. See the setup guide.">
       <Toggle
         label="Notify when an agent needs me"
         detail="Blocked or finished agents, pushed from your own machine."
