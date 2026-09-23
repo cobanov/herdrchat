@@ -211,6 +211,16 @@ describe('subscribe', () => {
     ]);
   });
 
+  it('throws when the stream ends before the subscription started (#104)', async () => {
+    const socket = streamingHost([]);
+    const consume = async () => {
+      const seen = [];
+      for await (const event of socket.subscribe([{ type: 'workspace.created' }], 1000)) seen.push(event);
+      return seen;
+    };
+    await expect(consume()).rejects.toMatchObject({ code: 'subscription_ended' });
+  });
+
   it('throws when the server refuses the subscription outright', async () => {
     const socket = streamingHost([
       '{"id":"hc:events.subscribe:1","error":{"code":"invalid_request","message":"unknown variant"}}',

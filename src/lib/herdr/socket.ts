@@ -147,6 +147,13 @@ export class HerdrSocket {
       const event = decodeEvent(text);
       if (event !== null) yield event;
     }
+    if (!started && signal?.aborted !== true) {
+      // The bridge exited without the server ever accepting (the fork's bridge
+      // prints its errors to stderr, which the reader drops). A clean end here
+      // is a failure, or the feed's backoff never engages and it reconnects
+      // every second, one SSH channel and one host process each time (#104).
+      throw new HerdrError('subscription_ended', 'The event stream closed before it started.');
+    }
   }
 
   private encode(method: string, params: Record<string, unknown>): string {
