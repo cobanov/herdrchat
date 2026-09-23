@@ -440,8 +440,9 @@ export class HerdrClient {
    *   only knows the bytes went in; that stays `unverified` for the caller's
    *   status watch. Reading "no `submitted` field" as unverified, as this did
    *   before, sent every upstream prompt down the fallback-Enter path (#76);
-   * - a `timeout` error is the host saying it sent the text and watched for
-   *   `working` and nothing moved, which is what `stalled` has always meant;
+   * - a `timeout` error from herdr is the host saying it sent the text and
+   *   watched for `working` and nothing moved, which is what `stalled` has
+   *   always meant. A transport timeout is not that, and is rethrown;
    * - `agent_blocked` is upstream refusing before sending anything, because the
    *   agent has a question open. It is rethrown with words a person can act on;
    * - `invalid_request` naming an unknown variant is a herdr too old for the
@@ -465,7 +466,11 @@ export class HerdrClient {
       return field(result, 'delivery') === 'written_to_pty' ? 'unverified' : 'delivered';
     } catch (thrown) {
       if (thrown instanceof HerdrError) {
-        if (thrown.code === 'timeout' || thrown.code === 'agent_prompt_stalled') return 'stalled';
+        // herdr's own timeout only. The transport's means nobody knows whether
+        // the prompt landed, and the caller has to find out (#83).
+        if ((thrown.code === 'timeout' && !thrown.transport) || thrown.code === 'agent_prompt_stalled') {
+          return 'stalled';
+        }
         if (thrown.code === 'agent_blocked') throw new HerdrError('agent_blocked', AGENT_BLOCKED_MESSAGE);
         if (isUnknownMethod(thrown)) {
           await this.sendMessage(paneId, text);
@@ -884,7 +889,7 @@ export class HerdrClient {
   private async shell(command: string, timeoutMs: number): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
     if (!result.ok) {
-      throw new HerdrError(result.code, result.message);
+      throw new HerdrError(result.code, result.message, { transport: true });
     }
     if (result.exitCode === 127) {
       // Worth one extra round-trip: this is the error people actually hit when

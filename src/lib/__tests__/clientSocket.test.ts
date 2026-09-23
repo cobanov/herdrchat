@@ -112,6 +112,22 @@ describe('HerdrClient over the socket', () => {
       await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('stalled');
     });
 
+    it('does not read a transport timeout as a stall (#83)', async () => {
+      // The SSH layer gave up (a half-open connection). The prompt may have
+      // landed, so this must not come back as "never picked up".
+      const transport: HerdrTransport = {
+        exec: async (command: string) =>
+          isSocketProbe(command)
+            ? ({ ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never)
+            : ({ ok: false, code: 'timeout', message: "The host didn't answer in time." } as never),
+        streamLines: async function* () {},
+      };
+      await expect(new HerdrClient(transport).sendPrompt('w1:p1', 'hello')).rejects.toMatchObject({
+        code: 'timeout',
+        transport: true,
+      });
+    });
+
     it('falls back to pane run only when the host has never heard of the method', async () => {
       // Nothing was sent, so a second attempt through the CLI cannot double up.
       const { client, commands } = socketHost({

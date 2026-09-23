@@ -107,16 +107,21 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How long a send cut off by the connection waits for its transcript receipt. */
+const TRANSPORT_RECEIPT_WAIT_MS = 8_000;
 const RECEIPT_CHECK_MS = 100;
 const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
 const STALLED_WARNING = 'The agent never picked that up, it may be stuck at a prompt. Try again.';
 const UNCONFIRMED_WARNING = "Couldn't confirm delivery, the message may be stuck in the terminal. Try again.";
+const DELIVERY_UNKNOWN_WARNING =
+  "The connection dropped while sending, so the message may have arrived. Check the chat before sending it again.";
 /** Warnings about whether a message landed. Its transcript receipt answers them. */
 const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
   CODEX_DELIVERY_NOTICE,
   STALLED_WARNING,
   UNCONFIRMED_WARNING,
+  DELIVERY_UNKNOWN_WARNING,
 ]);
 
 /** States that prove the agent read a prompt: it started, or it stopped to ask. */
@@ -857,16 +862,20 @@ export function useThread(
       const deliverySig = boundSig.current;
       const current = () => alive.current && deliverySig === boundSig.current;
       const confirmed = () => confirmedEchoIds.current.has(echoId);
-      const awaitCodexReceipt = async () => {
-        const deadline = Date.now() + CODEX_RECEIPT_WAIT_MS;
+      // Wait for the transcript to show the message. When it doesn't, the
+      // bubble fails with `notice`, which says the message may have landed:
+      // never a blind retry, never a second Enter.
+      const awaitReceipt = async (notice: string, waitMs: number) => {
+        const deadline = Date.now() + waitMs;
         while (current() && !confirmed() && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
         }
         if (current() && !confirmed()) {
           setFailedIds(previous => new Set(previous).add(echoId));
-          setActionError(CODEX_DELIVERY_NOTICE);
+          setActionError(notice);
         }
       };
+      const awaitCodexReceipt = () => awaitReceipt(CODEX_DELIVERY_NOTICE, CODEX_RECEIPT_WAIT_MS);
       setIsSending(true);
       try {
         const pane = await currentPane(polled);
@@ -913,6 +922,12 @@ export function useThread(
         if (polled.agent === 'codex' && thrown instanceof HerdrError &&
             thrown.code === 'agent_prompt_unverifiable') {
           await awaitCodexReceipt();
+          return;
+        }
+        if (thrown instanceof HerdrError && thrown.transport) {
+          // The connection failed mid-send: the prompt may well have landed.
+          // Reporting it as not delivered is how a retry sent it twice (#83).
+          await awaitReceipt(DELIVERY_UNKNOWN_WARNING, TRANSPORT_RECEIPT_WAIT_MS);
           return;
         }
         setFailedIds((previous) => new Set(previous).add(echoId));

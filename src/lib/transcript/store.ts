@@ -547,7 +547,7 @@ export class TranscriptStore {
 
   private async shell(command: string, timeoutMs = TRANSCRIPT_TIMEOUT_MS): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
-    if (!result.ok) throw new HerdrError(result.code, result.message);
+    if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
     // Nothing in this file runs herdr — it runs `sh`, `tail`, `wc` and `head`.
     // The shared exit-code reader blames herdr for a 127, which sends the
     // reader off to install a tool that is already there.

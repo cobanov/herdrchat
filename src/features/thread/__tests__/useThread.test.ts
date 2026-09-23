@@ -399,6 +399,22 @@ it('takes a send warning down on dismiss and on the next send', async () => {
   await unmount();
 });
 
+it('says a message may have arrived when the connection drops mid-send (#83)', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockRejectedValue(
+    new HerdrError('timeout', "The host didn't answer in time.", { transport: true })
+  );
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('deploy it'); });
+  // Not failed at once: the transcript gets the chance to show it landed.
+  expect(result.current.failedIds.size).toBe(0);
+  await act(async () => { await jest.advanceTimersByTimeAsync(8_200); await sent; });
+  expect(result.current.failedIds.size).toBe(1);
+  expect(result.current.error).toContain('may have arrived');
+  await unmount();
+});
+
 it('ends the initial spinner when the transcript probe reports a read failure', async () => {
   mockProbe = { kind: 'unknown', reason: 'Permission denied' };
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));

@@ -80,7 +80,7 @@ export class HerdrSocket {
     const request = this.encode(method, params);
     const result = await this.transport.exec(commandFor(route, request, this.herdr), timeoutMs);
     if (!result.ok) {
-      throw new HerdrError(result.code, result.message);
+      throw new HerdrError(result.code, result.message, { transport: true });
     }
     if (result.exitCode !== 0) {
       // The python bridge prints connect failures as an envelope on stdout and

@@ -9,14 +9,27 @@
  * version gates is which verbs exist, and that lives in `version.ts`.
  */
 
-/** An error herdr itself reported, as opposed to a transport failure. */
+/**
+ * An error from a herdr request. Usually one herdr itself reported; with
+ * `transport` set, the SSH layer failed instead (a timeout, a dropped
+ * channel) and herdr may never have answered.
+ *
+ * The difference matters for writes. herdr's own `timeout` on `agent.prompt`
+ * means it watched and nothing moved; the transport's `timeout` means nobody
+ * knows whether the prompt landed, and treating the second like the first is
+ * how a retry sent a prompt twice (#83). The code is kept as it is, so
+ * anything that maps codes to messages still reads the same.
+ */
 export class HerdrError extends Error {
   readonly code: string;
+  /** True when the SSH transport failed, not herdr. */
+  readonly transport: boolean;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, options: { transport?: boolean } = {}) {
     super(message);
     this.name = 'HerdrError';
     this.code = code;
+    this.transport = options.transport ?? false;
   }
 
   override toString(): string {
