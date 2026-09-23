@@ -41,7 +41,8 @@ export function Composer({
   draft,
   onDraftChange,
 }: {
-  onSend: (text: string) => void;
+  /** Resolves `false` when the message was not taken, and the draft comes back. */
+  onSend: (text: string) => Promise<boolean> | void;
   disabled?: boolean;
   /**
    * The draft lives in the parent so a prompt-history chip can fill it. Kept
@@ -63,8 +64,14 @@ export function Composer({
   const send = () => {
     if (!canSend) return;
     haptics.light();
-    onSend(draft);
+    const text = draft;
     onDraftChange('');
+    // A refusal (another send still in flight, the chat just changed hands)
+    // answers at once, so putting the draft back cannot overwrite anything
+    // typed since. It used to be cleared regardless, and the text was lost.
+    void Promise.resolve(onSend(text)).then((accepted) => {
+      if (accepted === false) onDraftChange(text);
+    });
   };
 
   return (

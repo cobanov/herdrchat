@@ -520,7 +520,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 // Storing what someone typed for a feature that no longer exists
                 // is a liability, not a convenience, the table and its cleanup
                 // stay only so existing rows are still erased by Reset app data.
-                onSend={(text) => void thread.send(text)}
+                onSend={(text) => thread.send(text)}
                 disabled={thread.isSending || !thread.canSend}
               />
             </View>

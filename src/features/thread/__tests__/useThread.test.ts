@@ -278,7 +278,7 @@ it('accepts a Codex transcript receipt even when terminal delivery cannot be obs
   jest.spyOn(client, 'sendPrompt').mockImplementation(() => new Promise((_resolve, reject) => { rejectSend = reject; }));
   const keys = jest.spyOn(client, 'sendKeys');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Phone prompt'); });
   await act(async () => { mockEmitReceipt?.({ id: 'host-prompt', role: 'user', segments: [{ kind: 'text', text: 'Phone prompt' }],
     timestamp: Date.now(), agentLabel: null, isSidechain: false }); });
@@ -296,7 +296,7 @@ it('never presses Enter again when a Codex send remains unverified', async () =>
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Not acknowledged yet'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).not.toHaveBeenCalled();
@@ -316,7 +316,7 @@ it('never presses Enter into an agent that went blocked after an unverified send
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Refactor the parser'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(wait).toHaveBeenCalledWith(agent.paneId, ['working', 'blocked'], expect.any(Number));
@@ -331,7 +331,7 @@ it('presses Enter once when an unverified prompt is still sitting in an idle com
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Run the tests'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).toHaveBeenCalledTimes(1);
@@ -350,7 +350,7 @@ it('presses nothing when the pane state cannot be read after an unverified send'
   jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Anything'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).not.toHaveBeenCalled();
@@ -378,7 +378,7 @@ it('keeps the Codex delivery notice through a live-stream poll', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
   jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('x'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(result.current.error).toContain('Check the host before retrying');
@@ -410,7 +410,7 @@ it('says a message may have arrived when the connection drops mid-send (#83)', a
     new HerdrError('timeout', "The host didn't answer in time.", { transport: true })
   );
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('deploy it'); });
   // Not failed at once: the transcript gets the chance to show it landed.
   expect(result.current.failedIds.size).toBe(0);
@@ -506,6 +506,43 @@ it('does not restart a healthy tail on every poll while a sibling has no file ye
   // 20 s), where it used to restart on every one of about fifteen polls.
   await act(async () => { await jest.advanceTimersByTimeAsync(26_000); });
   expect(mockTailStarts.length - startsAfterOpen).toBeLessThanOrEqual(2);
+  await unmount();
+});
+
+// #100: a refused send says so, and a double-tapped retry sends once.
+it('reports whether a message was taken', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  let finish: (() => void) | null = null;
+  jest.spyOn(client, 'sendPrompt').mockImplementation(
+    () => new Promise((resolve) => { finish = () => resolve('delivered'); })
+  );
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let first: Promise<boolean> | undefined;
+  await act(async () => { first = result.current.send('first'); });
+  // A second message while the first is still being delivered is refused.
+  let second: boolean | undefined;
+  await act(async () => { second = await result.current.send('second'); });
+  expect(second).toBe(false);
+  await act(async () => { finish?.(); await first; });
+  await expect(first).resolves.toBe(true);
+  await unmount();
+});
+
+it('sends a retried message once, however often retry is tapped', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValueOnce('stalled');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('try me'); });
+  const [failed] = [...result.current.failedIds];
+  expect(failed).toBeDefined();
+  let finish: (() => void) | null = null;
+  prompt.mockImplementation(() => new Promise((resolve) => { finish = () => resolve('delivered'); }));
+  await act(async () => {
+    void result.current.retry(failed!);
+    void result.current.retry(failed!);
+  });
+  await act(async () => { finish?.(); });
+  expect(prompt).toHaveBeenCalledTimes(2); // the original send and one retry
   await unmount();
 });
 

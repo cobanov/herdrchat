@@ -169,7 +169,11 @@ export interface ThreadState {
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
   failedIds: Set<string>;
-  send: (text: string) => Promise<void>;
+  /**
+   * Resolves whether the message was taken. `false` comes back at once, before
+   * anything is sent, so the composer can put the draft back (#100).
+   */
+  send: (text: string) => Promise<boolean>;
   retry: (id: string) => Promise<void>;
   sendKeys: (keys: readonly string[]) => Promise<void>;
   /** Stop the working agent. `hard` sends Ctrl-C and may end the session. */
@@ -1050,7 +1054,7 @@ export function useThread(
   );
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string): Promise<boolean> => {
       const text = raw.trim();
       if (
         text.length === 0 ||
@@ -1060,7 +1064,7 @@ export function useThread(
         sessionState === 'unsupported' ||
         sessionState === 'replaced'
       ) {
-        return;
+        return false;
       }
       sending.current = true;
       // A new message is a new attempt; the last one's warning has done its job.
@@ -1081,20 +1085,28 @@ export function useThread(
       } finally {
         sending.current = false;
       }
+      return true;
     },
     [primaryPane, rebuild, deliver, loading, sessionState]
   );
 
+  /** Retries in flight, by echo id. A second tap on "retry" sent it twice (#100). */
+  const retrying = useRef(new Set<string>());
   const retry = useCallback(
     async (id: string) => {
       const echo = echoes.current.find((message) => message.id === id);
-      if (echo === undefined || primaryPane === null) return;
+      if (echo === undefined || primaryPane === null || retrying.current.has(id)) return;
+      retrying.current.add(id);
       setFailedIds((previous) => {
         const next = new Set(previous);
         next.delete(id);
         return next;
       });
-      await deliver(displayText(echo), id, primaryPane);
+      try {
+        await deliver(displayText(echo), id, primaryPane);
+      } finally {
+        retrying.current.delete(id);
+      }
     },
     [primaryPane, deliver]
   );
