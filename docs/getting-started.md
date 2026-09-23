@@ -2,7 +2,8 @@
 
 [Back to the overview](../README.md)
 
-You need an iPhone running iOS 17+ and a computer you administer. That computer
+You need an iPhone or iPad running iOS 17+ with
+[HerdrChat from the App Store](https://apps.apple.com/app/herdrchat/id6791874615), and a computer you administer. That computer
 runs [herdr](https://herdr.dev) and Claude Code or Codex. The phone connects over
 SSH, usually through your existing Tailscale network. Keep SSH on your private
 network; there is no need to expose it to the internet.
@@ -98,10 +99,8 @@ Set `APNS_KEY_ID`, `APNS_TEAM_ID` and `APNS_KEY_PATH` explicitly in
 for keys or reuse App Store Connect credentials. Keep keys on your host and
 out of the repository. Verify delivery on a physical iPhone before relying on it.
 
-## Beta limitations
+## Known limitations
 
-- Public TestFlight access depends on Beta App Review; an internal build being
-  ready does not mean it is available through the public link.
 - Android has a buildable native implementation but is not runtime-verified.
 - Physical-device APNs delivery and recovery from a real Tailscale interruption
   still need acceptance testing. Simulator checks are not proof of either.

@@ -77,8 +77,17 @@ A public link needs **Beta App Review**, which requires more than a build:
   `ITSAppUsesNonExemptEncryption` is `false` in `app.json`. Re-confirm this if
   you ever add your own cryptography.
 
+## App Store
+
+HerdrChat is live on the [App Store](https://apps.apple.com/app/herdrchat/id6791874615)
+(first release 0.7.9, 2026-09-22). The same uploaded build goes to the store:
+in App Store Connect, create the next version with the same string as
+`expo.version` in `app.json`, attach the build and submit it for App Review.
+The Demo host is what lets review run without an account or SSH credentials,
+so it has to work in every submitted build.
+
 ## Android
 
 There is no Android release path in this repo. The module builds and the app
 compiles, but it has not been runtime-verified. See the
-[current limitations](docs/getting-started.md#beta-limitations).
+[current limitations](docs/getting-started.md#known-limitations).
