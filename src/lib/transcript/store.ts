@@ -335,9 +335,7 @@ export class TranscriptStore {
     // `withPath()`. If that ever changes, this starts returning 141 and every
     // older-history read fails; the same inversion once rejected two good
     // release builds before anyone spotted it.
-    const body = await this.shell(
-      `tail -c +${start + 1} ${shellQuote(path)} | head -c ${length}`
-    );
+    const body = await this.readRange(path, start, length);
 
     let text = body;
     let startByte = start;
@@ -347,10 +345,19 @@ export class TranscriptStore {
     // and advancing it further would lose whatever sits between the two pages.
     if (start > 0) {
       const firstNewline = text.indexOf('\n');
-      if (firstNewline >= 0) {
-        startByte = start + byteLength(text.slice(0, firstNewline + 1));
-        text = text.slice(firstNewline + 1);
+      // The window ends at a line boundary, so its only newline being the last
+      // byte means the whole window sits inside one line. Dropping "the
+      // fragment" would then drop everything and hand back the same anchor, and
+      // paging stopped for good at the first line longer than a page (#81):
+      // image results and tool dumps run to megabytes.
+      if (firstNewline < 0 || firstNewline === text.length - 1) {
+        return this.olderLongLine(path, agentLabel, beforeByte);
       }
+      text = text.slice(firstNewline + 1);
+      // Counted back from the known end, like `recent()`: a window that opened
+      // inside a multi-byte character decodes that fragment lossily, so
+      // counting forward from `start` would land a few bytes off.
+      startByte = beforeByte - byteLength(text);
     }
 
     return {
@@ -358,6 +365,49 @@ export class TranscriptStore {
       startByte,
       reachedStart: startByte <= 0,
     };
+  }
+
+  /**
+   * The one line that ends at `beforeByte`, when it is longer than a page.
+   *
+   * The host finds where it starts (`grep -b` over the prefix prints each line's
+   * byte offset; only the last number comes back, never the content). A line
+   * up to `OLDER_LINE_MAX_BYTES` is then read whole. A longer one is stepped
+   * over: at that size it is base64 or a tool dump, rarely anything a person
+   * would read on a phone, and fetching it would cost more than the reader
+   * asked for. Either way the anchor moves, so paging continues.
+   */
+  private async olderLongLine(
+    path: string,
+    agentLabel: string | null,
+    beforeByte: number
+  ): Promise<{ messages: ChatMessage[]; startByte: number; reachedStart: boolean }> {
+    const output = await this.shell(
+      `head -c ${beforeByte} ${shellQuote(path)} | LC_ALL=C grep -a -b '' | cut -d: -f1 | tail -n 1`
+    );
+    const lineStart = Number.parseInt(output.trim(), 10);
+    if (!Number.isInteger(lineStart) || lineStart < 0 || lineStart >= beforeByte) {
+      throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
+    }
+    const lineBytes = beforeByte - lineStart;
+    const messages =
+      lineBytes > OLDER_LINE_MAX_BYTES
+        ? []
+        : parseTranscript(await this.readRange(path, lineStart, lineBytes), agentLabel);
+    return { messages, startByte: lineStart, reachedStart: lineStart <= 0 };
+  }
+
+  /**
+   * Bytes `[start, start + length)` of a file. A shorter answer means the read
+   * was cut off (a dropped channel, a killed command), and a short page would
+   * anchor the next one in the wrong place, so it is refused.
+   */
+  private async readRange(path: string, start: number, length: number): Promise<string> {
+    const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)} | head -c ${length}`);
+    if (byteLength(body) < length) {
+      throw new HerdrError('transcript_changed', 'The transcript read was cut short. Retrying.');
+    }
+    return body;
   }
 
   /**
@@ -497,7 +547,7 @@ export class TranscriptStore {
 
   private async shell(command: string, timeoutMs = TRANSCRIPT_TIMEOUT_MS): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
-    if (!result.ok) throw new HerdrError(result.code, result.message);
+    if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
     // Nothing in this file runs herdr — it runs `sh`, `tail`, `wc` and `head`.
     // The shared exit-code reader blames herdr for a 127, which sends the
     // reader off to install a tool that is already there.
@@ -553,6 +603,12 @@ export function previewText(message: ChatMessage): string | null {
     .join(' ');
   return collapsed.length === 0 ? null : collapsed.slice(0, 200);
 }
+
+/**
+ * The longest single line older history will fetch (4 MiB). The largest seen
+ * in practice were a 2.3 MB Claude image result and a 3.9 MB Codex compaction.
+ */
+const OLDER_LINE_MAX_BYTES = 4 * 1024 * 1024;
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 

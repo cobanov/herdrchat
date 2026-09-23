@@ -1,5 +1,6 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
+import { claudeUserText, isClaudeHarnessLine } from './harness';
 import type { SessionMeta } from './sessionMeta';
 
 /**
@@ -54,9 +55,10 @@ export function parseTranscriptEntry(
 
 /**
  * Parse a single JSONL line. Returns null for non-conversational entries (mode,
- * permission-mode, hook system output, snapshots, attachments) and for turns
- * that carry no segments — and for anything unparseable, since a transcript
- * being tailed can hand us a truncated line at any moment.
+ * permission-mode, hook system output, snapshots, most attachments), for user
+ * turns the harness wrote rather than the user (see `harness.ts`), and for
+ * turns that carry no segments. And for anything unparseable, since a
+ * transcript being tailed can hand us a truncated line at any moment.
  */
 export function parseTranscriptLine(
   line: string,
@@ -103,6 +105,9 @@ export function projectDirName(cwd: string): string {
 
 const EMPTY_ENTRY: TranscriptEntry = { message: null, meta: null };
 
+/** The model id Claude writes on API-error and rate-limit lines. */
+const SYNTHETIC_MODEL = '<synthetic>';
+
 /** How much of a tool's input the chip may carry. A chip shows one line anyway. */
 const TOOL_INPUT_PREVIEW_CHARS = 2_000;
 
@@ -111,11 +116,13 @@ function messageFrom(
   line: string,
   agentLabel: string | null
 ): ChatMessage | null {
+  if (raw.type === 'attachment') return queuedPrompt(raw, line, agentLabel);
   const role = roleOf(raw.type);
   if (role === null) return null;
+  if (role === 'user' && isClaudeHarnessLine(raw)) return null;
 
   const message = asRecord(raw.message);
-  const segments = segmentsFrom(message?.content);
+  const segments = segmentsFrom(message?.content, role);
   if (segments.length === 0) return null;
 
   return {
@@ -128,10 +135,41 @@ function messageFrom(
   };
 }
 
+/**
+ * A prompt that arrived while Claude was busy. Claude records it only as an
+ * attachment, never as a `user` line (60 of 60 in the sample had no user line),
+ * so without this a message sent from the phone mid-turn never showed up and
+ * its echo could never be matched (#77). `commandMode: "task-notification"`
+ * attachments are the harness's own and stay hidden.
+ */
+function queuedPrompt(
+  raw: Record<string, unknown>,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const attachment = asRecord(raw.attachment);
+  if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'prompt') return null;
+  const segments = segmentsFrom(attachment.prompt, 'user');
+  if (segments.length === 0) return null;
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role: 'user',
+    segments,
+    timestamp: parseTimestamp(raw.timestamp ?? attachment.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
 function metaFrom(raw: Record<string, unknown>): SessionMeta | null {
   if (raw.type !== 'assistant') return null;
   const message = asRecord(raw.message);
   if (message === null) return null;
+  // Claude writes API errors, rate limits and "Login expired" as assistant
+  // lines with model "<synthetic>" and all-zero usage. They are not the
+  // session's model or context, and read as such they put "<synthetic>" and
+  // "ctx 0" in the header (#80). The line itself still renders as a bubble.
+  if (message.model === SYNTHETIC_MODEL || raw.isApiErrorMessage === true) return null;
 
   const usage = asRecord(message.usage);
   // Null, not 0, when the line carries no token counts at all. A `usage` block
@@ -159,29 +197,33 @@ function roleOf(type: unknown): MessageRole | null {
 
 /**
  * `content` is either a plain string (user turns) or an array of typed blocks
- * (assistant turns, tool results).
+ * (assistant turns, tool results). A user turn's text goes through
+ * `claudeUserText`, which unwraps pastes, turns slash and shell commands back
+ * into what was typed, and drops harness elements.
  */
-function segmentsFrom(content: unknown): MessageSegment[] {
+function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
   if (typeof content === 'string') {
-    return content.trim().length === 0 ? [] : [{ kind: 'text', text: content }];
+    const text = role === 'user' ? claudeUserText(content) : content;
+    return text === null || text.trim().length === 0 ? [] : [{ kind: 'text', text }];
   }
   if (!Array.isArray(content)) return [];
   const segments: MessageSegment[] = [];
   for (const block of content) {
-    const segment = segmentFrom(block);
+    const segment = segmentFrom(block, role);
     if (segment !== null) segments.push(segment);
   }
   return segments;
 }
 
-function segmentFrom(block: unknown): MessageSegment | null {
+function segmentFrom(block: unknown, role: MessageRole): MessageSegment | null {
   const value = asRecord(block);
   if (value === null) return null;
 
   switch (value.type) {
     case 'text': {
-      const text = typeof value.text === 'string' ? value.text : '';
-      return text.length === 0 ? null : { kind: 'text', text };
+      const raw = typeof value.text === 'string' ? value.text : '';
+      const text = role === 'user' ? claudeUserText(raw) : raw;
+      return text === null || text.length === 0 ? null : { kind: 'text', text };
     }
     case 'thinking': {
       const text = typeof value.thinking === 'string' ? value.thinking : '';

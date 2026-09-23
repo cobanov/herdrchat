@@ -107,9 +107,25 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How long a send cut off by the connection waits for its transcript receipt. */
+const TRANSPORT_RECEIPT_WAIT_MS = 8_000;
 const RECEIPT_CHECK_MS = 100;
 const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
+const STALLED_WARNING = 'The agent never picked that up, it may be stuck at a prompt. Try again.';
+const UNCONFIRMED_WARNING = "Couldn't confirm delivery, the message may be stuck in the terminal. Try again.";
+const DELIVERY_UNKNOWN_WARNING =
+  "The connection dropped while sending, so the message may have arrived. Check the chat before sending it again.";
+/** Warnings about whether a message landed. Its transcript receipt answers them. */
+const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
+  CODEX_DELIVERY_NOTICE,
+  STALLED_WARNING,
+  UNCONFIRMED_WARNING,
+  DELIVERY_UNKNOWN_WARNING,
+]);
+
+/** States that prove the agent read a prompt: it started, or it stopped to ask. */
+const REACTED = ['working', 'blocked'] as const;
 
 export interface ThreadState {
   loading: boolean;
@@ -180,10 +196,23 @@ export function useThread(
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /*
+    Errors live in three slots, because each has its own owner and its own
+    reason to go away. The poll clears only what the poll raised: a warning
+    from a send ("the agent never picked that up") is there to stop the user
+    sending the same prompt twice into a live agent, and a successful poll two
+    seconds later is no reason to take it down (#82).
+
+    - `pollError`: the status loop's own failure. Cleared by its next success.
+    - `actionError`: a send, a blocked-prompt reply, an interrupt. Cleared on
+      dismiss, on the transcript receipt that answers it, or by the next send.
+    - `tailError`: the live transcript reader, below.
+  */
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   /*
     Tail failures need their own slot, because the poll's success path ends in
-    `setError(null)` and a tail that rejected earlier in the SAME iteration was
+    `setPollError(null)` and a tail that rejected earlier in the SAME iteration was
     wiped by it a few hundred milliseconds after appearing.
 
     `startTail` is fired without await and its first await, `homeDirectory()` :
@@ -285,7 +314,8 @@ export function useThread(
       claimedReceipts.current.add(receipt.id);
       confirmedEchoIds.current.add(echo.id);
       echoBaselines.current.delete(echo.id);
-      setError(previous => previous === CODEX_DELIVERY_NOTICE ? null : previous);
+      // The message arrived after all: a warning about its delivery is moot.
+      setActionError(previous => previous !== null && DELIVERY_WARNINGS.has(previous) ? null : previous);
       return false;
     });
 
@@ -629,8 +659,7 @@ export function useThread(
 
         // A reply in flight is confirmed (or orphaned) by what this poll saw.
         // Only the silent outcomes are handled here: the timeout banner belongs
-        // to the timer in sendKeys, because this same poll iteration ends in
-        // `setError(null)` and would wipe a banner raised from inside it.
+        // to the timer in sendKeys, which raises it as an action error.
         const pending = blockedPendingRef.current;
         if (pending !== null) {
           const resolution = resolveBlockedPending(pending, {
@@ -681,13 +710,13 @@ export function useThread(
             tailBeats.current.delete(id);
           }
         }
-        setError(null);
+        setPollError(null);
         failures.current = 0;
       } catch (thrown) {
         if (!alive.current || stopped) return;
         setLoading(false);
         failures.current += 1;
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setPollError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
         inFlight = false;
         // The banner stays up throughout: backing off must never read as
@@ -798,11 +827,16 @@ export function useThread(
    * So on a modern host there are two outcomes and neither needs us to guess:
    * `delivered` returns immediately, `stalled` fails the bubble honestly.
    *
-   * `unverified` is the legacy path, for hosts with no `agent prompt`. There
-   * `pane run` only means keystrokes were sent, so the old dance survives :
-   * including the blind second Enter, which is unsafe in principle (if the first
-   * send DID land it submits an empty line into a live agent) but is also the
-   * only thing that recovers a stuck composer on a host with no alternative.
+   * `unverified` is the legacy path, for hosts with no `agent prompt` (and the
+   * fork's `written_to_pty`). There `pane run` only means keystrokes were sent,
+   * so the old dance survives, including the second Enter, which is unsafe in
+   * principle (if the first send DID land it submits an empty line into a live
+   * agent) but is also the only thing that recovers a stuck composer on a host
+   * with no alternative. It is narrowed to the one case it is for: the agent
+   * still sitting idle. An agent that went `blocked` read the prompt and opened
+   * a menu, and Enter there picks the highlighted option, usually "Yes", which
+   * approved a tool call nobody saw (#76). So the wait accepts `blocked` as a
+   * reaction, and the status is read again right before any Enter.
    *
    * `wasWorking` still guards all of it, and herdr's own caveat is why: --wait
    * "does not track turns: if the agent is already working, that active turn's
@@ -812,19 +846,36 @@ export function useThread(
   const deliver = useCallback(
     async (text: string, echoId: string, polled: AgentInfo) => {
       if (client === null) return;
+      // What the pane is doing right now. `idle` only when the host positively
+      // says so; a failed read or a vanished pane is `unknown`, never `idle`.
+      const paneState = async (paneId: string): Promise<'idle' | 'reacted' | 'unknown'> => {
+        try {
+          const snapshot = await client.snapshot();
+          const status = snapshot.agents.find((agent) => agent.paneId === paneId)?.agentStatus;
+          if (status === 'idle' || status === 'done') return 'idle';
+          if (status === 'working' || status === 'blocked') return 'reacted';
+          return 'unknown';
+        } catch {
+          return 'unknown';
+        }
+      };
       const deliverySig = boundSig.current;
       const current = () => alive.current && deliverySig === boundSig.current;
       const confirmed = () => confirmedEchoIds.current.has(echoId);
-      const awaitCodexReceipt = async () => {
-        const deadline = Date.now() + CODEX_RECEIPT_WAIT_MS;
+      // Wait for the transcript to show the message. When it doesn't, the
+      // bubble fails with `notice`, which says the message may have landed:
+      // never a blind retry, never a second Enter.
+      const awaitReceipt = async (notice: string, waitMs: number) => {
+        const deadline = Date.now() + waitMs;
         while (current() && !confirmed() && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
         }
         if (current() && !confirmed()) {
           setFailedIds(previous => new Set(previous).add(echoId));
-          setError(CODEX_DELIVERY_NOTICE);
+          setActionError(notice);
         }
       };
+      const awaitCodexReceipt = () => awaitReceipt(CODEX_DELIVERY_NOTICE, CODEX_RECEIPT_WAIT_MS);
       setIsSending(true);
       try {
         const pane = await currentPane(polled);
@@ -843,21 +894,27 @@ export function useThread(
         if (outcome === 'stalled') {
           // The host watched and nothing moved. No guessing, no second Enter.
           setFailedIds((previous) => new Set(previous).add(echoId));
-          setError('The agent never picked that up, it may be stuck at a prompt. Try again.');
+          setActionError(STALLED_WARNING);
           return;
         }
 
         if (outcome === 'unverified' && !wasWorking) {
-          let accepted = await client.waitAgentStatus(pane.paneId, 'working', 3500);
+          let accepted = await client.waitAgentStatus(pane.paneId, REACTED, 3500);
           if (!accepted) {
-            await client.sendKeys(pane.paneId, ['Enter']);
-            accepted = await client.waitAgentStatus(pane.paneId, 'working', 2500);
+            // Enter only into a composer the host says is idle. It may have
+            // reacted just after the wait gave up; if its state is unknown, an
+            // Enter is not safe to guess and the bubble says so instead.
+            const state = await paneState(pane.paneId);
+            if (state === 'idle') {
+              await client.sendKeys(pane.paneId, ['Enter']);
+              accepted = await client.waitAgentStatus(pane.paneId, REACTED, 2500);
+            } else {
+              accepted = state === 'reacted';
+            }
           }
           if (!accepted) {
             setFailedIds((previous) => new Set(previous).add(echoId));
-            setError(
-              "Couldn't confirm delivery, the message may be stuck in the terminal. Try again."
-            );
+            setActionError(UNCONFIRMED_WARNING);
           }
         }
       } catch (thrown) {
@@ -867,8 +924,14 @@ export function useThread(
           await awaitCodexReceipt();
           return;
         }
+        if (thrown instanceof HerdrError && thrown.transport) {
+          // The connection failed mid-send: the prompt may well have landed.
+          // Reporting it as not delivered is how a retry sent it twice (#83).
+          await awaitReceipt(DELIVERY_UNKNOWN_WARNING, TRANSPORT_RECEIPT_WAIT_MS);
+          return;
+        }
         setFailedIds((previous) => new Set(previous).add(echoId));
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
         setIsSending(false);
       }
@@ -881,6 +944,8 @@ export function useThread(
       const text = raw.trim();
       if (text.length === 0 || primaryPane === null || sending.current || loading || sessionState === 'unsupported') return;
       sending.current = true;
+      // A new message is a new attempt; the last one's warning has done its job.
+      setActionError(null);
       const echo: ChatMessage = {
         id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         role: 'user',
@@ -949,7 +1014,7 @@ export function useThread(
           () => {
             if (!alive.current || blockedPendingRef.current !== pending) return;
             clearBlockedPending();
-            setError(BLOCKED_PENDING_ERROR);
+            setActionError(BLOCKED_PENDING_ERROR);
           },
           blockedPendingTimeout(STATUS_POLL_MS * pollScale)
         );
@@ -960,7 +1025,7 @@ export function useThread(
       } catch (thrown) {
         // The keys never left the phone; nothing is pending on the host.
         clearBlockedPending();
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
     // `pollScale` belongs here: the pending window is derived from the poll
@@ -984,7 +1049,7 @@ export function useThread(
       try {
         await (hard ? client.interruptHard(pane.paneId) : client.interrupt(pane.paneId));
       } catch (thrown) {
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
     [client, agents, primaryPane]
@@ -1025,7 +1090,7 @@ export function useThread(
     sessionMeta,
     livePreview,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
-    error: error ?? tailError,
+    error: actionError ?? pollError ?? tailError,
     isSending,
     loadOlder,
     loadingOlder,
@@ -1037,7 +1102,8 @@ export function useThread(
     sendKeys,
     interrupt,
     clearError: () => {
-      setError(null);
+      setActionError(null);
+      setPollError(null);
       setTailError(null);
     },
     reload,

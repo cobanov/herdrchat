@@ -79,6 +79,27 @@ describe('HerdrClient over the socket', () => {
       });
     });
 
+    it("reads upstream's plain success as delivered", async () => {
+      // Upstream herdr has no `delivery` field: `{ agent }` after an observed
+      // working/blocked. Treating that as unverified sent every upstream prompt
+      // down the fallback-Enter path (#76).
+      const { client } = socketHost({
+        'agent.prompt': '{"id":"x","result":{"type":"agent_info","agent":{"pane_id":"w1:p1","agent_status":"blocked"}}}',
+      });
+      await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('delivered');
+    });
+
+    it('explains an upstream agent_blocked refusal in words a person can act on', async () => {
+      const { client, commands } = socketHost({
+        'agent.prompt': '{"id":"x","error":{"code":"agent_blocked","message":"agent is blocked"}}',
+      });
+      await expect(client.sendPrompt('w1:p1', 'hi')).rejects.toMatchObject({
+        code: 'agent_blocked',
+        message: expect.stringContaining('waiting on a question'),
+      });
+      expect(commands).toHaveLength(1);
+    });
+
     it('leaves written_to_pty for the caller to verify', async () => {
       const { client } = socketHost({ 'agent.prompt': prompted('written_to_pty') });
       await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('unverified');
@@ -89,6 +110,22 @@ describe('HerdrClient over the socket', () => {
         'agent.prompt': '{"id":"x","error":{"code":"timeout","message":"timed out waiting for agent status"}}',
       });
       await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('stalled');
+    });
+
+    it('does not read a transport timeout as a stall (#83)', async () => {
+      // The SSH layer gave up (a half-open connection). The prompt may have
+      // landed, so this must not come back as "never picked up".
+      const transport: HerdrTransport = {
+        exec: async (command: string) =>
+          isSocketProbe(command)
+            ? ({ ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never)
+            : ({ ok: false, code: 'timeout', message: "The host didn't answer in time." } as never),
+        streamLines: async function* () {},
+      };
+      await expect(new HerdrClient(transport).sendPrompt('w1:p1', 'hello')).rejects.toMatchObject({
+        code: 'timeout',
+        transport: true,
+      });
     });
 
     it('falls back to pane run only when the host has never heard of the method', async () => {

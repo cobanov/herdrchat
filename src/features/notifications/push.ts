@@ -220,7 +220,7 @@ async function run(transport: HerdrTransport, command: string): Promise<void> {
 
 async function runOut(transport: HerdrTransport, command: string): Promise<string> {
   const result = await transport.exec(withPath(command), SEND_TIMEOUT_MS);
-  if (!result.ok) throw new HerdrError(result.code, result.message);
+  if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
   if (result.exitCode !== 0) {
     throw new HerdrError(
       'push_registration_failed',

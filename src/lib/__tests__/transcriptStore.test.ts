@@ -22,6 +22,15 @@ class FakeTransport implements HerdrTransport {
 
     if (command.includes('wc -c')) return ok(`${bytes.length}\n`);
 
+    // `older()`'s line-start probe: the byte offset of the last line in the
+    // first N bytes, which is what `grep -b '' | cut | tail -n 1` prints.
+    const probe = /head -c (\d+) .*grep -a -b/.exec(command);
+    if (probe !== null) {
+      const prefix = bytes.subarray(0, Number(probe[1]));
+      const lastNewlineBeforeEnd = prefix.subarray(0, prefix.length - 1).lastIndexOf(0x0a);
+      return ok(`${lastNewlineBeforeEnd + 1}\n`);
+    }
+
     const window = /tail -c \+(\d+)/.exec(command);
     if (window !== null) {
       const oneBased = Number(window[1]);
@@ -363,6 +372,59 @@ describe('older history', () => {
     }
 
     expect(seen).toEqual(Array.from({ length: 200 }, (_, index) => index));
+  });
+
+  // #81: a line longer than a page (image results, tool dumps) used to hand
+  // back the same anchor, and paging stopped there for good.
+  it('pages past a line longer than one page', async () => {
+    const big = `{"type":"user","uuid":"big","message":{"role":"user","content":"${'x'.repeat(300_000)}"}}`;
+    const lines = [
+      ...Array.from({ length: 5 }, (_, i) => `{"type":"user","uuid":"a${i}","message":{"role":"user","content":"turn ${i}"}}`),
+      big,
+      ...Array.from({ length: 5 }, (_, i) => `{"type":"user","uuid":"b${i}","message":{"role":"user","content":"turn ${i + 6}"}}`),
+    ];
+    const { store: subject } = store(`${lines.join('\n')}\n`);
+
+    const first = await subject.recent('/t.jsonl', null, 500);
+    const ids = first.messages.map((message) => message.id);
+    let anchor = first.startByte;
+    for (let guard = 0; ; guard += 1) {
+      const page = await subject.older('/t.jsonl', null, anchor, 128_000);
+      ids.unshift(...page.messages.map((message) => message.id));
+      if (page.reachedStart) break;
+      expect(page.startByte).toBeLessThan(anchor);
+      anchor = page.startByte;
+      if (guard > 20) throw new Error('older() stopped making progress');
+    }
+    expect(ids).toEqual(['a0', 'a1', 'a2', 'a3', 'a4', 'big', 'b0', 'b1', 'b2', 'b3', 'b4']);
+  });
+
+  it('steps over a line too long to fetch, and keeps paging', async () => {
+    const huge = `{"type":"user","uuid":"huge","message":{"role":"user","content":"${'x'.repeat(4_300_000)}"}}`;
+    const lines = [`{"type":"user","uuid":"a0","message":{"role":"user","content":"turn 0"}}`, huge,
+      `{"type":"user","uuid":"b0","message":{"role":"user","content":"turn 2"}}`];
+    const { store: subject } = store(`${lines.join('\n')}\n`);
+
+    const first = await subject.recent('/t.jsonl', null, 200);
+    const skipped = await subject.older('/t.jsonl', null, first.startByte, 128_000);
+    expect(skipped.messages).toEqual([]);
+    expect(skipped.startByte).toBeLessThan(first.startByte);
+    const rest = await subject.older('/t.jsonl', null, skipped.startByte, 128_000);
+    expect(rest.messages.map((message) => message.id)).toEqual(['a0']);
+    expect(rest.reachedStart).toBe(true);
+  });
+
+  it('refuses a page that came back short', async () => {
+    const file = transcript(50);
+    const { store: subject } = store(file);
+    const first = await subject.recent('/t.jsonl', null, 1_000);
+    const shortTransport: HerdrTransport = {
+      exec: async () => ok('{"type":"user"'),
+      streamLines: async function* () {},
+    };
+    await expect(new TranscriptStore(shortTransport).older('/t.jsonl', null, first.startByte, 700)).rejects.toMatchObject({
+      code: 'transcript_changed',
+    });
   });
 
   it('reports reaching the start rather than paging forever', async () => {
