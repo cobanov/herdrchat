@@ -110,6 +110,14 @@ const CODEX_RECEIPT_WAIT_MS = 5_000;
 const RECEIPT_CHECK_MS = 100;
 const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
+const STALLED_WARNING = 'The agent never picked that up, it may be stuck at a prompt. Try again.';
+const UNCONFIRMED_WARNING = "Couldn't confirm delivery, the message may be stuck in the terminal. Try again.";
+/** Warnings about whether a message landed. Its transcript receipt answers them. */
+const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
+  CODEX_DELIVERY_NOTICE,
+  STALLED_WARNING,
+  UNCONFIRMED_WARNING,
+]);
 
 /** States that prove the agent read a prompt: it started, or it stopped to ask. */
 const REACTED = ['working', 'blocked'] as const;
@@ -183,10 +191,23 @@ export function useThread(
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /*
+    Errors live in three slots, because each has its own owner and its own
+    reason to go away. The poll clears only what the poll raised: a warning
+    from a send ("the agent never picked that up") is there to stop the user
+    sending the same prompt twice into a live agent, and a successful poll two
+    seconds later is no reason to take it down (#82).
+
+    - `pollError`: the status loop's own failure. Cleared by its next success.
+    - `actionError`: a send, a blocked-prompt reply, an interrupt. Cleared on
+      dismiss, on the transcript receipt that answers it, or by the next send.
+    - `tailError`: the live transcript reader, below.
+  */
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   /*
     Tail failures need their own slot, because the poll's success path ends in
-    `setError(null)` and a tail that rejected earlier in the SAME iteration was
+    `setPollError(null)` and a tail that rejected earlier in the SAME iteration was
     wiped by it a few hundred milliseconds after appearing.
 
     `startTail` is fired without await and its first await, `homeDirectory()` :
@@ -288,7 +309,8 @@ export function useThread(
       claimedReceipts.current.add(receipt.id);
       confirmedEchoIds.current.add(echo.id);
       echoBaselines.current.delete(echo.id);
-      setError(previous => previous === CODEX_DELIVERY_NOTICE ? null : previous);
+      // The message arrived after all: a warning about its delivery is moot.
+      setActionError(previous => previous !== null && DELIVERY_WARNINGS.has(previous) ? null : previous);
       return false;
     });
 
@@ -632,8 +654,7 @@ export function useThread(
 
         // A reply in flight is confirmed (or orphaned) by what this poll saw.
         // Only the silent outcomes are handled here: the timeout banner belongs
-        // to the timer in sendKeys, because this same poll iteration ends in
-        // `setError(null)` and would wipe a banner raised from inside it.
+        // to the timer in sendKeys, which raises it as an action error.
         const pending = blockedPendingRef.current;
         if (pending !== null) {
           const resolution = resolveBlockedPending(pending, {
@@ -684,13 +705,13 @@ export function useThread(
             tailBeats.current.delete(id);
           }
         }
-        setError(null);
+        setPollError(null);
         failures.current = 0;
       } catch (thrown) {
         if (!alive.current || stopped) return;
         setLoading(false);
         failures.current += 1;
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setPollError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
         inFlight = false;
         // The banner stays up throughout: backing off must never read as
@@ -843,7 +864,7 @@ export function useThread(
         }
         if (current() && !confirmed()) {
           setFailedIds(previous => new Set(previous).add(echoId));
-          setError(CODEX_DELIVERY_NOTICE);
+          setActionError(CODEX_DELIVERY_NOTICE);
         }
       };
       setIsSending(true);
@@ -864,7 +885,7 @@ export function useThread(
         if (outcome === 'stalled') {
           // The host watched and nothing moved. No guessing, no second Enter.
           setFailedIds((previous) => new Set(previous).add(echoId));
-          setError('The agent never picked that up, it may be stuck at a prompt. Try again.');
+          setActionError(STALLED_WARNING);
           return;
         }
 
@@ -884,9 +905,7 @@ export function useThread(
           }
           if (!accepted) {
             setFailedIds((previous) => new Set(previous).add(echoId));
-            setError(
-              "Couldn't confirm delivery, the message may be stuck in the terminal. Try again."
-            );
+            setActionError(UNCONFIRMED_WARNING);
           }
         }
       } catch (thrown) {
@@ -897,7 +916,7 @@ export function useThread(
           return;
         }
         setFailedIds((previous) => new Set(previous).add(echoId));
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       } finally {
         setIsSending(false);
       }
@@ -910,6 +929,8 @@ export function useThread(
       const text = raw.trim();
       if (text.length === 0 || primaryPane === null || sending.current || loading || sessionState === 'unsupported') return;
       sending.current = true;
+      // A new message is a new attempt; the last one's warning has done its job.
+      setActionError(null);
       const echo: ChatMessage = {
         id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         role: 'user',
@@ -978,7 +999,7 @@ export function useThread(
           () => {
             if (!alive.current || blockedPendingRef.current !== pending) return;
             clearBlockedPending();
-            setError(BLOCKED_PENDING_ERROR);
+            setActionError(BLOCKED_PENDING_ERROR);
           },
           blockedPendingTimeout(STATUS_POLL_MS * pollScale)
         );
@@ -989,7 +1010,7 @@ export function useThread(
       } catch (thrown) {
         // The keys never left the phone; nothing is pending on the host.
         clearBlockedPending();
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
     // `pollScale` belongs here: the pending window is derived from the poll
@@ -1013,7 +1034,7 @@ export function useThread(
       try {
         await (hard ? client.interruptHard(pane.paneId) : client.interrupt(pane.paneId));
       } catch (thrown) {
-        setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
       }
     },
     [client, agents, primaryPane]
@@ -1054,7 +1075,7 @@ export function useThread(
     sessionMeta,
     livePreview,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
-    error: error ?? tailError,
+    error: actionError ?? pollError ?? tailError,
     isSending,
     loadOlder,
     loadingOlder,
@@ -1066,7 +1087,8 @@ export function useThread(
     sendKeys,
     interrupt,
     clearError: () => {
-      setError(null);
+      setActionError(null);
+      setPollError(null);
       setTailError(null);
     },
     reload,

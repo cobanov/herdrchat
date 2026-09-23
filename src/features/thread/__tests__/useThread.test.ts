@@ -354,6 +354,51 @@ it('presses nothing when the pane state cannot be read after an unverified send'
   await unmount();
 });
 
+// #82: the poll's success path used to clear every banner, including the
+// warnings that exist to stop a second send into a live agent.
+it('keeps a stalled-send warning through the next successful poll', async () => {
+  mockLive = false; // poll every 2 s
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('stalled');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('hello'); });
+  expect(result.current.error).toContain('never picked that up');
+  await act(async () => { await jest.advanceTimersByTimeAsync(4_100); });
+  expect(result.current.error).toContain('never picked that up');
+  await unmount();
+});
+
+it('keeps the Codex delivery notice through a live-stream poll', async () => {
+  mockLive = true; // poll every 30 s
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<void> | undefined;
+  await act(async () => { sent = result.current.send('x'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(result.current.error).toContain('Check the host before retrying');
+  await act(async () => { await jest.advanceTimersByTimeAsync(30_100); });
+  expect(result.current.error).toContain('Check the host before retrying');
+  await unmount();
+});
+
+it('takes a send warning down on dismiss and on the next send', async () => {
+  mockLive = false;
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('stalled');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('first'); });
+  expect(result.current.error).not.toBeNull();
+  await act(async () => { result.current.clearError(); });
+  expect(result.current.error).toBeNull();
+  await act(async () => { await result.current.send('second'); });
+  expect(result.current.error).not.toBeNull();
+  prompt.mockResolvedValue('delivered');
+  await act(async () => { await result.current.send('third'); });
+  expect(result.current.error).toBeNull();
+  await unmount();
+});
+
 it('ends the initial spinner when the transcript probe reports a read failure', async () => {
   mockProbe = { kind: 'unknown', reason: 'Permission denied' };
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
