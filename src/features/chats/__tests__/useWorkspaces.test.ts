@@ -65,6 +65,20 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+// #88: a kick that lands while a poll is in flight must not be lost when
+// that poll finishes and schedules its own next round.
+it('honours an event that arrives while a poll is in flight', async () => {
+  const fetch = jest.spyOn(client, 'snapshot').mockImplementation(
+    () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 100))
+  );
+  const { unmount } = await renderHook(() => useWorkspaces(client));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); }); // first poll done
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(300); }); // poll #2 in flight
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(1_700); }); // event mid-poll
+  expect(fetch).toHaveBeenCalledTimes(3);
+  await unmount();
+});
+
 it('refreshes an idle chat preview on the event that finished its turn', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
   const { result, unmount } = await renderHook(() => useWorkspaces(client));

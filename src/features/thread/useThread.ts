@@ -729,7 +729,13 @@ export function useThread(
         }
       }
     };
-    kick.current = () => schedule(EVENT_DEBOUNCE_MS);
+    // Mid-poll, a kick only asks for one more round. Scheduling a timer
+    // instead lost it: the poll's own `schedule(backoff)` cleared that timer
+    // when it finished first (#88).
+    kick.current = () => {
+      if (inFlight) again = true;
+      else schedule(EVENT_DEBOUNCE_MS);
+    };
     void poll();
 
     // Captured now: by cleanup time `tails.current` may be a different map, and

@@ -194,7 +194,13 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => void loop(), delayMs);
     };
-    kick.current = () => schedule(EVENT_DEBOUNCE_MS);
+    // Mid-refresh, a kick only asks for one more round. Scheduling a timer
+    // instead lost it: the refresh's own `schedule(backoff)` cleared that timer
+    // when it finished first, and "Needs you" waited for the next slow poll (#88).
+    kick.current = () => {
+      if (inFlight) again = true;
+      else schedule(EVENT_DEBOUNCE_MS);
+    };
     void loop();
 
     return () => {
