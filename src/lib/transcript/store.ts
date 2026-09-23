@@ -119,8 +119,10 @@ export class TranscriptStore {
     if (sessionId.length === 0 || !/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
     const result = await this.transport.exec(
       withPath(
-        `for f in "${CLAUDE_DIR_SHELL}"/projects/*/${sessionId}.jsonl; do ` +
-          `[ -f "$f" ] && { printf '%s' "$f"; exit 0; }; done; exit ${ABSENT_EXIT}`
+        // Falls off the end rather than `exit 0`: the transport marks a finished
+        // command by what runs after it (#103). Not found is a non-zero status.
+        `found=; for f in "${CLAUDE_DIR_SHELL}"/projects/*/${sessionId}.jsonl; do ` +
+          `if [ -f "$f" ]; then printf '%s' "$f"; found=1; break; fi; done; [ -n "$found" ]`
       ),
       POLL_TIMEOUT_MS
     );

@@ -1,5 +1,6 @@
 import Native from '../HerdrSshModule';
 import { streamLines, type SshConfig } from '..';
+import { DONE_MARK } from '../../../../src/lib/herdr/doneMark';
 import { SshHerdrTransport } from '../../../../src/lib/herdr/sshTransport';
 
 jest.mock('../HerdrSshModule', () => ({
@@ -17,7 +18,10 @@ beforeEach(() => {
   jest.resetAllMocks();
   native.connect.mockResolvedValue({ ok: true, fingerprint: 'pin-A' });
   native.disconnect.mockResolvedValue(undefined);
-  native.exec.mockResolvedValue({ ok: true, stdout: '', stderr: '', exitCode: 0 });
+  // Like a shell: the transport's `&& printf <mark>` prints the mark on exit 0.
+  native.exec.mockImplementation(async (_id: string, command: string) => ({
+    ok: true, stdout: command.includes(DONE_MARK) ? DONE_MARK : '', stderr: '', exitCode: 0,
+  }));
   native.startStream.mockResolvedValue({ ok: true });
   native.stopStream.mockResolvedValue(undefined);
   native.addListener.mockReturnValue({ remove: jest.fn() });
