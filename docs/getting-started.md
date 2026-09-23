@@ -120,8 +120,12 @@ session's service carries the session name as a suffix.
 
 ## Known limitations
 
-- Android has a buildable native implementation but is not runtime-verified.
-- Physical-device APNs delivery and recovery from a real Tailscale interruption
-  still need acceptance testing. Simulator checks are not proof of either.
+- Android has been run in an emulator against a real host (connecting,
+  history, sending, blocked prompts, reconnecting, a changed host key), but
+  not on a physical device, and it has no notifications: those are APNs,
+  which is iOS only.
+- Notifications need the relay's APNs key in place and have not yet been
+  confirmed on a physical iPhone. Recovery from a real Tailscale interruption
+  also still needs a device. Simulator checks are not proof of either.
 - Reconnect banners and waiting/live-preview presentation are being refined.
   Report problems in [issues](https://github.com/cobanov/herdrchat/issues).
