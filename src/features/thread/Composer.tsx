@@ -3,6 +3,7 @@ import { Pressable, TextInput } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
+import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -75,81 +76,85 @@ export function Composer({
   };
 
   return (
-    <Glass
-      variant="regular"
-      style={{
-        borderRadius: radius.lg,
-        overflow: 'hidden',
-        flexDirection: 'row',
-        // `flex-end`, not centre: as the field grows the send control stays
-        // beside the LAST line, the way Messages does it. Centred, it drifts
-        // into the middle of a tall pill and looks unmoored from the text.
-        alignItems: 'flex-end',
-        // A hairline rim, brightened on focus. On glass it reads as the edge of
-        // a physical surface; without it the pill dissolves into a light
-        // background entirely.
-        borderWidth: 1,
-        borderColor: focused ? colors.tint : colors.separator,
-      }}>
-      <TextInput
-        testID="composer-input"
-        accessibilityLabel="Message"
-        placeholder="Message"
-        placeholderTextColor={colors.tertiaryLabel}
-        value={draft}
-        onChangeText={onDraftChange}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        multiline
+    // Command-Return sends from an iPad's hardware keyboard, where Return alone
+    // has to stay a newline (#113).
+    <SubmitShortcutView onSubmitShortcut={send}>
+      <Glass
+        variant="regular"
         style={{
-          flex: 1,
-          minHeight,
-          // Four lines, then it scrolls — see `composerMaxHeight`.
-          maxHeight: composerMaxHeight,
-          paddingLeft: spacing.lg,
-          paddingRight: spacing.sm,
-          // Padding rather than lineHeight, so a single line sits centred in the
-          // 44pt pill while the field still grows correctly.
-          paddingTop: spacing.md,
-          paddingBottom: spacing.md,
-          color: colors.label,
-          fontSize: typography.body.fontSize,
-        }}
-      />
-
-      <AnimatedPressable
-        onPress={send}
-        onPressIn={() => {
-          if (!reduceMotion) sendScale.set(withSpring(0.88, motion.press));
-        }}
-        onPressOut={() => sendScale.set(withSpring(1, motion.press))}
-        disabled={!canSend}
-        accessibilityRole="button"
-        accessibilityLabel="Send"
-        accessibilityState={{ disabled: !canSend }}
-        testID="composer-send"
-        // A full-size target even though the glyph is smaller, so the button is
-        // hittable without aiming at it.
-        style={[
-          {
-            width: minTouchTarget,
-            height: minTouchTarget,
-            alignItems: 'center',
-            justifyContent: 'center',
-          },
-          sendStyle,
-        ]}>
-        <Icon
-          name={canSend ? 'arrow.up.circle.fill' : 'arrow.up.circle'}
-          size={28}
-          tintColor={canSend ? colors.tint : colors.tertiaryLabel}
-          fallback={
-            <Text variant="title2" color={canSend ? 'tint' : 'tertiary'}>
-              ↑
-            </Text>
-          }
+          borderRadius: radius.lg,
+          overflow: 'hidden',
+          flexDirection: 'row',
+          // `flex-end`, not centre: as the field grows the send control stays
+          // beside the LAST line, the way Messages does it. Centred, it drifts
+          // into the middle of a tall pill and looks unmoored from the text.
+          alignItems: 'flex-end',
+          // A hairline rim, brightened on focus. On glass it reads as the edge of
+          // a physical surface; without it the pill dissolves into a light
+          // background entirely.
+          borderWidth: 1,
+          borderColor: focused ? colors.tint : colors.separator,
+        }}>
+        <TextInput
+          testID="composer-input"
+          accessibilityLabel="Message"
+          placeholder="Message"
+          placeholderTextColor={colors.tertiaryLabel}
+          value={draft}
+          onChangeText={onDraftChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          multiline
+          style={{
+            flex: 1,
+            minHeight,
+            // Four lines, then it scrolls — see `composerMaxHeight`.
+            maxHeight: composerMaxHeight,
+            paddingLeft: spacing.lg,
+            paddingRight: spacing.sm,
+            // Padding rather than lineHeight, so a single line sits centred in the
+            // 44pt pill while the field still grows correctly.
+            paddingTop: spacing.md,
+            paddingBottom: spacing.md,
+            color: colors.label,
+            fontSize: typography.body.fontSize,
+          }}
         />
-      </AnimatedPressable>
-    </Glass>
+
+        <AnimatedPressable
+          onPress={send}
+          onPressIn={() => {
+            if (!reduceMotion) sendScale.set(withSpring(0.88, motion.press));
+          }}
+          onPressOut={() => sendScale.set(withSpring(1, motion.press))}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
+          accessibilityState={{ disabled: !canSend }}
+          testID="composer-send"
+          // A full-size target even though the glyph is smaller, so the button is
+          // hittable without aiming at it.
+          style={[
+            {
+              width: minTouchTarget,
+              height: minTouchTarget,
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+            sendStyle,
+          ]}>
+          <Icon
+            name={canSend ? 'arrow.up.circle.fill' : 'arrow.up.circle'}
+            size={28}
+            tintColor={canSend ? colors.tint : colors.tertiaryLabel}
+            fallback={
+              <Text variant="title2" color={canSend ? 'tint' : 'tertiary'}>
+                ↑
+              </Text>
+            }
+          />
+        </AnimatedPressable>
+      </Glass>
+    </SubmitShortcutView>
   );
 }
