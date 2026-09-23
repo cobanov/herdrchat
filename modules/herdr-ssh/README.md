@@ -79,7 +79,8 @@ Changing anything under `ios/` or `android/` here requires a native rebuild
 `swift run --package-path modules/herdr-ssh NativeChecks` exercises the production
 pin policy on macOS. Optional `<test-key> <test-directory>` arguments run actual
 SSH checks with an isolated loopback sshd on port 22264: nonzero exit status,
-20 silent stream cancellations, a lost reply, and a changed host key. The test
+20 silent stream cancellations, five concurrent commands sharing one connection
+after a reset, a lost reply, and a changed host key. The test
 starts and stops its own sshd. The directory must contain `config` (bound to
 127.0.0.1:22264 with an absolute HostKey path ending in `/host_a`), a second
 `host_b` key, and the test client's public key in AuthorizedKeysFile. Use only

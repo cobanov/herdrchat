@@ -64,6 +64,22 @@ struct SshConfigRecord {
     precondition(remaining.isEmpty, "Cancelled remote commands are still running: \(remaining)")
     print("PASS 20 silent native streams close their remote commands")
 
+    // #84: after a reset, the poll, tail, feed and previews all dial at once.
+    // They must share one connection, not open one each and leak the extras.
+    // `$SSH_CLIENT` carries the client's source port, so distinct values mean
+    // distinct connections.
+    await connection.close()
+    let sources = try await withThrowingTaskGroup(of: String.self) { group in
+      for _ in 0..<5 {
+        group.addTask { try await connection.exec("printf %s \"$SSH_CLIENT\"", timeoutMs: 5000).stdout }
+      }
+      var seen: [String] = []
+      for try await source in group { seen.append(source) }
+      return seen
+    }
+    precondition(Set(sources).count == 1, "5 concurrent commands dialled \(Set(sources).count) connections")
+    print("PASS 5 concurrent commands after a reset share one connection")
+
     let counter = "\(directory)/counter-\(UUID().uuidString)"
     let command = Task { try await connection.exec("printf x >> \(counter); sleep 10", timeoutMs: 3000) }
     for _ in 0..<100 {

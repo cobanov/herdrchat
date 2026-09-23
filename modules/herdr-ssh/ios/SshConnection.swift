@@ -62,6 +62,14 @@ struct SshFailure: Error {
 actor SshConnection {
   private let config: SshConfigRecord
   private var client: SSHClient?
+  /// The dial in progress, shared by every caller that finds no client.
+  ///
+  /// Actors are reentrant: while one call awaits `SSHClient.connect`, others
+  /// run, and each of them used to see no client and dial its own. After every
+  /// reconnect (network change, timeout, resume) the poll, the tail, the event
+  /// feed and the previews all fire at once, so one host got five logins, and
+  /// the four replaced clients were never closed (#84).
+  private var connecting: Task<SSHClient, Error>?
   /// The host key fingerprint this connection accepted, reported back to JS so
   /// first contact can be persisted as the pin.
   private let hostKeyPin: HostKeyPin
@@ -79,17 +87,21 @@ actor SshConnection {
   // MARK: - Lifecycle
 
   func close() async {
-    if let client { try? await client.close() }
-    client = nil
+    await resetClient()
     if pathMonitorStarted {
       pathMonitor.cancel()
       pathMonitorStarted = false
     }
   }
 
+  /// Drop the cached client. Detached from state BEFORE the await: clearing it
+  /// afterwards could discard a client another call dialled in the meantime,
+  /// leaving that connection open with nothing holding it.
   private func resetClient() async {
-    if let client { try? await client.close() }
+    let old = client
     client = nil
+    connecting = nil
+    if let old { try? await old.close() }
   }
 
   /// Watch the network path: when the interface set changes, drop the cached
@@ -124,7 +136,33 @@ actor SshConnection {
       if client.isConnected { return client }
       await resetClient()
     }
+    if let connecting { return try await connecting.value }
 
+    let task = Task { try await self.dial() }
+    connecting = task
+    let dialled: SSHClient
+    do {
+      dialled = try await task.value
+    } catch {
+      if connecting == task { connecting = nil }
+      throw error
+    }
+    if connecting == task { connecting = nil }
+    if client == nil {
+      client = dialled
+      return dialled
+    }
+    if let client, client !== dialled {
+      // The client was reset while this dial was in flight and a newer one is
+      // already installed. Keeping both is the leak; close this one.
+      try? await dialled.close()
+      return client
+    }
+    return dialled
+  }
+
+  /// One SSH handshake, with this connection's credentials and pin.
+  private func dial() async throws -> SSHClient {
     // Parse the key up front: the settings closure below cannot throw.
     // SSHAuthenticationMethod isn't Sendable but is effectively immutable once
     // built, so the capture is safe.
@@ -139,9 +177,7 @@ actor SshConnection {
     )
 
     do {
-      let newClient = try await SSHClient.connect(to: settings)
-      client = newClient
-      return newClient
+      return try await SSHClient.connect(to: settings)
     } catch {
       if observer.mismatched {
         throw SshFailure(
