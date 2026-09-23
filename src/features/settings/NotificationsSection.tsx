@@ -104,7 +104,7 @@ export function NotificationsSection() {
       if (connection === null) return;
 
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
-      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId);
+      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId, connection.id);
       persist(true);
       setNote({
         message: `Registered with ${connection.name}. Run the watcher on that machine.`,

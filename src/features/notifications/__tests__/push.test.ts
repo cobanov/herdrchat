@@ -1,7 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { getPushDeviceId, newDeviceId } from '../deviceId';
-import { deviceFileId, errorDetail, matchingTokenFiles, parseTokenDirListing } from '../push';
+import { deviceFileId, errorDetail, matchingTokenFiles, parseTokenDirListing, uploadPushToken } from '../push';
+import type { HerdrTransport } from '@/lib/herdr/transport';
 
 /**
  * `deviceFileId` builds a filename that is interpolated into a shell path on the
@@ -9,6 +10,22 @@ import { deviceFileId, errorDetail, matchingTokenFiles, parseTokenDirListing } f
  * injection on the user's own machine, so the filter is pinned rather than
  * trusted.
  */
+// #91: the token file names this device's connection id for the host, which
+// the watcher sends back so a tap opens the right host's chat.
+it('writes the connection id into the token file', async () => {
+  const commands: string[] = [];
+  const transport: HerdrTransport = {
+    exec: async (command: string) => {
+      commands.push(command);
+      return { ok: true, exitCode: 0, stdout: '', stderr: '' };
+    },
+    streamLines: async function* () {},
+  };
+  await uploadPushToken(transport, 'device-1', 'abc123', 'dev.herdr.HerdrChat', 'conn-42');
+  expect(commands[0]).toContain('"connection":"conn-42"');
+  expect(commands[0]).toContain('"token":"abc123"');
+});
+
 describe('deviceFileId', () => {
   it('keeps characters that are already inert', () => {
     expect(deviceFileId('A1b2-c3D4')).toBe('A1b2-c3D4');

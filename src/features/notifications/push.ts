@@ -130,9 +130,15 @@ export async function uploadPushToken(
   transport: HerdrTransport,
   deviceId: string,
   token: string,
-  bundleId: string
+  bundleId: string,
+  /**
+   * Which of this device's hosts the file is on. The watcher sends it back in
+   * every push, so a tap opens this host's chat rather than whichever host is
+   * selected (#91). Workspace ids are per host; `w1` exists on all of them.
+   */
+  connectionId: string
 ): Promise<void> {
-  const payload = JSON.stringify({ token, bundleId, env: 'production' });
+  const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId });
   await run(
     transport,
     `mkdir -p ${TOKEN_DIR} && printf '%s' ${shellQuote(payload)} > ${TOKEN_DIR}/${shellQuote(deviceId)}.json`
