@@ -806,3 +806,34 @@ it('restarts a dropped tail at once and quietly, and speaks up only if that fail
   mockTailFailures = 0;
   await unmount();
 });
+
+// A page of older history for one conversation can arrive after the workspace
+// slot has moved on to another. It must never land in the new one (574ef79).
+it('drops a page of older history that arrives after the session changed', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  mockRecent.mockResolvedValue({ messages: [turn('first-chat-recent', 10)], consumedBytes: 50_000, startByte: 40_000 });
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['first-chat-recent']);
+
+  let deliver: ((page: Awaited<ReturnType<typeof mockOlder>>) => void) | undefined;
+  mockOlder.mockImplementation(() => new Promise((resolve) => { deliver = resolve; }));
+  let paging: Promise<void> | undefined;
+  await act(async () => { paging = result.current.loadOlder(); });
+  expect(deliver).toBeDefined();
+
+  // The slot now holds a different conversation.
+  mockRecent.mockResolvedValue({ messages: [turn('second-chat', 20)], consumedBytes: 50_000, startByte: 0 });
+  fetch.mockResolvedValue(snapshot([{ ...agent, agentSession: { kind: 'id', value: 'session-2', agent: 'claude', source: null } }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['second-chat']);
+
+  await act(async () => {
+    deliver?.({ messages: [turn('first-chat-older', 1)], startByte: 0, reachedStart: true });
+    await paging;
+  });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['second-chat']);
+  await unmount();
+});
