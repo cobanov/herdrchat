@@ -85,6 +85,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * list grows rather than only when someone scrolls.
    */
   const pinnedToBottom = useRef(true);
+  /**
+   * Whether the reader has dragged since the list was last put at the end.
+   * Only a reader can unpin it: a scroll event from layout (a long last message
+   * measuring taller than estimated) unpinned it before, and the thread opened
+   * short of its last lines with nothing bringing it back (#4 acceptance).
+   */
+  const readerScrolled = useRef(false);
   const anchorAfterControlsResize = useRef(false);
   const viewportHeight = useRef(0);
   const scrollOffset = useRef(0);
@@ -196,7 +203,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     viewportHeight.current = layoutMeasurement.height;
     scrollOffset.current = contentOffset.y;
     const distanceFromEnd = contentSize.height - contentOffset.y - layoutMeasurement.height;
-    pinnedToBottom.current = distanceFromEnd <= BOTTOM_SLACK;
+    if (readerScrolled.current) pinnedToBottom.current = distanceFromEnd <= BOTTOM_SLACK;
     setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
   }, []);
 
@@ -213,6 +220,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const restoreBottom = useCallback(() => {
     pinnedToBottom.current = true;
+    readerScrolled.current = false;
     scrollListToEnd(false);
   }, [scrollListToEnd]);
 
@@ -231,6 +239,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const jumpToBottom = useCallback(() => {
     pinnedToBottom.current = true;
+    readerScrolled.current = false;
     scrollListToEnd(true);
     setAtBottom(true);
   }, [scrollListToEnd]);
@@ -384,6 +393,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               }}
               onStartReachedThreshold={0.5}
               onScrollBeginDrag={() => {
+                readerScrolled.current = true;
                 historyInteraction.current = thread.historyVersion;
                 // A short first window may already be at the top before the
                 // reader drags, so onStartReached will not fire a second time.
@@ -412,6 +422,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               onContentSizeChange={(_width, height) => {
                 if (anchorAfterControlsResize.current) {
                   anchorAfterControlsResize.current = false;
+                  restoreBottom();
+                  setAtBottom(true);
+                  return;
+                }
+                // Pinned, the end follows the content: a message measured taller
+                // than its estimate grows the list after the first frame.
+                if (pinnedToBottom.current) {
                   restoreBottom();
                   setAtBottom(true);
                   return;

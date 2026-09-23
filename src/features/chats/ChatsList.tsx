@@ -63,7 +63,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  const { summaries, loading, error, errorCode, herdrMissing, serverStopped, refresh } =
+  const { summaries, loading, error, errorCode, refresh } =
     useWorkspaces(client);
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
@@ -157,6 +157,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
    * process. Offering them as one button would make the smaller one feel as
    * consequential as the larger.
    */
+  /** The fix that matches the failure, for the banner and the empty state alike. */
+  const recover = () => {
+    const { action } = connectionRecovery(errorCode ?? '');
+    if (action === 'install') confirmInstallHerdr();
+    else if (action === 'start') void fixHost('start');
+    else if (action === 'retry') void refresh();
+    else if (connection !== null) router.push({ pathname: '/server/[id]', params: { id: connection.id } });
+  };
+
   const fixHost = async (action: 'install' | 'start') => {
     if (client === null) return;
     setFixing(true);
@@ -217,26 +226,13 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             }
           />
         ) : (
+          // Same recovery as the empty state below: with cached rows on
+          // screen a rejected key or an unreachable host showed a message and
+          // no way to fix it (#4 acceptance).
           <ErrorBanner
             message={error}
-            actionLabel={
-              fixing
-                ? 'Working…'
-                : herdrMissing
-                  ? 'Install herdr on the host'
-                  : serverStopped
-                    ? 'Start herdr on the host'
-                    : null
-            }
-            onAction={
-              fixing
-                ? undefined
-                : herdrMissing
-                  ? confirmInstallHerdr
-                  : serverStopped
-                    ? () => void fixHost('start')
-                    : undefined
-            }
+            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+            onAction={fixing ? undefined : recover}
           />
         ))}
 
@@ -301,13 +297,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 title={connectionRecovery(errorCode ?? '').title}
                 body={error}
                 actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
-                onAction={fixing ? undefined : () => {
-                  const { action } = connectionRecovery(errorCode ?? '');
-                  if (action === 'install') confirmInstallHerdr();
-                  else if (action === 'start') void fixHost('start');
-                  else if (action === 'retry') void refresh();
-                  else router.push({ pathname: '/server/[id]', params: { id: connection.id } });
-                }}
+                onAction={fixing ? undefined : recover}
               />
             ) : error === null ? (
               <EmptyState

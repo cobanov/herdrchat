@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
@@ -51,6 +52,7 @@ type TestState =
  */
 export default function ServerEditScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const params = useLocalSearchParams<{ id: string; mode?: string }>();
@@ -343,7 +345,13 @@ export default function ServerEditScreen() {
       {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets); Android
           has no such prop, and with edge-to-edge the window no longer resizes,
           so the fields near the bottom sat under the keyboard. */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'android' ? 'padding' : undefined}
+        // The avoider measures from the window's top, but this sheet starts
+        // below the status bar on Android, so it under-padded by exactly that
+        // inset and the last fields still sat behind the keys (#4 acceptance).
+        keyboardVerticalOffset={Platform.OS === 'android' ? insets.top : 0}
+        style={{ flex: 1 }}>
       <ScrollView
         ref={form}
         contentContainerStyle={{

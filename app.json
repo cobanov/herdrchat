@@ -4,6 +4,7 @@
     "slug": "herdrchat",
     "scheme": "herdrchat",
     "version": "0.8.0",
+    "primaryColor": "#5459D4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

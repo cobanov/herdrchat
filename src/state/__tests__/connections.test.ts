@@ -45,3 +45,10 @@ it('tests the session the form names', async () => {
   await client.transport.exec('true', 1000);
   expect(mockCommands.at(-1)).toContain("export HERDR_SESSION='work'");
 });
+
+// A new host landed after the Demo, between the user's own hosts.
+it('adds a new host before the Demo, which stays last', () => {
+  useConnections.getState().setAll([host('a')], 'a');
+  useConnections.getState().upsert(host('b'));
+  expect(useConnections.getState().connections.map((connection) => connection.id)).toEqual(['a', 'b', DEMO_CONNECTION_ID]);
+});
