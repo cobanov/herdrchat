@@ -1,0 +1,39 @@
+  operation with a single file.
+
+  What would you like to do next?
+
+✻ Churned for 5s · done 2:44 PM
+
+❯ Call the AskUserQuestion tool exactly once with this input and nothing else, then wait for my answer:
+  {"questions":[{"question":"Which layout should the settings page
+  use?","header":"Layout","multiSelect":false,"options":[{"label":"Cards","description":"Each section in its own
+  card.","preview":"+----------+\n| Account  |\n+----------+\n| Privacy
+  |\n+----------+"},{"label":"List","description":"One grouped list, iOS style.","preview":"Account   >\nPrivacy
+  >\nAbout     >"}]}]}
+
+⏺ User declined to answer questions
+  ⎿  · Which layout should the settings page use? (Cards / List)
+
+✻ Churned for 2s · done 2:45 PM
+
+❯ Call the AskUserQuestion tool exactly once with this input and nothing else, then wait for my answer:
+  {"questions":[{"question":"Which checks should run before
+  merging?","header":"Checks","multiSelect":true,"options":[{"label":"Type check","description":"tsc
+  --noEmit"},{"label":"Lint","description":"eslint over src and app"},{"label":"Unit tests","description":"jest"}]}]}
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Checks  ✔ Submit  →
+
+Which checks should run before merging?
+
+❯ 1. [ ] Type check
+         tsc --noEmit
+  2. [ ] Lint
+         eslint over src and app
+  3. [ ] Unit tests
+         jest
+  4. [ ] Type something
+     Submit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

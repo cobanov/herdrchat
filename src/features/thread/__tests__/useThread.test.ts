@@ -206,6 +206,22 @@ it.each([
   await unmount();
 });
 
+// Claude answers on the digit; the Enter behind it picked the next question's
+// option. Codex's trust menu needs it (#107).
+it.each([
+  { kind: 'claude', submitWithEnter: false },
+  { kind: 'codex', submitWithEnter: true },
+])('sends Enter after a digit only where $kind needs it', async ({ kind, submitWithEnter }) => {
+  jest
+    .spyOn(client, 'snapshot')
+    .mockResolvedValue(snapshot([{ ...agent, agent: kind, agentStatus: 'blocked' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue('Do you want to proceed?\n❯ 1. Yes\n  2. No');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+  expect(result.current.blockedPrompt?.submitWithEnter).toBe(submitWithEnter);
+  await unmount();
+});
+
 it('resolves a Codex transcript by native session id and namespaces its cache', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));

@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';
 import {
+  CONTINUE_KEYS,
   isPendingKeys,
   optionKeys,
   type BlockedPending,
@@ -72,7 +73,7 @@ export function BlockedBar({
       {prompt !== null && prompt.options.length > 0 ? (
         <>
           {prompt.options.map((option) => {
-            const keys = optionKeys(option);
+            const keys = optionKeys(option, prompt);
             // An option this app cannot type is still SHOWN, just not offered.
             // Hiding it would renumber the menu against the one on the terminal,
             // and then "option 9" means two different things in two places.
@@ -84,13 +85,13 @@ export function BlockedBar({
                 key={option.number}
                 onPress={keys === null ? undefined : () => press(keys)}
                 disabled={dim}
-                accessibilityRole="button"
+                accessibilityRole={option.checked === undefined ? 'button' : 'checkbox'}
                 accessibilityLabel={
                   untypable
                     ? `Option ${option.number}: ${option.label}. Not available from this app.`
                     : `Option ${option.number}: ${option.label}`
                 }
-                accessibilityState={{ disabled: dim, busy: tapped }}
+                accessibilityState={{ disabled: dim, busy: tapped, checked: option.checked }}
                 testID={`blocked-option-${option.number}`}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
@@ -113,13 +114,28 @@ export function BlockedBar({
                     {option.number}
                   </Text>
                 )}
+                {option.checked !== undefined && (
+                  <Icon
+                    name={option.checked ? 'checkmark.square.fill' : 'square'}
+                    size={16}
+                    tintColor={dim ? colors.secondaryLabel : colors.attention}
+                    fallback={<Text variant="subhead" color={dim ? 'secondary' : 'attention'}>{option.checked ? '☑' : '☐'}</Text>}
+                  />
+                )}
                 <Text variant="subhead" color={dim ? 'secondary' : 'label'} style={{ flex: 1 }}>
                   {option.label}
                 </Text>
               </Pressable>
             );
           })}
-          {prompt.options.some((option) => optionKeys(option) === null) && (
+          {prompt.multiSelect === true && (
+            // Ticking sends nothing to the agent. This moves on, to the next
+            // question or to the review, which is an ordinary menu.
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Chip label="Continue" keys={CONTINUE_KEYS} pending={pending} onPress={press} />
+            </View>
+          )}
+          {prompt.options.some((option) => optionKeys(option, prompt) === null) && (
             <Text variant="caption" color="secondary">
               Options above 9 can’t be typed from here. Answer this one in the terminal.
             </Text>

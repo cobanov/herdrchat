@@ -1,0 +1,16 @@
+  {"questions":[{"question":"Which checks should run before
+  merging?","header":"Checks","multiSelect":true,"options":[{"label":"Type check","description":"tsc
+  --noEmit"},{"label":"Lint","description":"eslint over src and app"},{"label":"Unit tests","description":"jest"}]}]}
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Checks  ✔ Submit  →
+
+Review your answers
+
+ ● Which checks should run before merging?
+   → Lint, Type check
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel

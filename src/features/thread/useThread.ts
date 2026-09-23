@@ -762,7 +762,10 @@ export function useThread(
             };
           } else {
             const parsed = parseBlockedPrompt(raw);
-            parsedPrompt = parsed.options.length === 0 ? null : parsed;
+            // Claude answers on the digit alone; see `optionKeys`.
+            parsedPrompt = parsed.options.length === 0
+              ? null
+              : { ...parsed, submitWithEnter: blocked.agent !== 'claude' };
           }
         }
         setBlockedPrompt(parsedPrompt);
