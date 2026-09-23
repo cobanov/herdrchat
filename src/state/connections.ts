@@ -343,7 +343,10 @@ export function testClient(
     onFingerprint
   );
   return {
-    client: new HerdrClient(transport, herdrPath),
+    // Bound to the session being tested, like every saved host's client. Without
+    // it the test asked the host's DEFAULT session and reported that one's
+    // herdr version, whatever the form said (#4 acceptance).
+    client: new HerdrClient(withSession(transport, connection.sessionName), herdrPath),
     dispose: () => transport.close(),
   };
 }

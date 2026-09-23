@@ -298,10 +298,18 @@ class SshConnection(private val config: SshConfigRecord) {
     @Volatile var stopped = false
       private set
 
-    /** Closing the session is what unblocks a `readLine()` parked on the channel. */
+    /**
+     * Closing the session is what unblocks a `readLine()` parked on the channel.
+     *
+     * Off the caller's thread: sshj's close waits for the host to close its side,
+     * and the caller is Expo's single queue for every async call of this module,
+     * so a close that took 30 s held up every SSH call behind it (#4). The host
+     * now ends the command when the channel closes (`untilChannelCloses`), which
+     * keeps that wait short, but nothing should wait on it here.
+     */
     fun stop() {
       stopped = true
-      runCatching { session.close() }
+      Thread { runCatching { session.close() } }.apply { isDaemon = true }.start()
     }
   }
 }

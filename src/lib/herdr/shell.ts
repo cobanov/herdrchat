@@ -39,3 +39,39 @@ export function shellCommand(argv: readonly string[]): string {
 export function withPath(command: string): string {
   return `export PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"; ${command}`;
 }
+
+/**
+ * Run a long-lived command so that it stops when the client stops reading.
+ *
+ * Closing an SSH channel does not stop the command behind it: sshd keeps the
+ * session open while the child runs ("session_close_by_channel: has child"),
+ * and a `tail -f` on a quiet transcript never writes, so it never finds out.
+ * Every thread the app left behind a `tail -f` and every event bridge stayed
+ * running on the host, for hours (#4 acceptance, seen on both platforms).
+ *
+ * What the command does notice is its stdin: the clients keep it open for the
+ * life of the channel, and sshd closes it when the channel closes. So stdin is
+ * set aside for a watcher, the command gets /dev/null, and the watcher stops
+ * the command's leaf processes on end of input. Leaves rather than the whole
+ * tree, so a compound command's own cleanup (the FIFO bridge's) still runs.
+ * When the command ends by itself, the watcher goes and its exit status is the
+ * stream's.
+ *
+ * Portable across the login shells commands arrive in: no `status` (read-only
+ * in zsh), and process lists come from command substitution, which zsh splits
+ * where it would not split a variable.
+ */
+export function untilChannelCloses(command: string): string {
+  return [
+    'exec 3<&0',
+    'hc_leaves() { if pgrep -P "$1" >/dev/null 2>&1; then for hc_c in $(pgrep -P "$1"); do hc_leaves "$hc_c"; done; else kill "$1" 2>/dev/null; fi; }',
+    `{ ${command}`,
+    '} </dev/null &',
+    'hc_job=$!',
+    '( cat <&3 >/dev/null; hc_leaves "$hc_job" ) &',
+    'hc_watch=$!',
+    'wait "$hc_job"; hc_rc=$?',
+    'hc_leaves "$hc_watch"',
+    'exit "$hc_rc"',
+  ].join('\n');
+}

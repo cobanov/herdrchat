@@ -5,7 +5,31 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.Security
 import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Android ships a cut-down BouncyCastle under the provider name "BC", and sshj
+ * asks for "BC" by name: with Android's copy there is no X25519, no EC and no
+ * SHA-256 digest, so every handshake failed with "no such algorithm: X25519
+ * for provider BC" and no host could be reached (#4). The Compose app replaced
+ * the provider at startup; the Expo port lost that step. Swapping in the full
+ * library once, before the first connection, restores it.
+ */
+internal object Crypto {
+  @Volatile private var installed = false
+
+  fun ensureBouncyCastle() {
+    if (installed) return
+    synchronized(this) {
+      if (installed) return
+      Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+      Security.addProvider(BouncyCastleProvider())
+      installed = true
+    }
+  }
+}
 
 /**
  * Connection config as it arrives from JavaScript. Records flatten the TS
@@ -36,8 +60,11 @@ class HerdrSshModule : Module() {
 
     Events("onStreamLine", "onStreamEnd", "onStreamError")
 
+    OnCreate { Crypto.ensureBouncyCastle() }
+
     AsyncFunction("connect") Coroutine { id: String, config: SshConfigRecord ->
       try {
+        Crypto.ensureBouncyCastle()
         val connection = connections.getOrPut(id) { SshConnection(config) }
         connection.connected()
         mapOf("ok" to true, "fingerprint" to (connection.acceptedFingerprint ?: ""))

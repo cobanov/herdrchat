@@ -200,10 +200,21 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
   }, []);
 
+  /**
+   * The native scroll view, scrolled directly. FlashList's own `scrollToEnd`
+   * finishes in a timer that dereferences its scroll view without a check, and
+   * a list that unmounts in between (a reload remounts it by `key`) threw there:
+   * Reload crashed the app every time on Android (#4 acceptance), and an
+   * uncaught error is fatal in any release build.
+   */
+  const scrollListToEnd = useCallback((animated: boolean) => {
+    listRef.current?.getNativeScrollRef()?.scrollToEnd({ animated });
+  }, []);
+
   const restoreBottom = useCallback(() => {
     pinnedToBottom.current = true;
-    listRef.current?.scrollToEnd({ animated: false });
-  }, []);
+    scrollListToEnd(false);
+  }, [scrollListToEnd]);
 
   useFocusEffect(
     useCallback(() => {
@@ -220,9 +231,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const jumpToBottom = useCallback(() => {
     pinnedToBottom.current = true;
-    listRef.current?.scrollToEnd({ animated: true });
+    scrollListToEnd(true);
     setAtBottom(true);
-  }, []);
+  }, [scrollListToEnd]);
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
@@ -593,9 +604,11 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     <Pressable
                       onPress={() => {
                         haptics.light();
+                        // No scroll: the reloaded list remounts (its key is the
+                        // history version) and starts at the bottom by itself.
                         void thread.reload().then(() => {
+                          pinnedToBottom.current = true;
                           setAtBottom(true);
-                          listRef.current?.scrollToEnd({ animated: false });
                         });
                       }}
                       accessibilityRole="button"

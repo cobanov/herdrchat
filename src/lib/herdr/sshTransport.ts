@@ -10,6 +10,7 @@ import {
 } from '../../../modules/herdr-ssh/src';
 import { checkDoneMark, withDoneMark } from './doneMark';
 import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
+import { untilChannelCloses } from './shell';
 import type { HerdrTransport } from './transport';
 import { withJsDeadline } from './timeouts';
 
@@ -128,7 +129,8 @@ export class SshHerdrTransport implements HerdrTransport {
       // key, missing credentials) rather than only what (#109).
       throw new SshStreamError(opened);
     }
-    yield* streamLines(this.id, command, startTimeoutMs, signal);
+    // Stopped streams must not leave their command running on the host.
+    yield* streamLines(this.id, untilChannelCloses(command), startTimeoutMs, signal);
   }
 
   async close(): Promise<void> {
