@@ -37,3 +37,11 @@ Interoperates with (not bundled)
 herdr (https://herdr.dev) — reached over SSH on the user's own machine.
 Claude Code — its transcript files are read on the user's own machine.
 Neither is redistributed with this app.
+
+Served with the website (site/), not the app
+--------------------------------------------
+Recursive (https://github.com/arrowtype/recursive)                  OFL-1.1
+  Self-hosted in site/assets/fonts, subset to Latin; license text in
+  site/assets/fonts/OFL.txt.
+"Download on the App Store" badge                                   Apple
+  Apple's own artwork, used as Apple's marketing guidelines allow.

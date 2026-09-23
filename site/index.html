@@ -3,17 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HerdrChat — your coding agents, as a chat on your phone</title>
-<meta name="description" content="A phone client for Claude Code and Codex on your own machine. SSH over your own network. No account, no server, nothing in the middle.">
+<title>HerdrChat: Claude Code and Codex, as chats on your iPhone</title>
+<meta name="description" content="HerdrChat turns the Claude Code and Codex agents running on your computer into chats on your iPhone and iPad. Direct SSH, no account, no relay, open source.">
 <meta name="theme-color" content="#0e0e14">
 <meta name="apple-itunes-app" content="app-id=6791874615">
+<link rel="canonical" href="https://herdrchat.cobanov.dev/">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="stylesheet" href="/assets/style.css?v=7">
-<meta property="og:title" content="HerdrChat">
-<meta property="og:description" content="Your coding agents, as a chat on your phone.">
-<meta property="og:image" content="/assets/logo.png">
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/recursive-sans-v1.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/recursive-mono-v1.woff2" crossorigin>
+<link rel="stylesheet" href="/assets/style.css?v=8">
+<link rel="stylesheet" href="/assets/home.css?v=2">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://herdrchat.cobanov.dev/">
+<meta property="og:title" content="HerdrChat: less terminal, more conversation">
+<meta property="og:description" content="Claude Code and Codex, as chats on your iPhone and iPad. Straight to your machine over SSH. Free and open source.">
+<meta property="og:image" content="https://herdrchat.cobanov.dev/assets/og-v1.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MobileApplication",
+  "name": "HerdrChat",
+  "operatingSystem": "iOS 17 or later",
+  "applicationCategory": "DeveloperApplication",
+  "description": "Claude Code and Codex agents on your own computer, as chats on your iPhone and iPad.",
+  "downloadUrl": "https://apps.apple.com/app/herdrchat/id6791874615",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0"
+}
+</script>
+<script defer src="/assets/home.js?v=2"></script>
   <script
     async
     src="https://oa-c.cobanov.run/oa.js"
@@ -21,7 +44,7 @@
     data-collector="https://oa-c.cobanov.run"
   ></script>
 </head>
-<body>
+<body class="home">
 
 <header class="site-header">
   <div class="wrap nav">
@@ -31,117 +54,424 @@
     </a>
     <span class="nav-spacer"></span>
     <nav class="nav-links" aria-label="Primary">
-      <a href="/">HerdrChat</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
+      <a href="#how">How it works</a>
+      <a href="#ipad">iPad</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#setup">Setup</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/cobanov/herdrchat">GitHub</a>
-      <!-- The rule marks a boundary, not a gap: everything to its left is this
-           project, and what follows is the tool it is a client for. -->
-      <span class="nav-rule" aria-hidden="true"></span>
-      <a href="https://herdr.dev">herdr</a>
     </nav>
+    <a class="nav-cta" href="https://apps.apple.com/app/herdrchat/id6791874615" data-oa-event="app-store-nav">Get the app</a>
   </div>
 </header>
 
-<div class="wrap">
+<main>
 
-  <div class="hero">
-    <img class="hero-mark" src="/assets/logo.png" alt="HerdrChat" width="72" height="72">
-    <p class="display">The herd,<br>in your pocket.</p>
-    <p class="lede">
-      HerdrChat connects over SSH to a machine you own and shows each
-      <a href="https://herdr.dev">herdr</a> workspace running Claude Code or Codex as a
-      conversation. Read what the agent did, answer it when it is blocked, send
-      it back to work.
-    </p>
-    <div class="cta">
-      <a class="btn btn-primary" href="https://apps.apple.com/app/herdrchat/id6791874615" data-oa-event="app-store">Download on the App Store</a>
-      <a class="btn" href="https://github.com/cobanov/herdrchat" data-oa-event="view-github">Source</a>
-      <a class="btn" href="/privacy">Privacy policy</a>
-    </div>
-  </div>
+  <!-- The hero is the page's one moving part: a question Claude asks in the
+       terminal on your computer turns up on the phone, gets answered there,
+       and the terminal carries on. The markup below is the frame where the
+       question is waiting, so without JS or with reduced motion that is what
+       you see, and it tells the story on its own. -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 class="h1">
+          <span class="h1-term">Less terminal.</span>
+          <span class="h1-chat">More conversation.</span>
+        </h1>
+        <p class="lede">
+          HerdrChat turns the Claude Code and Codex agents running on your computer into
+          chats on your iPhone and iPad. Read what each one did, answer the one that is
+          stuck, and put the phone back in your pocket.
+        </p>
+        <div class="cta">
+          <a class="store" href="https://apps.apple.com/app/herdrchat/id6791874615" data-oa-event="app-store">
+            <img src="/assets/app-store-badge.svg" alt="Download on the App Store" width="150" height="50">
+          </a>
+          <a class="link-btn" href="https://github.com/cobanov/herdrchat" data-oa-event="view-github">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.6 4.9 18.6 5.2 18.6 5.2c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5z"/></svg>
+            Source on GitHub
+          </a>
+        </div>
+        <p class="hero-note">Free for iPhone and iPad. A built-in demo lets you look around before you connect anything.</p>
+      </div>
 
-  <section>
-    <h2>What it looks like</h2>
-    <p>
-      Bubbles come from the agent's own transcript files on your machine, not
-      from scraping the terminal. That is why they are clean, and why a tool call
-      can be a chip instead of a wall of output.
-    </p>
-    <!-- A grid rather than counted &nbsp;: the speaker column is one track wide,
-         so every turn hangs from the same edge no matter how long the label is
-         or how the text wraps. -->
-    <div class="panel transcript">
-      <p class="meta">herdrchat · macmini · ~/Developer/herdrchat</p>
-      <div class="turn">
-        <span class="who dim">claude</span>
-        <span>Tests are green — 102 passing. The byte accounting was the risky
-          part, so it is pinned by a test that pages to the top of a 200-turn
-          transcript.</span>
-      </div>
-      <div class="turn">
-        <span class="who you">you</span>
-        <span>ship it</span>
-      </div>
-      <div class="turn">
-        <span class="who dim">claude</span>
-        <span class="dim">● working — uploading build 36</span>
+      <div class="scene" role="img" aria-label="Claude asks a question in the terminal on your computer. It appears on your phone with the answers as buttons, you tap Yes, and the agent carries on.">
+        <div class="scene-light" aria-hidden="true"></div>
+
+        <div class="term" aria-hidden="true">
+          <div class="term-bar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span class="term-title">~/code/herdrchat: claude</span>
+          </div>
+          <div class="term-body" data-term>
+            <p class="tl tl-you">show the host fingerprint in monospace</p>
+            <p class="tl tl-tool"><b>Update</b>(src/features/servers/HostKeyPanels.tsx)</p>
+            <p class="tl tl-out">Updated with 4 additions and 1 removal</p>
+            <p class="tl tl-say">Done. The fingerprint is monospaced and wraps in pairs now.</p>
+            <p class="tl tl-you">why does an empty folder look like an error?</p>
+            <p class="tl tl-tool"><b>Read</b>(src/lib/herdr/client.ts)</p>
+            <p class="tl tl-out">Read 214 lines</p>
+            <p class="tl tl-tool"><b>Search</b>(pattern: "; true", path: "src/lib")</p>
+            <p class="tl tl-out">Found 1 file</p>
+            <p class="tl tl-say">Found it. listDirectories appends "; true", so an unreadable path exits 0 and looks exactly like an empty folder.</p>
+            <div class="tl-ask">
+              <p>Before I write to client.ts: this changes what every caller of listDirectories sees on failure. Want me to go ahead?</p>
+              <p class="tl-opt on">1. Yes, go ahead</p>
+              <p class="tl-opt">2. No, tell me more first</p>
+            </div>
+          </div>
+          <div class="term-foot"><span>herdr</span><span class="on">1 herdrchat</span><span>2 notes</span><span>3 scratch</span></div>
+        </div>
+
+        <div class="iphone iphone-hero" aria-hidden="true">
+          <div class="screen">
+            <div class="ios-bar">
+              <b>9:41</b>
+              <span class="ios-icons">
+                <svg viewBox="0 0 18 12" width="18" height="12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+                <svg viewBox="0 0 16 12" width="16" height="12"><path d="M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0z"/><path d="M3.5 7a6.4 6.4 0 0 1 9 0l-1.4 1.4a4.4 4.4 0 0 0-6.2 0z"/><path d="M1.2 4.7a9.7 9.7 0 0 1 13.6 0l-1.4 1.4a7.7 7.7 0 0 0-10.8 0z"/></svg>
+                <svg viewBox="0 0 27 12" width="27" height="12"><rect x=".5" y=".5" width="23" height="11" rx="3.5" fill="none" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="24.5" y="4" width="1.8" height="4" rx=".9" opacity=".45"/></svg>
+              </span>
+            </div>
+            <div class="island"></div>
+
+            <div class="banner show" data-banner>
+              <img src="/assets/logo.png" alt="" width="40" height="40">
+              <div>
+                <p class="banner-top"><b>herdrchat</b><span>now</span></p>
+                <p>Claude is waiting for your input</p>
+              </div>
+            </div>
+
+            <div class="p-head">
+              <svg class="p-back" viewBox="0 0 12 20" width="12" height="20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="p-head-mid">
+                <p class="p-title">herdrchat</p>
+                <p class="p-sub waiting" data-status><i></i><span data-status-text>Opus 5 · herdrchat · waiting for reply</span></p>
+              </div>
+              <svg class="p-refresh" viewBox="0 0 20 20" width="20" height="20"><path d="M16.5 10.5a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M15 2.5v4h-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+
+            <div class="p-body" data-phone>
+              <p class="p-day">Today 12:06</p>
+              <div class="b b-out">sort the host list by last connection</div>
+              <div class="b b-in">The host list sorts by last connection now.</div>
+              <div class="b b-out">show the host fingerprint in monospace</div>
+              <div class="b b-in b-tool"><span>Edit src/features/servers/HostKeyPanels.tsx</span></div>
+              <div class="b b-in">Done. The fingerprint is monospaced and wraps in pairs now.</div>
+              <div class="b b-out">why does an empty folder look like an error?</div>
+              <div class="b b-in b-tool"><span>Read src/lib/herdr/client.ts</span></div>
+              <div class="b b-in b-tool"><span>Search "; true" in src/lib</span></div>
+              <div class="b b-in">Found it. <code>listDirectories</code> appends <code>; true</code>, so an unreadable path exits 0 and looks exactly like an empty folder.</div>
+            </div>
+
+            <div class="p-ask" data-ask>
+              <p class="p-ask-q"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M3 1.5h10A2.5 2.5 0 0 1 15.5 4v6a2.5 2.5 0 0 1-2.5 2.5H7L3.5 15v-2.5H3A2.5 2.5 0 0 1 .5 10V4A2.5 2.5 0 0 1 3 1.5z"/><path d="M8 4v4M8 10.2v.1" stroke="#1a1204" stroke-width="1.7" stroke-linecap="round"/></svg>Before I write to client.ts: this changes what every caller of listDirectories sees on failure. Want me to go ahead?</p>
+              <p class="p-opt" data-opt><b>1</b>Yes, go ahead</p>
+              <p class="p-opt"><b>2</b>No, tell me more first</p>
+            </div>
+
+            <div class="p-compose"><span>Message</span><i></i></div>
+            <span class="tap" data-tap></span>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2>How it is built</h2>
-    <div class="grid">
-      <div class="card">
-        <h3>No account, no server</h3>
-        <p>
-          There is nothing to sign into and no service of ours in the path. The
-          connection is your phone to your machine, over SSH.
+  <!-- ---------- the list ---------- -->
+  <section id="how" class="band">
+    <div class="wrap split split-media-left">
+      <figure class="split-media">
+        <div class="iphone iphone-shot">
+          <div class="screen">
+            <img src="/assets/shot-chats-dark-v1.webp" alt="The Chats screen: herdrchat under Needs you, waiting for input, with notes and scratch under Idle" width="603" height="1311" loading="lazy">
+            <div class="island"></div>
+          </div>
+        </div>
+      </figure>
+      <div class="split-copy">
+        <h2 class="h2">Open it, and the agent that needs you is on top.</h2>
+        <p class="body-lg">
+          Every herdr workspace on your machine shows up as a chat, grouped by what it is
+          doing. One glance tells you whether anything is waiting on you, and your history
+          is all there, including the replies you started at your desk.
         </p>
-      </div>
-      <div class="card">
-        <h3>Private by construction</h3>
-        <p>
-          Normally over a private network such as Tailscale, so nothing is
-          exposed publicly. Host keys are pinned the first time you connect.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Keys stay in the Keychain</h3>
-        <p>
-          Your SSH key or password lives in the device Keychain, never in the
-          app's database and never off the device.
-        </p>
-      </div>
-      <div class="card">
-        <h3>Notifications from your own machine</h3>
-        <p>
-          A watcher you run on your host pushes straight to Apple with your own
-          key. Optional, and nothing of ours sits in the middle.
-        </p>
+        <dl class="states">
+          <div class="state state-need">
+            <dt><i></i>Needs you</dt>
+            <dd>Blocked on a question or a permission. It waits at the top, and your phone can buzz when it happens.</dd>
+          </div>
+          <div class="state state-work">
+            <dt><i></i>Working</dt>
+            <dd>Busy on its task. Open it and read along as the transcript grows.</dd>
+          </div>
+          <div class="state state-idle">
+            <dt><i></i>Idle</dt>
+            <dd>Done, or waiting for the next thing to do. Send it one from wherever you are.</dd>
+          </div>
+        </dl>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2>Status</h2>
-    <p>
-      <a href="https://apps.apple.com/app/herdrchat/id6791874615">On the App Store</a>, free, for iPhone and iPad on
-      iOS 17 or later. Android compiles but has not been runtime-verified and
-      has no release path yet. Open source under the Apache License 2.0; the
-      honest version of this list is in the
-      <a href="https://github.com/cobanov/herdrchat/issues">issues</a>.
-    </p>
-    <p>
-      You will need <a href="https://herdr.dev">herdr</a> and Claude Code or Codex
-      on the machine you want to reach. Follow the
-      <a href="https://github.com/cobanov/herdrchat/blob/main/docs/getting-started.md">setup guide</a>
-      to connect each agent to its own session.
-    </p>
+  <!-- ---------- the thread ---------- -->
+  <section class="band">
+    <div class="wrap split">
+      <div class="split-copy">
+        <h2 class="h2">Bubbles, not scrollback.</h2>
+        <p class="body-lg">
+          HerdrChat reads each agent's own transcript files on your machine instead of
+          scraping the terminal. What you get is the conversation: clean messages, code
+          blocks and tables, with the tool activity folded out of the way.
+        </p>
+        <!-- A key, not a sequence: each number marks a spot on the screenshot. -->
+        <ol class="keys">
+          <li><span class="k">1</span>Model, folder and state live in the header.</li>
+          <li><span class="k">2</span>A tool call folds into a single line.</li>
+          <li><span class="k">3</span>What you type goes into the real session.</li>
+          <li><span class="k">4</span>A question arrives with its answers as buttons.</li>
+        </ol>
+      </div>
+      <figure class="split-media">
+        <div class="iphone iphone-shot">
+          <div class="screen">
+            <img src="/assets/shot-thread-blocked-dark-v1.webp" alt="A conversation where Claude asks before editing client.ts, with Yes and No as tappable answers" width="603" height="1311" loading="lazy">
+            <div class="island"></div>
+          </div>
+          <span class="pin" style="--y: 10.5%" aria-hidden="true">1</span>
+          <span class="pin" style="--y: 41%" aria-hidden="true">2</span>
+          <span class="pin" style="--y: 49.5%" aria-hidden="true">3</span>
+          <span class="pin" style="--y: 81%" aria-hidden="true">4</span>
+        </div>
+      </figure>
+    </div>
   </section>
 
-</div>
+  <!-- ---------- iPad ---------- -->
+  <section id="ipad" class="band band-ipad">
+    <div class="wrap">
+      <div class="head-row">
+        <h2 class="h2">On iPad, the list stays beside the conversation.</h2>
+        <p class="body-lg">
+          Keep the whole herd in the sidebar and one agent open beside it, on the couch
+          or on a stand next to your keyboard.
+        </p>
+      </div>
+
+      <div class="ipad" aria-label="HerdrChat on iPad: the chat list in a sidebar, and a Codex conversation with a code block and a table beside it" role="img">
+        <div class="ipad-screen">
+          <div class="ipad-bar"><b>9:41</b><span>Tue 23 Sep</span><span class="nav-spacer"></span><span class="ios-icons">
+            <svg viewBox="0 0 16 12" width="16" height="12"><path d="M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0z"/><path d="M3.5 7a6.4 6.4 0 0 1 9 0l-1.4 1.4a4.4 4.4 0 0 0-6.2 0z"/><path d="M1.2 4.7a9.7 9.7 0 0 1 13.6 0l-1.4 1.4a7.7 7.7 0 0 0-10.8 0z"/></svg>
+            <svg viewBox="0 0 27 12" width="27" height="12"><rect x=".5" y=".5" width="23" height="11" rx="3.5" fill="none" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="17" height="8" rx="2"/><rect x="24.5" y="4" width="1.8" height="4" rx=".9" opacity=".45"/></svg>
+          </span></div>
+
+          <aside class="ip-side">
+            <div class="ip-title-row"><p class="ip-title">Chats</p><svg viewBox="0 0 20 20" width="20" height="20"><path d="M9 3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="m15.5 2.5 2 2-7 7-2.6.6.6-2.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+            <p class="ip-host">Mac mini<i></i></p>
+            <p class="ip-search">Search chats</p>
+
+            <p class="ip-group ip-group-need"><span>NEEDS YOU</span><i></i><span>1</span></p>
+            <div class="ip-card ip-card-need">
+              <span class="ip-badge"><svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 3v14M3.9 6.5l12.2 7M3.9 13.5l12.2-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+              <div><b>herdrchat</b><small>Claude · code/herdrchat</small><em>Waiting for your input</em></div>
+              <span class="ip-state ip-state-need">!</span>
+            </div>
+
+            <p class="ip-group"><span>WORKING</span><i></i><span>1</span></p>
+            <div class="ip-card ip-card-open">
+              <span class="ip-badge ip-badge-code">&lt;/&gt;</span>
+              <div><b>api</b><small>Codex · code/api</small><em class="ip-working">Running tests</em></div>
+              <span class="ip-state ip-state-work">···</span>
+            </div>
+
+            <p class="ip-group"><span>IDLE</span><i></i><span>2</span></p>
+            <div class="ip-card">
+              <span class="ip-badge"><svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 3v14M3.9 6.5l12.2 7M3.9 13.5l12.2-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+              <div><b>notes</b><small>Claude · code/notes</small><em>Idle</em></div>
+              <span class="ip-state"></span>
+            </div>
+            <div class="ip-card">
+              <span class="ip-badge"><svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 3v14M3.9 6.5l12.2 7M3.9 13.5l12.2-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+              <div><b>site</b><small>Claude · code/site</small><em>Done</em></div>
+              <span class="ip-state"></span>
+            </div>
+          </aside>
+
+          <div class="ip-main">
+            <div class="ip-head">
+              <p class="p-title">api</p>
+              <p class="p-sub"><i></i><span>Codex · api · working</span></p>
+            </div>
+            <div class="ip-thread">
+              <p class="p-day">Today 09:40</p>
+              <div class="b b-out">ship 4.2.1 to staging</div>
+              <div class="b b-in b-tool"><span>Run make deploy ENV=staging</span></div>
+              <div class="b b-in">4.2.1 is on staging and every check is green.</div>
+              <p class="p-day">Today 11:02</p>
+              <div class="b b-out">p95 on /search doubled since Friday. Can you find out why?</div>
+              <div class="b b-in b-tool"><span>Run git log --since=friday -- src/search</span></div>
+              <div class="b b-in">
+                One change touches that path. <code>a41c9e2</code> moved the rank filter after
+                the join, so every query now scores the full table:
+                <pre><span class="c-k">const</span> rows = <span class="c-k">await</span> db.search(q)
+<span class="c-dim">  // was: .where(rank &gt; 0.2) before the join</span>
+  .join(<span class="c-s">'docs'</span>)
+  .where(<span class="c-s">'rank'</span>, <span class="c-s">'&gt;'</span>, <span class="c-n">0.2</span>)</pre>
+                <table>
+                  <thead><tr><th>Query</th><th>Before</th><th>Now</th></tr></thead>
+                  <tbody>
+                    <tr><td>short</td><td>41 ms</td><td>88 ms</td></tr>
+                    <tr><td>long</td><td>63 ms</td><td>131 ms</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="b b-out">Move it back and add a benchmark.</div>
+              <div class="b b-in b-tool"><span>Edit src/search/query.ts</span></div>
+              <div class="b b-in b-tool"><span>Run npm run bench -- search</span></div>
+            </div>
+            <div class="p-compose"><span>Message</span><i></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- privacy ---------- -->
+  <section id="privacy" class="band">
+    <div class="wrap">
+      <div class="head-row">
+        <h2 class="h2">Your phone, your computer, and nothing in between.</h2>
+        <p class="body-lg">
+          HerdrChat connects straight to your machine over SSH, usually across your own
+          Tailscale network. There is no HerdrChat account and no relay, so your code and
+          your conversations never pass through us. The <a href="/privacy">privacy policy</a>
+          spells out the rest.
+        </p>
+      </div>
+
+      <div class="path" aria-label="Your iPhone or iPad connects over SSH to your computer, where herdr runs Claude Code and Codex." role="img">
+        <div class="path-node">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <b>Your iPhone or iPad</b>
+          <span>HerdrChat</span>
+        </div>
+        <div class="path-link">
+          <span class="path-wire"></span>
+          <b>SSH</b>
+          <span>over Tailscale or your own network</span>
+        </div>
+        <div class="path-node path-host">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <b>Your computer</b>
+          <span class="path-stack"><code>herdr</code><code>claude</code><code>codex</code></span>
+        </div>
+      </div>
+
+      <dl class="facts">
+        <div><dt>No account</dt><dd>There is nothing to sign up for. Add a host and you are in.</dd></div>
+        <div><dt>No relay</dt><dd>The connection runs from your phone to your computer. No server of ours sits in the path.</dd></div>
+        <div><dt>Keys in the Keychain</dt><dd>Your SSH key or password stays in the iOS Keychain, never in the app's database and never off the device.</dd></div>
+        <div><dt>Host keys pinned</dt><dd>You check the fingerprint the first time you connect. After that, a changed key stops the connection.</dd></div>
+        <div><dt>Alerts from your own host</dt><dd>Optional. A small watcher on your computer pushes straight to Apple with your own key.</dd></div>
+        <div><dt>Open source</dt><dd>Apache-2.0. You can read every line that talks to your machine.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ---------- setup ---------- -->
+  <section id="setup" class="band">
+    <div class="wrap">
+      <div class="head-row">
+        <h2 class="h2">Running in three steps.</h2>
+        <p class="body-lg">
+          You need <a href="https://herdr.dev">herdr</a> and Claude Code or Codex on a
+          computer your phone can reach over SSH.
+        </p>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <span class="step-n">1</span>
+          <h3>Prepare your computer</h3>
+          <p>Install herdr's integration for your agent, so each chat can find its own session.</p>
+          <pre class="cmd"><span class="cmd-p">$</span> herdr integration install claude</pre>
+          <p class="step-fine">Using Codex? Open its chat in the app and choose Install it on the host.</p>
+        </li>
+        <li>
+          <span class="step-n">2</span>
+          <h3>Add it in HerdrChat</h3>
+          <p>Under Hosts, enter the address, your SSH user and a key or password. Test the connection and check the fingerprint.</p>
+          <pre class="cmd"><span class="cmd-p">host</span> 100.64.0.12   <span class="cmd-p">user</span> you</pre>
+        </li>
+        <li>
+          <span class="step-n">3</span>
+          <h3>Open a chat</h3>
+          <p>Pick a workspace under Chats. From there it is a conversation: read it, answer it, send the next task.</p>
+          <pre class="cmd"><span class="cmd-p">Chats</span> › herdrchat</pre>
+        </li>
+      </ol>
+
+      <p class="setup-foot">
+        Just looking? The app ships with a demo host, so you can try every screen before
+        connecting anything. <a href="https://github.com/cobanov/herdrchat/blob/main/docs/getting-started.md">Read the full setup guide</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ---------- FAQ ---------- -->
+  <section id="faq" class="band">
+    <div class="wrap faq-grid">
+      <h2 class="h2">Questions</h2>
+      <div class="faq">
+        <details>
+          <summary>Does my code go through your servers?</summary>
+          <p>No. There are no HerdrChat servers. The app opens an SSH connection from your phone to your computer and reads the agent's transcript there. Nothing is copied anywhere else.</p>
+        </details>
+        <details>
+          <summary>Can I try it before setting anything up?</summary>
+          <p>Yes. The app ships with a demo host that behaves like a real one, with chats that need you, chats that are idle and answers you can tap. It is what you see before you add a host, and it stays under Hosts after.</p>
+        </details>
+        <details>
+          <summary>Do I need Tailscale?</summary>
+          <p>No. Any network where your phone can reach your computer over SSH works. Tailscale is simply the easiest way to do that from anywhere without opening SSH to the internet.</p>
+        </details>
+        <details>
+          <summary>Which agents does it work with?</summary>
+          <p>Claude Code and Codex, running inside <a href="https://herdr.dev">herdr</a> workspaces. Each workspace is one chat.</p>
+        </details>
+        <details>
+          <summary>Can I get a notification when an agent needs me?</summary>
+          <p>Yes, if you want it. A small watcher on your computer sends the push straight to Apple with your own key, so no service of ours is involved. The <a href="https://github.com/cobanov/herdrchat/blob/main/docs/getting-started.md">setup guide</a> walks through it.</p>
+        </details>
+        <details>
+          <summary>What does it cost?</summary>
+          <p>Nothing. HerdrChat is free on the App Store and open source under the Apache License 2.0.</p>
+        </details>
+        <details>
+          <summary>Is there an Android version?</summary>
+          <p>Not yet. The Android build compiles, but it has not been tested on a device and there is no release. Follow the <a href="https://github.com/cobanov/herdrchat/issues">issues</a> for progress.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- closing ---------- -->
+  <section class="closing">
+    <div class="wrap closing-in">
+      <img src="/assets/logo.png" alt="" width="72" height="72" class="closing-mark">
+      <h2 class="h1 closing-h">Let the herd run.<br>Answer from anywhere.</h2>
+      <div class="cta cta-center">
+        <a class="store" href="https://apps.apple.com/app/herdrchat/id6791874615" data-oa-event="app-store-footer">
+          <img src="/assets/app-store-badge.svg" alt="Download on the App Store" width="150" height="50" loading="lazy">
+        </a>
+        <a class="link-btn" href="https://github.com/cobanov/herdrchat/blob/main/docs/getting-started.md">Setup guide</a>
+      </div>
+    </div>
+  </section>
+
+</main>
 
 <footer class="site-footer">
   <div class="wrap foot-row">
