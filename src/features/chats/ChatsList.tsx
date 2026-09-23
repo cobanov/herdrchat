@@ -17,6 +17,8 @@ import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
+import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
+import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegrations';
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
@@ -62,6 +64,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
   const { summaries, loading, error, herdrMissing, serverStopped, refresh } = useWorkspaces(client);
+  const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
   const rows = useMemo(() => groupChats(summaries, query), [summaries, query]);
   /** One flag for both recovery actions, only one is ever offered at a time. */
@@ -230,6 +233,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             }
           />
         ))}
+
+      {error === null && integrations.outdated.length > 0 && (
+        <IntegrationBanner
+          outdated={integrations.outdated}
+          updating={integrations.updating}
+          error={integrations.error}
+          onUpdate={() => void integrations.update()}
+        />
+      )}
 
       {connection !== null && summaries.length > 0 && (
         <View style={{ paddingHorizontal: screenPadding, paddingBottom: spacing.sm }}>
