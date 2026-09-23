@@ -1,4 +1,4 @@
-import { HerdrError, decodeEnvelope, herdrErrorFrom } from './protocol';
+import { HerdrError, decodeEnvelope, herdrError, herdrErrorFrom } from './protocol';
 import { commandWord, shellQuote, withPath } from './shell';
 import type { HerdrTransport } from './transport';
 
@@ -19,14 +19,18 @@ import type { HerdrTransport } from './transport';
  * one request per connection. Only `events.subscribe` keeps it open.
  *
  * HOW A REQUEST GETS TO THE SOCKET. Nothing on the phone can open a Unix
- * socket on the host, so a small program on the host does it. Two candidates,
- * probed once per client:
+ * socket on the host, so a small program on the host does it. Three
+ * candidates, probed once per client, in this order:
  *
  * - `python3`: a six-line bridge passed on the command line. Present on every
  *   Linux herdr runs on and on any Mac with the developer tools. 17 ms per
  *   round-trip on loopback.
  * - `herdr api-bridge`: the jerryfane fork's own subcommand. Fastest, but
  *   fork-only; upstream answers `unknown command`.
+ * - `herdr remote-api-bridge`: upstream's own relay, from 0.9.1. What a host
+ *   without python3 uses (a Mac without the developer tools, a slim
+ *   container), which otherwise fell back to polling the CLI (#116). See
+ *   `remoteBridgeCommand` for why it cannot simply be piped a request.
  *
  * `nc -U` was measured and rejected: macOS `nc` exits at stdin EOF, so a
  * request that takes longer than the write (`agent.prompt` with `wait`, any
@@ -89,6 +93,7 @@ export class HerdrSocket {
       throw (
         herdrErrorFrom(result.stdout) ??
         herdrErrorFrom(result.stderr) ??
+        bridgeStderr(result.stderr) ??
         new HerdrError(
           'ssh_command_failed',
           `The socket bridge failed on the host (exit ${result.exitCode}): ${firstLine(result.stderr)}`
@@ -175,7 +180,7 @@ export class HerdrSocket {
 
 /** A way to reach the socket on a host, and where the socket is. */
 export interface SocketRoute {
-  readonly bridge: 'python3' | 'api-bridge';
+  readonly bridge: 'python3' | 'api-bridge' | 'remote-api-bridge';
   readonly socketPath: string;
 }
 
@@ -251,7 +256,42 @@ function bridgeCommand(route: SocketRoute, request: string, herdr: string): stri
       // variables would point it at the pane's own session; a phone is never
       // in one, but the command is the same either way.
       return withPath(`${commandWord(herdr)} api-bridge ${base64(request)}`);
+    case 'remote-api-bridge':
+      return withPath(remoteBridgeCommand(herdr, request));
   }
+}
+
+/**
+ * Upstream's bridge copies stdin to the socket and the socket to stdout, and
+ * the server takes the end of stdin as the client leaving. Measured on 0.9.1:
+ * piped a request, a subscription stopped right after `subscription_started`,
+ * and a request that waits (`agent.prompt` with `wait`) came back with no
+ * output at all, exit 0.
+ *
+ * So stdin is a FIFO held open by a sleeping writer. Holding it with a pipe
+ * from `sleep` would work too, but the shell waits for every member of a
+ * pipeline and the answer would sit there until the sleep ran out; here the
+ * holder is killed (and reaped quietly) as soon as the bridge exits, and the
+ * bridge's own status is the command's. Checked under sh, dash, bash and zsh.
+ */
+function remoteBridgeCommand(herdr: string, request: string): string {
+  return [
+    'd=$(mktemp -d) && mkfifo "$d/in" && {',
+    `{ printf '%s\n' ${shellQuote(request)}; exec sleep 2147483647; } > "$d/in" & h=$!;`,
+    `${commandWord(herdr)} remote-api-bridge < "$d/in"; s=$?;`,
+    'kill "$h" 2>/dev/null; wait "$h" 2>/dev/null; rm -rf "$d"; (exit "$s"); }',
+  ].join(' ');
+}
+
+/**
+ * What a bridge's stderr says, when it is something the app has a word for.
+ * Upstream's bridge reports a missing socket as a Rust error, not an envelope.
+ */
+function bridgeStderr(stderr: string): HerdrError | null {
+  if (stderr.includes('failed to connect to remote Herdr API socket')) {
+    return herdrError('server_not_running', firstLine(stderr));
+  }
+  return null;
 }
 
 /**
@@ -299,6 +339,7 @@ export function probeScript(herdr: string): string {
     'py=$(command -v python3 2>/dev/null)',
     'if [ -n "$py" ] && { [ "$(uname)" != Darwin ] || [ "$py" != /usr/bin/python3 ] || xcode-select -p >/dev/null 2>&1; }; then b=python3',
     `elif ${h} api-bridge >/dev/null 2>&1; then b=api-bridge`,
+    `elif [ "$(${h} remote-api-bridge --check </dev/null 2>/dev/null)" = herdr-api-bridge-v1 ]; then b=remote-api-bridge`,
     'else b=none; fi',
     'echo "BRIDGE $b"; echo "SOCK $sock"',
   ].join('; ');
@@ -322,7 +363,9 @@ export function parseProbe(stdout: string): SocketRoute | null {
     else if (line.startsWith('SOCK ')) socketPath = line.slice(5).trim();
   }
   if (socketPath === null || socketPath.length === 0) return null;
-  if (bridge === 'python3' || bridge === 'api-bridge') return { bridge, socketPath };
+  if (bridge === 'python3' || bridge === 'api-bridge' || bridge === 'remote-api-bridge') {
+    return { bridge, socketPath };
+  }
   return null;
 }
 

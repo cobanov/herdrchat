@@ -155,6 +155,11 @@ export function herdrErrorFrom(output: string): HerdrError | null {
     return null;
   }
 
+  return herdrError(code, message);
+}
+
+/** An error with herdr's code, worded for a phone where that differs. */
+export function herdrError(code: string, message: string): HerdrError {
   return new HerdrError(code, humanise(code, message));
 }
 

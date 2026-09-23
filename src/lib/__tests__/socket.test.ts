@@ -253,3 +253,70 @@ describe('subscribe', () => {
     expect(decodeEvent('{"id":"x","result":{"type":"pong"}}')).toBeNull();
   });
 });
+
+// herdr 0.9.1's own bridge, for hosts without python3 (#116).
+describe('remote-api-bridge', () => {
+  const REMOTE_PROBE = 'BRIDGE remote-api-bridge\nSOCK /home/u/.config/herdr/herdr.sock\n';
+
+  it('is found by its capability line, after the other two', () => {
+    expect(parseProbe(REMOTE_PROBE)?.bridge).toBe('remote-api-bridge');
+    const script = probeScript('herdr');
+    expect(script).toContain("remote-api-bridge --check </dev/null 2>/dev/null)\" = herdr-api-bridge-v1");
+    expect(script.indexOf('b=python3')).toBeLessThan(script.indexOf('b=remote-api-bridge'));
+  });
+
+  // The server takes the end of stdin as the client leaving: a subscription
+  // stopped at once, and a waiting request answered nothing. The command has
+  // to keep stdin open, and still end as soon as the bridge does.
+  it('keeps stdin open for the bridge and ends when the bridge does', () => {
+    const { execFileSync } = jest.requireActual<typeof import('node:child_process')>('node:child_process');
+    const { mkdtempSync, writeFileSync, chmodSync, rmSync } = jest.requireActual<typeof import('node:fs')>('node:fs');
+    const { tmpdir } = jest.requireActual<typeof import('node:os')>('node:os');
+    const dir = mkdtempSync(`${tmpdir()}/hc-bridge-`);
+    const fake = `${dir}/herdr`;
+    // Answers the request, then reports whether stdin was still open.
+    // Python rather than bash: macOS ships bash 3.2, where a `read -t` timeout
+    // and end of input return the same status.
+    writeFileSync(fake, [
+      '#!/usr/bin/env python3',
+      'import json, os, select, sys',
+      'if sys.argv[1:] != ["remote-api-bridge"]: sys.exit(2)',
+      'data = b""',
+      'while not data.endswith(b"\\n"):',
+      '    chunk = os.read(0, 4096)',
+      '    if not chunk: break',
+      '    data += chunk',
+      'ready = select.select([0], [], [], 1.0)[0]',
+      'held = "open" if not ready else ("closed" if os.read(0, 1) == b"" else "data")',
+      'print(json.dumps({"id": "1", "result": {"type": "echo", "stdin": held, "got": json.loads(data)}}))',
+    ].join('\n'));
+    chmodSync(fake, 0o755);
+    try {
+      const command = commandFor({ bridge: 'remote-api-bridge', socketPath: '/unused' }, '{"id":"1","method":"ping"}', fake);
+      const started = Date.now();
+      const out = execFileSync('sh', ['-c', command], { encoding: 'utf8', timeout: 10_000 });
+      expect(JSON.parse(out)).toEqual({ id: '1', result: { type: 'echo', stdin: 'open', got: { id: '1', method: 'ping' } } });
+      // The holder sleeps for years; the command must not wait for it.
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a missing socket from the bridge's stderr as herdr not running", async () => {
+    const transport: HerdrTransport = {
+      exec: async (command: string) =>
+        (command.includes('BRIDGE')
+          ? { ok: true, exitCode: 0, stdout: REMOTE_PROBE, stderr: '' }
+          : {
+              ok: true,
+              exitCode: 1,
+              stdout: '',
+              stderr: 'Error: Custom { kind: NotFound, error: "failed to connect to remote Herdr API socket /home/u/.config/herdr/herdr.sock: No such file or directory (os error 2)" }',
+            }) as never,
+      streamLines: async function* () {},
+    };
+    const socket = new HerdrSocket(transport, 'herdr');
+    await expect(socket.call('ping', {}, 1000)).rejects.toMatchObject({ code: 'server_not_running' });
+  });
+});
