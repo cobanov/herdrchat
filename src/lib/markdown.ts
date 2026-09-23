@@ -41,12 +41,18 @@ export function parseMarkdown(text: string): MarkdownBlock[] {
     const line = lines[index] ?? '';
     const trimmed = line.trim();
 
-    if (trimmed.startsWith('```')) {
+    const fence = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+    if (fence !== null) {
       flush();
-      const language = trimmed.slice(3).trim();
+      // Closed only by the same character, at least as long, and nothing else
+      // on the line (#108). A block opened with four backticks can therefore
+      // show a three-backtick example inside it, and `~~~` fences work.
+      const marker = fence[1] ?? '```';
+      const closing = new RegExp(`^${marker[0] === '~' ? '~' : '`'}{${marker.length},}\\s*$`);
+      const language = (fence[2] ?? '').trim();
       const code: string[] = [];
       index += 1;
-      while (index < lines.length && !(lines[index] ?? '').trim().startsWith('```')) {
+      while (index < lines.length && !closing.test((lines[index] ?? '').trim())) {
         code.push(lines[index] ?? '');
         index += 1;
       }
@@ -155,7 +161,10 @@ export type InlineSpan =
  */
 export function parseInline(text: string): InlineSpan[] {
   const spans: InlineSpan[] = [];
-  const pattern = /(\[([^\]]+)\]\(([^)\s]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(_([^_]+)_)/g;
+  // The link target allows one level of balanced parentheses, so a URL such as
+  // https://en.wikipedia.org/wiki/Rust_(programming_language) is not cut at its
+  // first `)` (#108).
+  const pattern = /(\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(_([^_]+)_)/g;
 
   let cursor = 0;
   for (;;) {
