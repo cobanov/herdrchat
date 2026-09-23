@@ -141,8 +141,58 @@ struct SshConfigRecord {
       preconditionFailure("Reconnect accepted a different host key")
     } catch let error as SshFailure {
       precondition(error.code == "host_key_changed")
+      let pinnedKey = await connection.acceptedFingerprint
+      precondition(error.presentedFingerprint != nil && error.presentedFingerprint != pinnedKey,
+                   "A refused key must carry the fingerprint the host presented")
     }
     await connection.close()
-    print("PASS real handshake A -> A accepted, A -> B rejected")
+    print("PASS real handshake A -> A accepted, A -> B rejected, with the new key's fingerprint")
+
+    // Failed handshakes must not leave their TCP connections open: the polls
+    // retry every few seconds, and each leftover pre-auth connection counts
+    // against sshd's MaxStartups until it refuses the phone altogether.
+    func openConnections() throws -> Int {
+      let lsof = Process()
+      lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+      lsof.arguments = ["-a", "-p", String(ProcessInfo.processInfo.processIdentifier), "-iTCP:\(config.port)", "-sTCP:ESTABLISHED", "-t"]
+      let pipe = Pipe()
+      lsof.standardOutput = pipe
+      lsof.standardError = FileHandle.nullDevice
+      try lsof.run()
+      lsof.waitUntilExit()
+      _ = pipe.fileHandleForReading.readDataToEndOfFile()
+      return try openSockets()
+    }
+    func openSockets() throws -> Int {
+      let lsof = Process()
+      lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+      lsof.arguments = ["-a", "-p", String(ProcessInfo.processInfo.processIdentifier), "-iTCP:\(config.port)", "-sTCP:ESTABLISHED", "-Fn"]
+      let pipe = Pipe()
+      lsof.standardOutput = pipe
+      lsof.standardError = FileHandle.nullDevice
+      try lsof.run()
+      lsof.waitUntilExit()
+      let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      return out.split(separator: "\n").filter { $0.hasPrefix("n") }.count
+    }
+    var pinned = config
+    pinned.hostKeyFingerprint = await connection.acceptedFingerprint
+    for _ in 0..<8 {
+      let attempt = SshConnection(config: pinned)
+      if (try? await attempt.connected()) != nil { preconditionFailure("A changed key was accepted") }
+      await attempt.close()
+    }
+    var badKey = config
+    badKey.privateKey = try String(contentsOfFile: "\(directory)/host_a", encoding: .utf8)
+    badKey.hostKeyFingerprint = nil
+    for _ in 0..<8 {
+      let attempt = SshConnection(config: badKey)
+      if (try? await attempt.connected()) != nil { preconditionFailure("A rejected key logged in") }
+      await attempt.close()
+    }
+    try await Task.sleep(nanoseconds: 500_000_000)
+    let leftover = try openConnections()
+    precondition(leftover == 0, "\(leftover) connections left open by failed handshakes")
+    print("PASS 16 failed handshakes (changed key, rejected key) leave no connection open")
   }
 }

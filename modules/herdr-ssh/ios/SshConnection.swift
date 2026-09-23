@@ -2,6 +2,7 @@ import Foundation
 import Citadel
 import Crypto
 import NIOCore
+import NIOPosix
 import NIOSSH
 import Network
 
@@ -11,6 +12,9 @@ import Network
 struct SshFailure: Error {
   let code: String
   let message: String
+  /// On `host_key_changed`: the fingerprint the host presented, so the app can
+  /// show what it is being asked to trust instead of only the old pin.
+  var presentedFingerprint: String? = nil
 
   static func connect(_ error: Error) -> SshFailure {
     // Citadel surfaces auth rejection as an authentication error and everything
@@ -70,6 +74,8 @@ actor SshConnection {
   /// feed and the previews all fire at once, so one host got five logins, and
   /// the four replaced clients were never closed (#84).
   private var connecting: Task<SSHClient, Error>?
+  /// The event loop group each live client runs on, shut down with it.
+  private var groups: [ObjectIdentifier: MultiThreadedEventLoopGroup] = [:]
   /// The host key fingerprint this connection accepted, reported back to JS so
   /// first contact can be persisted as the pin.
   private let hostKeyPin: HostKeyPin
@@ -101,7 +107,15 @@ actor SshConnection {
     let old = client
     client = nil
     connecting = nil
-    if let old { try? await old.close() }
+    if let old { await dispose(old) }
+  }
+
+  /// Close a client and the event loop group it runs on.
+  private func dispose(_ client: SSHClient) async {
+    try? await client.close()
+    if let group = groups.removeValue(forKey: ObjectIdentifier(client)) {
+      try? await group.shutdownGracefully()
+    }
   }
 
   /// Watch the network path: when the interface set changes, drop the cached
@@ -155,7 +169,7 @@ actor SshConnection {
     if let client, client !== dialled {
       // The client was reset while this dial was in flight and a newer one is
       // already installed. Keeping both is the leak; close this one.
-      try? await dialled.close()
+      await dispose(dialled)
       return client
     }
     return dialled
@@ -169,20 +183,35 @@ actor SshConnection {
     nonisolated(unsafe) let auth = try Self.authMethod(for: config)
     let observer = HostKeyObserver(pin: hostKeyPin)
 
-    let settings = SSHClientSettings(
+    var settings = SSHClientSettings(
       host: config.host,
       port: config.port,
       authenticationMethod: { auth },
       hostKeyValidator: .custom(TOFUHostKeyDelegate(observer: observer))
     )
 
+    // Each dial gets an event loop group of its own. Citadel's connect never
+    // closes the TCP channel when the handshake fails, and never hands it back:
+    // a rejected key or a changed host key left one pre-auth connection open
+    // per attempt until sshd's login timeout, the polls made one every few
+    // seconds, and sshd then refused the phone entirely (MaxStartups, then
+    // OpenSSH's per-source penalty) right when the user had fixed the problem.
+    // Shutting a group down closes every channel on it, which is the one handle
+    // on that connection there is. (Citadel's `connect(on:)` would take a
+    // channel opened here, but it must be called on the channel's event loop.)
+    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    settings.group = group
     do {
-      return try await SSHClient.connect(to: settings)
+      let client = try await SSHClient.connect(to: settings)
+      groups[ObjectIdentifier(client)] = group
+      return client
     } catch {
+      try? await group.shutdownGracefully()
       if observer.mismatched {
         throw SshFailure(
           code: "host_key_changed",
-          message: "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin."
+          message: "This host's SSH key has changed since you saved it.",
+          presentedFingerprint: observer.presented
         )
       }
       throw SshFailure.connect(error)
@@ -217,6 +246,7 @@ actor SshConnection {
   private final class HostKeyObserver: @unchecked Sendable {
     let pin: HostKeyPin
     var mismatched = false
+    var presented: String?
 
     init(pin: HostKeyPin) {
       self.pin = pin
@@ -244,6 +274,7 @@ actor SshConnection {
         validationCompletePromise.succeed(())
       } else {
         observer.mismatched = true
+        observer.presented = fingerprint
         validationCompletePromise.fail(
           SshFailure(code: "host_key_changed", message: "host key fingerprint mismatch")
         )
