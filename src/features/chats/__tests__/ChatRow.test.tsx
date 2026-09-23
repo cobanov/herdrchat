@@ -27,6 +27,7 @@ const summary = (agent: string | null): ChatSummary => ({
   }],
   preview: null,
   sessionSig: null,
+  restoreError: null,
 });
 
 // A swipe is invisible to VoiceOver and Voice Control; the same actions have
@@ -63,4 +64,19 @@ it.each([
 ])('names a %s pane as %s', async (agent, context) => {
   const screen = await render(<ChatRow summary={summary(agent)} unread={false} onPress={jest.fn()} />);
   expect(screen.getByText(context)).toBeOnTheScreen();
+});
+
+// A failed restore used to look like an empty chat (#119).
+it('says why herdr could not restore a chat', async () => {
+  const screen = await render(
+    <ChatRow
+      summary={{ ...summary('claude'), restoreError: 'Saved directory is unavailable.' }}
+      unread={false}
+      onPress={jest.fn()}
+    />
+  );
+  expect(screen.getByTestId('chat-row-restore-error')).toHaveTextContent(
+    "Couldn't restore. Saved directory is unavailable."
+  );
+  expect(screen.getByTestId('chat-row-w1').props.accessibilityLabel).toContain('Saved directory is unavailable.');
 });

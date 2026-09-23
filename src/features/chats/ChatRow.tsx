@@ -50,6 +50,8 @@ export const ChatRow = memo(function ChatRow({
   const status = attention ? 'Waiting for you' : working ? 'Working' : summary.status === 'unknown' ? 'Status unknown' : summary.status === 'done' ? 'Done' : 'Idle';
   const preview = summary.preview === null ? status
     : `${summary.preview.fromUser ? 'You: ' : ''}${summary.preview.text}`;
+  // herdr's own sentence, which already says what to do about it.
+  const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
 
   return (
     <Pressable
@@ -61,7 +63,7 @@ export const ChatRow = memo(function ChatRow({
       onAccessibilityAction={(event) => {
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
-      accessibilityLabel={[summary.title || summary.workspaceId, context, status, unread ? 'Unread' : '', summary.preview?.text].filter(Boolean).join(', ')}
+      accessibilityLabel={[summary.title || summary.workspaceId, context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
       testID={`chat-row-${summary.workspaceId}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -79,9 +81,15 @@ export const ChatRow = memo(function ChatRow({
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
         <Text variant="headline" numberOfLines={2}>{summary.title || summary.workspaceId}</Text>
         <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
-        <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
-          {attention ? 'Waiting for your input' : preview}
-        </Text>
+        {restoreFailed !== null ? (
+          <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">
+            {restoreFailed}
+          </Text>
+        ) : (
+          <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
+            {attention ? 'Waiting for your input' : preview}
+          </Text>
+        )}
       </View>
 
       <View style={{ alignItems: 'center', gap: spacing.sm }}>

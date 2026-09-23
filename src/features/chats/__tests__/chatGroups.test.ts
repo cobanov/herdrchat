@@ -2,7 +2,7 @@ import { groupChats } from '../chatGroups';
 import type { ChatSummary } from '../useWorkspaces';
 
 const chat = (workspaceId: string, status: ChatSummary['status']): ChatSummary => ({
-  workspaceId, title: workspaceId, status, number: 1, agents: [], preview: null, sessionSig: null,
+  workspaceId, title: workspaceId, status, number: 1, agents: [], preview: null, sessionSig: null, restoreError: null,
 });
 const chats = [chat('idle-a', 'idle'), chat('busy', 'working'), chat('approval', 'blocked'), chat('idle-b', 'done'), chat('unknown', 'unknown')];
 const ids = (rows: ReturnType<typeof groupChats>) => rows.map((row) => row.kind === 'chat' ? row.summary.workspaceId : row.id);

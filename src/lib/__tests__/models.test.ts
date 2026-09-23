@@ -56,6 +56,22 @@ describe('snapshot decoding', () => {
     const bare = decodeSnapshot({ agents: [], focused_pane_id: null });
     expect(bare.layouts).toBeNull();
     expect(bare.agents).toEqual([]);
+    expect(bare.restoreErrors).toEqual([]);
+  });
+
+  // herdr #4400 keeps a pane whose restore failed and says why (#119).
+  it('collects the panes herdr could not restore', () => {
+    const snapshot = decodeSnapshot({
+      agents: [],
+      panes: [
+        { pane_id: 'p1', workspace_id: 'w1', restore_error: 'Saved directory is unavailable.' },
+        { pane_id: 'p2', workspace_id: 'w2' },
+        { pane_id: 'p3', workspace_id: 'w3', restore_error: null },
+      ],
+    });
+    expect(snapshot.restoreErrors).toEqual([
+      { paneId: 'p1', workspaceId: 'w1', message: 'Saved directory is unavailable.' },
+    ]);
   });
 
   /**

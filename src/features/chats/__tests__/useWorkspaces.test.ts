@@ -122,6 +122,21 @@ it('drops the preview the moment the slot reports a different session', async ()
 });
 
 // #96: the list needs the failure's code to offer the matching way out.
+it('carries herdr\'s restore error onto the chat it belongs to (#119)', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(decodeSnapshot({
+    version: '0.9.2',
+    workspaces: [
+      { workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' },
+      { workspace_id: 'gone', label: 'Gone', number: 2, agent_status: 'unknown' },
+    ],
+    panes: [{ pane_id: 'p9', workspace_id: 'gone', restore_error: 'Saved directory is unavailable.' }],
+    agents: [],
+  }));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.summaries.map((chat) => chat.restoreError)).toEqual([null, 'Saved directory is unavailable.']);
+  await unmount();
+});
+
 it('reports why the host could not be listed', async () => {
   jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'The server rejected these credentials.'));
   const { result, unmount } = await renderHook(() => useWorkspaces(client));

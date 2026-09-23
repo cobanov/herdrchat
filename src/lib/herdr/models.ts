@@ -130,6 +130,19 @@ export interface Snapshot {
   version: string | null;
   /** Wire protocol number. Null if absent. */
   protocol: number | null;
+  /** Panes herdr could not bring back after a restart. Empty before herdr #4400. */
+  restoreErrors: RestoreError[];
+}
+
+/**
+ * A pane whose saved session failed to come back (herdr's `restore_error`):
+ * its directory is gone, or its shell would not start. herdr keeps the layout
+ * and says why, rather than silently dropping it.
+ */
+export interface RestoreError {
+  paneId: string;
+  workspaceId: string;
+  message: string;
 }
 
 export interface TabLayout {
@@ -309,6 +322,12 @@ export function decodeSnapshot(raw: unknown): Snapshot {
     layouts,
     version: optionalStr(value.version),
     protocol: typeof value.protocol === 'number' ? value.protocol : null,
+    restoreErrors: array(value.panes).flatMap((raw) => {
+      const pane = record(raw);
+      const message = optionalStr(pane.restore_error);
+      if (message === null || message.length === 0) return [];
+      return [{ paneId: str(pane.pane_id), workspaceId: str(pane.workspace_id), message }];
+    }),
   };
 }
 

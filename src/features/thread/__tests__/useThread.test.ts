@@ -90,6 +90,7 @@ const snapshot = (agents: AgentInfo[]): Snapshot => ({
   focusedPaneId: null,
   focusedTabId: null,
   focusedWorkspaceId: null,
+  restoreErrors: [],
 });
 const db = {
   runAsync: jest.fn(async () => undefined),

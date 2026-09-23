@@ -14,6 +14,7 @@ import {
   hasSessionId,
   type AgentInfo,
   type AgentStatus,
+  type RestoreError,
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
@@ -32,6 +33,11 @@ export interface ChatSummary {
    * the previous chat in a recycled workspace must not silence this one.
    */
   sessionSig: string | null;
+  /**
+   * Why herdr could not bring this chat back after a restart, if it couldn't.
+   * Without it a failed restore looked like an empty chat (#119).
+   */
+  restoreError: string | null;
 }
 
 export interface WorkspacesState {
@@ -142,7 +148,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
+      setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current, snapshot.restoreErrors));
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
       setErrorCode(null);
@@ -252,7 +258,8 @@ export interface CachedPreview {
 export function buildSummaries(
   workspaces: readonly Workspace[],
   agents: readonly AgentInfo[],
-  previews: Map<string, CachedPreview>
+  previews: Map<string, CachedPreview>,
+  restoreErrors: readonly RestoreError[] = []
 ): ChatSummary[] {
   const byWorkspace = groupByWorkspace(agents);
 
@@ -272,6 +279,8 @@ export function buildSummaries(
           ? cached.preview
           : null,
         sessionSig,
+        restoreError:
+          restoreErrors.find((error) => error.workspaceId === workspace.workspaceId)?.message ?? null,
       };
     });
 }
