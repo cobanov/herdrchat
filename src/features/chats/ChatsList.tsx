@@ -238,15 +238,6 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           />
         ))}
 
-      {error === null && integrations.outdated.length > 0 && (
-        <IntegrationBanner
-          outdated={integrations.outdated}
-          updating={integrations.updating}
-          error={integrations.error}
-          onUpdate={() => void integrations.update()}
-        />
-      )}
-
       {connection !== null && summaries.length > 0 && (
         <View style={{ paddingHorizontal: screenPadding, paddingBottom: spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: colors.chatCard }}>
@@ -340,7 +331,23 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           // at the end of the list and cannot be read or tapped, however far you
           // scroll, there is nothing left to scroll.
           contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: size.floatingBarClearance }}
-          ListFooterComponent={seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
+          // Below the rows, not above them: the host answers the integration
+          // check after the list has drawn, and a banner arriving on top pushed
+          // every row down under a finger that was about to tap one (#4
+          // acceptance: a tap meant for one chat opened the next).
+          ListFooterComponent={
+            <>
+              {error === null && integrations.outdated.length > 0 && (
+                <IntegrationBanner
+                  outdated={integrations.outdated}
+                  updating={integrations.updating}
+                  error={integrations.error}
+                  onUpdate={() => void integrations.update()}
+                />
+              )}
+              {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
+            </>
+          }
           ListEmptyComponent={<EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />}
           renderItem={({ item: row }) => {
             if (row.kind === 'group') return (

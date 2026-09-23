@@ -8,7 +8,7 @@ import {
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, nestedRadius, radius, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, monoFamily, nestedRadius, radius, size, spacing, typography } from '@/theme/tokens';
 
 export interface FieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
@@ -29,6 +29,9 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
         placeholderTextColor={colors.tertiaryLabel}
         multiline={multiline}
         autoCorrect={false}
+        // Android keyboards keep a suggestion strip unless spell checking is off
+        // too, and a host name or username is not a word.
+        spellCheck={false}
         style={{
           minHeight: multiline === true ? 120 : minTouchTarget,
           borderRadius: radius.sm,
@@ -37,7 +40,7 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
           backgroundColor: colors.secondarySystemBackground,
           color: colors.label,
           fontSize: mono ? typography.footnote.fontSize : typography.body.fontSize,
-          ...(mono ? { fontFamily: 'Menlo' } : {}),
+          ...(mono ? { fontFamily: monoFamily } : {}),
           textAlignVertical: multiline === true ? 'top' : 'center',
         }}
         {...rest}

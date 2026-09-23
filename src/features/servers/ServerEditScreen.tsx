@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, ScrollView, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
@@ -297,10 +297,43 @@ export default function ServerEditScreen() {
     router.dismissAll();
   };
 
+  /**
+   * Done used to drop a half-typed host without a word, key and all (#4
+   * acceptance). With anything entered or changed it asks first.
+   */
+  const dirty = isNew
+    ? [name, host, username, secret, sessionName].some((value) => value.trim().length > 0) ||
+      herdrPath !== 'herdr' ||
+      port !== '22'
+    : name !== existing.name ||
+      host !== existing.host ||
+      port !== String(existing.port) ||
+      username !== existing.username ||
+      authKind !== existing.authKind ||
+      secret.length > 0 ||
+      herdrPath !== existing.herdrPath ||
+      sessionName !== existing.sessionName;
+  const close = () => {
+    if (!dirty) {
+      router.back();
+      return;
+    }
+    confirmDestructive({
+      title: isNew ? 'Discard this host?' : 'Discard your changes?',
+      message: isNew ? 'What you entered here is not saved.' : 'The host keeps its saved settings.',
+      confirmLabel: 'Discard',
+      onConfirm: () => router.back(),
+    });
+  };
+
   return (
     <Screen presentation="sheet">
-      <Header title={isNew ? 'New host' : 'Edit host'} onClose={() => router.back()} />
+      <Header title={isNew ? 'New host' : 'Edit host'} onClose={close} />
 
+      {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets); Android
+          has no such prop, and with edge-to-edge the window no longer resizes,
+          so the fields near the bottom sat under the keyboard. */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={{ flex: 1 }}>
       <ScrollView
         ref={form}
         contentContainerStyle={{
@@ -494,6 +527,7 @@ export default function ServerEditScreen() {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

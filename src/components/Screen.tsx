@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/theme/ThemeProvider';
@@ -39,7 +39,9 @@ export function Screen({
     </View>
   );
 
-  if (presentation !== 'full') {
+  // A sheet on Android is a full-screen page, not a card below the status bar,
+  // so it clears the status bar like any other screen (#4 acceptance).
+  if (presentation === 'edge-to-edge' || (presentation === 'sheet' && Platform.OS === 'ios')) {
     return <View style={{ flex: 1, backgroundColor: colors.systemBackground }}>{content}</View>;
   }
   return (

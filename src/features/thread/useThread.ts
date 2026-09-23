@@ -178,6 +178,8 @@ export interface ThreadState {
   sessionState: SessionState;
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
+  /** The live transcript stream failed and is being restarted. */
+  paused: boolean;
   failedIds: Set<string>;
   /**
    * Resolves whether the message was taken. `false` comes back at once, before
@@ -1265,6 +1267,7 @@ export function useThread(
       sessionState !== 'unsupported' &&
       sessionState !== 'replaced',
     offline,
+    paused: tailError !== null,
     messages,
     status,
     agents,

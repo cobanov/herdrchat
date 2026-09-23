@@ -36,7 +36,7 @@ export default function TabsLayout() {
       // back on scroll-up — the iOS 26 behaviour people already expect.
       minimizeBehavior={Platform.OS === 'ios' && Platform.isPad ? 'never' : 'onScrollDown'}>
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} />
+        <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} md="forum" />
         <NativeTabs.Trigger.Label>Chats</NativeTabs.Trigger.Label>
         {/* Rendered conditionally rather than as an empty string: a badge whose
             value is falsy still reserves its dot on some iOS versions, and a
@@ -47,12 +47,12 @@ export default function TabsLayout() {
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="hosts">
-        <NativeTabs.Trigger.Icon sf={{ default: 'server.rack', selected: 'server.rack' }} />
+        <NativeTabs.Trigger.Icon sf={{ default: 'server.rack', selected: 'server.rack' }} md="dns" />
         <NativeTabs.Trigger.Label>Hosts</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+        <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} md="settings" />
         <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>

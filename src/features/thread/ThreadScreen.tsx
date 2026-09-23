@@ -239,7 +239,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     modelDisplayName(thread.sessionMeta?.model ?? null),
     thread.sessionMeta?.effort ?? null,
     thread.workingDirName,
-    statusWord(thread.status),
+    // The connection before the agent: "online" under a banner saying the
+    // chat is offline or paused contradicted it (#4 acceptance).
+    thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
@@ -295,7 +297,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         the window, and adding padding on top of that would double-count it.
       */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // Padding on Android too: with edge-to-edge (Android 15 enforces it) the
+        // window no longer resizes for the keyboard, which covered the composer.
+        behavior="padding"
         // The viewport now starts at the window edge, not below the status bar.
         keyboardVerticalOffset={0}
         style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
@@ -589,7 +593,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   </Text>
                   {subtitle.length > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: statusColor(thread.status, colors) }} />
+                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
                       <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
                         {subtitle}
                       </Text>
