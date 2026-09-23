@@ -7,9 +7,22 @@ export function shellQuote(argument: string): string {
   return `'${argument.replaceAll("'", `'\\''`)}'`;
 }
 
-/** Quote an argv into a single shell command line. */
+/**
+ * The program word of a command: quoted, except that a leading `~/` becomes
+ * `"$HOME"/`.
+ *
+ * A herdr path typed as `~/.local/bin/herdr` went through `shellQuote`, where a
+ * tilde is not expanded, so the command exited 127 and the diagnosis told the
+ * user to set the herdr path they had just set (#106). Only the `~/` prefix is
+ * rewritten; the rest stays single-quoted.
+ */
+export function commandWord(path: string): string {
+  return path.startsWith('~/') ? `"$HOME"/${shellQuote(path.slice(2))}` : shellQuote(path);
+}
+
+/** Quote an argv into a single shell command line. `argv[0]` is the program. */
 export function shellCommand(argv: readonly string[]): string {
-  return argv.map(shellQuote).join(' ');
+  return argv.map((argument, index) => (index === 0 ? commandWord(argument) : shellQuote(argument))).join(' ');
 }
 
 /**

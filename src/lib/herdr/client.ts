@@ -12,7 +12,7 @@ import {
   type WorkspaceCreation,
 } from './models';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom } from './protocol';
-import { shellCommand, shellQuote, withPath } from './shell';
+import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
@@ -217,7 +217,7 @@ export class HerdrClient {
    */
   async startServer(): Promise<void> {
     await this.shell(
-      `nohup ${shellQuote(this.herdr)} server >/dev/null 2>&1 & echo started`,
+      `nohup ${commandWord(this.herdr)} server >/dev/null 2>&1 & echo started`,
       LAUNCH_TIMEOUT_MS
     );
     // The spawn returns immediately; the socket takes a moment. Confirm rather
@@ -979,7 +979,7 @@ export class HerdrClient {
    */
   async locateHerdr(): Promise<HerdrLocation> {
     const script = [
-      `p=$(command -v ${shellQuote(this.herdr)} 2>/dev/null)`,
+      `p=$(command -v ${commandWord(this.herdr)} 2>/dev/null)`,
       'if [ -z "$p" ]; then',
       '  for c in "$HOME/.local/bin/herdr" "$HOME/bin/herdr" /opt/homebrew/bin/herdr /usr/local/bin/herdr /usr/bin/herdr; do',
       '    if [ -e "$c" ]; then p="$c"; break; fi',

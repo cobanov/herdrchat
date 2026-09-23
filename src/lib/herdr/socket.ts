@@ -1,5 +1,5 @@
 import { HerdrError, decodeEnvelope, herdrErrorFrom } from './protocol';
-import { shellQuote, withPath } from './shell';
+import { commandWord, shellQuote, withPath } from './shell';
 import type { HerdrTransport } from './transport';
 
 /**
@@ -250,7 +250,7 @@ function bridgeCommand(route: SocketRoute, request: string, herdr: string): stri
       // request survives any shell. Run from inside a herdr pane the HERDR_*
       // variables would point it at the pane's own session; a phone is never
       // in one, but the command is the same either way.
-      return withPath(`${shellQuote(herdr)} api-bridge ${base64(request)}`);
+      return withPath(`${commandWord(herdr)} api-bridge ${base64(request)}`);
   }
 }
 
@@ -292,7 +292,7 @@ const PYTHON_BRIDGE = [
  * are there. Homebrew's python3 is fine anywhere.
  */
 export function probeScript(herdr: string): string {
-  const h = shellQuote(herdr);
+  const h = commandWord(herdr);
   return [
     `sock=$(${h} status server 2>/dev/null | sed -n 's/^socket: //p' | head -n 1)`,
     '[ -n "$sock" ] || sock="${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}"',
