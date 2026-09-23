@@ -1,12 +1,17 @@
 package expo.modules.herdrssh
 
 import android.util.Base64
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.Buffer
 import net.schmizz.sshj.common.IOUtils
@@ -32,6 +37,8 @@ class SshConnection(private val config: SshConfigRecord) {
 
   private val mutex = Mutex()
   @Volatile private var client: SSHClient? = null
+  /** The client being dialled, so a deadline can close it without the mutex. */
+  @Volatile private var dialing: SSHClient? = null
   @Volatile private var hostKeyMismatch = false
   @Volatile var acceptedFingerprint: String? = null
     private set
@@ -45,6 +52,11 @@ class SshConnection(private val config: SshConfigRecord) {
       hostKeyMismatch = false
       val fresh = SSHClient()
       fresh.addHostKeyVerifier(hostKeyVerifier())
+      // Bounds the TCP handshake itself, which `connect` from JavaScript calls
+      // with no deadline of its own. Not `fresh.timeout`: that is SO_TIMEOUT on
+      // the socket, and sshj's reader would give up on a quiet `tail -f`.
+      fresh.connectTimeout = CONNECT_TIMEOUT_MS
+      dialing = fresh
       try {
         fresh.connect(config.host, config.port)
         // Survive NAT/router idle timeouts on a long-lived connection.
@@ -62,6 +74,8 @@ class SshConnection(private val config: SshConfigRecord) {
         }
         if (error is SshFailure) throw error
         throw SshFailure("connect_failed", error.message ?: "Couldn't reach the host.")
+      } finally {
+        dialing = null
       }
     }
   }
@@ -129,6 +143,24 @@ class SshConnection(private val config: SshConfigRecord) {
     client = null
   }
 
+  /**
+   * Drop the connection WITHOUT the mutex, for when something is stuck on it.
+   *
+   * `connected()` holds the mutex for as long as a dial takes, so a deadline
+   * that waited for it would wait on the very thing that timed out. Closing
+   * the socket is also what makes a read parked on it throw, which is the only
+   * way to stop one: sshj's blocking reads ignore coroutine cancellation.
+   * Also the module's teardown, which cannot suspend.
+   */
+  fun abandon() {
+    val stuck = listOfNotNull(client, dialing)
+    client = null
+    dialing = null
+    // Off the caller's thread: disconnect() writes a goodbye first, and a
+    // write on a half-open socket can block too.
+    if (stuck.isNotEmpty()) ioScope.launch { stuck.forEach { runCatching { it.disconnect() } } }
+  }
+
   data class CommandOutput(val stdout: String, val stderr: String, val exitCode: Int)
 
   /**
@@ -148,21 +180,35 @@ class SshConnection(private val config: SshConfigRecord) {
   /**
    * Race an operation against its deadline.
    *
-   * A blocked read on a half-open socket does not necessarily notice
-   * cancellation, so the client is dropped as well — the next command dials
-   * fresh rather than queueing behind a channel that will never answer.
+   * `withTimeout` alone was no deadline at all (#110): cancellation is
+   * cooperative, sshj's reads block, and `withTimeout` waits for its block to
+   * finish before throwing, so a read on a half-open socket held the command
+   * forever. The operation now runs detached and only the WAIT is timed; on
+   * expiry the connection is abandoned, which closes the socket under the
+   * parked read so it fails and ends on its own. The next command dials fresh
+   * rather than queueing behind a channel that will never answer.
    */
   private suspend fun <T> withDeadline(timeoutMs: Int, operation: suspend () -> T): T {
     if (timeoutMs <= 0) return operation()
-    return try {
-      withTimeout(timeoutMs.toLong()) { operation() }
-    } catch (expired: TimeoutCancellationException) {
-      resetClient()
+    val work = ioScope.async { operation() }
+    val outcome: Result<T>? = withTimeoutOrNull(timeoutMs.toLong()) {
+      try {
+        Result.success(work.await())
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (error: Throwable) {
+        Result.failure(error)
+      }
+    }
+    if (outcome == null) {
+      abandon()
+      work.cancel()
       throw SshFailure(
         "timeout",
         "The host didn't answer in time. Check that it's awake and on the tailnet.",
       )
     }
+    return outcome.getOrThrow()
   }
 
   private suspend fun execOnce(command: String): CommandOutput = withContext(Dispatchers.IO) {
@@ -170,10 +216,15 @@ class SshConnection(private val config: SshConfigRecord) {
     val session = client.startSession()
     try {
       val cmd = session.exec(command)
-      val stdout = IOUtils.readFully(cmd.inputStream).toString()
-      val stderr = IOUtils.readFully(cmd.errorStream).toString()
-      cmd.join()
-      CommandOutput(stdout, stderr, cmd.exitStatus ?: 0)
+      // Both streams at once. Reading all of stdout before any of stderr
+      // deadlocked a command that wrote enough to stderr to fill the channel's
+      // window: it waited for stderr to drain, we waited for stdout to end.
+      coroutineScope {
+        val stderr = async(Dispatchers.IO) { IOUtils.readFully(cmd.errorStream).toString(Charsets.UTF_8.name()) }
+        val stdout = IOUtils.readFully(cmd.inputStream).toString(Charsets.UTF_8.name())
+        cmd.join()
+        CommandOutput(stdout, stderr.await(), cmd.exitStatus ?: 0)
+      }
     } finally {
       runCatching { session.close() }
     }
@@ -193,8 +244,10 @@ class SshConnection(private val config: SshConfigRecord) {
     // Only STARTING is bounded. What follows is a `tail -f` and is meant to
     // outlive any deadline; a stream that dies quietly is the tail watchdog's
     // job, not this one's.
-    val client = withDeadline(startTimeoutMs) {
-      try {
+    // Opening the channel is bounded too: it is a round-trip on a connection
+    // that may have died since the last command.
+    val (session, cmd) = withDeadline(startTimeoutMs) {
+      val client = try {
         connected()
       } catch (failure: SshFailure) {
         throw failure
@@ -202,11 +255,18 @@ class SshConnection(private val config: SshConfigRecord) {
         resetClient()
         connected()
       }
+      val session = client.startSession()
+      try {
+        session to session.exec(command)
+      } catch (error: Exception) {
+        // The channel was open; without this it stayed open for the life of
+        // the connection (#110).
+        runCatching { session.close() }
+        throw error
+      }
     }
 
     return withContext(Dispatchers.IO) {
-      val session = client.startSession()
-      val cmd = session.exec(command)
       val reader = cmd.inputStream.bufferedReader()
       val handle = StreamHandle(session)
       Thread {
@@ -226,6 +286,12 @@ class SshConnection(private val config: SshConfigRecord) {
       }.apply { isDaemon = true }.start()
       handle
     }
+  }
+
+  private companion object {
+    const val CONNECT_TIMEOUT_MS = 15_000
+    /** Detached work for deadlines and teardown; never waited on by structure. */
+    val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   }
 
   class StreamHandle(private val session: net.schmizz.sshj.connection.channel.direct.Session) {
