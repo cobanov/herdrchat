@@ -424,9 +424,12 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                       onPress={() => void thread.retry(item.message.id)}
                       accessibilityRole="button"
                       accessibilityLabel="Failed to send. Retry."
+                      // A caption is ~16pt tall; the target is the full 44pt,
+                      // since this is the one way back for a lost message (#112).
                       style={{
                         alignSelf: 'flex-end',
-                        paddingVertical: spacing.xs,
+                        minHeight: minTouchTarget,
+                        justifyContent: 'center',
                       }}>
                       <Text variant="caption" color="attention">
                         Failed to send, retry

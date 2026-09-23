@@ -16,14 +16,27 @@ export const AVATAR_SIZE = size.chatBadge;
  */
 const AGENT_NAMES: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', letta: 'Letta' };
 
+/** Something a row can do besides open, named for assistive technology. */
+export interface RowAction {
+  name: string;
+  label: string;
+  run: () => void;
+}
+
 export const ChatRow = memo(function ChatRow({
-  summary, unread, selected = false, onPress, onLongPress,
+  summary, unread, selected = false, onPress, onLongPress, actions = [],
 }: {
   summary: ChatSummary;
   unread: boolean;
   selected?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
+  /**
+   * Offered to VoiceOver (the rotor's Actions) and Voice Control ("Show
+   * actions"). A swipe is invisible to both, so without these a row's swipe
+   * actions exist only for people who can see and drag (#112).
+   */
+  actions?: readonly RowAction[];
 }) {
   const { colors, reduceMotion } = useTheme();
   const previewHeight = useScaledLine(typography.footnote.lineHeight);
@@ -44,6 +57,10 @@ export const ChatRow = memo(function ChatRow({
       onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      accessibilityActions={actions.map(({ name, label }) => ({ name, label }))}
+      onAccessibilityAction={(event) => {
+        actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
+      }}
       accessibilityLabel={[summary.title || summary.workspaceId, context, status, unread ? 'Unread' : '', summary.preview?.text].filter(Boolean).join(', ')}
       testID={`chat-row-${summary.workspaceId}`}
       style={({ pressed }) => ({
