@@ -20,9 +20,14 @@ export function modelDisplayName(model: string | null): string | null {
   // Non-Claude model ids are already meaningful, including decimal versions.
   if (!base.startsWith('claude-')) return base;
   const noPrefix = base.startsWith('claude-') ? base.slice('claude-'.length) : base;
-  const tokens = noPrefix.split('-').filter((token) => token.length > 0);
+  const all = noPrefix.split('-').filter((token) => token.length > 0);
+  // The pre-2025 form put the version first: claude-3-5-sonnet-20241022 is
+  // Sonnet 3.5. Read it as family-then-version like the current ids.
+  const firstWord = all.findIndex((token) => !/^\d+$/.test(token));
+  const tokens =
+    firstWord > 0 ? [all[firstWord] ?? '', ...all.slice(0, firstWord), ...all.slice(firstWord + 1)] : all;
   const family = tokens[0];
-  if (family === undefined) return model;
+  if (family === undefined || family.length === 0) return model;
 
   const familyName = family.charAt(0).toUpperCase() + family.slice(1);
   // Version = the short numeric tokens; long date suffixes like 20251001 are not

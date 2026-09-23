@@ -1,3 +1,4 @@
+import { codexUserText } from './harness';
 import type { ChatMessage, MessageSegment } from './message';
 import type { TranscriptEntry } from './parser';
 
@@ -87,25 +88,26 @@ function responseMessage(
   }
 }
 
+/**
+ * The displayable text of a content list. With `omitHarness` (user messages),
+ * each text block goes through `codexUserText`, which drops what Codex injects
+ * (context, heartbeats, plugin lists) and keeps what was typed (#78).
+ */
 function contentText(content: unknown, omitHarness = false): string {
-  if (typeof content === 'string') return omitHarness && isHarnessMessage(content) ? '' : content;
+  if (typeof content === 'string') return omitHarness ? codexUserText(content) ?? '' : content;
   if (!Array.isArray(content)) return '';
   return content.flatMap((block: unknown) => {
     const value = record(block);
     if (value === null) return [];
     if (['input_text', 'output_text', 'text', 'summary_text'].includes(String(value.type))) {
-      return typeof value.text === 'string' && !(omitHarness && isHarnessMessage(value.text)) ? [value.text] : [];
+      if (typeof value.text !== 'string') return [];
+      if (!omitHarness) return [value.text];
+      const text = codexUserText(value.text);
+      return text === null ? [] : [text];
     }
     if (value.type === 'input_image') return ['[Image]'];
     return [];
   }).join('\n');
-}
-
-function isHarnessMessage(text: string): boolean {
-  const trimmed = text.trim();
-  return /^# AGENTS\.md instructions(?: for [^\n]+)?\s*\n/.test(trimmed) ||
-    /^<environment_context>[\s\S]*<\/environment_context>$/.test(trimmed) ||
-    /^<permissions instructions>[\s\S]*<\/permissions instructions>$/.test(trimmed);
 }
 
 function preview(value: unknown): string | null {
