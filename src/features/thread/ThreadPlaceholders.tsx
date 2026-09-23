@@ -5,6 +5,8 @@ import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
 import { spacing } from '@/theme/tokens';
 
+import type { SessionState } from './useThread';
+
 /**
  * The two full-screen states a thread shows instead of its bubbles.
  *
@@ -71,7 +73,7 @@ export function ThreadPlaceholder({
   canSend: boolean;
   onBack?: () => void;
   title: string;
-  sessionState: 'ok' | 'waiting' | 'missing' | 'unsupported';
+  sessionState: SessionState;
   agentKind?: 'claude' | 'codex';
   onInstallIntegration?: () => void;
   installing: boolean;
@@ -136,6 +138,20 @@ export function ThreadPlaceholder({
               on the host instead.
             </Text>
           )}
+        </>
+      ) : sessionState === 'replaced' ? (
+        // The conversation this screen had open ended on the host, and another
+        // agent started in the same workspace. Say so, rather than leaving an
+        // empty thread or a composer that would talk to someone else.
+        <>
+          <Text variant="title3" style={{ textAlign: 'center' }}>
+            A new chat started here
+          </Text>
+          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
+            The conversation you had open ended on the host, and a new agent is now running in this
+            workspace. It will appear here once it reports its session.
+          </Text>
+          <WaitingBar />
         </>
       ) : sessionState === 'waiting' ? (
         <>

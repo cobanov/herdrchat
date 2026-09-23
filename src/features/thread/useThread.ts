@@ -127,6 +127,8 @@ const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
 /** States that prove the agent read a prompt: it started, or it stopped to ask. */
 const REACTED = ['working', 'blocked'] as const;
 
+export type SessionState = 'ok' | 'waiting' | 'missing' | 'unsupported' | 'replaced';
+
 export interface ThreadState {
   loading: boolean;
   /** Changes only when a bounded host snapshot replaces the visible window. */
@@ -156,8 +158,10 @@ export interface ThreadState {
    * `waiting`, an agent is here but has not reported yet; normal for a minute.
    * `missing`, long enough that the host is probably missing herdr's Claude
    *   integration, which is the only thing that reports the id.
+   * `replaced`, the session this thread had open ended and a different agent
+   *   now holds the workspace, not yet reporting its own. Sending is held.
    */
-  sessionState: 'ok' | 'waiting' | 'missing' | 'unsupported';
+  sessionState: SessionState;
   failedIds: Set<string>;
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
@@ -229,7 +233,7 @@ export function useThread(
   const [isSending, setIsSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
-  const [sessionState, setSessionState] = useState<'ok' | 'waiting' | 'missing' | 'unsupported'>('ok');
+  const [sessionState, setSessionState] = useState<SessionState>('ok');
   /** When the thread first saw an agent without a session id, or null while all have one. */
   const noSessionSince = useRef<number | null>(null);
   const polling = usePollGate();
@@ -271,6 +275,13 @@ export function useThread(
     anchor: number;
   } | null>(null);
   const boundSig = useRef<string | null>(null);
+  /** The panes the bound session was seen in, sorted and joined. */
+  const boundPanes = useRef('');
+  /**
+   * The session this thread had open ended and a different agent now holds
+   * the slot, not yet reporting its own session. Cleared when one binds.
+   */
+  const replaced = useRef(false);
   const tails = useRef(new Map<string, AbortController>());
   /**
    * When each tail last produced anything, so the poll can tell a wedged stream
@@ -608,6 +619,35 @@ export function useThread(
         const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex');
         const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
         const sig = sessionSignature(conversational);
+        const panes = conversational.map((agent) => agent.paneId).sort().join(',');
+
+        /*
+          The session this thread was showing is gone. Nothing reported a new
+          one, but either no agent is left in the workspace (closed on the
+          host) or different panes hold it (recreated, common in the iPad split
+          view). The old history and the send target would otherwise both
+          stay: the screen kept the old conversation and `send` went to the new
+          pane (#87). Unbind, clear the history, and hold sending until the new
+          agent says which session it is.
+        */
+        if (
+          sig === null &&
+          boundSig.current !== null &&
+          (conversational.length === 0 || panes !== boundPanes.current)
+        ) {
+          for (const controller of tails.current.values()) controller.abort();
+          tails.current.clear();
+          tailBeats.current.clear();
+          boundSig.current = null;
+          boundPanes.current = '';
+          resetHistory();
+          replaced.current = conversational.length > 0;
+        }
+        if (conversational.length === 0) replaced.current = false;
+        if (sig !== null) {
+          replaced.current = false;
+          boundPanes.current = panes;
+        }
 
         // An agent that never reports a session id is almost always a host
         // without `herdr integration install claude`. The thread cannot target
@@ -617,6 +657,9 @@ export function useThread(
         if (unsupported) {
           noSessionSince.current = null;
           setSessionState('unsupported');
+        } else if (replaced.current) {
+          noSessionSince.current = null;
+          setSessionState('replaced');
         } else if (conversational.length > 0 && sig === null) {
           const since = (noSessionSince.current ??= Date.now());
           setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
@@ -948,7 +991,16 @@ export function useThread(
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0 || primaryPane === null || sending.current || loading || sessionState === 'unsupported') return;
+      if (
+        text.length === 0 ||
+        primaryPane === null ||
+        sending.current ||
+        loading ||
+        sessionState === 'unsupported' ||
+        sessionState === 'replaced'
+      ) {
+        return;
+      }
       sending.current = true;
       // A new message is a new attempt; the last one's warning has done its job.
       setActionError(null);
@@ -1086,7 +1138,12 @@ export function useThread(
   return {
     loading,
     historyVersion,
-    canSend: client !== null && primaryPane !== null && !loading && sessionState !== 'unsupported',
+    canSend:
+      client !== null &&
+      primaryPane !== null &&
+      !loading &&
+      sessionState !== 'unsupported' &&
+      sessionState !== 'replaced',
     messages,
     status,
     agents,

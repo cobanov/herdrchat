@@ -415,6 +415,59 @@ it('says a message may have arrived when the connection drops mid-send (#83)', a
   await unmount();
 });
 
+// #87: the host closed and recreated the workspace while the thread was open.
+it('clears the old history and holds sending when a new agent takes the slot', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'old conversation' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['old-1']);
+
+  fetch.mockResolvedValue(snapshot([{ ...agent, paneId: 'new-pane', agentSession: null }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.sessionState).toBe('replaced');
+  expect(result.current.canSend).toBe(false);
+  await act(async () => { await result.current.send('reply meant for the old chat'); });
+  expect(prompt).not.toHaveBeenCalled();
+  await unmount();
+});
+
+it('clears the old history when the workspace loses its agents', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'old conversation' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages).toHaveLength(1);
+  fetch.mockResolvedValue(snapshot([]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.canSend).toBe(false);
+  await unmount();
+});
+
+it('keeps the thread bound when the same session moves to another pane', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 10 };
+  mockRecentMessages = [{ id: 'old-1', role: 'assistant', segments: [{ kind: 'text', text: 'same chat' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  fetch.mockResolvedValue(snapshot([{ ...agent, paneId: 'resumed-pane' }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['old-1']);
+  expect(result.current.sessionState).toBe('ok');
+  await unmount();
+});
+
 it('ends the initial spinner when the transcript probe reports a read failure', async () => {
   mockProbe = { kind: 'unknown', reason: 'Permission denied' };
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
