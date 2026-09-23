@@ -108,8 +108,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     liveRef.current = live;
   }, [live]);
 
-  const previews = useRef(new Map<string, ChatSummary['preview']>());
-  const previewSessions = useRef(new Map<string, string>());
+  const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
   const alive = useRef(true);
 
@@ -134,7 +133,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       if (!alive.current) return false;
 
       const store = new TranscriptStore(client.transport);
-      invalidateStalePreviews(snapshot.agents, previews.current, previewSessions.current);
+      dropStalePreviews(workspaces, snapshot.agents, previews.current);
       const force = forcePreviews.current;
       forcePreviews.current = false;
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force);
@@ -229,29 +228,56 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
 
 // MARK: - Internals
 
+/**
+ * A row's last message, with the session it was read from.
+ *
+ * A chat's identity is its session, not its workspace slot: herdr reuses
+ * workspace ids. Keyed by workspace alone, a preview outlived its chat. A new
+ * chat in the same slot showed the old chat's last line until its agent
+ * reported a session id (about 48 s), and a slot with no agent kept it until
+ * the list remounted (#86). Stored with its session, it is shown only while
+ * that session is still the one in the slot.
+ */
+export interface CachedPreview {
+  sessionSig: string;
+  preview: NonNullable<ChatSummary['preview']>;
+}
+
 export function buildSummaries(
   workspaces: readonly Workspace[],
   agents: readonly AgentInfo[],
-  previews: Map<string, ChatSummary['preview']>
+  previews: Map<string, CachedPreview>
 ): ChatSummary[] {
+  const byWorkspace = groupByWorkspace(agents);
+
+  return [...workspaces]
+    .sort((a, b) => a.number - b.number)
+    .map((workspace) => {
+      const group = byWorkspace.get(workspace.workspaceId) ?? [];
+      const sessionSig = sessionSignature(group);
+      const cached = previews.get(workspace.workspaceId);
+      return {
+        workspaceId: workspace.workspaceId,
+        title: workspace.label,
+        number: workspace.number,
+        status: workspace.agentStatus,
+        agents: group,
+        preview: cached !== undefined && sessionSig !== null && cached.sessionSig === sessionSig
+          ? cached.preview
+          : null,
+        sessionSig,
+      };
+    });
+}
+
+function groupByWorkspace(agents: readonly AgentInfo[]): Map<string, AgentInfo[]> {
   const byWorkspace = new Map<string, AgentInfo[]>();
   for (const agent of agents) {
     const list = byWorkspace.get(agent.workspaceId) ?? [];
     list.push(agent);
     byWorkspace.set(agent.workspaceId, list);
   }
-
-  return [...workspaces]
-    .sort((a, b) => a.number - b.number)
-    .map((workspace) => ({
-      workspaceId: workspace.workspaceId,
-      title: workspace.label,
-      number: workspace.number,
-      status: workspace.agentStatus,
-      agents: byWorkspace.get(workspace.workspaceId) ?? [],
-      preview: previews.get(workspace.workspaceId) ?? null,
-      sessionSig: sessionSignature(byWorkspace.get(workspace.workspaceId) ?? []),
-    }));
+  return byWorkspace;
 }
 
 /**
@@ -262,7 +288,7 @@ export function buildSummaries(
 export async function refreshPreviews(
   store: TranscriptStore,
   agents: readonly AgentInfo[],
-  previews: Map<string, ChatSummary['preview']>,
+  previews: Map<string, CachedPreview>,
   tick: { current: number },
   force = false
 ): Promise<void> {
@@ -278,6 +304,8 @@ export async function refreshPreviews(
   }
 
   const requests: PreviewRequest[] = [];
+  /** The session each request was made for; the answer is filed under it. */
+  const requestedFor = new Map<string, string>();
   for (const [workspaceId, group] of byWorkspace) {
     // A chat's identity is its Claude session, not its workspace slot. Until an
     // agent reports a concrete session id we cannot tell a new chat's transcript
@@ -289,12 +317,16 @@ export async function refreshPreviews(
     const sessionId = agent?.agentSession?.value ?? null;
     if (agent === undefined || sessionId === null) continue;
 
+    const sessionSig = sessionSignature(group);
+    if (sessionSig === null) continue;
+
     const active = group.some(
       (item) => item.agentStatus !== 'idle' && item.agentStatus !== 'unknown'
     );
-    if (!fullSweep && !active && previews.has(workspaceId)) continue;
+    if (!fullSweep && !active && previews.get(workspaceId)?.sessionSig === sessionSig) continue;
 
     requests.push({ workspaceId, cwd: agent.cwd, sessionId, agent: agent.agent ?? undefined });
+    requestedFor.set(workspaceId, sessionSig);
   }
   if (requests.length === 0) return;
 
@@ -309,39 +341,31 @@ export async function refreshPreviews(
 
   for (const [workspaceId, message] of latest) {
     const text = previewText(message);
-    if (text === null) continue;
+    const sessionSig = requestedFor.get(workspaceId);
+    if (text === null || sessionSig === undefined) continue;
     previews.set(workspaceId, {
-      text,
-      timestamp: message.timestamp,
-      fromUser: message.role === 'user',
+      sessionSig,
+      preview: { text, timestamp: message.timestamp, fromUser: message.role === 'user' },
     });
   }
 }
 
 /**
- * Drop a workspace's cached last message when its session changed, so the list
- * never previews a previous chat's line under a reused workspace.
+ * Forget cached previews that can no longer be shown: a workspace that left the
+ * snapshot, or one whose session is gone or different. `buildSummaries` would
+ * hide them anyway; dropping them keeps the map from growing and makes the next
+ * poll fetch the new chat's line.
  */
-function invalidateStalePreviews(
+function dropStalePreviews(
+  workspaces: readonly Workspace[],
   agents: readonly AgentInfo[],
-  previews: Map<string, ChatSummary['preview']>,
-  sessions: Map<string, string>
+  previews: Map<string, CachedPreview>
 ): void {
-  const byWorkspace = new Map<string, AgentInfo[]>();
-  for (const agent of agents) {
-    if (agent.agent === null) continue;
-    const list = byWorkspace.get(agent.workspaceId) ?? [];
-    list.push(agent);
-    byWorkspace.set(agent.workspaceId, list);
-  }
-
-  for (const [workspaceId, group] of byWorkspace) {
-    const signature = sessionSignature(group);
-    if (signature === null) continue;
-    if (sessions.get(workspaceId) !== undefined && sessions.get(workspaceId) !== signature) {
-      previews.delete(workspaceId);
-    }
-    sessions.set(workspaceId, signature);
+  const present = new Set(workspaces.map((workspace) => workspace.workspaceId));
+  const byWorkspace = groupByWorkspace(agents);
+  for (const [workspaceId, cached] of previews) {
+    const current = sessionSignature(byWorkspace.get(workspaceId) ?? []);
+    if (!present.has(workspaceId) || current !== cached.sessionSig) previews.delete(workspaceId);
   }
 }
 
