@@ -45,7 +45,7 @@ export function codexEntry(
       id: `codex:${typeof raw.timestamp === 'string' ? raw.timestamp : ''}:${stableId}`,
       timestamp: Number.isNaN(timestamp) ? null : timestamp,
       agentLabel,
-      isSidechain: false,
+      isSidechain: message.isSidechain ?? false,
     },
     meta: null,
   };
@@ -53,8 +53,18 @@ export function codexEntry(
 
 function responseMessage(
   payload: Record<string, unknown>
-): Pick<ChatMessage, 'role' | 'segments'> | null {
+): (Pick<ChatMessage, 'role' | 'segments'> & { isSidechain?: boolean }) | null {
   switch (payload.type) {
+    case 'agent_message': {
+      // One agent writing to another (Codex 0.155), with an author and a
+      // recipient. Chatter between agents, like Claude's subagents, so it is a
+      // sidechain: hidden unless "show subagent activity" is on (#121).
+      const text = contentText(payload.content);
+      if (!text.trim()) return null;
+      const author = typeof payload.author === 'string' ? payload.author : 'agent';
+      const recipient = typeof payload.recipient === 'string' ? payload.recipient : 'agent';
+      return { role: 'assistant', segments: [{ kind: 'text', text: `${author} → ${recipient}: ${text}` }], isSidechain: true };
+    }
     case 'message': {
       const role = payload.role;
       if (role !== 'user' && role !== 'assistant') return null;
