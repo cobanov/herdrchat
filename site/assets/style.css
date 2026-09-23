@@ -1,11 +1,17 @@
 /*
  * Shared styling for herdrchat.cobanov.dev.
  *
- * Structure is herdr.dev's — the monospace wordmark at -0.04em, hairline
- * rules, near-square corners, the 1160px measure, the Inter / JetBrains Mono
- * stack — because HerdrChat is a client for herdr and should read as family.
+ * Structure is herdr.dev's: the monospace wordmark at -0.04em, hairline
+ * rules, near-square corners and the 1160px measure. HerdrChat is a client
+ * for herdr and should read as family.
  *
- * The ground is not. This is dark, and the palette comes from the app's own
+ * The type is Recursive, self-hosted (no font service sees a visitor). One
+ * family with a mono axis fits a product whose whole job is turning terminal
+ * output into conversation: the mono cut is the machine talking, the sans cut
+ * is the chat. The two files are instances of the same variable font, cut at
+ * build time so a font-family stack can pick either (see assets/fonts/OFL.txt).
+ *
+ * The ground is not herdr.dev's. This is dark, and the palette comes from the app's own
  * dark theme (src/theme/tokens.ts) rather than being invented here: the accent
  * is `tint` on dark, a periwinkle brightened to hold up against a dark ground,
  * and the greys are the same label opacities the app uses. The logo sits on a
@@ -15,6 +21,20 @@
  * the browser's own chrome follow, rather than a light widget appearing in the
  * middle of a dark page.
  */
+
+@font-face {
+  font-family: "Recursive Sans";
+  src: url("/assets/fonts/recursive-sans-v1.woff2") format("woff2");
+  font-weight: 300 1000;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Recursive Mono";
+  src: url("/assets/fonts/recursive-mono-v1.woff2") format("woff2");
+  font-weight: 300 1000;
+  font-display: swap;
+}
 
 :root {
   color-scheme: dark;
@@ -46,8 +66,8 @@
   --max: 1160px;
   --measure: 46rem;
 
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Recursive Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --body: "Recursive Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
