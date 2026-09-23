@@ -162,6 +162,8 @@ export interface ThreadState {
    *   now holds the workspace, not yet reporting its own. Sending is held.
    */
   sessionState: SessionState;
+  /** The host could not be reached on the last poll; what shows is saved history. */
+  offline: boolean;
   failedIds: Set<string>;
   send: (text: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
@@ -277,6 +279,9 @@ export function useThread(
   const boundSig = useRef<string | null>(null);
   /** The panes the bound session was seen in, sorted and joined. */
   const boundPanes = useRef('');
+  /** The saved history was already put on screen for an unreachable host. */
+  const offlineSeeded = useRef(false);
+  const [offline, setOffline] = useState(false);
   /**
    * The session this thread had open ended and a different agent now holds
    * the slot, not yet reporting its own session. Cleared when one binds.
@@ -763,12 +768,31 @@ export function useThread(
           }
         }
         setPollError(null);
+        setOffline(false);
         failures.current = 0;
       } catch (thrown) {
         if (!alive.current || stopped) return;
         setLoading(false);
         failures.current += 1;
         setPollError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setOffline(true);
+        /*
+          The host cannot be reached and nothing is on screen yet. The saved
+          messages were cut short before: they were read only after a snapshot
+          named the session, so an offline thread said "No agent is running"
+          over a conversation the phone had on disk (#97). Show them, read-only.
+          The cache belongs to the session last bound to this chat; when the
+          host is back and names a different one, `rebind` drops it and the
+          history is reset, as it always was.
+        */
+        if (!offlineSeeded.current && boundSig.current === null && arrivals.current.length === 0) {
+          offlineSeeded.current = true;
+          const cached = await seedMessages(db, connectionId, workspaceId);
+          if (!alive.current || stopped || boundSig.current !== null || cached.length === 0) return;
+          arrivals.current = cached;
+          seen.current = new Set(cached.map((message) => message.id));
+          rebuild();
+        }
       } finally {
         inFlight = false;
         // The banner stays up throughout: backing off must never read as
@@ -1151,8 +1175,10 @@ export function useThread(
       client !== null &&
       primaryPane !== null &&
       !loading &&
+      !offline &&
       sessionState !== 'unsupported' &&
       sessionState !== 'replaced',
+    offline,
     messages,
     status,
     agents,

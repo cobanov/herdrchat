@@ -470,6 +470,21 @@ it('keeps the thread bound when the same session moves to another pane', async (
   await unmount();
 });
 
+// #97: an unreachable host used to leave the thread saying "No agent is
+// running" over a conversation the phone had on disk.
+it('shows the saved history, read-only, when the host cannot be reached', async () => {
+  const saved: ChatMessage[] = [{ id: 'saved-1', role: 'assistant', segments: [{ kind: 'text', text: 'from the cache' }],
+    timestamp: 1, agentLabel: null, isSidechain: false }];
+  jest.mocked(seedMessages).mockResolvedValue(saved);
+  jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('timeout', "The host didn't answer.", { transport: true }));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [agent]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['saved-1']);
+  expect(result.current.offline).toBe(true);
+  expect(result.current.canSend).toBe(false);
+  await unmount();
+});
+
 it('ends the initial spinner when the transcript probe reports a read failure', async () => {
   mockProbe = { kind: 'unknown', reason: 'Permission denied' };
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
