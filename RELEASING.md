@@ -16,6 +16,25 @@ about a particular Apple team is committed. A fork sets its own values.
 
 ## Shipping a build
 
+Before building, run the live socket suite against **upstream stable herdr**,
+not only against the fork the development Mac runs. App Store users run
+upstream; a suite that passed only on the fork is how the app came to depend
+on fork-only events and fields (#75, #76, #85). A throwaway session keeps it
+away from your real workspaces:
+
+```bash
+gh release download v0.9.1 -R herdrdev/herdr -p herdr-macos-aarch64 -O ~/.local/bin/herdr-stable-0.9.1
+chmod +x ~/.local/bin/herdr-stable-0.9.1 && xattr -c ~/.local/bin/herdr-stable-0.9.1
+HERDR_SESSION=hc-upstream-test ~/.local/bin/herdr-stable-0.9.1 server &   # headless, own socket
+HERDR_LIVE=1 HERDR_LIVE_BIN=~/.local/bin/herdr-stable-0.9.1 \
+  HERDR_LIVE_SESSION=hc-upstream-test npx jest socket.live --forceExit
+# Optional, spends one Claude turn: HERDR_LIVE_PROMPT=1 HERDR_LIVE_CWD=<a folder Claude trusts>
+HERDR_SESSION=hc-upstream-test ~/.local/bin/herdr-stable-0.9.1 server stop
+```
+
+Run inside a herdr pane, the test strips the inherited `HERDR_*` variables
+itself; an inherited `HERDR_SOCKET_PATH` would otherwise win over the session.
+
 ```bash
 # Bump the build number first — App Store Connect rejects a duplicate.
 #   app.json → expo.ios.buildNumber

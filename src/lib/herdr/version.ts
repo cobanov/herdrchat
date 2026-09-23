@@ -28,8 +28,13 @@ export const MIN_HERDR_VERSION = '0.7.0';
  */
 export const AGENT_VERBS_VERSION = '0.8.0';
 
-/** The wire protocol this app was written against. 0.7.4 spoke 16; 0.8.0 speaks 19. */
-export const KNOWN_PROTOCOL = 19;
+/**
+ * The wire protocol this app was last checked against. 0.7.4 spoke 16, 0.8.0
+ * speaks 19, and 0.9.0, 0.9.1 and the 2026-09-21 preview all speak 22.
+ * Informational: what the app may use is gated by `AGENT_VERBS_VERSION` and
+ * by asking the host, not by this number.
+ */
+export const KNOWN_PROTOCOL = 22;
 
 export interface HerdrVersion {
   major: number;
