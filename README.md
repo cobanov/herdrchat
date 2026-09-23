@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://apps.apple.com/app/herdrchat/id6791874615"><strong>Download on the App Store</strong></a> ·
   <a href="https://herdrchat.cobanov.dev">Website</a> ·
   <a href="docs/getting-started.md">Get started</a> ·
   <a href="https://github.com/cobanov/herdrchat/issues">Issues</a>
@@ -40,13 +41,13 @@ Just curious? Open the built-in **Demo** host. No server setup needed.
 
 For your own agents:
 
-1. Get the iOS beta through [TestFlight](https://testflight.apple.com/join/zTmVfpkn), when available, or [build it locally](docs/getting-started.md#build-the-ios-app).
+1. Install HerdrChat from the [App Store](https://apps.apple.com/app/herdrchat/id6791874615) (free), or [build it locally](docs/getting-started.md#build-the-ios-app).
 2. Set up herdr and the [Claude or Codex integration](docs/getting-started.md#prepare-your-computer) on your computer.
 3. Add that computer in **Hosts**, test the SSH connection, and open a chat.
 
-**Still a beta.** iOS 17+ is the main platform. Android is experimental.
-Public TestFlight access depends on beta review, and push notifications need
-extra setup. See [setup and limitations](docs/getting-started.md).
+**On the App Store** for iPhone and iPad, iOS 17+. Android is experimental.
+Push notifications need extra setup on your host. See
+[setup and limitations](docs/getting-started.md).
 
 ## Want to tinker?
 
