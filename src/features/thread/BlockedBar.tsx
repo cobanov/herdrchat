@@ -5,7 +5,7 @@ import { haptics } from '@/lib/haptics';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, size, spacing } from '@/theme/tokens';
+import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import {
   CONTINUE_KEYS,
   isPendingKeys,
@@ -43,6 +43,8 @@ export function BlockedBar({
 }) {
   const { colors } = useTheme();
   const busy = pending !== null;
+  // The label's first line, so a checkbox centres on it rather than on the top edge.
+  const labelLine = useScaledLine(typography.subhead.lineHeight);
 
   const press = (keys: readonly string[]) => {
     haptics.selection();
@@ -115,12 +117,14 @@ export function BlockedBar({
                   </Text>
                 )}
                 {option.checked !== undefined && (
-                  <Icon
-                    name={option.checked ? 'checkmark.square.fill' : 'square'}
-                    size={16}
-                    tintColor={dim ? colors.secondaryLabel : colors.attention}
-                    fallback={<Text variant="subhead" color={dim ? 'secondary' : 'attention'}>{option.checked ? '☑' : '☐'}</Text>}
-                  />
+                  <View style={{ height: labelLine, justifyContent: 'center' }}>
+                    <Icon
+                      name={option.checked ? 'checkmark.square.fill' : 'square'}
+                      size={16}
+                      tintColor={dim ? colors.secondaryLabel : colors.attention}
+                      fallback={<Text variant="subhead" color={dim ? 'secondary' : 'attention'}>{option.checked ? '☑' : '☐'}</Text>}
+                    />
+                  </View>
                 )}
                 <Text variant="subhead" color={dim ? 'secondary' : 'label'} style={{ flex: 1 }}>
                   {option.label}
