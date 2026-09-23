@@ -13,6 +13,12 @@ export function connectionRecovery(code: string): {
         label: 'Review credentials',
         action: 'credentials',
       };
+    case 'credentials_missing':
+      return {
+        title: 'The key or password is not on this device',
+        label: 'Enter credentials',
+        action: 'credentials',
+      };
     case 'bad_key':
       return {
         title: 'The private key could not be read',

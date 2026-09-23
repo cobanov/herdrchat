@@ -53,6 +53,12 @@ export type SshFailureCode =
   | 'auth_failed'
   /** The private key could not be parsed (wrong format, bad passphrase). */
   | 'bad_key'
+  /**
+   * The key or password is not on this device, raised in TypeScript before any
+   * connect. A device backup restores the hosts but not their secrets, which
+   * are device-only in the keychain.
+   */
+  | 'credentials_missing'
   /** A command was issued against an id that has no live connection. */
   | 'not_connected'
   /** The channel died mid-command (dropped socket, suspended app). */

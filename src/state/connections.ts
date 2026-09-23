@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
-import { SshHerdrTransport } from '@/lib/herdr/sshTransport';
+import { MissingCredentialsError, SshHerdrTransport } from '@/lib/herdr/sshTransport';
 import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 
@@ -231,7 +231,14 @@ export function clientFor(connection: ServerConnection): HerdrClient {
         loadSecret(connection.id),
         loadHostKeyPin(connection.id),
       ]);
-      return sshConfig(connection, secret ?? '', pin);
+      if (secret === null || secret.length === 0) {
+        throw new MissingCredentialsError(
+          connection.authKind === 'password'
+            ? `The password for ${connection.name || connection.host} isn't on this device. Restoring a backup brings back hosts but not their passwords. Enter it again.`
+            : `The private key for ${connection.name || connection.host} isn't on this device. Restoring a backup brings back hosts but not their keys. Add it again.`
+        );
+      }
+      return sshConfig(connection, secret, pin);
     },
     (fingerprint) => {
       // First contact: remember what we trusted, so a later key change is
