@@ -442,19 +442,30 @@ export class TranscriptStore {
     agentLabel: string | null,
     beforeByte: number
   ): Promise<{ messages: ChatMessage[]; startByte: number; reachedStart: boolean }> {
-    const output = await this.shell(
-      `head -c ${beforeByte} ${shellQuote(path)} | LC_ALL=C grep -a -b '' | cut -d: -f1 | tail -n 1`
-    );
-    const lineStart = Number.parseInt(output.trim(), 10);
-    if (!Number.isInteger(lineStart) || lineStart < 0 || lineStart >= beforeByte) {
-      throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
-    }
+    const lineStart = await this.lineStartBefore(path, beforeByte);
     const lineBytes = beforeByte - lineStart;
     const messages =
       lineBytes > OLDER_LINE_MAX_BYTES
         ? []
         : parseTranscript(await this.readRange(path, lineStart, lineBytes), agentLabel);
     return { messages, startByte: lineStart, reachedStart: lineStart <= 0 };
+  }
+
+  /**
+   * Where the line that ends at (or contains) `byte - 1` starts: the host runs
+   * `grep -b` over the prefix and returns only that offset, never the content.
+   * Used where a read must begin exactly on a line boundary.
+   */
+  async lineStartBefore(path: string, byte: number): Promise<number> {
+    if (byte <= 0) return 0;
+    const output = await this.shell(
+      `head -c ${byte} ${shellQuote(path)} | LC_ALL=C grep -a -b '' | cut -d: -f1 | tail -n 1`
+    );
+    const lineStart = Number.parseInt(output.trim(), 10);
+    if (!Number.isInteger(lineStart) || lineStart < 0 || lineStart >= byte) {
+      throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
+    }
+    return lineStart;
   }
 
   /**

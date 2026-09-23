@@ -6,6 +6,14 @@ jest.mock('../../../modules/herdr-ssh/src', () => ({
   disconnect: jest.fn(async () => undefined),
   exec: jest.fn(),
   streamLines: jest.fn(),
+  SshStreamError: class SshStreamError extends Error {
+    readonly code: string;
+    constructor(failure: { code: string; message: string }) {
+      super(failure.message);
+      this.name = 'SshStreamError';
+      this.code = failure.code;
+    }
+  },
 }));
 
 describe('SshHerdrTransport (#98)', () => {
@@ -39,4 +47,15 @@ it('refuses a command longer than a host shell accepts as one argument', async (
     code: 'request_too_large',
   });
   expect(mockConnect).not.toHaveBeenCalled();
+});
+
+// #109: a stream that could not open lost its failure code.
+it('says why a stream could not open', async () => {
+  const transport = new SshHerdrTransport('host-4', async () => {
+    throw new MissingCredentialsError("The password for mini isn't on this device.");
+  });
+  const open = async () => {
+    for await (const _line of transport.streamLines('tail -f x', 1000)) void _line;
+  };
+  await expect(open()).rejects.toMatchObject({ name: 'SshStreamError', code: 'credentials_missing' });
 });

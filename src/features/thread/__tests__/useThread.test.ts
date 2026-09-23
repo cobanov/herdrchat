@@ -58,6 +58,7 @@ jest.mock('@/lib/transcript/store', () => ({
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
     claudeTranscriptPath = async (_cwd: string, id: string) => `/test/${id}.jsonl`;
     findClaudeTranscript = async () => null;
+    lineStartBefore = async (_path: string, byte: number) => byte - 321;
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
     fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
@@ -652,7 +653,8 @@ it('uses the cache without a bulk read when the host file has not changed', asyn
   expect(result.current.messages.map(message => message.id)).toEqual(['cached']);
   expect(mockRecent).not.toHaveBeenCalled();
   expect(replaceMessages).not.toHaveBeenCalled();
-  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 4096 }]);
+  // From the start of the line at the cursor, as the host reports it (#109).
+  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 321 }]);
   await unmount();
 });
 

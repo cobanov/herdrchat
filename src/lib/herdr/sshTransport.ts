@@ -3,6 +3,7 @@ import {
   disconnect,
   exec,
   streamLines,
+  SshStreamError,
   type ConnectResult,
   type ExecResult,
   type SshConfig,
@@ -123,7 +124,9 @@ export class SshHerdrTransport implements HerdrTransport {
     const opened = await this.open();
     if (signal?.aborted) return;
     if (!opened.ok) {
-      throw new Error(opened.message);
+      // With its code, so a stream that cannot open says WHY (a changed host
+      // key, missing credentials) rather than only what (#109).
+      throw new SshStreamError(opened);
     }
     yield* streamLines(this.id, command, startTimeoutMs, signal);
   }

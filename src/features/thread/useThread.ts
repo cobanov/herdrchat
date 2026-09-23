@@ -57,9 +57,13 @@ const RECENT_BYTES_WIDE = 3_000_000;
 const RECENT_MESSAGES = 150;
 const THIN_HISTORY = 10;
 /**
- * On resume, rewind this far before the stored cursor: a disconnect can leave it
- * mid-line, and re-reading the boundary line in full costs nothing (dedupe drops
- * what we've seen) while losing it costs a message.
+ * On resume, the tail re-reads the line at the stored cursor: a disconnect can
+ * leave the cursor mid-line, and re-reading the boundary line in full costs
+ * nothing (dedupe drops what we've seen) while losing it costs a message. The
+ * host says where that line starts (#109). A blind rewind by a byte count could
+ * land inside a multi-byte character, and the lossy decode of that fragment
+ * pushed the cursor a few bytes past where it really was. This fixed rewind is
+ * only the fallback when the host cannot be asked.
  */
 const RESUME_REWIND = 4096;
 /**
@@ -573,7 +577,7 @@ export function useThread(
 
       setTailError(openingError);
       for (const source of windows) {
-        const followFrom = source.recent?.consumedBytes ?? Math.max(0, source.cached! - RESUME_REWIND);
+        const followFrom = source.recent?.consumedBytes ?? await resumePoint(store, source.path, source.cached!);
         if (source.recent !== null) {
           await setTailCursor(db, connectionId, workspaceId, source.path, followFrom);
         }
@@ -1246,6 +1250,15 @@ export function useThread(
     },
     reload,
   };
+}
+
+/** Where a tail resuming from `cursor` starts: the start of the line there. */
+async function resumePoint(store: TranscriptStore, path: string, cursor: number): Promise<number> {
+  try {
+    return await store.lineStartBefore(path, cursor);
+  } catch {
+    return Math.max(0, cursor - RESUME_REWIND);
+  }
 }
 
 /**
