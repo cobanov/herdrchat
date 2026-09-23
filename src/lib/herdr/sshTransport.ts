@@ -8,6 +8,7 @@ import {
   type SshConfig,
 } from '../../../modules/herdr-ssh/src';
 import { checkDoneMark, withDoneMark } from './doneMark';
+import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
 import type { HerdrTransport } from './transport';
 import { withJsDeadline } from './timeouts';
 
@@ -106,6 +107,11 @@ export class SshHerdrTransport implements HerdrTransport {
    * mean.
    */
   async exec(command: string, timeoutMs: number): Promise<ExecResult> {
+    // The backstop for every path, CLI sends included: past this the host's
+    // shell refuses the command (E2BIG) with an error that names nothing (#105).
+    if (utf8Length(command) > MAX_COMMAND_BYTES) {
+      return { ok: false, code: 'request_too_large', message: tooLarge().message };
+    }
     const opened = await this.open();
     if (!opened.ok) return opened;
     const result = await withJsDeadline(exec(this.id, withDoneMark(command), timeoutMs), timeoutMs);

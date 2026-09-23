@@ -59,6 +59,8 @@ export type SshFailureCode =
    * are device-only in the keychain.
    */
   | 'credentials_missing'
+  /** The command is longer than a host shell accepts as one argument. Raised in TypeScript. */
+  | 'request_too_large'
   /** A command was issued against an id that has no live connection. */
   | 'not_connected'
   /** The channel died mid-command (dropped socket, suspended app). */

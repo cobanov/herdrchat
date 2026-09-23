@@ -203,12 +203,18 @@ export type SocketEvent =
 const PROBE_TIMEOUT_MS = 8000;
 
 /**
- * Bytes a single argument may be on the host. Linux caps one argv string at
- * 128 KiB (`MAX_ARG_STRLEN`); macOS is looser but the fork's bridge documents
- * hitting E2BIG at the same figure. Requests here are a prompt plus a few
- * dozen bytes of envelope, so this is a guard, not a budget.
+ * Bytes a whole command may be on the host. sshd hands the command to the
+ * login shell as ONE argument (`$SHELL -c <command>`), and Linux caps one argv
+ * string at 128 KiB (`MAX_ARG_STRLEN`); macOS is looser but the fork's bridge
+ * documents hitting E2BIG at the same figure. A little is kept back for what
+ * the transport adds around the command (the session prefix, the done mark).
+ *
+ * Checked on the finished command, not the request: the api-bridge route
+ * base64s the request (4/3 larger) and quoting grows every `'` fourfold, so
+ * prompts of roughly 96-120 KiB used to pass a check on the request and then
+ * fail on the host (#105).
  */
-export const MAX_REQUEST_BYTES = 120 * 1024;
+export const MAX_COMMAND_BYTES = 126 * 1024;
 
 /**
  * The shell command that delivers `request` to the socket and prints what
@@ -217,12 +223,21 @@ export const MAX_REQUEST_BYTES = 120 * 1024;
  * Exported for tests, which pin the shape of each bridge without a host.
  */
 export function commandFor(route: SocketRoute, request: string, herdr: string): string {
-  if (utf8Length(request) > MAX_REQUEST_BYTES) {
-    throw new HerdrError(
-      'request_too_large',
-      'That message is too long to send in one go. Shorten it, or send it in parts.'
-    );
-  }
+  const command = bridgeCommand(route, request, herdr);
+  if (utf8Length(command) > MAX_COMMAND_BYTES) throw tooLarge();
+  return command;
+}
+
+/** The refusal for a message too long to send in one command. */
+export function tooLarge(): HerdrError {
+  return new HerdrError(
+    'request_too_large',
+    'That message is too long to send in one go. Shorten it, or send it in parts.'
+  );
+}
+
+/** The request as the host will receive it, for this route. */
+function bridgeCommand(route: SocketRoute, request: string, herdr: string): string {
   switch (route.bridge) {
     case 'python3':
       // `-S` skips site-packages; the bridge needs only the standard library
@@ -350,7 +365,7 @@ function firstLine(text: string): string {
   return text.trim().split('\n')[0] ?? '';
 }
 
-function utf8Length(text: string): number {
+export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 

@@ -1,7 +1,7 @@
 import { HerdrError } from '../herdr/protocol';
 import {
   HerdrSocket,
-  MAX_REQUEST_BYTES,
+  MAX_COMMAND_BYTES,
   base64,
   commandFor,
   decodeEvent,
@@ -154,8 +154,23 @@ describe('call', () => {
 
   it('refuses a request the host could not accept as one argument', () => {
     const route = { bridge: 'python3', socketPath: '/tmp/h.sock' } as const;
-    const huge = JSON.stringify({ id: 'x', method: 'agent.prompt', params: { text: 'a'.repeat(MAX_REQUEST_BYTES) } });
+    const huge = JSON.stringify({ id: 'x', method: 'agent.prompt', params: { text: 'a'.repeat(MAX_COMMAND_BYTES) } });
     expect(() => commandFor(route, huge, 'herdr')).toThrow(HerdrError);
+  });
+
+  // #105: the check was on the request, before base64 and quoting grew it.
+  it('counts what the route adds: base64 on the fork bridge', () => {
+    const route = { bridge: 'api-bridge', socketPath: '/tmp/h.sock' } as const;
+    const request = JSON.stringify({ id: 'x', method: 'agent.prompt', params: { text: 'a'.repeat(100 * 1024) } });
+    expect(() => commandFor(route, request, 'herdr')).toThrow(HerdrError);
+    const python = { bridge: 'python3', socketPath: '/tmp/h.sock' } as const;
+    expect(() => commandFor(python, request, 'herdr')).not.toThrow();
+  });
+
+  it('counts what the route adds: quoting of single quotes', () => {
+    const route = { bridge: 'python3', socketPath: '/tmp/h.sock' } as const;
+    const request = JSON.stringify({ id: 'x', method: 'agent.prompt', params: { text: "'".repeat(40 * 1024) } });
+    expect(() => commandFor(route, request, 'herdr')).toThrow(HerdrError);
   });
 
   it('hands the fork bridge base64 of the UTF-8 bytes', () => {

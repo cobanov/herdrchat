@@ -28,3 +28,15 @@ describe('SshHerdrTransport (#98)', () => {
     await expect(transport.exec('true', 1000)).resolves.toMatchObject({ ok: false, code: 'connect_failed' });
   });
 });
+
+// #105: the CLI send paths had no size guard at all.
+it('refuses a command longer than a host shell accepts as one argument', async () => {
+  const transport = new SshHerdrTransport('host-3', async () => {
+    throw new Error('never reached');
+  });
+  await expect(transport.exec(`herdr pane run w1:p1 '${'a'.repeat(130 * 1024)}'`, 1000)).resolves.toMatchObject({
+    ok: false,
+    code: 'request_too_large',
+  });
+  expect(mockConnect).not.toHaveBeenCalled();
+});
