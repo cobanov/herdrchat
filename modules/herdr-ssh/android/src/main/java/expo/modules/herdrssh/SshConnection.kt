@@ -23,7 +23,12 @@ import java.security.MessageDigest
 import java.security.PublicKey
 
 /** A failure the caller is expected to handle. `code` matches `SshFailureCode` in TypeScript. */
-class SshFailure(val code: String, override val message: String) : Exception(message)
+class SshFailure(
+  val code: String,
+  override val message: String,
+  /** On `host_key_changed`: the fingerprint the host presented instead of the pin. */
+  val presentedFingerprint: String? = null,
+) : Exception(message)
 
 /**
  * One long-lived SSH connection to a herdr host.
@@ -40,6 +45,7 @@ class SshConnection(private val config: SshConfigRecord) {
   /** The client being dialled, so a deadline can close it without the mutex. */
   @Volatile private var dialing: SSHClient? = null
   @Volatile private var hostKeyMismatch = false
+  @Volatile private var presentedFingerprint: String? = null
   @Volatile var acceptedFingerprint: String? = null
     private set
 
@@ -69,7 +75,8 @@ class SshConnection(private val config: SshConfigRecord) {
         if (hostKeyMismatch) {
           throw SshFailure(
             "host_key_changed",
-            "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin.",
+            "This host's SSH key has changed since you saved it.",
+            presentedFingerprint,
           )
         }
         if (error is SshFailure) throw error
@@ -103,6 +110,7 @@ class SshConnection(private val config: SshConfigRecord) {
         return true   // no pin: first contact, trust and record
       }
       hostKeyMismatch = true
+      presentedFingerprint = fingerprint
       return false
     }
 
@@ -132,6 +140,14 @@ class SshConnection(private val config: SshConfigRecord) {
       )
     }
   }
+
+  /**
+   * Connect within a deadline. `connectTimeout` bounds only opening the socket;
+   * a host that accepts TCP and then says nothing (not an SSH server, or a
+   * wedged one) held the handshake, and Test connection with it, until the host
+   * closed the socket, minutes later (#4 acceptance).
+   */
+  suspend fun connectWithin(timeoutMs: Int): SSHClient = withDeadline(timeoutMs) { connected() }
 
   suspend fun close() = mutex.withLock {
     withContext(Dispatchers.IO) { runCatching { client?.disconnect() } }
@@ -298,10 +314,18 @@ class SshConnection(private val config: SshConfigRecord) {
     @Volatile var stopped = false
       private set
 
-    /** Closing the session is what unblocks a `readLine()` parked on the channel. */
+    /**
+     * Closing the session is what unblocks a `readLine()` parked on the channel.
+     *
+     * Off the caller's thread: sshj's close waits for the host to close its side,
+     * and the caller is Expo's single queue for every async call of this module,
+     * so a close that took 30 s held up every SSH call behind it (#4). The host
+     * now ends the command when the channel closes (`untilChannelCloses`), which
+     * keeps that wait short, but nothing should wait on it here.
+     */
     fun stop() {
       stopped = true
-      runCatching { session.close() }
+      Thread { runCatching { session.close() } }.apply { isDaemon = true }.start()
     }
   }
 }

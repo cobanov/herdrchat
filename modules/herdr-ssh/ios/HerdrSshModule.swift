@@ -41,7 +41,7 @@ public class HerdrSshModule: Module {
         return ["ok": true, "fingerprint": fingerprint]
       } catch let failure as SshFailure {
         await self.connections.drop(id)
-        return ["ok": false, "code": failure.code, "message": failure.message]
+        return failureMap(failure)
       } catch {
         await self.connections.drop(id)
         return ["ok": false, "code": "connect_failed", "message": SshFailure.friendly(error)]
@@ -65,7 +65,7 @@ public class HerdrSshModule: Module {
           "exitCode": output.exitCode,
         ]
       } catch let failure as SshFailure {
-        return ["ok": false, "code": failure.code, "message": failure.message]
+        return failureMap(failure)
       } catch {
         return ["ok": false, "code": "transport_failed", "message": SshFailure.friendly(error)]
       }
@@ -99,7 +99,7 @@ public class HerdrSshModule: Module {
         await self.connections.registerStream(streamId, task: task)
         return ["ok": true]
       } catch let failure as SshFailure {
-        return ["ok": false, "code": failure.code, "message": failure.message]
+        return failureMap(failure)
       } catch {
         return ["ok": false, "code": "transport_failed", "message": SshFailure.friendly(error)]
       }
@@ -163,4 +163,12 @@ actor ConnectionStore {
     for connection in connections.values { await connection.close() }
     connections.removeAll()
   }
+}
+
+/// A failure as JavaScript receives it; the presented fingerprint only when
+/// there is one, so the shape stays what every other failure has.
+func failureMap(_ failure: SshFailure) -> [String: Any] {
+  var map: [String: Any] = ["ok": false, "code": failure.code, "message": failure.message]
+  if let presented = failure.presentedFingerprint { map["presentedFingerprint"] = presented }
+  return map
 }

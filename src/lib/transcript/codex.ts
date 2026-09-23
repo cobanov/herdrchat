@@ -1,4 +1,4 @@
-import { codexUserText } from './harness';
+import { codexAssistantText, codexUserText } from './harness';
 import type { ChatMessage, MessageSegment } from './message';
 import type { TranscriptEntry } from './parser';
 
@@ -59,7 +59,7 @@ function responseMessage(
       // One agent writing to another (Codex 0.155), with an author and a
       // recipient. Chatter between agents, like Claude's subagents, so it is a
       // sidechain: hidden unless "show subagent activity" is on (#121).
-      const text = contentText(payload.content);
+      const text = codexAssistantText(contentText(payload.content));
       if (!text.trim()) return null;
       const author = typeof payload.author === 'string' ? payload.author : 'agent';
       const recipient = typeof payload.recipient === 'string' ? payload.recipient : 'agent';
@@ -70,7 +70,8 @@ function responseMessage(
       if (role !== 'user' && role !== 'assistant') return null;
       // Internal analysis is not a user-facing assistant response.
       if (payload.channel === 'analysis') return null;
-      const text = contentText(payload.content, role === 'user');
+      const content = contentText(payload.content, role === 'user');
+      const text = role === 'assistant' ? codexAssistantText(content) : content;
       if (!text.trim()) return null;
       return { role, segments: [{ kind: 'text', text }] };
     }

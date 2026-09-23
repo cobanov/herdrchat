@@ -1,29 +1,40 @@
 #!/usr/bin/env python3
-"""Send an iOS push (APNs) when a herdr agent needs you or finishes.
+"""Send an iOS push when a herdr agent needs you or finishes.
 
-Runs on the herdr host (the Mac mini the agents run on). Polls the local herdr
-socket via `herdr api snapshot`, and when any agent transitions into `blocked`
-(waiting for your input) or `done` (finished), it sends an APNs push straight to
-the phone — so HerdrChat notifies you even when it's closed or backgrounded.
-This is the iOS counterpart to Android's foreground watch service.
+Runs on the herdr host (the machine the agents run on). Polls herdr with
+`herdr api snapshot`, and when an agent becomes `blocked` (waiting for your
+input) or `done` (finished), it sends a push to every phone registered here,
+so HerdrChat notifies you even when it is closed.
 
-Dependency-free: signs the APNs JWT with `openssl` (ES256) and delivers over
-HTTP/2 with `curl`. No pip installs.
+Two ways to reach Apple:
 
-Device tokens: the HerdrChat app writes its APNs token to
-~/.config/herdrchat/apns-tokens/<id>.json on connect; this watcher pushes to
-every token it finds there.
+- Through the HerdrChat relay (the default, and the only way for the App Store
+  build). Apple only accepts a push signed by the team that built the app, so
+  the relay holds that key. It receives the device token and the notification
+  text, signs, forwards, and keeps nothing. Source: relay/ in the repository.
+- Straight to APNs, when you build and sign the app yourself: set all three of
+  APNS_KEY_ID, APNS_TEAM_ID and APNS_KEY_PATH to your own APNs key.
+
+Dependency-free: python3 and, in direct mode, `openssl` and `curl`.
+
+Device tokens: the HerdrChat app writes its token to
+~/.config/herdrchat/apns-tokens/<id>.json over SSH (under sessions/<name>/
+for a named herdr session); this watcher pushes to every token it finds there.
+A token Apple reports as retired is deleted.
 
 Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
-    APNS_KEY_ID     10-char Key ID of your APNs auth key (required).
-    APNS_TEAM_ID    Apple Team ID (required).
-    APNS_KEY_PATH   Explicit path to your APNs AuthKey_XXXX.p8 (required).
+    HERDRCHAT_RELAY_URL  Relay endpoint (default the HerdrChat relay).
+    APNS_KEY_ID     Direct mode: 10-char Key ID of your APNs auth key.
+    APNS_TEAM_ID    Direct mode: your Apple Team ID.
+    APNS_KEY_PATH   Direct mode: path to your AuthKey_XXXX.p8.
                     App Store Connect API keys cannot be used for APNs.
-    APNS_BUNDLE_ID  App bundle id / apns-topic (default dev.herdr.HerdrChat).
-    APNS_ENV        "production" (default, TestFlight/App Store) or "sandbox".
+    APNS_BUNDLE_ID  Direct mode: bundle id / apns-topic (default dev.herdr.HerdrChat).
+    APNS_ENV        Direct mode: force "production" or "sandbox"; by default
+                    each token's own environment is used.
     NOTIFY_ON       States to notify on (default "blocked,done").
     POLL_SECONDS    Poll interval (default 3).
     HERDR_BIN       herdr binary (default: herdr).
+    HERDR_SESSION   The herdr session to watch (default: herdr's default).
 """
 
 import base64
@@ -36,9 +47,12 @@ import time
 import urllib.error
 import urllib.request
 
+# Bumped with every change the app should roll out: the app embeds this script,
+# installs it on a host, and offers an update when a host runs an older one.
+WATCHER_VERSION = 2
+
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
-TOKENS_DIR = os.path.join(CONFIG_DIR, "apns-tokens")
 
 
 def _load_env_file():
@@ -59,7 +73,16 @@ KEY_ID = os.environ.get("APNS_KEY_ID")
 TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
 KEY_PATH = os.environ.get("APNS_KEY_PATH")
 BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "dev.herdr.HerdrChat")
-APNS_HOST = "api.sandbox.push.apple.com" if os.environ.get("APNS_ENV") == "sandbox" else "api.push.apple.com"
+FORCED_ENV = os.environ.get("APNS_ENV")
+RELAY_URL = os.environ.get("HERDRCHAT_RELAY_URL", "https://push.herdrchat.cobanov.dev/v1/push")
+SESSION = os.environ.get("HERDR_SESSION", "").strip()
+# A named session's phones register under their own folder: a push names a
+# workspace, and workspace ids mean something only within one session.
+TOKENS_DIR = os.path.join(
+    CONFIG_DIR, "apns-tokens", *(["sessions", SESSION] if SESSION and SESSION != "default" else [])
+)
+# Apple's answers that mean this token will never work again.
+RETIRED = {"Unregistered", "BadDeviceToken", "DeviceTokenNotForTopic"}
 NOTIFY_ON = {s.strip() for s in os.environ.get("NOTIFY_ON", "blocked,done").split(",") if s.strip()}
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "3"))
 HERDR_BIN = os.environ.get("HERDR_BIN", "herdr")
@@ -111,8 +134,21 @@ def apns_jwt() -> str:
     return token
 
 
+def mode():
+    """"direct" with a complete APNs key, "relay" with none of it, else the
+    names of what is missing, because half a key is a mistake worth stopping on."""
+    given = {"APNS_KEY_ID": KEY_ID, "APNS_TEAM_ID": TEAM_ID, "APNS_KEY_PATH": KEY_PATH}
+    missing = [name for name, value in given.items() if not value]
+    if not missing:
+        return "direct"
+    if len(missing) == len(given):
+        return "relay"
+    return missing
+
+
 def device_tokens():
-    """Registered devices: (APNs token, the app's connection id for this host).
+    """Registered devices: (APNs token, the app's connection id for this host,
+    the token's APNs environment).
 
     The connection id is how a tap on the phone knows which of its hosts sent
     the push. Token files from app builds before it have none (None here)."""
@@ -122,36 +158,81 @@ def device_tokens():
             data = json.load(open(path))
             tok = data.get("token")
             if tok:
-                out.append((tok, data.get("connection")))
+                env = "sandbox" if data.get("env") in ("sandbox", "development") else "production"
+                out.append((tok, data.get("connection"), env))
         except (OSError, ValueError):
             continue
     return out
 
 
-def send_push(device_token: str, title: str, body: str, extra=None) -> bool:
-    """`extra` rides at the payload root beside `aps`. The app reads
-    `workspace` (and optional `label`) from it to open the tapped thread."""
+def forget_token(device_token: str):
+    """Delete every file carrying a token Apple has retired."""
+    for path in glob.glob(os.path.join(TOKENS_DIR, "*.json")):
+        try:
+            if json.load(open(path)).get("token") == device_token:
+                os.remove(path)
+        except (OSError, ValueError):
+            continue
+
+
+def send_push(device_token: str, title: str, body: str, extra=None, env="production"):
+    """Deliver one notification. Returns (http status, Apple's reason or None).
+
+    `extra` rides at the payload root beside `aps`. The app reads `workspace`
+    (and optional `label`, `session`, `connection`) from it to open the tapped
+    thread."""
+    if mode() == "direct":
+        return _send_direct(device_token, title, body, extra, FORCED_ENV or env)
+    return _send_relay(device_token, title, body, extra, env)
+
+
+def _send_relay(device_token, title, body, extra, env):
+    request = urllib.request.Request(
+        RELAY_URL,
+        data=json.dumps({
+            "token": device_token, "env": env,
+            "title": title[:120], "body": body[:240], "data": extra or {},
+        }).encode(),
+        headers={"content-type": "application/json", "user-agent": "herdrchat-notifier"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status, None
+    except urllib.error.HTTPError as error:
+        try:
+            reason = json.loads(error.read() or b"{}").get("reason")
+        except ValueError:
+            reason = None
+        return error.code, reason
+    except (urllib.error.URLError, OSError) as error:
+        return 0, str(error)
+
+
+def _send_direct(device_token, title, body, extra, env):
     root = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
     if extra:
         root.update(extra)
-    payload = json.dumps(root)
+    host = "api.sandbox.push.apple.com" if env == "sandbox" else "api.push.apple.com"
     result = subprocess.run(
         [
-            "curl", "--http2", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+            "curl", "--http2", "-s", "-o", "-", "-w", "\n%{http_code}",
             "-X", "POST",
             "-H", f"authorization: bearer {apns_jwt()}",
             "-H", f"apns-topic: {BUNDLE_ID}",
             "-H", "apns-push-type: alert",
             "-H", "apns-priority: 10",
-            "-d", payload,
-            f"https://{APNS_HOST}/3/device/{device_token}",
+            "-d", json.dumps(root),
+            f"https://{host}/3/device/{device_token}",
         ],
         capture_output=True, text=True,
     )
-    code = result.stdout.strip()
-    if code != "200":
-        print(f"[apns] push failed ({code}) for token …{device_token[-6:]}", file=sys.stderr)
-    return code == "200"
+    reply, _, code = result.stdout.rpartition("\n")
+    try:
+        reason = json.loads(reply).get("reason") if reply.strip() else None
+    except ValueError:
+        reason = None
+    return int(code) if code.strip().isdigit() else 0, reason
 
 
 def snapshot_agents():
@@ -204,11 +285,16 @@ def should_notify(agent, previous):
 
 
 def main():
-    if not KEY_ID or not TEAM_ID or not KEY_PATH or not os.path.isfile(KEY_PATH) or not os.access(KEY_PATH, os.R_OK):
-        sys.exit("Set APNS_KEY_ID, APNS_TEAM_ID and a readable APNS_KEY_PATH for an APNs auth key. "
+    how = mode()
+    if isinstance(how, list):
+        sys.exit(f"Set all of APNS_KEY_ID, APNS_TEAM_ID and APNS_KEY_PATH for your own APNs key, "
+                 f"or none of them to use the HerdrChat relay. Missing: {', '.join(how)}.")
+    if how == "direct" and (not os.path.isfile(KEY_PATH) or not os.access(KEY_PATH, os.R_OK)):
+        sys.exit("APNS_KEY_PATH must be a readable APNs auth key (.p8). "
                  "App Store Connect API keys are not supported. See the script header.")
     os.makedirs(TOKENS_DIR, exist_ok=True)
-    print(f"[apns] watching herdr; key {KEY_ID}, topic {BUNDLE_ID}, host {APNS_HOST}", file=sys.stderr)
+    where = f"key {KEY_ID}, topic {BUNDLE_ID}" if how == "direct" else f"relay {RELAY_URL}"
+    print(f"[apns] watching herdr{' session ' + SESSION if SESSION else ''}; {where}", file=sys.stderr)
     last = {}
     seeded = False
     while True:
@@ -230,8 +316,14 @@ def main():
                         # Lets the app tell this chat from a later one in the
                         # same workspace slot.
                         extra["session"] = session["value"]
-                    for tok, connection in tokens:
-                        send_push(tok, title, body, dict(extra, connection=connection) if connection else extra)
+                    for tok, connection, env in tokens:
+                        status, reason = send_push(
+                            tok, title, body, dict(extra, connection=connection) if connection else extra, env=env
+                        )
+                        if status != 200:
+                            print(f"[apns] push failed ({status} {reason or ''}) for token …{tok[-6:]}", file=sys.stderr)
+                        if reason in RETIRED:
+                            forget_token(tok)
                 last[pane] = memo
             seeded = True
         time.sleep(POLL_SECONDS)

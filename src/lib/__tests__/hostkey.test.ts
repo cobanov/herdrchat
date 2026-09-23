@@ -1,7 +1,6 @@
 import {
   fingerprintMatchesPin,
   formatFingerprint,
-  isHostKeyChangedMessage,
   normalizeFingerprint,
   shouldResetPin,
 } from '../hostkey';
@@ -48,17 +47,3 @@ describe('fingerprint format', () => {
   });
 });
 
-describe('isHostKeyChangedMessage', () => {
-  it('recognises the native mismatch message', () => {
-    expect(
-      isHostKeyChangedMessage(
-        "The server's SSH key DIFFERS from the saved one (possible MITM, or the server was reinstalled). If you trust it, edit and save the server to reset the pin."
-      )
-    ).toBe(true);
-  });
-
-  it('leaves an ordinary failure to the generic banner', () => {
-    expect(isHostKeyChangedMessage("Couldn't reach the host.")).toBe(false);
-    expect(isHostKeyChangedMessage(null)).toBe(false);
-  });
-});

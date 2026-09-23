@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, ScrollView, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
@@ -9,6 +10,7 @@ import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
+import { KeyField } from '@/features/servers/KeyField';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { connectionRecovery, type RecoveryAction } from '@/lib/connectionRecovery';
 import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
@@ -39,7 +41,7 @@ type TestState =
    * state, not a `failed` flavour: the only way forward is an explicit,
    * confirmed decision to trust the new key, never a silent re-pin.
    */
-  | { kind: 'keyChanged'; message: string };
+  | { kind: 'keyChanged'; message: string; presented: string | null };
 
 /**
  * Add or edit a herdr host.
@@ -51,6 +53,7 @@ type TestState =
  */
 export default function ServerEditScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const params = useLocalSearchParams<{ id: string; mode?: string }>();
@@ -154,7 +157,7 @@ export default function ServerEditScreen() {
       if (attempt !== testAttempt.current) return;
       const failure = thrown instanceof HerdrError ? thrown : null;
       if (failure?.code === 'host_key_changed') {
-        setTest({ kind: 'keyChanged', message: failure.message });
+        setTest({ kind: 'keyChanged', message: failure.message, presented: failure.presentedFingerprint });
       } else {
         setTest({
           kind: 'failed',
@@ -175,6 +178,16 @@ export default function ServerEditScreen() {
       confirmLabel: 'Trust the new key',
       onConfirm: () => {
         void (async () => {
+          const presented = test.kind === 'keyChanged' ? test.presented : null;
+          if (presented !== null) {
+            // Pin exactly the key that was shown. Clearing the pin and testing
+            // again would trust whatever key answers next, which need not be
+            // the one the user just compared.
+            await saveHostKeyPin(params.id, presented);
+            setStoredPin(presented);
+            await runTest();
+            return;
+          }
           await clearSecrets(params.id, { keepSecret: true });
           // The screen's copy of the pin has to go with the stored one. `save()`
           // decides whether to write a pin by asking whether this host still has
@@ -297,10 +310,49 @@ export default function ServerEditScreen() {
     router.dismissAll();
   };
 
+  /**
+   * Done used to drop a half-typed host without a word, key and all (#4
+   * acceptance). With anything entered or changed it asks first.
+   */
+  const dirty = isNew
+    ? [name, host, username, secret, sessionName].some((value) => value.trim().length > 0) ||
+      herdrPath !== 'herdr' ||
+      port !== '22'
+    : name !== existing.name ||
+      host !== existing.host ||
+      port !== String(existing.port) ||
+      username !== existing.username ||
+      authKind !== existing.authKind ||
+      secret.length > 0 ||
+      herdrPath !== existing.herdrPath ||
+      sessionName !== existing.sessionName;
+  const close = () => {
+    if (!dirty) {
+      router.back();
+      return;
+    }
+    confirmDestructive({
+      title: isNew ? 'Discard this host?' : 'Discard your changes?',
+      message: isNew ? 'What you entered here is not saved.' : 'The host keeps its saved settings.',
+      confirmLabel: 'Discard',
+      onConfirm: () => router.back(),
+    });
+  };
+
   return (
     <Screen presentation="sheet">
-      <Header title={isNew ? 'New host' : 'Edit host'} onClose={() => router.back()} />
+      <Header title={isNew ? 'New host' : 'Edit host'} onClose={close} />
 
+      {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets); Android
+          has no such prop, and with edge-to-edge the window no longer resizes,
+          so the fields near the bottom sat under the keyboard. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'android' ? 'padding' : undefined}
+        // The avoider measures from the window's top, but this sheet starts
+        // below the status bar on Android, so it under-padded by exactly that
+        // inset and the last fields still sat behind the keys (#4 acceptance).
+        keyboardVerticalOffset={Platform.OS === 'android' ? insets.top : 0}
+        style={{ flex: 1 }}>
       <ScrollView
         ref={form}
         contentContainerStyle={{
@@ -367,16 +419,7 @@ export default function ServerEditScreen() {
             }}
           />
           {authKind === 'privateKey' ? (
-            <Field
-              label="OpenSSH private key"
-              placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…'}
-              value={secret}
-              onChangeText={invalidate(setSecret)}
-              multiline
-              mono
-              autoCapitalize="none"
-              testID="field-secret"
-            />
+            <KeyField value={secret} onChangeText={invalidate(setSecret)} />
           ) : (
             <Field
               label="Password"
@@ -473,12 +516,12 @@ export default function ServerEditScreen() {
           )}
 
           {test.kind === 'keyChanged' && (
-            <KeyChangedPanel message={test.message} onTrust={trustNewKey} />
+            <KeyChangedPanel message={test.message} presented={test.presented} saved={storedPin} onTrust={trustNewKey} />
           )}
 
           {/* Shown once there is something true to show: a key a test just
               accepted, or the pin this host is already bound to. */}
-          {fingerprint !== null && <HostFingerprint fingerprint={fingerprint} />}
+          {fingerprint !== null && test.kind !== 'keyChanged' && <HostFingerprint fingerprint={fingerprint} />}
 
           <Button
             title="Save"
@@ -494,6 +537,7 @@ export default function ServerEditScreen() {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

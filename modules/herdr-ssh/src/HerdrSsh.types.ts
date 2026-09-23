@@ -80,6 +80,8 @@ export interface SshFailure {
   ok: false;
   code: SshFailureCode;
   message: string;
+  /** On `host_key_changed`: the fingerprint the host presented instead of the pin. */
+  presentedFingerprint?: string;
 }
 
 export interface ConnectSuccess {

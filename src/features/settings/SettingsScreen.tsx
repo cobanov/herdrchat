@@ -190,8 +190,9 @@ export default function SettingsScreen() {
 
           <Text variant="caption" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
             HerdrChat reaches your machines over SSH on your tailnet. Keys are stored in the device
-            keychain and never leave it; nothing is sent to any server of ours, because there isn’t
-            one.
+            keychain and never leave it. Nothing goes to a server of ours, except notifications if
+            you turn them on: those pass through a relay that forwards them to Apple and keeps
+            nothing.
           </Text></>}
 
           {/* Last, alone, and separated by more than the usual gap. Nothing below

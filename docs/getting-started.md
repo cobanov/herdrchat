@@ -90,24 +90,42 @@ a native rebuild. See [conventions](../CLAUDE.md) and [release setup](../RELEASI
 
 ## Optional notifications
 
-Push notifications require an Apple **APNs auth key from the team that signed
-the app** (not an App Store Connect API key). Apple rejects a push signed by any
-other team, so today this works with a build you sign yourself, under your own
-team and bundle identifier. The App Store build cannot be set up this way yet;
-see [#95](https://github.com/cobanov/herdrchat/issues/95).
+Turn on **Settings → Notifications**. The app registers this phone's push token
+on the selected host over SSH, then offers to install the watcher there. The
+watcher is a small Python script
+([`scripts/herdr-apns-notifier.py`](../scripts/herdr-apns-notifier.py)) that the
+app installs as a background service: a LaunchAgent on macOS, a systemd user
+service on Linux (with lingering, so it survives logging out), or a plain
+background process elsewhere. It needs `python3` on the host. Each herdr
+session gets its own watcher.
 
-The app registers its device token on your host over SSH;
-the [host-side notifier](../scripts/herdr-apns-notifier.py) sends notifications
-directly to APNs. Its header documents the environment variables and usage.
-Set `APNS_KEY_ID`, `APNS_TEAM_ID` and `APNS_KEY_PATH` explicitly in
-`~/.config/herdrchat/apns.env` or the environment. The watcher does not search
-for keys or reuse App Store Connect credentials. Keep keys on your host and
-out of the repository. Verify delivery on a physical iPhone before relying on it.
+When an agent is waiting for you or has finished, the watcher sends the
+notification through the HerdrChat relay (`push.herdrchat.cobanov.dev`). Apple
+only delivers a push signed with the key of the team that published the app, so
+the relay holds that key. It receives the device token, the notification text
+and the identifiers that open the right chat, forwards them to Apple and keeps
+nothing. Its source is in [`relay/`](../relay).
+
+If you build and sign the app yourself, you can skip the relay: set
+`APNS_KEY_ID`, `APNS_TEAM_ID` and `APNS_KEY_PATH` for your own APNs auth key
+(not an App Store Connect API key) in `~/.config/herdrchat/apns.env` on the
+host, and the watcher sends straight to Apple. Setting only some of the three
+is an error, not a fallback.
+
+To remove the watcher from a host, run
+`launchctl bootout gui/$(id -u)/dev.herdr.herdrchat-notifier` and delete
+`~/Library/LaunchAgents/dev.herdr.herdrchat-notifier.plist` on macOS, or
+`systemctl --user disable --now dev.herdr.herdrchat-notifier` on Linux. A named
+session's service carries the session name as a suffix.
 
 ## Known limitations
 
-- Android has a buildable native implementation but is not runtime-verified.
-- Physical-device APNs delivery and recovery from a real Tailscale interruption
-  still need acceptance testing. Simulator checks are not proof of either.
+- Android has been run in an emulator against a real host (connecting,
+  history, sending, blocked prompts, reconnecting, a changed host key), but
+  not on a physical device, and it has no notifications: those are APNs,
+  which is iOS only.
+- Notifications need the relay's APNs key in place and have not yet been
+  confirmed on a physical iPhone. Recovery from a real Tailscale interruption
+  also still needs a device. Simulator checks are not proof of either.
 - Reconnect banners and waiting/live-preview presentation are being refined.
   Report problems in [issues](https://github.com/cobanov/herdrchat/issues).

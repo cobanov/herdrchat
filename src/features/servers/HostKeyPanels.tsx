@@ -22,7 +22,22 @@ import { radius, spacing } from '@/theme/tokens';
  * on it, because at this point the app genuinely cannot tell the two apart. The
  * action is a deliberate one-way door, labelled as trust rather than as retry.
  */
-export function KeyChangedPanel({ message, onTrust }: { message: string; onTrust: () => void }) {
+export function KeyChangedPanel({
+  message,
+  presented,
+  saved,
+  onTrust,
+}: {
+  message: string;
+  /**
+   * The key the host presents now. Asking someone to trust a key without
+   * showing it made "compare before you trust" impossible: the only
+   * fingerprint on screen was the old pin (#4 acceptance).
+   */
+  presented: string | null;
+  saved: string | null;
+  onTrust: () => void;
+}) {
   const { colors } = useTheme();
 
   return (
@@ -40,9 +55,33 @@ export function KeyChangedPanel({ message, onTrust }: { message: string; onTrust
         {message}
       </Text>
       <Text variant="footnote" color="secondary">
-        If you did not reinstall or re-key this server, stop here — something between you and it
+        If you did not reinstall or re-key this server, stop here: something between you and it
         could be intercepting the connection.
       </Text>
+      {presented !== null && (
+        <View style={{ gap: spacing.xs }}>
+          <Text variant="caption" color="secondary">
+            Key it presents now
+          </Text>
+          <Text variant="caption" mono selectable testID="presented-fingerprint">
+            {formatFingerprint(presented)}
+          </Text>
+          <Text variant="caption" color="secondary">
+            On the host, `ssh-keygen -lf` on its public host key prints the same line if this is
+            really it.
+          </Text>
+        </View>
+      )}
+      {saved !== null && (
+        <View style={{ gap: spacing.xs }}>
+          <Text variant="caption" color="secondary">
+            Key you saved
+          </Text>
+          <Text variant="caption" color="tertiary" mono selectable testID="saved-fingerprint">
+            {formatFingerprint(saved)}
+          </Text>
+        </View>
+      )}
       <Button title="Trust the new key" variant="tinted" onPress={onTrust} />
     </View>
   );

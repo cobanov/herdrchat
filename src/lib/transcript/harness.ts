@@ -135,3 +135,16 @@ function element(text: string, tag: string): string | null {
   const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`).exec(text);
   return match === null ? null : match[1] ?? '';
 }
+
+/**
+ * Codex with memories on ends a reply with an `<oai-mem-citation>` block: the
+ * memory file lines it drew on and rollout ids, laid out for Codex's own UI to
+ * render as a footnote. As text it is a stack of `MEMORY.md:627-640|note=[…]`
+ * lines under every answer. An unterminated block (a reply cut off mid-block)
+ * goes too.
+ */
+const MEMORY_CITATION = /\s*<oai-mem-citation>[\s\S]*?(?:<\/oai-mem-citation>|$)/g;
+
+export function codexAssistantText(text: string): string {
+  return text.replace(MEMORY_CITATION, '').trimEnd();
+}

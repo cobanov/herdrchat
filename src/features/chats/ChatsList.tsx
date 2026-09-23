@@ -25,7 +25,6 @@ import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
-import { isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
@@ -64,7 +63,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  const { summaries, loading, error, errorCode, herdrMissing, serverStopped, refresh } =
+  const { summaries, loading, error, errorCode, refresh } =
     useWorkspaces(client);
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
@@ -73,7 +72,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const [fixing, setFixing] = useState(false);
   // A key change is not one failure among many: it is the only one where the
   // right move might be to stop using the app. It gets its own surface.
-  const keyChanged = isHostKeyChangedMessage(error);
+  // By code, not by the message: the wording is the transport's to change, and
+  // it did (the native sentence became a plain one), which silently turned
+  // this banner back into an ordinary error.
+  const keyChanged = error !== null && errorCode === 'host_key_changed';
   const [storedPin, setStoredPin] = useState<string | null>(null);
   useEffect(() => {
     if (!keyChanged || connection === null) return;
@@ -155,6 +157,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
    * process. Offering them as one button would make the smaller one feel as
    * consequential as the larger.
    */
+  /** The fix that matches the failure, for the banner and the empty state alike. */
+  const recover = () => {
+    const { action } = connectionRecovery(errorCode ?? '');
+    if (action === 'install') confirmInstallHerdr();
+    else if (action === 'start') void fixHost('start');
+    else if (action === 'retry') void refresh();
+    else if (connection !== null) router.push({ pathname: '/server/[id]', params: { id: connection.id } });
+  };
+
   const fixHost = async (action: 'install' | 'start') => {
     if (client === null) return;
     setFixing(true);
@@ -215,37 +226,15 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             }
           />
         ) : (
+          // Same recovery as the empty state below: with cached rows on
+          // screen a rejected key or an unreachable host showed a message and
+          // no way to fix it (#4 acceptance).
           <ErrorBanner
             message={error}
-            actionLabel={
-              fixing
-                ? 'Working…'
-                : herdrMissing
-                  ? 'Install herdr on the host'
-                  : serverStopped
-                    ? 'Start herdr on the host'
-                    : null
-            }
-            onAction={
-              fixing
-                ? undefined
-                : herdrMissing
-                  ? confirmInstallHerdr
-                  : serverStopped
-                    ? () => void fixHost('start')
-                    : undefined
-            }
+            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+            onAction={fixing ? undefined : recover}
           />
         ))}
-
-      {error === null && integrations.outdated.length > 0 && (
-        <IntegrationBanner
-          outdated={integrations.outdated}
-          updating={integrations.updating}
-          error={integrations.error}
-          onUpdate={() => void integrations.update()}
-        />
-      )}
 
       {connection !== null && summaries.length > 0 && (
         <View style={{ paddingHorizontal: screenPadding, paddingBottom: spacing.sm }}>
@@ -308,13 +297,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 title={connectionRecovery(errorCode ?? '').title}
                 body={error}
                 actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
-                onAction={fixing ? undefined : () => {
-                  const { action } = connectionRecovery(errorCode ?? '');
-                  if (action === 'install') confirmInstallHerdr();
-                  else if (action === 'start') void fixHost('start');
-                  else if (action === 'retry') void refresh();
-                  else router.push({ pathname: '/server/[id]', params: { id: connection.id } });
-                }}
+                onAction={fixing ? undefined : recover}
               />
             ) : error === null ? (
               <EmptyState
@@ -340,7 +323,23 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           // at the end of the list and cannot be read or tapped, however far you
           // scroll, there is nothing left to scroll.
           contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: size.floatingBarClearance }}
-          ListFooterComponent={seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
+          // Below the rows, not above them: the host answers the integration
+          // check after the list has drawn, and a banner arriving on top pushed
+          // every row down under a finger that was about to tap one (#4
+          // acceptance: a tap meant for one chat opened the next).
+          ListFooterComponent={
+            <>
+              {error === null && integrations.outdated.length > 0 && (
+                <IntegrationBanner
+                  outdated={integrations.outdated}
+                  updating={integrations.updating}
+                  error={integrations.error}
+                  onUpdate={() => void integrations.update()}
+                />
+              )}
+              {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
+            </>
+          }
           ListEmptyComponent={<EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />}
           renderItem={({ item: row }) => {
             if (row.kind === 'group') return (

@@ -28,10 +28,16 @@ const mockTailSignals: (AbortSignal | undefined)[] = [];
 const mockSessionMeta = jest.fn<Promise<SessionMeta | null>, [string, string | null]>();
 let mockLiveMeta: SessionMeta[] = [];
 let mockLiveReceipt = false;
+/** How many of the next tails fail right after opening, as a dropped stream does. */
+let mockTailFailures = 0;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
 async function* mockTail(path: string, _label: string | null, from: number, signal?: AbortSignal) {
   mockTailStarts.push({ path, from });
   mockTailSignals.push(signal);
+  if (mockTailFailures > 0) {
+    mockTailFailures -= 1;
+    throw new Error('stream closed');
+  }
   for (const meta of mockLiveMeta) yield { message: null, meta, consumedBytes: from };
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
@@ -777,5 +783,57 @@ it('still opens the healthy transcript when another agent cannot resolve its fil
   expect(result.current.messages.map(message => message.id)).toEqual(['healthy-claude']);
   expect(result.current.error).toContain('Codex session is identified');
   expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 0 }]);
+  await unmount();
+});
+
+// Coming back from the background drops the SSH stream. The poll that restarts
+// a tail runs every 30 s with live events on, so the thread sat behind
+// "Conversation updates paused" for that long each time.
+it('restarts a dropped tail at once and quietly, and speaks up only if that fails too', async () => {
+  mockProbe = { kind: 'size', bytes: 120 };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  mockTailFailures = 1;
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+  expect(mockTailStarts.length).toBeGreaterThanOrEqual(2);
+  expect(result.current.error).toBeNull();
+
+  mockTailFailures = 2;
+  mockTailStarts.length = 0;
+  await act(async () => { await result.current.reload(); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+  expect(result.current.error).toContain('Conversation updates paused');
+  mockTailFailures = 0;
+  await unmount();
+});
+
+// A page of older history for one conversation can arrive after the workspace
+// slot has moved on to another. It must never land in the new one (574ef79).
+it('drops a page of older history that arrives after the session changed', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  mockRecent.mockResolvedValue({ messages: [turn('first-chat-recent', 10)], consumedBytes: 50_000, startByte: 40_000 });
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['first-chat-recent']);
+
+  let deliver: ((page: Awaited<ReturnType<typeof mockOlder>>) => void) | undefined;
+  mockOlder.mockImplementation(() => new Promise((resolve) => { deliver = resolve; }));
+  let paging: Promise<void> | undefined;
+  await act(async () => { paging = result.current.loadOlder(); });
+  expect(deliver).toBeDefined();
+
+  // The slot now holds a different conversation.
+  mockRecent.mockResolvedValue({ messages: [turn('second-chat', 20)], consumedBytes: 50_000, startByte: 0 });
+  fetch.mockResolvedValue(snapshot([{ ...agent, agentSession: { kind: 'id', value: 'session-2', agent: 'claude', source: null } }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['second-chat']);
+
+  await act(async () => {
+    deliver?.({ messages: [turn('first-chat-older', 1)], startByte: 0, reachedStart: true });
+    await paging;
+  });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['second-chat']);
   await unmount();
 });

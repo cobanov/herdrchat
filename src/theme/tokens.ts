@@ -1,4 +1,4 @@
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 
 /**
  * Design tokens. Nothing outside `src/theme/` may hardcode a colour, radius,
@@ -239,6 +239,12 @@ export const motion = {
 } as const;
 
 /**
+ * The monospace family. Menlo exists only on Apple platforms; Android fell back
+ * to its proportional default, so code and paths lost their alignment there.
+ */
+export const monoFamily = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+
+/**
  * Type scale, iOS. Sizes are the system scale at the default Dynamic Type
  * setting; they are never locked — `allowFontScaling` stays on everywhere, so
  * these are starting points that grow with the user's setting.
@@ -373,7 +379,12 @@ export interface Palette {
    */
   controlTrack: string;
 
-  /** Solid stand-in for glass, used on Android and under Reduce Transparency. */
+  /**
+   * Solid stand-in for glass, used on Android and under Reduce Transparency.
+   * Opaque: at 92 to 94% the thread scrolled visibly behind the header and its
+   * banners on Android, where nothing blurs it (#4 acceptance), and Reduce
+   * Transparency asks for exactly no see-through.
+   */
   glassFallback: string;
   /** The depth wash behind glass. Flat grey makes the effect invisible. */
   backdropTop: string;
@@ -437,7 +448,7 @@ export const lightPalette: Palette = {
   // sits on.
   controlTrack: '#CFD3E3',
 
-  glassFallback: 'rgba(246, 247, 252, 0.94)',
+  glassFallback: '#F6F7FC',
   backdropTop: '#F0F2FB',
   backdropBottom: '#E4E7F4',
 };
@@ -466,7 +477,7 @@ export const darkPalette: Palette = {
   attentionBorder: 'rgba(255, 159, 10, 0.55)',
   controlTrack: '#3A3A41', // the system's dark off-track, lifted off our card
 
-  glassFallback: 'rgba(30, 30, 34, 0.92)',
+  glassFallback: '#1E1E22',
   backdropTop: '#111119',
   backdropBottom: '#07070C',
 };

@@ -174,10 +174,14 @@ export const useConnections = create<ConnectionsState>((set) => ({
   upsert: (connection) =>
     set((state) => {
       const index = state.connections.findIndex((existing) => existing.id === connection.id);
+      // A new host goes before the Demo, which stays last (see setAll): it
+      // landed after it, between the user's own hosts (#4 acceptance).
+      const withoutDemo = state.connections.filter((existing) => !isDemo(existing.id));
+      const demo = state.connections.filter((existing) => isDemo(existing.id));
       const connections =
         index >= 0
           ? state.connections.map((existing) => (existing.id === connection.id ? connection : existing))
-          : [...state.connections, connection];
+          : [...withoutDemo, connection, ...demo];
       return { connections, selectedId: connection.id };
     }),
   remove: (id) =>
@@ -343,7 +347,10 @@ export function testClient(
     onFingerprint
   );
   return {
-    client: new HerdrClient(transport, herdrPath),
+    // Bound to the session being tested, like every saved host's client. Without
+    // it the test asked the host's DEFAULT session and reported that one's
+    // herdr version, whatever the form said (#4 acceptance).
+    client: new HerdrClient(withSession(transport, connection.sessionName), herdrPath),
     dispose: () => transport.close(),
   };
 }

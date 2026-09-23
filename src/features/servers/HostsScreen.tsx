@@ -12,6 +12,7 @@ import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, size, spacing } from '@/theme/tokens';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
+import { isNamedSession } from '@/lib/herdr/session';
 import { deviceFileId, removePushToken } from '@/features/notifications/push';
 import {
   clearSecrets,
@@ -142,7 +143,10 @@ export default function ServersScreen() {
                   <Text variant="caption" color="secondary">
                     {isDemo(connection.id)
                       ? 'A sample conversation. No machine, no SSH, nothing sent.'
-                      : `${connection.username}@${connection.host}:${connection.port}`}
+                      : `${connection.username}@${connection.host}:${connection.port}${
+                          // Two entries for one machine differ only by session.
+                          isNamedSession(connection.sessionName) ? ` · session ${connection.sessionName.trim()}` : ''
+                        }`}
                   </Text>
                 </View>
                 {connection.id === selectedId && (

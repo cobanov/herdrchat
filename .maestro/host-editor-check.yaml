@@ -1,0 +1,110 @@
+# Fill a new host in the editor, run Test connection, and stop on the result.
+#
+# One flow for the happy path and every failure mode: the caller decides what
+# the result should be. EXPECT_ID is the testID the test must end on:
+#   test-ok               the connection passed
+#   connection-recovery   a failure panel with its recovery button
+#   test-key-changed      the host presented a key other than the pinned one
+# SAVE=yes also saves the host (only meaningful after test-ok).
+#
+# Everything host-specific comes from the environment, never this file:
+#   NAME HOST PORT USERNAME SSH_KEY HERDR_PATH SESSION EXPECT_ID SAVE
+# Pass SSH_KEY with real newlines: -e SSH_KEY="$(< /path/to/test-key)".
+# The editor is left open on the result when SAVE is not yes, so the caller
+# can screenshot it.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- assertVisible: "Chats"
+
+- tapOn:
+    id: "server-switcher"
+    retryTapIfNoChange: true
+- assertVisible: "Hosts"
+- tapOn: "Add a host"
+
+- tapOn:
+    id: "field-name"
+- inputText: ${NAME}
+- tapOn:
+    id: "field-host"
+- inputText: ${HOST}
+- tapOn:
+    id: "field-port"
+- eraseText
+- inputText: ${PORT}
+- tapOn:
+    id: "field-username"
+- inputText: ${USERNAME}
+- assertVisible: ${USERNAME}
+
+# See add-server.yaml: scroll before tapping below the fold, pick the key
+# segment first, paste the multiline key from the clipboard.
+- scrollUntilVisible:
+    element:
+      id: "field-secret"
+    direction: DOWN
+- tapOn: "Private key"
+- scrollUntilVisible:
+    element:
+      text: '(?s)OpenSSH private key.*BEGIN.*'
+    direction: DOWN
+- tapOn:
+    text: '(?s)OpenSSH private key.*BEGIN.*'
+- setClipboard: ${SSH_KEY}
+- pasteText
+- swipe:
+    start: "98%, 50%"
+    end: "98%, 20%"
+    duration: 400
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: "field-herdr-path"
+    direction: DOWN
+- tapOn:
+    id: "field-herdr-path"
+- eraseText
+- inputText: ${HERDR_PATH}
+- pressKey: enter
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: "field-session"
+    direction: DOWN
+- tapOn:
+    id: "field-session"
+- inputText: ${SESSION}
+- pressKey: enter
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: "test-connection"
+    direction: DOWN
+- tapOn:
+    id: "test-connection"
+- extendedWaitUntil:
+    visible:
+      id: ${EXPECT_ID}
+    timeout: 45000
+- scrollUntilVisible:
+    element:
+      id: "save-server"
+    direction: DOWN
+- takeScreenshot: host-editor-${EXPECT_ID}
+
+- runFlow:
+    when:
+      true: ${SAVE == 'yes'}
+    commands:
+      - tapOn:
+          id: "save-server"
+      - assertVisible: "Hosts"
+      - tapOn: "Chats"
+      - assertVisible:
+          id: "server-switcher"

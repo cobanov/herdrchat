@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import { maxFontScale, typography, type TypographyToken } from '@/theme/tokens';
+import { maxFontScale, monoFamily, typography, type TypographyToken } from '@/theme/tokens';
 
 type ColorRole = 'label' | 'secondary' | 'tertiary' | 'tint' | 'attention' | 'onTint' | 'destructive';
 
@@ -67,7 +67,7 @@ export function Text({
         // The system font is the correct choice here, so it is left unset rather
         // than named. Monospace is the one deliberate departure: tool activity
         // should read as terminal output, not as prose.
-        mono && { fontFamily: 'Menlo' },
+        mono && { fontFamily: monoFamily },
         style,
       ]}
       {...rest}

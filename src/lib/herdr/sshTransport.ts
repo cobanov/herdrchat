@@ -9,7 +9,9 @@ import {
   type SshConfig,
 } from '../../../modules/herdr-ssh/src';
 import { checkDoneMark, withDoneMark } from './doneMark';
+import { friendlyFailure } from './nativeFailure';
 import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
+import { untilChannelCloses } from './shell';
 import type { HerdrTransport } from './transport';
 import { withJsDeadline } from './timeouts';
 
@@ -114,9 +116,9 @@ export class SshHerdrTransport implements HerdrTransport {
       return { ok: false, code: 'request_too_large', message: tooLarge().message };
     }
     const opened = await this.open();
-    if (!opened.ok) return opened;
-    const result = await withJsDeadline(exec(this.id, withDoneMark(command), timeoutMs), timeoutMs);
-    return checkDoneMark(result);
+    if (!opened.ok) return friendlyFailure(opened);
+    const result = checkDoneMark(await withJsDeadline(exec(this.id, withDoneMark(command), timeoutMs), timeoutMs));
+    return result.ok ? result : friendlyFailure(result);
   }
 
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
@@ -126,9 +128,17 @@ export class SshHerdrTransport implements HerdrTransport {
     if (!opened.ok) {
       // With its code, so a stream that cannot open says WHY (a changed host
       // key, missing credentials) rather than only what (#109).
-      throw new SshStreamError(opened);
+      throw new SshStreamError(friendlyFailure(opened));
     }
-    yield* streamLines(this.id, command, startTimeoutMs, signal);
+    try {
+      // Stopped streams must not leave their command running on the host.
+      yield* streamLines(this.id, untilChannelCloses(command), startTimeoutMs, signal);
+    } catch (thrown) {
+      if (thrown instanceof SshStreamError) {
+        throw new SshStreamError(friendlyFailure({ ok: false, code: thrown.code, message: thrown.message }));
+      }
+      throw thrown;
+    }
   }
 
   async close(): Promise<void> {

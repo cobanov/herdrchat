@@ -85,6 +85,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * list grows rather than only when someone scrolls.
    */
   const pinnedToBottom = useRef(true);
+  /**
+   * Whether the reader has dragged since the list was last put at the end.
+   * Only a reader can unpin it: a scroll event from layout (a long last message
+   * measuring taller than estimated) unpinned it before, and the thread opened
+   * short of its last lines with nothing bringing it back (#4 acceptance).
+   */
+  const readerScrolled = useRef(false);
   const anchorAfterControlsResize = useRef(false);
   const viewportHeight = useRef(0);
   const scrollOffset = useRef(0);
@@ -196,14 +203,26 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     viewportHeight.current = layoutMeasurement.height;
     scrollOffset.current = contentOffset.y;
     const distanceFromEnd = contentSize.height - contentOffset.y - layoutMeasurement.height;
-    pinnedToBottom.current = distanceFromEnd <= BOTTOM_SLACK;
+    if (readerScrolled.current) pinnedToBottom.current = distanceFromEnd <= BOTTOM_SLACK;
     setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
+  }, []);
+
+  /**
+   * The native scroll view, scrolled directly. FlashList's own `scrollToEnd`
+   * finishes in a timer that dereferences its scroll view without a check, and
+   * a list that unmounts in between (a reload remounts it by `key`) threw there:
+   * Reload crashed the app every time on Android (#4 acceptance), and an
+   * uncaught error is fatal in any release build.
+   */
+  const scrollListToEnd = useCallback((animated: boolean) => {
+    listRef.current?.getNativeScrollRef()?.scrollToEnd({ animated });
   }, []);
 
   const restoreBottom = useCallback(() => {
     pinnedToBottom.current = true;
-    listRef.current?.scrollToEnd({ animated: false });
-  }, []);
+    readerScrolled.current = false;
+    scrollListToEnd(false);
+  }, [scrollListToEnd]);
 
   useFocusEffect(
     useCallback(() => {
@@ -220,15 +239,18 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const jumpToBottom = useCallback(() => {
     pinnedToBottom.current = true;
-    listRef.current?.scrollToEnd({ animated: true });
+    readerScrolled.current = false;
+    scrollListToEnd(true);
     setAtBottom(true);
-  }, []);
+  }, [scrollListToEnd]);
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
     thread.sessionMeta?.effort ?? null,
     thread.workingDirName,
-    statusWord(thread.status),
+    // The connection before the agent: "online" under a banner saying the
+    // chat is offline or paused contradicted it (#4 acceptance).
+    thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
@@ -284,7 +306,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         the window, and adding padding on top of that would double-count it.
       */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // Padding on Android too: with edge-to-edge (Android 15 enforces it) the
+        // window no longer resizes for the keyboard, which covered the composer.
+        behavior="padding"
         // The viewport now starts at the window edge, not below the status bar.
         keyboardVerticalOffset={0}
         style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
@@ -369,6 +393,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               }}
               onStartReachedThreshold={0.5}
               onScrollBeginDrag={() => {
+                readerScrolled.current = true;
                 historyInteraction.current = thread.historyVersion;
                 // A short first window may already be at the top before the
                 // reader drags, so onStartReached will not fire a second time.
@@ -397,6 +422,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               onContentSizeChange={(_width, height) => {
                 if (anchorAfterControlsResize.current) {
                   anchorAfterControlsResize.current = false;
+                  restoreBottom();
+                  setAtBottom(true);
+                  return;
+                }
+                // Pinned, the end follows the content: a message measured taller
+                // than its estimate grows the list after the first frame.
+                if (pinnedToBottom.current) {
                   restoreBottom();
                   setAtBottom(true);
                   return;
@@ -578,7 +610,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   </Text>
                   {subtitle.length > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: statusColor(thread.status, colors) }} />
+                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
                       <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
                         {subtitle}
                       </Text>
@@ -593,9 +625,11 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     <Pressable
                       onPress={() => {
                         haptics.light();
+                        // No scroll: the reloaded list remounts (its key is the
+                        // history version) and starts at the bottom by itself.
                         void thread.reload().then(() => {
+                          pinnedToBottom.current = true;
                           setAtBottom(true);
-                          listRef.current?.scrollToEnd({ animated: false });
                         });
                       }}
                       accessibilityRole="button"

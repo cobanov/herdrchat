@@ -31,6 +31,7 @@ src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
 modules/herdr-keys/     iOS only: Command-Return on the composer (a UIKeyCommand view)
+relay/                  the push relay, a Cloudflare Worker (see RELEASING.md)
                         (the SwiftUI and Compose apps this replaced are not in
                          the tree — they live in git history before the rewrite)
 .maestro/               UI flows
@@ -107,11 +108,18 @@ Fast Refresh does not reload native code.
 
 ## Not yet built
 
-Notifications work on iOS and ship with the push entitlement, but have not been
-confirmed against APNs on a real device — the Simulator cannot register at all.
-The host watcher (`scripts/herdr-apns-notifier.py`) is complete.
+Notifications: the app registers its token on the host and installs the
+watcher (`scripts/herdr-apns-notifier.py`, embedded via
+`scripts/embed-watcher.mjs`) as a service. The watcher sends through the relay
+(`relay/`, deployed at push.herdrchat.cobanov.dev), which needs the team's APNs
+key as a Worker secret before anything reaches a phone. Delivery has not been
+confirmed on a real device; the Simulator cannot register at all.
 
-Android compiles and the SSH module is implemented in Kotlin/sshj, but it has
-never been run and there is **no Android release path in this branch** — no
-`scripts/play.sh`, no EAS equivalent. iOS ships via `scripts/testflight.sh`,
-which targets the Expo app (see RELEASING.md).
+**The relay is the one server of ours.** It stores nothing, logs nothing,
+shapes the payload itself and sends only to this app. Any change to what it
+receives changes the privacy policy (`site/privacy/`) in the same commit.
+
+Android ships through `scripts/android-release.sh` (signed AAB and APK, Play
+upload with a service-account key; see RELEASING.md), which still needs the
+Play Console app and that key. iOS ships via `scripts/testflight.sh`. Android
+has no notifications: APNs is iOS-only and there is no FCM path.

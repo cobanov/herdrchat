@@ -169,8 +169,8 @@ describe('HerdrClient diagnosing a missing binary', () => {
     async *streamLines(): AsyncIterable<string> {}
   }
 
-  const failureFrom = async (probeOutput: string) => {
-    const client = new HerdrClient(new ProbeTransport(probeOutput));
+  const failureFrom = async (probeOutput: string, herdrPath?: string) => {
+    const client = new HerdrClient(new ProbeTransport(probeOutput), herdrPath);
     return client.snapshot().then(
       () => null,
       (error: unknown) => error as { code: string; message: string }
@@ -189,7 +189,18 @@ describe('HerdrClient diagnosing a missing binary', () => {
     // The valuable case: the user does not have to install anything, only tell
     // us where it is — and the message hands them the exact path to paste.
     expect(failure?.message).toContain('/opt/herdr/bin/herdr');
-    expect(failure?.message).toContain('Advanced settings');
+    expect(failure?.message).toContain("this host's herdr path");
+  });
+
+  // A path typed in full is not a PATH problem: nothing runs there (#4
+  // acceptance). The message said "installed elsewhere, not on PATH".
+  it('says nothing runs at a typed path, and where herdr really is', async () => {
+    const elsewhere = await failureFrom('EXEC /opt/herdr/bin/herdr\n', '/nonexistent/herdr');
+    expect(elsewhere?.message).toBe(
+      "Nothing runs at /nonexistent/herdr. herdr is installed at /opt/herdr/bin/herdr; use that as this host's herdr path."
+    );
+    const nowhere = await failureFrom('NONE\n', '/nonexistent/herdr');
+    expect(nowhere?.message).toContain('Nothing runs at /nonexistent/herdr');
   });
 
   it('says chmod when it is there but not executable', async () => {

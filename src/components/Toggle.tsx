@@ -1,4 +1,4 @@
-import { Switch, View } from 'react-native';
+import { Platform, Switch, View } from 'react-native';
 
 import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
@@ -73,6 +73,9 @@ export function Toggle({
         // keeps the system's white knob and its shadow, which is the thing that
         // separates knob from track at all.
         ios_backgroundColor={colors.controlTrack}
+        // Android colours the knob with the system accent (teal) unless told;
+        // white on either track, like the iOS knob.
+        thumbColor={Platform.OS === 'android' ? colors.onTint : undefined}
         accessibilityLabel={label}
         accessibilityHint={detail}
         testID={testID}

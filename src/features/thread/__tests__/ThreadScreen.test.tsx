@@ -34,10 +34,14 @@ jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => null,
 }));
 let mockWorkspaceLabel: string | null = null;
+let mockOffline = false;
+let mockPaused = false;
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: [],
     workspaceLabel: mockWorkspaceLabel,
+    offline: mockOffline,
+    paused: mockPaused,
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
@@ -99,4 +103,18 @@ it('names the chat from the host, never by its id, and keeps a draft after leavi
   expect(again.getByTestId('composer-input')).toHaveProp('value', 'half a thought');
   const other = await render(<ThreadScreen workspaceId="w10" />);
   expect(other.getAllByTestId('composer-input').at(-1)).toHaveProp('value', '');
+});
+
+// The header said "online" under a banner saying the chat was offline or paused.
+it.each([
+  [{ offline: true, paused: false }, 'offline'],
+  [{ offline: false, paused: true }, 'reconnecting'],
+])('says %j in the header rather than online', async (state, word) => {
+  mockLoading = false;
+  mockOffline = state.offline;
+  mockPaused = state.paused;
+  const screen = await render(<ThreadScreen workspaceId="w1" title="Chat" />);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(new RegExp(`· ${word}$`));
+  mockOffline = false;
+  mockPaused = false;
 });

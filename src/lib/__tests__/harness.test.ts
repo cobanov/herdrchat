@@ -1,4 +1,5 @@
-import { claudeUserText, codexUserText } from '../transcript/harness';
+import { claudeUserText, codexAssistantText, codexUserText } from '../transcript/harness';
+import { codexEntry } from '../transcript/codex';
 import { displayText } from '../transcript/message';
 import { assistantMeta, parseTranscript, parseTranscriptLine } from '../transcript/parser';
 import { modelDisplayName } from '../transcript/sessionMeta';
@@ -165,5 +166,37 @@ describe('Codex harness text (#78)', () => {
       payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<heartbeat>tick</heartbeat>' }] },
     });
     expect(parseTranscriptLine(line)).toBeNull();
+  });
+});
+
+// Seen in Codex 0.154 replies with memories on: a footnote block for Codex's own
+// UI, which read as a pile of MEMORY.md line ranges under every answer.
+describe('Codex memory citations', () => {
+  const CITED = [
+    'Updated the project note with today\'s results.',
+    '',
+    '<oai-mem-citation>',
+    '<citation_entries>',
+    'MEMORY.md:627-640|note=[issue acceptance rules]',
+    '</citation_entries>',
+    '<rollout_ids>',
+    '01a077ec-f777-70e3-a531-22b668ed1e9e',
+    '</rollout_ids>',
+    '</oai-mem-citation>',
+  ].join('\n');
+
+  it('keeps the answer and drops the citation block', () => {
+    expect(codexAssistantText(CITED)).toBe("Updated the project note with today's results.");
+    expect(codexAssistantText('No citations here.\n')).toBe('No citations here.');
+    expect(codexAssistantText('Cut off.\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1-2')).toBe('Cut off.');
+  });
+
+  it('applies to the assistant messages read from a rollout', () => {
+    const { message } = codexEntry({
+      type: 'response_item',
+      timestamp: '2026-09-20T12:25:29Z',
+      payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: CITED }] },
+    }, 'hash', null);
+    expect(message === null ? null : displayText(message)).toBe("Updated the project note with today's results.");
   });
 });

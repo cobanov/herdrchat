@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HerdrChat — Privacy Policy</title>
-<meta name="description" content="HerdrChat collects no personal data. It has no accounts and no back end; the app talks over SSH to a machine you own.">
+<meta name="description" content="HerdrChat collects no personal data. It has no accounts; the app talks over SSH to a machine you own, and only optional notifications pass through a relay that keeps nothing.">
 <meta name="theme-color" content="#0e0e14">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48.png">
@@ -42,21 +42,24 @@
 <div class="wrap prose">
 
   <h1>Privacy Policy</h1>
-  <p class="stamp">HerdrChat · last updated 17 September 2026</p>
+  <p class="stamp">HerdrChat · last updated 23 September 2026</p>
 
   <div class="callout">
     <p>
-      <strong>HerdrChat has no accounts, no back end, and no analytics.</strong>
-      We do not operate a server, so there is no system of ours for your data to
-      reach. The app talks over SSH to a computer you own and administer, using
-      credentials you supply.
+      <strong>HerdrChat has no accounts and no analytics.</strong>
+      The app talks over SSH to a computer you own and administer, using
+      credentials you supply. The only system of ours anything passes through is
+      a push relay, and only if you turn notifications on; it forwards each
+      notification to Apple and keeps nothing.
     </p>
   </div>
 
   <h2>What we collect</h2>
   <p>
-    Nothing. HerdrChat collects no personal data, transmits nothing to us, and
-    contains no analytics, advertising, tracking or crash-reporting SDKs. The
+    Nothing. HerdrChat collects no personal data, stores nothing on any system of
+    ours, and contains no analytics, advertising, tracking or crash-reporting
+    SDKs. The notification relay described below handles a notification only
+    for the moment it takes to hand it to Apple. The
     app's Apple privacy manifest declares <code>NSPrivacyTracking = false</code>
     and an empty set of collected data types, which matches the “Data Not
     Collected” label on the App Store.
@@ -122,12 +125,28 @@
 
   <h2>Notifications</h2>
   <p>
-    If you turn notifications on, your device's Apple Push Notification token is
-    written to a file on <em>your own host</em> over the same SSH connection. A
-    watcher you run there signs a request with your own Apple push key and sends
-    it to Apple. The token identifies your installation of the app so Apple can
-    deliver to it; it does not identify you, and it never passes through any
-    service of ours, because none exists.
+    Notifications are off until you turn them on. When you do, your device's
+    Apple Push Notification token is written to a file on <em>your own host</em>
+    over the same SSH connection, and the app can install a small watcher there
+    that notices when an agent is waiting for you or has finished.
+  </p>
+  <p>
+    Apple delivers a notification only when it is signed with the push key of
+    the team that published the app, so the watcher sends each one to the
+    HerdrChat relay at <code>push.herdrchat.cobanov.dev</code>, which signs it
+    and passes it to Apple. What the relay receives is the device token, the
+    notification's title and text (the chat's name and which agent it is), and
+    identifiers the app uses to open the right chat: the workspace, session and
+    host entry. It stores none of it and records no request logs, and it
+    accepts only notifications for HerdrChat. Its source is in the app's
+    repository.
+  </p>
+  <p>
+    If you build and sign the app yourself, the watcher can use your own Apple
+    push key and send directly to Apple instead, and nothing passes through the
+    relay. The token identifies your installation of the app so Apple can
+    deliver to it; it does not identify you. Turning notifications off removes
+    the token from your hosts.
   </p>
 
   <h2>Children</h2>
