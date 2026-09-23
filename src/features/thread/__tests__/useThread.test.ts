@@ -28,10 +28,16 @@ const mockTailSignals: (AbortSignal | undefined)[] = [];
 const mockSessionMeta = jest.fn<Promise<SessionMeta | null>, [string, string | null]>();
 let mockLiveMeta: SessionMeta[] = [];
 let mockLiveReceipt = false;
+/** How many of the next tails fail right after opening, as a dropped stream does. */
+let mockTailFailures = 0;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
 async function* mockTail(path: string, _label: string | null, from: number, signal?: AbortSignal) {
   mockTailStarts.push({ path, from });
   mockTailSignals.push(signal);
+  if (mockTailFailures > 0) {
+    mockTailFailures -= 1;
+    throw new Error('stream closed');
+  }
   for (const meta of mockLiveMeta) yield { message: null, meta, consumedBytes: from };
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
@@ -777,5 +783,26 @@ it('still opens the healthy transcript when another agent cannot resolve its fil
   expect(result.current.messages.map(message => message.id)).toEqual(['healthy-claude']);
   expect(result.current.error).toContain('Codex session is identified');
   expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 0 }]);
+  await unmount();
+});
+
+// Coming back from the background drops the SSH stream. The poll that restarts
+// a tail runs every 30 s with live events on, so the thread sat behind
+// "Conversation updates paused" for that long each time.
+it('restarts a dropped tail at once and quietly, and speaks up only if that fails too', async () => {
+  mockProbe = { kind: 'size', bytes: 120 };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  mockTailFailures = 1;
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+  expect(mockTailStarts.length).toBeGreaterThanOrEqual(2);
+  expect(result.current.error).toBeNull();
+
+  mockTailFailures = 2;
+  mockTailStarts.length = 0;
+  await act(async () => { await result.current.reload(); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
+  expect(result.current.error).toContain('Conversation updates paused');
+  mockTailFailures = 0;
   await unmount();
 });

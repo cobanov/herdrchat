@@ -314,6 +314,12 @@ export function useThread(
    * from a quiet agent. See `TAIL_SILENCE_MS`.
    */
   const tailBeats = useRef(new Map<string, number>());
+  /**
+   * Tail failures in a row per session, cleared by anything the tail reads.
+   * The first is nearly always the phone sleeping and taking the stream with
+   * it, so it restarts quietly; only a restart that fails too is shown.
+   */
+  const tailFailures = useRef(new Map<string, number>());
   /** The header is seeded from disk once per bound session; the tail does the rest. */
   const metaSeeded = useRef(new Set<string>());
   const alive = useRef(true);
@@ -609,19 +615,32 @@ export function useThread(
         }
         tailBeats.current.set(source.key, Date.now());
         void (async () => {
+          let restartNow = false;
           try {
             for await (const chunk of store.tail(source.path, source.label, followFrom, controller.signal)) {
               if (!current()) break;
               tailBeats.current.set(source.key, Date.now());
+              tailFailures.current.delete(source.key);
               if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
               if (chunk.message !== null) await ingest([chunk.message], sig);
               if (!current()) break;
               await setTailCursor(db, connectionId, workspaceId, source.path, chunk.consumedBytes);
             }
           } catch (thrown) {
-            if (current()) setTailError(`Conversation updates paused. Reconnecting. ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+            if (current()) {
+              const failures = (tailFailures.current.get(source.key) ?? 0) + 1;
+              tailFailures.current.set(source.key, failures);
+              // With live events the poll that restarts a tail runs every 30 s,
+              // so the thread sat behind this banner for that long after every
+              // return from the background. Restart at once instead, and only
+              // say something when that restart fails as well.
+              if (failures === 1) restartNow = true;
+              else setTailError(`Conversation updates paused. Reconnecting. ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+            }
           } finally {
             release(source.key);
+            // After the release, or the poll would still find this tail running.
+            if (restartNow) kick.current();
           }
         })();
       }
@@ -697,6 +716,7 @@ export function useThread(
           for (const controller of tails.current.values()) controller.abort();
           tails.current.clear();
           tailBeats.current.clear();
+          tailFailures.current.clear();
           boundSig.current = null;
           boundPanes.current = '';
           resetHistory();
@@ -733,6 +753,7 @@ export function useThread(
           for (const controller of tails.current.values()) controller.abort();
           tails.current.clear();
           tailBeats.current.clear();
+          tailFailures.current.clear();
           const rotated = boundSig.current !== null;
           const dropped = await rebind(db, connectionId, workspaceId, sig);
           if (dropped || rotated) resetHistory();
@@ -1214,6 +1235,7 @@ export function useThread(
     for (const controller of tails.current.values()) controller.abort();
     tails.current.clear();
     tailBeats.current.clear();
+    tailFailures.current.clear();
     // Reload must replace the persisted messages too, otherwise a cold reopen
     // resurrects stale parsed bubbles that the fresh host read has removed.
     await inTransaction(db, async () => {
