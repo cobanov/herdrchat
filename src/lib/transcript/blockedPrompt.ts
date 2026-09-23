@@ -23,6 +23,20 @@ export interface BlockedOption {
 export interface BlockedPrompt {
   question: string | null;
   options: BlockedOption[];
+  /**
+   * The only safe answer is to close it (Esc). Set for Codex's file-mention
+   * popup, which herdr counts as blocked (herdr #4495): Enter or a digit there
+   * would pick a file into the prompt rather than answer anything.
+   */
+  dismissOnly?: boolean;
+}
+
+/**
+ * Codex's `@` mention picker, recognised the way herdr's own manifest does it:
+ * all three of its tab labels on screen at once.
+ */
+export function isMentionPopup(screen: string): boolean {
+  return ['All Results', 'Filesystem Only', 'Plugins'].every((label) => screen.includes(label));
 }
 
 /**

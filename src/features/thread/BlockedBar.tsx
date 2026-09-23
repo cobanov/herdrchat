@@ -125,6 +125,10 @@ export function BlockedBar({
             </Text>
           )}
         </>
+      ) : prompt?.dismissOnly === true ? (
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <Chip label="Close picker" keys={['Escape']} pending={pending} onPress={press} />
+        </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>

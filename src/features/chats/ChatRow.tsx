@@ -10,6 +10,12 @@ import type { ChatSummary } from './useWorkspaces';
 /** Shared with the loading skeleton so content does not jump on arrival. */
 export const AVATAR_SIZE = size.chatBadge;
 
+/**
+ * How the agents herdr detects are named on a row. Letta Code joined in herdr
+ * 0.9.1 (#120); anything else shows herdr's own id.
+ */
+const AGENT_NAMES: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', letta: 'Letta' };
+
 export const ChatRow = memo(function ChatRow({
   summary, unread, selected = false, onPress, onLongPress,
 }: {
@@ -25,7 +31,7 @@ export const ChatRow = memo(function ChatRow({
   const working = summary.status === 'working';
   const agent = summary.agents.find((item) => item.focused && item.agent !== null)
     ?? summary.agents.find((item) => item.agent !== null);
-  const provider = agent?.agent === 'claude' ? 'Claude' : agent?.agent === 'codex' ? 'Codex' : agent?.agent ?? 'Terminal';
+  const provider = agent?.agent == null ? 'Terminal' : (AGENT_NAMES[agent.agent] ?? agent.agent);
   const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
   const context = [provider, folder].filter(Boolean).join(' · ');
   const status = attention ? 'Waiting for you' : working ? 'Working' : summary.status === 'unknown' ? 'Status unknown' : summary.status === 'done' ? 'Done' : 'Idle';

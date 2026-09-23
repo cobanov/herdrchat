@@ -21,6 +21,7 @@ import { displayText } from '@/lib/transcript/message';
 import {
   blockedPromptSignature,
   blockedPendingTimeout,
+  isMentionPopup,
   parseBlockedPrompt,
   resolveBlockedPending,
   type BlockedPending,
@@ -745,8 +746,16 @@ export function useThread(
         let parsedPrompt: BlockedPrompt | null = null;
         if (blocked !== undefined) {
           const raw = await client.paneVisible(blocked.paneId, 40);
-          const parsed = parseBlockedPrompt(raw);
-          parsedPrompt = parsed.options.length === 0 ? null : parsed;
+          if (blocked.agent === 'codex' && isMentionPopup(raw)) {
+            parsedPrompt = {
+              question: 'Codex has its file picker open. Close it here, or pick a file in the terminal.',
+              options: [],
+              dismissOnly: true,
+            };
+          } else {
+            const parsed = parseBlockedPrompt(raw);
+            parsedPrompt = parsed.options.length === 0 ? null : parsed;
+          }
         }
         setBlockedPrompt(parsedPrompt);
 

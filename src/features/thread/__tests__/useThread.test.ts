@@ -184,6 +184,25 @@ it('finishes loading when a new session has not created its transcript yet', asy
   await unmount();
 });
 
+// herdr counts Codex's `@` file picker as blocked (#4495). Enter or a digit
+// there picks a file into the prompt, so the bar offers only Esc (#120).
+const MENTION_POPUP = ['@src', '  All Results   Filesystem Only   Plugins', '  1. src/app.ts', '  2. src/lib.ts'].join('\n');
+
+it.each([
+  { name: 'Codex', kind: 'codex', dismissOnly: true },
+  { name: 'Claude', kind: 'claude', dismissOnly: undefined },
+])('treats the mention picker as dismiss-only for $name', async ({ kind, dismissOnly }) => {
+  jest
+    .spyOn(client, 'snapshot')
+    .mockResolvedValue(snapshot([{ ...agent, agent: kind, agentStatus: 'blocked' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue(MENTION_POPUP);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+  expect(result.current.blockedPrompt?.dismissOnly).toBe(dismissOnly);
+  if (dismissOnly === true) expect(result.current.blockedPrompt?.options).toEqual([]);
+  await unmount();
+});
+
 it('resolves a Codex transcript by native session id and namespaces its cache', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));

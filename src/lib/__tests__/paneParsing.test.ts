@@ -1,4 +1,4 @@
-import { isBlockedPromptEmpty, optionKeys, parseBlockedPrompt } from '../transcript/blockedPrompt';
+import { isBlockedPromptEmpty, isMentionPopup, optionKeys, parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { extractLivePreview } from '../transcript/livePreview';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
 
@@ -99,6 +99,12 @@ describe('blocked prompt parsing', () => {
 
   it('is not fooled by prose that merely contains digits', () => {
     expect(parseBlockedPrompt('I found 3 errors\nand 2 warnings').options).toHaveLength(0);
+  });
+
+  // herdr's own rule for Codex's `@` picker: all three tab labels at once (#120).
+  it('recognises the Codex mention picker only by all three of its tabs', () => {
+    expect(isMentionPopup('@src\n All Results  Filesystem Only  Plugins\n 1. a.ts')).toBe(true);
+    expect(isMentionPopup('Search the Plugins folder for All Results')).toBe(false);
   });
 });
 
