@@ -36,6 +36,7 @@ import {
   setTailCursor,
   tailCursor,
 } from '@/state/threadCache';
+import { inTransaction } from '@/state/db';
 
 /**
  * Bytes of a fresh transcript to pull up front.
@@ -1152,7 +1153,7 @@ export function useThread(
     tailBeats.current.clear();
     // Reload must replace the persisted messages too, otherwise a cold reopen
     // resurrects stale parsed bubbles that the fresh host read has removed.
-    await db.withTransactionAsync(async () => {
+    await inTransaction(db, async () => {
       for (const table of ['messages', 'tail_cursors']) {
         await db.runAsync(
           `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,

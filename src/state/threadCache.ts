@@ -2,6 +2,8 @@ import type * as SQLite from 'expo-sqlite';
 
 import type { ChatMessage } from '@/lib/transcript/message';
 
+import { inTransaction } from './db';
+
 /**
  * Disk-backed per-thread message cache, so reopening a chat — even after an app
  * restart — shows history instantly instead of paying an SSH read.
@@ -44,8 +46,10 @@ export async function appendMessages(
   messages: readonly ChatMessage[]
 ): Promise<void> {
   if (messages.length === 0) return;
-  const start = await nextSeq(db, connectionId, workspaceId);
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
+    // Read inside the transaction: two appends reading it first both got the
+    // same next seq and filed their rows under duplicate numbers (#92).
+    const start = await nextSeq(db, connectionId, workspaceId);
     await insertMessages(db, connectionId, workspaceId, sessionSig, messages, start);
   });
 }
@@ -58,7 +62,7 @@ export async function replaceMessages(
   sessionSig: string,
   messages: readonly ChatMessage[]
 ): Promise<void> {
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
     await db.runAsync('DELETE FROM messages WHERE connection_id = ? AND workspace_id = ?',
       connectionId, workspaceId);
     await insertMessages(db, connectionId, workspaceId, sessionSig, messages, 0);
@@ -104,7 +108,7 @@ export async function rebind(
   );
   if (row === null || row.session_sig === sessionSig) return false;
 
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
     await db.runAsync(
       'DELETE FROM messages WHERE connection_id = ? AND workspace_id = ?',
       connectionId,
@@ -192,7 +196,7 @@ export async function forgetWorkspace(
   connectionId: string,
   workspaceId: string
 ): Promise<void> {
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
     for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads']) {
       await db.runAsync(
         `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,

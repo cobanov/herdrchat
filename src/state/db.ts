@@ -185,7 +185,7 @@ export async function saveConnection(
 }
 
 export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): Promise<void> {
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
     await db.runAsync('DELETE FROM connections WHERE id = ?', id);
     await db.runAsync('DELETE FROM messages WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM tail_cursors WHERE connection_id = ?', id);
@@ -241,6 +241,34 @@ export async function loadThreadReads(
   return new Map(
     rows.map((row) => [row.workspace_id, { sessionSig: row.session_sig, openedAt: row.opened_at }])
   );
+}
+
+// MARK: - Transactions
+
+const writeQueues = new WeakMap<SQLite.SQLiteDatabase, Promise<unknown>>();
+
+/**
+ * `withTransactionAsync`, one at a time per database.
+ *
+ * expo-sqlite's version is a plain BEGIN / COMMIT on the one shared connection,
+ * and it is not exclusive (its own docs say so). Two at once, which a thread
+ * with two tails, a reload during a replace or an iPad "Close chat" during a
+ * tail write all produce, interleave: the second BEGIN throws "cannot start a
+ * transaction within a transaction", and its ROLLBACK undoes the FIRST one.
+ * Reproduced against SQLite: both fail, one tail's row is lost and the other's
+ * lands outside any transaction (#92).
+ *
+ * Every cache transaction goes through here, so they run in order. A failure
+ * rejects its own caller only; the queue carries on.
+ */
+export function inTransaction(
+  db: SQLite.SQLiteDatabase,
+  task: () => Promise<void>
+): Promise<void> {
+  const previous = writeQueues.get(db) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(() => db.withTransactionAsync(task));
+  writeQueues.set(db, next);
+  return next;
 }
 
 // MARK: - Settings
@@ -305,7 +333,7 @@ export async function cachedMessageCount(db: SQLite.SQLiteDatabase): Promise<num
  * next tail resume mid-conversation and silently skip everything before it.
  */
 export async function clearCachedMessages(db: SQLite.SQLiteDatabase): Promise<void> {
-  await db.withTransactionAsync(async () => {
+  await inTransaction(db, async () => {
     await db.runAsync('DELETE FROM messages');
     await db.runAsync('DELETE FROM tail_cursors');
     await db.runAsync('DELETE FROM previews');
