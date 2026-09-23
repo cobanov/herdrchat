@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { backoffDelay } from '@/lib/poll';
+import { backoffDelay, needsTheUser } from '@/lib/poll';
 import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useReportPresence } from './useReportPresence';
@@ -688,6 +688,7 @@ export function useThread(
       }
       inFlight = true;
       let keepFast = true;
+      let needsUser = false;
       try {
         const snapshot = await client.snapshot();
         if (!alive.current || stopped) return;
@@ -853,6 +854,7 @@ export function useThread(
         if (!alive.current || stopped) return;
         setLoading(false);
         failures.current += 1;
+        needsUser = thrown instanceof HerdrError && needsTheUser(thrown.code);
         setPollError(thrown instanceof HerdrError ? thrown.message : String(thrown));
         setOffline(true);
         /*
@@ -875,8 +877,9 @@ export function useThread(
       } finally {
         inFlight = false;
         // The banner stays up throughout: backing off must never read as
-        // recovery. Only the interval changes.
-        if (alive.current && !stopped) {
+        // recovery. Only the interval changes. A failure only the user can fix
+        // pauses the loop instead (`needsTheUser`); Reload kicks it again.
+        if (alive.current && !stopped && !(needsUser && !again)) {
           const base =
             streamLiveRef.current && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
           schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));

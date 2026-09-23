@@ -61,18 +61,3 @@ export function formatFingerprint(fingerprint: string): string {
   return `SHA256:${normalizeFingerprint(fingerprint)}`;
 }
 
-// MARK: - Key-change detection in the chat list
-
-/**
- * The one sentence both native layers emit for `host_key_changed`.
- *
- * The chat list's poll publishes its failure as a message, not as the
- * `HerdrError` it came from, so this is what the list has to recognise. When
- * that poll starts carrying the code, match on the code and delete this.
- */
-const KEY_CHANGED_MARKER = 'SSH key DIFFERS';
-
-/** True when a poll failure is a host-key mismatch rather than an ordinary one. */
-export function isHostKeyChangedMessage(message: string | null): boolean {
-  return message !== null && message.includes(KEY_CHANGED_MARKER);
-}

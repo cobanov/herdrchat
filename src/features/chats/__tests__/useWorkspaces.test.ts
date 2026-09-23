@@ -138,6 +138,17 @@ it('carries herdr\'s restore error onto the chat it belongs to (#119)', async ()
   await unmount();
 });
 
+// The chat list shows its changed-key banner from this code; it used to match
+// the native message, and silently stopped when that wording changed.
+it('reports a changed host key by its code, whatever the message says', async () => {
+  jest.spyOn(client, 'snapshot').mockRejectedValue(
+    new HerdrError('host_key_changed', "This host's SSH key has changed since you saved it.", { transport: true })
+  );
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.errorCode).toBe('host_key_changed');
+  await unmount();
+});
+
 it('reports why the host could not be listed', async () => {
   jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'The server rejected these credentials.'));
   const { result, unmount } = await renderHook(() => useWorkspaces(client));
@@ -212,4 +223,26 @@ it('refreshes an idle chat whose state counter moved between polls', async () =>
   expect(fetch).toHaveBeenCalledTimes(1);
   await refreshPreviews(store, at(6), previews, tick, false, seqs);
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+// Retrying rejected credentials only adds failed logins, which OpenSSH
+// penalises per source address (#4 acceptance: sshd refused the phone).
+it('stops polling on a failure only the user can fix, until a pull to refresh', async () => {
+  mockLive = false;
+  const snapshot = jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'rejected'));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  await act(async () => { await jest.advanceTimersByTimeAsync(300_000); });
+  expect(snapshot).toHaveBeenCalledTimes(1);
+  await act(async () => { await result.current.refresh(); });
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  await unmount();
+});
+
+it('keeps retrying, with backoff, a host that is merely unreachable', async () => {
+  mockLive = false;
+  const snapshot = jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+  const { unmount } = await renderHook(() => useWorkspaces(client));
+  await act(async () => { await jest.advanceTimersByTimeAsync(300_000); });
+  expect(snapshot.mock.calls.length).toBeGreaterThan(3);
+  await unmount();
 });

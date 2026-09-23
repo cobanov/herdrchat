@@ -13,11 +13,31 @@ export const HOST_KEY_CHANGED_MESSAGE =
   'intercepting the connection. If you expect the change, edit the host and trust the new key.';
 
 const LOOKS_INTERNAL =
-  /exception|\bEOF\b|NIO|Error Domain|java\.|sshj|errno|ChannelError|SSHClient|NSPOSIX|Broken transport|\b\w+\.\w+Error\b/i;
+  /exception|\bEOF\b|NIO|Error Domain|java\.|sshj|errno|ChannelError|SSHClient|NSPOSIX|Broken transport|\b\w+\.\w+Error\b|\bE[A-Z]{4,}\b|isConnected|failed to connect to|after \d+ms/i;
+
+/** Library texts that name a cause worth its own sentence. */
+const CAUSES: readonly [RegExp, string][] = [
+  [
+    /ECONNREFUSED|Connection refused|NIOConnectionError error 1\b/i,
+    'Nothing accepted the connection at that address and port. Check the port, and that SSH (Remote Login on a Mac) is turned on there.',
+  ],
+  [
+    /UnknownHost|Unable to resolve host|nodename nor servname|No address associated|NXDOMAIN/i,
+    "Couldn't find that host name. Check the address, and that this phone is on the tailnet.",
+  ],
+  [
+    /ETIMEDOUT|timed out|EHOSTUNREACH|ENETUNREACH|No route to host|Network is unreachable/i,
+    "The host didn't answer. Check that it's awake and on the tailnet, and that this phone is too.",
+  ],
+];
 
 export function friendlyMessage(code: string, message: string): string {
   if (code === 'host_key_changed') return HOST_KEY_CHANGED_MESSAGE;
   if (message.trim().length > 0 && !LOOKS_INTERNAL.test(message)) return message;
+  if (code === 'connect_failed' || code === 'transport_failed' || code === 'timeout') {
+    const cause = CAUSES.find(([pattern]) => pattern.test(message));
+    if (cause !== undefined) return cause[1];
+  }
   switch (code) {
     case 'connect_failed':
       return "Couldn't reach the host. Check that it's awake and on the tailnet, and that the address and port are right.";

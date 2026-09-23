@@ -39,7 +39,7 @@ type TestState =
    * state, not a `failed` flavour: the only way forward is an explicit,
    * confirmed decision to trust the new key, never a silent re-pin.
    */
-  | { kind: 'keyChanged'; message: string };
+  | { kind: 'keyChanged'; message: string; presented: string | null };
 
 /**
  * Add or edit a herdr host.
@@ -154,7 +154,7 @@ export default function ServerEditScreen() {
       if (attempt !== testAttempt.current) return;
       const failure = thrown instanceof HerdrError ? thrown : null;
       if (failure?.code === 'host_key_changed') {
-        setTest({ kind: 'keyChanged', message: failure.message });
+        setTest({ kind: 'keyChanged', message: failure.message, presented: failure.presentedFingerprint });
       } else {
         setTest({
           kind: 'failed',
@@ -175,6 +175,16 @@ export default function ServerEditScreen() {
       confirmLabel: 'Trust the new key',
       onConfirm: () => {
         void (async () => {
+          const presented = test.kind === 'keyChanged' ? test.presented : null;
+          if (presented !== null) {
+            // Pin exactly the key that was shown. Clearing the pin and testing
+            // again would trust whatever key answers next, which need not be
+            // the one the user just compared.
+            await saveHostKeyPin(params.id, presented);
+            setStoredPin(presented);
+            await runTest();
+            return;
+          }
           await clearSecrets(params.id, { keepSecret: true });
           // The screen's copy of the pin has to go with the stored one. `save()`
           // decides whether to write a pin by asking whether this host still has
@@ -506,12 +516,12 @@ export default function ServerEditScreen() {
           )}
 
           {test.kind === 'keyChanged' && (
-            <KeyChangedPanel message={test.message} onTrust={trustNewKey} />
+            <KeyChangedPanel message={test.message} presented={test.presented} saved={storedPin} onTrust={trustNewKey} />
           )}
 
           {/* Shown once there is something true to show: a key a test just
               accepted, or the pin this host is already bound to. */}
-          {fingerprint !== null && <HostFingerprint fingerprint={fingerprint} />}
+          {fingerprint !== null && test.kind !== 'keyChanged' && <HostFingerprint fingerprint={fingerprint} />}
 
           <Button
             title="Save"

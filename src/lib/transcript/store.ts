@@ -1,5 +1,5 @@
 import { exitCodeError } from '../herdr/client';
-import { HerdrError } from '../herdr/protocol';
+import { HerdrError, transportError } from '../herdr/protocol';
 import { shellQuote, withPath } from '../herdr/shell';
 import { POLL_TIMEOUT_MS, STREAM_START_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
@@ -622,7 +622,7 @@ export class TranscriptStore {
 
   private async shell(command: string, timeoutMs = TRANSCRIPT_TIMEOUT_MS): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
-    if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
+    if (!result.ok) throw transportError(result);
     // Nothing in this file runs herdr — it runs `sh`, `tail`, `wc` and `head`.
     // The shared exit-code reader blames herdr for a 127, which sends the
     // reader off to install a tool that is already there.

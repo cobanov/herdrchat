@@ -25,7 +25,6 @@ import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
-import { isHostKeyChangedMessage } from '@/lib/hostkey';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
@@ -73,7 +72,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const [fixing, setFixing] = useState(false);
   // A key change is not one failure among many: it is the only one where the
   // right move might be to stop using the app. It gets its own surface.
-  const keyChanged = isHostKeyChangedMessage(error);
+  // By code, not by the message: the wording is the transport's to change, and
+  // it did (the native sentence became a plain one), which silently turned
+  // this banner back into an ordinary error.
+  const keyChanged = error !== null && errorCode === 'host_key_changed';
   const [storedPin, setStoredPin] = useState<string | null>(null);
   useEffect(() => {
     if (!keyChanged || connection === null) return;

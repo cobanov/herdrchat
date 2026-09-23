@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { backoffDelay } from '@/lib/poll';
+import { backoffDelay, needsTheUser } from '@/lib/poll';
 import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
@@ -100,6 +100,8 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
    * failing SSH round-trip every three seconds forever, on a metered radio.
    */
   const failures = useRef(0);
+  /** The code of the last failure, to tell a pause from a retry. */
+  const lastCode = useRef<string | null>(null);
 
   /** Every agent pane the last refresh saw; what the event stream watches. */
   const [paneIds, setPaneIds] = useState<string[]>([]);
@@ -153,6 +155,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
       setErrorCode(null);
+      lastCode.current = null;
       setHerdrMissing(false);
       setServerStopped(false);
       return false;
@@ -161,6 +164,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       const failure = thrown instanceof HerdrError ? thrown : null;
       setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
       setErrorCode(failure?.code ?? null);
+      lastCode.current = failure?.code ?? null;
       setHerdrMissing(failure?.code === 'herdr_not_found');
       setServerStopped(failure?.code === 'server_not_running');
       return true;
@@ -196,6 +200,9 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       inFlight = false;
       if (!alive.current || stopped) return;
       failures.current = failed ? failures.current + 1 : 0;
+      // Paused, not retried: see `needsTheUser`. A kick (a pull to refresh)
+      // starts it again.
+      if (failed && needsTheUser(lastCode.current) && !again) return;
       const base = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
       schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
       again = false;
@@ -234,7 +241,8 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     refresh: useCallback(async () => {
       failures.current = 0;
       forcePreviews.current = true;
-      await refresh();
+      // Resumes a loop paused on a failure that needed the user.
+      if (!(await refresh())) kick.current();
     }, [refresh]),
   };
 }

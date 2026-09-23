@@ -5,8 +5,13 @@ describe('native failure wording', () => {
   it.each([
     ['transport_failed', 'Broken transport; encountered EOF', /connection to the host dropped/],
     ['transport_failed', "The operation couldn't be completed. (NIOCore.ChannelError error 7.)", /connection to the host dropped/],
-    ['connect_failed', 'java.net.ConnectException: Connection refused', /Couldn't reach the host/],
+    ['connect_failed', 'java.net.ConnectException: Connection refused', /Nothing accepted the connection/],
+    ['connect_failed', 'java.net.SocketException: something odd', /Couldn't reach the host/],
     ['connect_failed', '', /Couldn't reach the host/],
+    // Seen on Android (sshj) and iOS (NIO) for a port nothing listens on.
+    ['connect_failed', 'failed to connect to /10.0.2.2 (port 22264) from /10.0.2.16 (port 43328) after 15000ms: isConnected failed: ECONNREFUSED (Connection refused)', /Nothing accepted the connection/],
+    ['connect_failed', "The operation couldn't be completed. (NIOPosix.NIOConnectionError error 1.)", /Nothing accepted the connection/],
+    ['connect_failed', 'java.net.UnknownHostException: Unable to resolve host "mini"', /Couldn't find that host name/],
   ])('rewrites %s "%s"', (code, message, expected) => {
     expect(friendlyMessage(code, message)).toMatch(expected);
   });

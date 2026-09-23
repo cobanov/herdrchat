@@ -66,11 +66,13 @@ class HerdrSshModule : Module() {
       try {
         Crypto.ensureBouncyCastle()
         val connection = connections.getOrPut(id) { SshConnection(config) }
-        connection.connected()
+        connection.connectWithin(CONNECT_DEADLINE_MS)
         mapOf("ok" to true, "fingerprint" to (connection.acceptedFingerprint ?: ""))
       } catch (failure: SshFailure) {
         connections.remove(id)?.close()
-        failureMap(failure.code, failure.message)
+        failureMap(failure.code, failure.message) + (
+          failure.presentedFingerprint?.let { mapOf("presentedFingerprint" to it) } ?: emptyMap()
+        )
       } catch (error: Exception) {
         connections.remove(id)?.close()
         failureMap("connect_failed", error.message ?: "Couldn't reach the host.")
@@ -141,6 +143,11 @@ class HerdrSshModule : Module() {
       connections.values.forEach { it.abandon() }
       connections.clear()
     }
+  }
+
+  private companion object {
+    /** The whole connect: socket, handshake and authentication. */
+    const val CONNECT_DEADLINE_MS = 30_000
   }
 
   private fun failureMap(code: String, message: String) =

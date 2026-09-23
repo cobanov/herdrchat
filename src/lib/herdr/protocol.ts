@@ -24,12 +24,19 @@ export class HerdrError extends Error {
   readonly code: string;
   /** True when the SSH transport failed, not herdr. */
   readonly transport: boolean;
+  /** On `host_key_changed`: the fingerprint the host presented instead of the pin. */
+  readonly presentedFingerprint: string | null;
 
-  constructor(code: string, message: string, options: { transport?: boolean } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    options: { transport?: boolean; presentedFingerprint?: string | null } = {}
+  ) {
     super(message);
     this.name = 'HerdrError';
     this.code = code;
     this.transport = options.transport ?? false;
+    this.presentedFingerprint = options.presentedFingerprint ?? null;
   }
 
   override toString(): string {
@@ -101,7 +108,7 @@ export function exitCodeError(exitCode: number, stderr = ''): HerdrError {
   if (exitCode === 127) {
     return new HerdrError(
       'herdr_not_found',
-      "herdr wasn't found on this account (exit 127). It's likely not installed for this user, or not on PATH. Install herdr on the host, or set its full path in the connection's Advanced settings."
+      "herdr wasn't found on this account. Install it on the host, or set its full path as this host's herdr path."
     );
   }
 
@@ -174,7 +181,9 @@ function humanise(code: string, message: string): string {
     case 'server_not_running':
       // herdr says "run `herdr` to start or attach it", which is correct and
       // unhelpful on a phone: the thing to do is on the other machine.
-      return 'herdr isn’t running on this host. Start it there — open a terminal and run `herdr` — then pull to refresh.';
+      // Not "run `herdr`": for a named session that starts the wrong one. The
+      // app can start the right one itself (Start herdr on the host).
+      return 'herdr isn’t running for this session on this host. Start it from here, or on the host itself, then pull to refresh.';
     case 'pane_not_found':
       return 'That pane is gone. The agent may have been closed on the host.';
     case 'agent_not_found':
@@ -185,4 +194,12 @@ function humanise(code: string, message: string): string {
       // has about a failure nobody anticipated.
       return message.length > 0 ? message : `herdr reported: ${code}`;
   }
+}
+
+/** A failed transport result as an error, keeping what the native side knew. */
+export function transportError(failure: { code: string; message: string; presentedFingerprint?: string }): HerdrError {
+  return new HerdrError(failure.code, failure.message, {
+    transport: true,
+    presentedFingerprint: failure.presentedFingerprint ?? null,
+  });
 }

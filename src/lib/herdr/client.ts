@@ -11,7 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
-import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom } from './protocol';
+import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
@@ -940,7 +940,7 @@ export class HerdrClient {
   private async shell(command: string, timeoutMs: number): Promise<string> {
     const result = await this.transport.exec(withPath(command), timeoutMs);
     if (!result.ok) {
-      throw new HerdrError(result.code, result.message, { transport: true });
+      throw transportError(result);
     }
     if (result.exitCode === 127) {
       // Worth one extra round-trip: this is the error people actually hit when
@@ -970,11 +970,17 @@ export class HerdrClient {
    */
   private async diagnoseMissingHerdr(): Promise<HerdrError> {
     const location = await this.locateHerdr();
+    // A path the user typed in full is not a PATH problem: nothing runs there.
+    // Saying "installed elsewhere, not on PATH" sent them looking for a PATH
+    // setting when the fix was the path they had just typed (#4 acceptance).
+    const explicit = this.herdr.includes('/');
     switch (location.kind) {
       case 'found':
         return new HerdrError(
           'herdr_not_on_path',
-          `herdr is installed at ${location.path}, but isn't on the PATH a non-interactive SSH session gets. Set that path in this server's Advanced settings.`
+          explicit && location.path !== this.herdr
+            ? `Nothing runs at ${this.herdr}. herdr is installed at ${location.path}; use that as this host's herdr path.`
+            : `herdr is installed at ${location.path}, but a non-interactive SSH session can't find it. Set that as this host's herdr path.`
         );
       case 'not_executable':
         return new HerdrError(
@@ -984,7 +990,9 @@ export class HerdrClient {
       case 'missing':
         return new HerdrError(
           'herdr_not_found',
-          "herdr isn't installed on this account. Install it on the host, or set its full path in this server's Advanced settings if it lives somewhere unusual."
+          explicit
+            ? `Nothing runs at ${this.herdr}, and herdr isn't installed anywhere usual on this account. Check the herdr path, or install herdr on the host.`
+            : "herdr isn't installed on this account. Install it on the host, or set its full path as this host's herdr path if it lives somewhere unusual."
         );
       case 'unknown':
         return exitCodeError(127);

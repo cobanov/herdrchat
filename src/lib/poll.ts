@@ -58,3 +58,17 @@ export function shouldPoll({
 }): boolean {
   return active && focused;
 }
+
+/**
+ * Failures that no retry can fix, only the user: the host refused these
+ * credentials, the key is not on the device, or the host key changed.
+ *
+ * Polling on through them only adds failed logins. OpenSSH penalises a source
+ * address for those (PerSourcePenalties), and together with pre-auth
+ * connections left open it refused the phone outright during the simulator
+ * acceptance pass. A loop that hits one pauses until the user pulls to refresh
+ * or edits the host, which replaces the client and so restarts the loop.
+ */
+export function needsTheUser(code: string | null | undefined): boolean {
+  return code === 'auth_failed' || code === 'host_key_changed' || code === 'credentials_missing' || code === 'bad_key';
+}

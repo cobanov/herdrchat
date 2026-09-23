@@ -1,4 +1,4 @@
-import { HerdrError, decodeEnvelope, herdrError, herdrErrorFrom } from './protocol';
+import { HerdrError, decodeEnvelope, herdrError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellQuote, withPath } from './shell';
 import type { HerdrTransport } from './transport';
 
@@ -84,7 +84,7 @@ export class HerdrSocket {
     const request = this.encode(method, params);
     const result = await this.transport.exec(commandFor(route, request, this.herdr), timeoutMs);
     if (!result.ok) {
-      throw new HerdrError(result.code, result.message, { transport: true });
+      throw transportError(result);
     }
     if (result.exitCode !== 0) {
       // The python bridge prints connect failures as an envelope on stdout and

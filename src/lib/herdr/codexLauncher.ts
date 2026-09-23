@@ -1,5 +1,5 @@
 import { CODEX_LAUNCHER_SCRIPT } from './codexLauncherScript';
-import { HerdrError } from './protocol';
+import { HerdrError, transportError } from './protocol';
 import { shellQuote, withPath } from './shell';
 import { LAUNCH_TIMEOUT_MS } from './timeouts';
 import type { HerdrTransport } from './transport';
@@ -19,7 +19,7 @@ export async function installCodexLauncher(transport: HerdrTransport): Promise<v
     `printf %s ${shellQuote(CODEX_LAUNCHER_SCRIPT)} > "$codex_launcher_tmp" && ` +
     'chmod 700 "$codex_launcher_tmp" && mv -f "$codex_launcher_tmp" "$codex_launcher_target" || exit $?; done';
   const result = await transport.exec(withPath(command), LAUNCH_TIMEOUT_MS);
-  if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
+  if (!result.ok) throw transportError(result);
   if (result.exitCode === 47) throw new HerdrError('codex_launcher_conflict',
     'A different codex or herdrchat-codex file already exists in ~/.local/bin. Neither was overwritten.');
   if (result.exitCode !== 0) throw new HerdrError('codex_launcher_install_failed',

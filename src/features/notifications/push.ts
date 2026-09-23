@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-import { HerdrError } from '@/lib/herdr/protocol';
+import { HerdrError, transportError } from '@/lib/herdr/protocol';
 import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
 import { shellQuote, withPath } from '@/lib/herdr/shell';
 import type { HerdrTransport } from '@/lib/herdr/transport';
@@ -245,7 +245,7 @@ async function run(transport: HerdrTransport, command: string): Promise<void> {
 
 async function runOut(transport: HerdrTransport, command: string): Promise<string> {
   const result = await transport.exec(withPath(command), SEND_TIMEOUT_MS);
-  if (!result.ok) throw new HerdrError(result.code, result.message, { transport: true });
+  if (!result.ok) throw transportError(result);
   if (result.exitCode !== 0) {
     throw new HerdrError(
       'push_registration_failed',
