@@ -38,6 +38,8 @@ export interface WorkspacesState {
   summaries: ChatSummary[];
   loading: boolean;
   error: string | null;
+  /** The failure's code (`auth_failed`, `connect_failed`, …), for choosing a way out. */
+  errorCode: string | null;
   /** True when the connect failed because herdr isn't installed on the host. */
   herdrMissing: boolean;
   /**
@@ -80,6 +82,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   // effect body just to get back to the initial value.
   const [loading, setLoading] = useState(client !== null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [herdrMissing, setHerdrMissing] = useState(false);
   const [serverStopped, setServerStopped] = useState(false);
 
@@ -142,6 +145,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current));
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
+      setErrorCode(null);
       setHerdrMissing(false);
       setServerStopped(false);
       return false;
@@ -149,6 +153,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       if (!alive.current) return true;
       const failure = thrown instanceof HerdrError ? thrown : null;
       setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
+      setErrorCode(failure?.code ?? null);
       setHerdrMissing(failure?.code === 'herdr_not_found');
       setServerStopped(failure?.code === 'server_not_running');
       return true;
@@ -214,6 +219,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     summaries,
     loading,
     error,
+    errorCode,
     herdrMissing,
     serverStopped,
     // A manual pull is a fresh start: clear the backoff so an explicit retry is

@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import { decodeSnapshot } from '@/lib/herdr/models';
+import { HerdrError } from '@/lib/herdr/protocol';
 import { useWorkspaces } from '../useWorkspaces';
 import type { ChatMessage } from '@/lib/transcript/message';
 
@@ -117,6 +118,16 @@ it('drops the preview the moment the slot reports a different session', async ()
   mockPreview = 'New chat line';
   await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
   expect(result.current.summaries[0]?.preview?.text).toBe('New chat line');
+  await unmount();
+});
+
+// #96: the list needs the failure's code to offer the matching way out.
+it('reports why the host could not be listed', async () => {
+  jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'The server rejected these credentials.'));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.error).toContain('rejected');
+  expect(result.current.errorCode).toBe('auth_failed');
+  expect(result.current.summaries).toEqual([]);
   await unmount();
 });
 
