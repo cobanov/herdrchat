@@ -5,7 +5,7 @@ import { haptics } from '@/lib/haptics';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing } from '@/theme/tokens';
 import {
   isPendingKeys,
   optionKeys,
@@ -100,16 +100,16 @@ export function BlockedBar({
                   paddingVertical: spacing.sm,
                   borderRadius: radius.sm,
                   backgroundColor:
-                    dim || pressed ? colors.fillSubtle : `${colors.attention}1F`,
+                    dim || pressed ? colors.fillSubtle : colors.attentionMuted,
                 })}>
                 {tapped ? (
-                  <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: 16 }} />
+                  <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: size.optionNumber }} />
                 ) : (
                   <Text
                     variant="footnote"
                     color={dim ? 'secondary' : 'attention'}
                     weight="700"
-                    style={{ fontVariant: ['tabular-nums'], minWidth: 16, textAlign: 'right' }}>
+                    style={{ fontVariant: ['tabular-nums'], minWidth: size.optionNumber, textAlign: 'right' }}>
                     {option.number}
                   </Text>
                 )}
@@ -169,7 +169,7 @@ function Chip({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.sm,
         borderRadius: radius.full,
-        backgroundColor: busy || pressed ? colors.fillSubtle : `${colors.attention}1F`,
+        backgroundColor: busy || pressed ? colors.fillSubtle : colors.attentionMuted,
       })}>
       {tapped ? (
         <ActivityIndicator size="small" color={colors.attention} />

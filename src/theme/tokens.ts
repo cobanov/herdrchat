@@ -84,6 +84,10 @@ export const size = {
    * one and the other two follow.
    */
   segmented: { inset: 3, height: 36 },
+  /** The floating "jump to latest" circle; `hitSlop` carries it past 44pt. */
+  jumpButton: 40,
+  /** The column an option's number sits in, so one- and two-digit labels align. */
+  optionNumber: 16,
 } as const;
 
 /**
@@ -192,7 +196,12 @@ export const threadLayout = {
 } as const;
 
 /** System navigation material, continuous through the status-bar safe area. */
-export const glass = { chromeIntensity: 100 } as const;
+export const glass = {
+  chromeIntensity: 100,
+  /** BlurView strength standing in for Liquid Glass below iOS 26, per variant. */
+  clearIntensity: 40,
+  regularIntensity: 70,
+} as const;
 
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
@@ -222,6 +231,11 @@ export const motion = {
   enter: { damping: 20, stiffness: 180, mass: 1 },
   fade: 200,
   fadeFast: 120,
+  /**
+   * The settings section a deep link points at: a glow in, a hold, a slower
+   * fade. Reduce Motion gets a plain hold-and-fade with the same meaning.
+   */
+  highlight: { in: 420, hold: 900, out: 700, reducedHold: 1400, reducedOut: 600 },
 } as const;
 
 /**
@@ -316,6 +330,8 @@ const LAVENDER = '#C3C7F9';
 export interface Palette {
   tint: string;
   tintMuted: string;
+  /** Wash behind a control that answers a waiting agent. */
+  attentionMuted: string;
   lavender: string;
   attention: string;
   destructive: string;
@@ -392,6 +408,7 @@ export const lightPalette: Palette = {
   // things you have to see, not just notice.
   tint: '#5459D4', // 5.23:1
   tintMuted: 'rgba(84, 89, 212, 0.12)',
+  attentionMuted: 'rgba(160, 92, 8, 0.12)',
   lavender: LAVENDER,
   attention: '#A05C08', // 4.87:1
   destructive: '#C22B2A', // 5.34:1
@@ -428,6 +445,7 @@ export const lightPalette: Palette = {
 export const darkPalette: Palette = {
   tint: '#8288F0',
   tintMuted: 'rgba(130, 136, 240, 0.20)',
+  attentionMuted: 'rgba(255, 159, 10, 0.12)',
   lavender: LAVENDER,
   attention: '#FF9F0A',
   destructive: '#FF6961',

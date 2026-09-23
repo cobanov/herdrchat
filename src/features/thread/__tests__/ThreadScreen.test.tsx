@@ -24,7 +24,10 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
 }));
-jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
+jest.mock('@/components/Glass', () => ({
+  Glass: (props: ViewProps) => <MockView {...props} />,
+  useGlassAvailable: () => false,
+}));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('@/state/connections', () => ({
   useConnections: () => false,

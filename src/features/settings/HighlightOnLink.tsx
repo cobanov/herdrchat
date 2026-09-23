@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { motion, radius, spacing } from '@/theme/tokens';
 
 /** The sections a link can point at. Typed, so a stale link is a build error. */
 export const SETTINGS_SECTIONS = ['connection', 'appearance', 'conversations', 'notifications', 'storage', 'support', 'about', 'danger'] as const;
@@ -58,11 +58,14 @@ export function HighlightOnLink({
       reduceMotion
         ? withSequence(
             withTiming(1, { duration: 1 }),
-            withDelay(1400, withTiming(0, { duration: 600 }))
+            withDelay(motion.highlight.reducedHold, withTiming(0, { duration: motion.highlight.reducedOut }))
           )
         : withSequence(
-            withTiming(1, { duration: 420, easing: Easing.out(Easing.quad) }),
-            withDelay(900, withTiming(0, { duration: 700, easing: Easing.in(Easing.quad) }))
+            withTiming(1, { duration: motion.highlight.in, easing: Easing.out(Easing.quad) }),
+            withDelay(
+              motion.highlight.hold,
+              withTiming(0, { duration: motion.highlight.out, easing: Easing.in(Easing.quad) })
+            )
           )
     );
   }, [isTarget, glow, reduceMotion]);
