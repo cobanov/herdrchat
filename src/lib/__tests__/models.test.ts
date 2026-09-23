@@ -56,6 +56,37 @@ describe('snapshot decoding', () => {
     const bare = decodeSnapshot({ agents: [], focused_pane_id: null });
     expect(bare.layouts).toBeNull();
     expect(bare.agents).toEqual([]);
+    expect(bare.restoreErrors).toEqual([]);
+  });
+
+  // Both counters are optional: 0.9.0 sends state_change_seq, only herdr
+  // after #4457 sends completion_seq, and only for finished work (#115).
+  it('reads the state and completion counters when herdr sends them', () => {
+    const [done, fresh, old] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', state_change_seq: 12, completion_seq: 12 },
+        { pane_id: 'p2', state_change_seq: 13 },
+        { pane_id: 'p3' },
+      ],
+    }).agents;
+    expect([done?.stateChangeSeq, done?.completionSeq]).toEqual([12, 12]);
+    expect([fresh?.stateChangeSeq, fresh?.completionSeq]).toEqual([13, null]);
+    expect([old?.stateChangeSeq, old?.completionSeq]).toEqual([null, null]);
+  });
+
+  // herdr #4400 keeps a pane whose restore failed and says why (#119).
+  it('collects the panes herdr could not restore', () => {
+    const snapshot = decodeSnapshot({
+      agents: [],
+      panes: [
+        { pane_id: 'p1', workspace_id: 'w1', restore_error: 'Saved directory is unavailable.' },
+        { pane_id: 'p2', workspace_id: 'w2' },
+        { pane_id: 'p3', workspace_id: 'w3', restore_error: null },
+      ],
+    });
+    expect(snapshot.restoreErrors).toEqual([
+      { paneId: 'p1', workspaceId: 'w1', message: 'Saved directory is unavailable.' },
+    ]);
   });
 
   /**
@@ -149,6 +180,8 @@ describe('session signature', () => {
     terminalId: null,
     workspaceId: 'w1',
     agentSession: { agent: 'claude', kind: 'id', source: 'hook', value: 'sess-a' },
+    stateChangeSeq: null,
+    completionSeq: null,
     ...overrides,
   });
 

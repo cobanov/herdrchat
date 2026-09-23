@@ -12,7 +12,7 @@ import {
   type WorkspaceCreation,
 } from './models';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom } from './protocol';
-import { shellCommand, shellQuote, withPath } from './shell';
+import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
@@ -217,7 +217,7 @@ export class HerdrClient {
    */
   async startServer(): Promise<void> {
     await this.shell(
-      `nohup ${shellQuote(this.herdr)} server >/dev/null 2>&1 & echo started`,
+      `nohup ${commandWord(this.herdr)} server >/dev/null 2>&1 & echo started`,
       LAUNCH_TIMEOUT_MS
     );
     // The spawn returns immediately; the socket takes a moment. Confirm rather
@@ -969,17 +969,24 @@ export class HerdrClient {
    *
    * Checks the same places the PATH prefix covers, plus whatever the login
    * shell would resolve. Everything is `2>/dev/null` and the script always
-   * exits 0, because a diagnosis that itself fails tells the user nothing.
+   * ends in exit 0, because a diagnosis that itself fails tells the user
+   * nothing. It ends by falling off the end, never `exit 0`: the transport
+   * marks a finished command by what runs after it (#103).
+   *
+   * One line per statement, joined with newlines. Joined with `; ` it read
+   * `do; [ -e …`, a syntax error in bash and sh that only zsh forgave, so on a
+   * Linux host with a bash login shell this diagnosis never worked.
    */
   async locateHerdr(): Promise<HerdrLocation> {
     const script = [
-      `p=$(command -v ${shellQuote(this.herdr)} 2>/dev/null)`,
-      '[ -n "$p" ] || for c in "$HOME/.local/bin/herdr" "$HOME/bin/herdr" /opt/homebrew/bin/herdr /usr/local/bin/herdr /usr/bin/herdr; do',
-      '  [ -e "$c" ] && { p="$c"; break; }',
-      'done',
-      '[ -n "$p" ] || { echo NONE; exit 0; }',
-      '[ -x "$p" ] && echo "EXEC $p" || echo "NOEXEC $p"',
-    ].join('; ');
+      `p=$(command -v ${commandWord(this.herdr)} 2>/dev/null)`,
+      'if [ -z "$p" ]; then',
+      '  for c in "$HOME/.local/bin/herdr" "$HOME/bin/herdr" /opt/homebrew/bin/herdr /usr/local/bin/herdr /usr/bin/herdr; do',
+      '    if [ -e "$c" ]; then p="$c"; break; fi',
+      '  done',
+      'fi',
+      'if [ -z "$p" ]; then echo NONE; elif [ -x "$p" ]; then echo "EXEC $p"; else echo "NOEXEC $p"; fi',
+    ].join('\n');
 
     const result = await this.transport.exec(withPath(script), POLL_TIMEOUT_MS);
     if (!result.ok || result.exitCode !== 0) return { kind: 'unknown' };

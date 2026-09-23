@@ -10,7 +10,7 @@
  * history before the Expo rewrite).
  */
 
-import { clean } from './ansi';
+import { BORDER_CHARS, clean, stripAnsi } from './ansi';
 
 /** One selectable choice: the keys to send and the label to show. */
 export interface BlockedOption {
@@ -18,16 +18,55 @@ export interface BlockedOption {
   number: number;
   /** e.g. "Yes, and don't ask again". */
   label: string;
+  /** A multi-select row: whether it is ticked. Absent on an ordinary option. */
+  checked?: boolean;
 }
 
 export interface BlockedPrompt {
   question: string | null;
   options: BlockedOption[];
+  /**
+   * The only safe answer is to close it (Esc). Set for Codex's file-mention
+   * popup, which herdr counts as blocked (herdr #4495): Enter or a digit there
+   * would pick a file into the prompt rather than answer anything.
+   */
+  dismissOnly?: boolean;
+  /**
+   * Claude's multi-select question: a digit ticks or unticks its row and
+   * nothing is sent until "Continue" moves on to the review screen.
+   */
+  multiSelect?: boolean;
+  /**
+   * Whether a digit needs Enter behind it. False for Claude, which acts on the
+   * digit alone; the Enter then lands on whatever comes next (#107). True
+   * (the default) for Codex, whose own trust menu only moves the cursor on a
+   * digit.
+   */
+  submitWithEnter?: boolean;
 }
 
 /**
- * Keys that submit a choice — press the number, then Enter — or `null` when the
- * choice cannot be typed at all.
+ * Codex's `@` mention picker, recognised the way herdr's own manifest does it:
+ * all three of its tab labels on screen at once.
+ */
+export function isMentionPopup(screen: string): boolean {
+  return ['All Results', 'Filesystem Only', 'Plugins'].every((label) => screen.includes(label));
+}
+
+/**
+ * Keys that submit a choice, or `null` when the choice cannot be typed at all.
+ *
+ * The digit, then Enter, except where the digit alone is the answer:
+ *
+ * - Claude acts on a numbered menu the instant a digit arrives (measured on
+ *   2.1.280 for permission prompts and AskUserQuestion). The Enter behind it
+ *   was harmless under a single question, landing in an empty composer, but
+ *   under several it picked the NEXT question's highlighted option unasked.
+ * - A multi-select row: the digit ticks it, and Enter ticks whichever row the
+ *   cursor is on, so digit plus Enter changed two answers.
+ *
+ * Codex needs the Enter: its approval overlay acts on the digit, but its trust
+ * menu only moves the cursor.
  *
  * There is no way to type "10" into one of these menus. Claude acts on a
  * numbered menu the instant a digit arrives, so `1` selects option 1 and closes
@@ -45,10 +84,18 @@ export interface BlockedPrompt {
  * ten-option menu, and guessing at key sequences aimed into a live agent is the
  * exact failure this function already has one of.)
  */
-export function optionKeys(option: BlockedOption): string[] | null {
+export function optionKeys(
+  option: BlockedOption,
+  prompt?: Pick<BlockedPrompt, 'multiSelect' | 'submitWithEnter'>
+): string[] | null {
   if (!Number.isInteger(option.number) || option.number < 1 || option.number > 9) return null;
-  return [String(option.number), 'Enter'];
+  const digit = String(option.number);
+  if (prompt?.multiSelect === true || prompt?.submitWithEnter === false) return [digit];
+  return [digit, 'Enter'];
 }
+
+/** Moves a multi-select question on: to the next question, or to the review. */
+export const CONTINUE_KEYS: readonly string[] = ['Right'];
 
 /**
  * Parse the tail of an agent pane into a question plus numbered options.
@@ -56,15 +103,33 @@ export function optionKeys(option: BlockedOption): string[] | null {
  * the UI then falls back to its generic chips rather than inventing choices.
  */
 export function parseBlockedPrompt(raw: string): BlockedPrompt {
-  const lines = raw.split('\n').map(clean);
+  const rawLines = raw.split('\n').map(stripAnsi);
+  const lines = rawLines.map(clean);
 
   const options: BlockedOption[] = [];
   let firstOptionLine: number | null = null;
+  /** Where the current menu's numbers start, in columns. */
+  let menuColumn: number | null = null;
+  /** Whether the lines since the last option still belong to it. */
+  let underOption = false;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
+    if (line.length === 0) {
+      underOption = false;
+      continue;
+    }
+    // Indented past the numbers, straight under an option: that option's
+    // description, the rest of a wrapped label, or a preview panel. Never a
+    // new option, even when it starts "1." — an AskUserQuestion description
+    // that did reset the menu and took option 1's place (#107).
+    const column = contentColumn(rawLines[index] ?? '');
+    if (underOption && menuColumn !== null && column > menuColumn) continue;
     const option = parseOption(line);
-    if (option === null) continue;
+    if (option === null) {
+      underOption = false;
+      continue;
+    }
     // Keep the LAST contiguous menu: a later menu supersedes an earlier one
     // still lingering in the scrollback.
     const last = options[options.length - 1];
@@ -74,6 +139,8 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
     }
     if (firstOptionLine === null) firstOptionLine = index;
     options.push(option);
+    menuColumn = column;
+    underOption = true;
   }
 
   if (options.length === 0 || firstOptionLine === null) {
@@ -93,7 +160,12 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   }
 
   const question = questionLines.join(' ').trim();
-  return { question: question.length > 0 ? question : null, options };
+  const multiSelect = options.some((option) => option.checked !== undefined);
+  return {
+    question: question.length > 0 ? question : null,
+    options,
+    ...(multiSelect ? { multiSelect } : {}),
+  };
 }
 
 export function isBlockedPromptEmpty(prompt: BlockedPrompt | null): boolean {
@@ -123,7 +195,10 @@ export interface BlockedPending {
  */
 export function blockedPromptSignature(prompt: BlockedPrompt | null): string | null {
   if (prompt === null || prompt.options.length === 0) return null;
-  return [prompt.question ?? '', ...prompt.options.map((o) => `${o.number}.${o.label}`)].join('\n');
+  // Ticks included: toggling a multi-select row changes nothing else on screen,
+  // and without them the reply would look undelivered until it timed out.
+  const tick = (o: BlockedOption) => (o.checked === undefined ? '' : o.checked ? '[x]' : '[ ]');
+  return [prompt.question ?? '', ...prompt.options.map((o) => `${o.number}.${tick(o)}${o.label}`)].join('\n');
 }
 
 export type PendingResolution = 'waiting' | 'delivered' | 'superseded' | 'timed_out';
@@ -184,8 +259,30 @@ export function isPendingKeys(pending: BlockedPending | null, keys: readonly str
 
 // MARK: - Internals
 
-const SELECTION_MARKERS = ['❯', '▶', '>', '→', '•', '*'];
-const KEYBOARD_HINT = /\s*\((esc|enter|return)\)\s*$/i;
+// `›` is Codex's cursor. Without it Codex's highlighted option, the first
+// one, was not recognised at all and the menu started at 2.
+const SELECTION_MARKERS = ['❯', '›', '▶', '>', '→', '•', '*'];
+// Codex also names a shortcut letter: "Yes, proceed (y)".
+const KEYBOARD_HINT = /\s*\((esc|enter|return|tab|[a-z])\)\s*$/i;
+/** A multi-select row's box: `[ ]`, or ticked. */
+const CHECKBOX = /^\[([ xX✔✓])\]\s*/;
+/** Where a label ends and a preview panel beside it begins. */
+const SIDE_PANEL = /\s{2,}[│┃┌└├╭╰].*$/;
+
+/**
+ * The column a line's text starts at, past box borders and a cursor marker.
+ * An option's is where its number starts.
+ */
+function contentColumn(line: string): number {
+  let index = 0;
+  while (index < line.length && BORDER_CHARS.includes(line[index] ?? '')) index += 1;
+  const marker = SELECTION_MARKERS.find((candidate) => line.startsWith(candidate, index));
+  if (marker !== undefined) {
+    index += marker.length;
+    while (index < line.length && (line[index] === ' ' || line[index] === '\t')) index += 1;
+  }
+  return index;
+}
 
 /** Parse a single cleaned line as a menu option, e.g. "❯ 2. Yes, allow all". */
 function parseOption(line: string): BlockedOption | null {
@@ -205,8 +302,10 @@ function parseOption(line: string): BlockedOption | null {
   const punctuation = after.charAt(0);
   if (punctuation !== '.' && punctuation !== ')') return null;
 
-  const label = after.slice(1).trim().replace(KEYBOARD_HINT, '').trim();
+  let label = after.slice(1).trim().replace(SIDE_PANEL, '').replace(KEYBOARD_HINT, '').trim();
+  const box = CHECKBOX.exec(label);
+  if (box !== null) label = label.slice(box[0].length).trim();
   if (label.length === 0) return null;
 
-  return { number, label };
+  return box === null ? { number, label } : { number, label, checked: box[1] !== ' ' };
 }

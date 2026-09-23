@@ -58,21 +58,41 @@ const keychainOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
+/** Keys already moved to `keychainOptions` in this launch. */
+const migrated = new Set<string>();
+
 /**
- * Values written before the accessibility option existed migrate on read: the
- * rewrite is idempotent, so no marker tracks whether it already happened.
+ * Read a secret, moving items written before the accessibility option existed
+ * onto it (once per key per launch).
+ *
+ * Re-saving the value did nothing: when the item exists, expo-secure-store
+ * updates only its data (`SecItemUpdate` with `kSecValueData`), so its
+ * accessibility never changed (#102). An item's accessibility can only be set
+ * when it is added, so it is re-added, in an order that never leaves the secret
+ * without a copy: a temporary item first, then the real one deleted and added
+ * again, then the temporary one removed. If that is interrupted, the next read
+ * finds the temporary copy and finishes the job.
  */
 async function loadMigrating(key: string): Promise<string | null> {
-  const value = await SecureStore.getItemAsync(key);
-  if (value !== null) {
-    try {
-      await SecureStore.setItemAsync(key, value, keychainOptions);
-    } catch {
-      // The rewrite is housekeeping, not the point of the call: we already hold
-      // the value the caller asked for. Letting a refused write fail the read
-      // would take the host down for the whole session over an accessibility
-      // flag, and the next read attempts the migration again anyway.
-    }
+  const spare = `${key}.migrating`;
+  let value = await SecureStore.getItemAsync(key);
+  if (value === null) {
+    const recovered = await SecureStore.getItemAsync(spare);
+    if (recovered === null) return null;
+    value = recovered;
+  } else if (migrated.has(key)) {
+    return value;
+  }
+  try {
+    await SecureStore.setItemAsync(spare, value, keychainOptions);
+    await SecureStore.deleteItemAsync(key);
+    await SecureStore.setItemAsync(key, value, keychainOptions);
+    await SecureStore.deleteItemAsync(spare);
+    migrated.add(key);
+  } catch {
+    // Housekeeping, not the point of the call: we already hold the value the
+    // caller asked for, and the spare copy covers a half-done move. Failing the
+    // read would take the host down over an accessibility flag.
   }
   return value;
 }
@@ -108,8 +128,12 @@ export async function saveHostKeyPin(id: string, fingerprint: string): Promise<v
  * ordinary save, which would silently re-open the trust-on-first-use window.
  */
 export async function clearSecrets(id: string, { keepSecret = false } = {}): Promise<void> {
-  if (!keepSecret) await SecureStore.deleteItemAsync(secretKey(id));
+  if (!keepSecret) {
+    await SecureStore.deleteItemAsync(secretKey(id));
+    await SecureStore.deleteItemAsync(`${secretKey(id)}.migrating`);
+  }
   await SecureStore.deleteItemAsync(pinKey(id));
+  await SecureStore.deleteItemAsync(`${pinKey(id)}.migrating`);
 }
 
 // MARK: - Store

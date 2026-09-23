@@ -134,6 +134,10 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
         selected={selected}
         onPress={onPress}
         onLongPress={onLongPress}
+        actions={[
+          { name: 'rename', label: 'Rename', run: onRename },
+          { name: 'close', label: 'Close chat', run: onClose },
+        ]}
       />
     </ReanimatedSwipeable>
   );

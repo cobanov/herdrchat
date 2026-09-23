@@ -30,6 +30,7 @@ src/lib/                pure logic, no React — this is what tests cover
 src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
+modules/herdr-keys/     iOS only: Command-Return on the composer (a UIKeyCommand view)
                         (the SwiftUI and Compose apps this replaced are not in
                          the tree — they live in git history before the rewrite)
 .maestro/               UI flows
@@ -101,7 +102,7 @@ npx expo run:ios --device "iPhone 17 Pro"
 npx expo start --dev-client
 ```
 
-Changes under `modules/herdr-ssh/ios` or `.../android` need a native rebuild;
+Changes under `modules/*/ios` or `.../android` need a native rebuild;
 Fast Refresh does not reload native code.
 
 ## Not yet built

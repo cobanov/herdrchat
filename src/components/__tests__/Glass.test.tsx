@@ -29,3 +29,16 @@ it.each(['dark', 'light'])('uses continuous %s navigation material but keeps flo
   expect(screen.queryByTestId('blur')).toBeNull();
   expect(screen.getByText('Title')).toBeOnTheScreen();
 });
+
+// Opacity on glass or an ancestor switches the effect off, so hiding real glass
+// animates its style to 'none' and keeps it mounted (#111).
+it('hides real glass by animating its style, never by unmounting', async () => {
+  mockScheme = 'dark';
+  mockReduceTransparency = false;
+  const screen = await render(<Glass><Text>Jump</Text></Glass>);
+  expect(screen.getByTestId('liquid-glass')).toHaveProp('glassEffectStyle', expect.objectContaining({ style: 'regular', animate: true }));
+  await screen.rerender(<Glass hidden><Text>Jump</Text></Glass>);
+  expect(screen.getByTestId('liquid-glass')).toHaveProp('glassEffectStyle', expect.objectContaining({ style: 'none' }));
+  await screen.rerender(<Glass hidden edgeAttached><Text>Jump</Text></Glass>);
+  expect(screen.queryByTestId('blur')).toBeNull();
+});

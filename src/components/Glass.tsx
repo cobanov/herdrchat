@@ -8,7 +8,7 @@ import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'reac
 import type { ReactNode } from 'react';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import { glass } from '@/theme/tokens';
+import { glass, motion } from '@/theme/tokens';
 
 /**
  * The ONLY file in the app that imports `expo-glass-effect`.
@@ -38,6 +38,15 @@ export interface GlassProps {
   /** Continuous navigation chrome, not a floating Liquid Glass lens. */
   edgeAttached?: boolean;
   tintColor?: string;
+  /**
+   * Dematerialise the lens without unmounting it, animated.
+   *
+   * The only way to fade real glass: opacity on a GlassView or on any ancestor
+   * switches the effect off, so instead its style animates to 'none'. Only
+   * meaningful where `useGlassAvailable()` is true; a caller fades the other
+   * branches the ordinary way, and they render nothing while hidden.
+   */
+  hidden?: boolean;
   testID?: string;
 }
 
@@ -58,11 +67,13 @@ export function Glass({
   interactive = false,
   edgeAttached = false,
   tintColor,
+  hidden = false,
   testID,
 }: GlassProps) {
-  const { colors, scheme, reduceTransparency } = useTheme();
+  const { colors, scheme, reduceTransparency, reduceMotion } = useTheme();
 
   if (reduceTransparency) {
+    if (hidden) return null;
     return (
       <View style={[{ backgroundColor: colors.glassFallback }, style]} testID={testID}>
         {children}
@@ -74,7 +85,11 @@ export function Glass({
     return (
       <GlassView
         style={style}
-        glassEffectStyle={variant}
+        glassEffectStyle={{
+          style: hidden ? 'none' : variant,
+          animate: !reduceMotion,
+          animationDuration: motion.fade / 1000,
+        }}
         isInteractive={interactive}
         tintColor={tintColor}
         // Without this the glass follows the SYSTEM appearance while everything
@@ -94,13 +109,19 @@ export function Glass({
     );
   }
 
+  if (hidden) return null;
+
   if (Platform.OS === 'ios') {
     // Edge-attached chrome uses system navigation material, not a rounded lens.
     // The same BlurView also backs floating surfaces on iOS below 26.
     return (
       <View style={[styles.clip, style]} testID={testID}>
         <BlurView
-          intensity={edgeAttached ? glass.chromeIntensity : variant === 'clear' ? 40 : 70}
+          intensity={
+            edgeAttached
+              ? glass.chromeIntensity
+              : variant === 'clear' ? glass.clearIntensity : glass.regularIntensity
+          }
           tint={edgeAttached
             ? scheme === 'dark' ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight'
             : scheme === 'dark' ? 'dark' : 'light'}

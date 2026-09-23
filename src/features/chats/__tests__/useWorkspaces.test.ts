@@ -3,7 +3,8 @@ import { act, renderHook } from '@testing-library/react-native';
 import { HerdrClient } from '@/lib/herdr/client';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { useWorkspaces } from '../useWorkspaces';
+import { refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
+import { TranscriptStore } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 
 let mockPolling = true;
@@ -122,6 +123,21 @@ it('drops the preview the moment the slot reports a different session', async ()
 });
 
 // #96: the list needs the failure's code to offer the matching way out.
+it('carries herdr\'s restore error onto the chat it belongs to (#119)', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(decodeSnapshot({
+    version: '0.9.2',
+    workspaces: [
+      { workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' },
+      { workspace_id: 'gone', label: 'Gone', number: 2, agent_status: 'unknown' },
+    ],
+    panes: [{ pane_id: 'p9', workspace_id: 'gone', restore_error: 'Saved directory is unavailable.' }],
+    agents: [],
+  }));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.summaries.map((chat) => chat.restoreError)).toEqual([null, 'Saved directory is unavailable.']);
+  await unmount();
+});
+
 it('reports why the host could not be listed', async () => {
   jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('auth_failed', 'The server rejected these credentials.'));
   const { result, unmount } = await renderHook(() => useWorkspaces(client));
@@ -173,4 +189,27 @@ it('does not rearm a covered list after an in-flight refresh completes', async (
   });
   expect(fetch).toHaveBeenCalledTimes(1);
   await unmount();
+});
+
+// A turn that starts and ends between two polls looks idle both times; only
+// herdr's state counter shows it happened (#115).
+it('refreshes an idle chat whose state counter moved between polls', async () => {
+  const store = new TranscriptStore({} as never);
+  const fetch = jest.spyOn(store, 'latestMessages');
+  const previews = new Map<string, CachedPreview>();
+  const seqs = new Map<string, number>();
+  const tick = { current: 0 };
+  const at = (seq: number) => decodeSnapshot({
+    agents: [{
+      workspace_id: 'chat', pane_id: 'pane', agent: 'claude', agent_status: 'idle', cwd: '/test',
+      agent_session: { kind: 'id', value: 'session' }, state_change_seq: seq,
+    }],
+  }).agents;
+
+  await refreshPreviews(store, at(4), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await refreshPreviews(store, at(4), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await refreshPreviews(store, at(6), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(2);
 });

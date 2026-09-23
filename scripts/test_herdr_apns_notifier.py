@@ -80,5 +80,51 @@ class RoutingPayloadTests(unittest.TestCase):
         ])
 
 
+
+class TransitionTests(unittest.TestCase):
+    """#115: herdr's counters catch what two status reads miss."""
+
+    def agent(self, status, seq=None, completion=None):
+        a = {"pane_id": "w1:p1", "agent_status": status}
+        if seq is not None:
+            a["state_change_seq"] = seq
+        if completion is not None:
+            a["completion_seq"] = completion
+        return a
+
+    def sequence(self, notifier, *agents):
+        fired, memo = [], None
+        for a in agents:
+            news, memo = notifier.should_notify(a, memo)
+            fired.append(news)
+        return fired
+
+    def test_a_whole_turn_between_polls_still_notifies(self):
+        notifier = load_notifier()
+        # done -> working -> done happened between the second and third poll.
+        fired = self.sequence(notifier, self.agent("idle", 3), self.agent("done", 5, 5), self.agent("done", 7, 7))
+        self.assertEqual(fired, [False, True, True])
+
+    def test_done_without_a_completion_is_not_news_twice(self):
+        notifier = load_notifier()
+        fired = self.sequence(notifier, self.agent("done", 5, 5), self.agent("done", 5, 5))
+        self.assertEqual(fired, [True, False])
+
+    def test_a_second_prompt_between_polls_notifies(self):
+        notifier = load_notifier()
+        fired = self.sequence(notifier, self.agent("blocked", 8), self.agent("blocked", 10))
+        self.assertEqual(fired, [True, True])
+
+    def test_older_herdr_falls_back_to_status_changes(self):
+        notifier = load_notifier()
+        fired = self.sequence(notifier, self.agent("working"), self.agent("blocked"), self.agent("blocked"))
+        self.assertEqual(fired, [False, True, False])
+
+    def test_quiet_states_never_notify(self):
+        notifier = load_notifier()
+        fired = self.sequence(notifier, self.agent("idle", 1), self.agent("working", 2))
+        self.assertEqual(fired, [False, False])
+
+
 if __name__ == "__main__":
     unittest.main()

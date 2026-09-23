@@ -49,6 +49,19 @@ export interface AgentInfo {
   terminalId: string | null;
   workspaceId: string;
   agentSession: AgentSessionRef | null;
+  /**
+   * herdr's counter at this pane's last state change. A different value on the
+   * next poll means it changed in between, even if it came back to the same
+   * state: a turn that started and finished between two polls. Null from a
+   * herdr too old to send it.
+   */
+  stateChangeSeq: number | null;
+  /**
+   * Set only when the current idle state is finished work, to that
+   * transition's `stateChangeSeq`; startup, restore and session switches leave
+   * it null (herdr #4457). Null from older herdr, which cannot tell.
+   */
+  completionSeq: number | null;
 }
 
 /**
@@ -130,6 +143,19 @@ export interface Snapshot {
   version: string | null;
   /** Wire protocol number. Null if absent. */
   protocol: number | null;
+  /** Panes herdr could not bring back after a restart. Empty before herdr #4400. */
+  restoreErrors: RestoreError[];
+}
+
+/**
+ * A pane whose saved session failed to come back (herdr's `restore_error`):
+ * its directory is gone, or its shell would not start. herdr keeps the layout
+ * and says why, rather than silently dropping it.
+ */
+export interface RestoreError {
+  paneId: string;
+  workspaceId: string;
+  message: string;
 }
 
 export interface TabLayout {
@@ -186,6 +212,10 @@ function optionalStr(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function optionalNum(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function num(value: unknown): number {
   return typeof value === 'number' ? value : 0;
 }
@@ -226,6 +256,8 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     terminalId: optionalStr(value.terminal_id),
     workspaceId: str(value.workspace_id),
     agentSession: decodeAgentSessionRef(value.agent_session),
+    stateChangeSeq: optionalNum(value.state_change_seq),
+    completionSeq: optionalNum(value.completion_seq),
   };
 }
 
@@ -309,6 +341,12 @@ export function decodeSnapshot(raw: unknown): Snapshot {
     layouts,
     version: optionalStr(value.version),
     protocol: typeof value.protocol === 'number' ? value.protocol : null,
+    restoreErrors: array(value.panes).flatMap((raw) => {
+      const pane = record(raw);
+      const message = optionalStr(pane.restore_error);
+      if (message === null || message.length === 0) return [];
+      return [{ paneId: str(pane.pane_id), workspaceId: str(pane.workspace_id), message }];
+    }),
   };
 }
 

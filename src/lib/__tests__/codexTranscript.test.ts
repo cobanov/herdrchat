@@ -114,3 +114,24 @@ describe('Codex rollout history', () => {
     expect(parseTranscript(lines.join('\n')).map(displayText)).toEqual(['Still here']);
   });
 });
+
+// #121: Codex 0.155 records messages between agents as `agent_message`.
+describe('Codex agent_message', () => {
+  const line = JSON.stringify({
+    timestamp: '2026-09-23T10:00:00Z',
+    type: 'response_item',
+    payload: {
+      type: 'agent_message',
+      id: 'am_1',
+      author: 'planner',
+      recipient: 'worker',
+      content: [{ type: 'output_text', text: 'Take the parser tests.' }],
+    },
+  });
+
+  it('is an assistant message marked as a sidechain', () => {
+    const message = parseTranscriptLine(line);
+    expect(message).toMatchObject({ role: 'assistant', isSidechain: true });
+    expect(displayText(message!)).toBe('planner → worker: Take the parser tests.');
+  });
+});

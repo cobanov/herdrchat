@@ -13,6 +13,8 @@ import { useThread } from '../useThread';
 let mockPolling = true;
 let mockLive = true;
 let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
+/** Per-path probe, when a test needs agents whose files differ. */
+let mockProbeFor: ((path: string) => FileProbe) | null = null;
 const mockCodexPath = jest.fn<Promise<string | null>, [string]>(async () => '/test/codex.jsonl');
 let mockRecentMessages: ChatMessage[] = [];
 const mockRecent = jest.fn(async (_path: string, _label: string | null, _bytes: number, _limit: number) => ({
@@ -56,9 +58,10 @@ jest.mock('@/lib/transcript/store', () => ({
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
     claudeTranscriptPath = async (_cwd: string, id: string) => `/test/${id}.jsonl`;
     findClaudeTranscript = async () => null;
+    lineStartBefore = async (_path: string, byte: number) => byte - 321;
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
-    fileProbe = async () => mockProbe;
+    fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
     recent = mockRecent;
     older = mockOlder;
     sessionMeta = mockSessionMeta;
@@ -77,6 +80,8 @@ const agent: AgentInfo = {
   terminalId: null,
   workspaceId: 'chat',
   agentSession: { kind: 'id', value: 'session', agent: 'claude', source: null },
+  stateChangeSeq: null,
+  completionSeq: null,
 };
 const snapshot = (agents: AgentInfo[]): Snapshot => ({
   agents,
@@ -87,6 +92,7 @@ const snapshot = (agents: AgentInfo[]): Snapshot => ({
   focusedPaneId: null,
   focusedTabId: null,
   focusedWorkspaceId: null,
+  restoreErrors: [],
 });
 const db = {
   runAsync: jest.fn(async () => undefined),
@@ -105,6 +111,7 @@ beforeEach(() => {
   mockPolling = true;
   mockLive = true;
   mockProbe = { kind: 'size', bytes: 0 };
+  mockProbeFor = null;
   mockCodexPath.mockResolvedValue('/test/codex.jsonl');
   mockRecentMessages = [];
   mockRecent.mockReset().mockImplementation(async () => ({
@@ -177,6 +184,41 @@ it('finishes loading when a new session has not created its transcript yet', asy
   expect(result.current.canSend).toBe(true);
   expect(result.current.messages).toEqual([]);
   expect(result.current.error).toBeNull();
+  await unmount();
+});
+
+// herdr counts Codex's `@` file picker as blocked (#4495). Enter or a digit
+// there picks a file into the prompt, so the bar offers only Esc (#120).
+const MENTION_POPUP = ['@src', '  All Results   Filesystem Only   Plugins', '  1. src/app.ts', '  2. src/lib.ts'].join('\n');
+
+it.each([
+  { name: 'Codex', kind: 'codex', dismissOnly: true },
+  { name: 'Claude', kind: 'claude', dismissOnly: undefined },
+])('treats the mention picker as dismiss-only for $name', async ({ kind, dismissOnly }) => {
+  jest
+    .spyOn(client, 'snapshot')
+    .mockResolvedValue(snapshot([{ ...agent, agent: kind, agentStatus: 'blocked' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue(MENTION_POPUP);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+  expect(result.current.blockedPrompt?.dismissOnly).toBe(dismissOnly);
+  if (dismissOnly === true) expect(result.current.blockedPrompt?.options).toEqual([]);
+  await unmount();
+});
+
+// Claude answers on the digit; the Enter behind it picked the next question's
+// option. Codex's trust menu needs it (#107).
+it.each([
+  { kind: 'claude', submitWithEnter: false },
+  { kind: 'codex', submitWithEnter: true },
+])('sends Enter after a digit only where $kind needs it', async ({ kind, submitWithEnter }) => {
+  jest
+    .spyOn(client, 'snapshot')
+    .mockResolvedValue(snapshot([{ ...agent, agent: kind, agentStatus: 'blocked' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue('Do you want to proceed?\n❯ 1. Yes\n  2. No');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+  expect(result.current.blockedPrompt?.submitWithEnter).toBe(submitWithEnter);
   await unmount();
 });
 
@@ -275,7 +317,7 @@ it('accepts a Codex transcript receipt even when terminal delivery cannot be obs
   jest.spyOn(client, 'sendPrompt').mockImplementation(() => new Promise((_resolve, reject) => { rejectSend = reject; }));
   const keys = jest.spyOn(client, 'sendKeys');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Phone prompt'); });
   await act(async () => { mockEmitReceipt?.({ id: 'host-prompt', role: 'user', segments: [{ kind: 'text', text: 'Phone prompt' }],
     timestamp: Date.now(), agentLabel: null, isSidechain: false }); });
@@ -293,7 +335,7 @@ it('never presses Enter again when a Codex send remains unverified', async () =>
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Not acknowledged yet'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).not.toHaveBeenCalled();
@@ -313,7 +355,7 @@ it('never presses Enter into an agent that went blocked after an unverified send
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Refactor the parser'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(wait).toHaveBeenCalledWith(agent.paneId, ['working', 'blocked'], expect.any(Number));
@@ -328,7 +370,7 @@ it('presses Enter once when an unverified prompt is still sitting in an idle com
   const wait = jest.spyOn(client, 'waitAgentStatus').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Run the tests'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).toHaveBeenCalledTimes(1);
@@ -347,7 +389,7 @@ it('presses nothing when the pane state cannot be read after an unverified send'
   jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
   const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('Anything'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(keys).not.toHaveBeenCalled();
@@ -375,7 +417,7 @@ it('keeps the Codex delivery notice through a live-stream poll', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
   jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('x'); });
   await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
   expect(result.current.error).toContain('Check the host before retrying');
@@ -407,7 +449,7 @@ it('says a message may have arrived when the connection drops mid-send (#83)', a
     new HerdrError('timeout', "The host didn't answer in time.", { transport: true })
   );
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
-  let sent: Promise<void> | undefined;
+  let sent: Promise<unknown> | undefined;
   await act(async () => { sent = result.current.send('deploy it'); });
   // Not failed at once: the transcript gets the chance to show it landed.
   expect(result.current.failedIds.size).toBe(0);
@@ -482,6 +524,64 @@ it('shows the saved history, read-only, when the host cannot be reached', async 
   expect(result.current.messages.map((message) => message.id)).toEqual(['saved-1']);
   expect(result.current.offline).toBe(true);
   expect(result.current.canSend).toBe(false);
+  await unmount();
+});
+
+// #99: a sibling whose transcript does not exist yet used to abort and
+// restart the healthy agent's SSH tail on every poll.
+it('does not restart a healthy tail on every poll while a sibling has no file yet', async () => {
+  mockLive = false;
+  mockLiveReceipt = true; // the healthy tail stays open, as a real one does
+  mockProbeFor = (path) => (path.includes('fresh') ? { kind: 'absent' } : { kind: 'size', bytes: 10 });
+  const sibling: AgentInfo = { ...agent, paneId: 'pane-2', agentSession: { kind: 'id', value: 'fresh', agent: 'claude', source: null } };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, sibling]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  const startsAfterOpen = mockTailStarts.length;
+  // Two polls inside the first 5 s retry window: nothing restarts.
+  await act(async () => { await jest.advanceTimersByTimeAsync(2 * 2_100); });
+  expect(mockTailStarts.length).toBe(startsAfterOpen);
+  // Thirty seconds of 2 s polls: the retry backs off (5 s, then 10 s, then
+  // 20 s), where it used to restart on every one of about fifteen polls.
+  await act(async () => { await jest.advanceTimersByTimeAsync(26_000); });
+  expect(mockTailStarts.length - startsAfterOpen).toBeLessThanOrEqual(2);
+  await unmount();
+});
+
+// #100: a refused send says so, and a double-tapped retry sends once.
+it('reports whether a message was taken', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  let finish: (() => void) | null = null;
+  jest.spyOn(client, 'sendPrompt').mockImplementation(
+    () => new Promise((resolve) => { finish = () => resolve('delivered'); })
+  );
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let first: Promise<boolean> | undefined;
+  await act(async () => { first = result.current.send('first'); });
+  // A second message while the first is still being delivered is refused.
+  let second: boolean | undefined;
+  await act(async () => { second = await result.current.send('second'); });
+  expect(second).toBe(false);
+  await act(async () => { finish?.(); await first; });
+  await expect(first).resolves.toBe(true);
+  await unmount();
+});
+
+it('sends a retried message once, however often retry is tapped', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValueOnce('stalled');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('try me'); });
+  const [failed] = [...result.current.failedIds];
+  expect(failed).toBeDefined();
+  let finish: (() => void) | null = null;
+  prompt.mockImplementation(() => new Promise((resolve) => { finish = () => resolve('delivered'); }));
+  await act(async () => {
+    void result.current.retry(failed!);
+    void result.current.retry(failed!);
+  });
+  await act(async () => { finish?.(); });
+  expect(prompt).toHaveBeenCalledTimes(2); // the original send and one retry
   await unmount();
 });
 
@@ -591,7 +691,8 @@ it('uses the cache without a bulk read when the host file has not changed', asyn
   expect(result.current.messages.map(message => message.id)).toEqual(['cached']);
   expect(mockRecent).not.toHaveBeenCalled();
   expect(replaceMessages).not.toHaveBeenCalled();
-  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 4096 }]);
+  // From the start of the line at the cursor, as the host reports it (#109).
+  expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 321 }]);
   await unmount();
 });
 

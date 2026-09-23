@@ -772,6 +772,19 @@ describe('preview marker collision', () => {
  * instance survives: `startTail` builds a new store every invocation and
  * `useWorkspaces.refresh` builds one on a three-second poll.
  */
+describe('lineStartBefore (#109)', () => {
+  const { store: subject } = store('a\nbb\nccc\n');
+  it('finds the start of the line that ends at a boundary', async () => {
+    await expect(subject.lineStartBefore('/t.jsonl', 5)).resolves.toBe(2);
+  });
+  it('finds the start of the line a mid-line cursor is in', async () => {
+    await expect(subject.lineStartBefore('/t.jsonl', 4)).resolves.toBe(2);
+  });
+  it('is the start of the file for the first line', async () => {
+    await expect(subject.lineStartBefore('/t.jsonl', 1)).resolves.toBe(0);
+  });
+});
+
 describe('Claude transcript location (#89)', () => {
   const answering = (reply: (command: string) => ExecResult): HerdrTransport => ({
     exec: async (command: string) => reply(command),

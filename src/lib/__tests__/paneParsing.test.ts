@@ -1,4 +1,13 @@
-import { isBlockedPromptEmpty, optionKeys, parseBlockedPrompt } from '../transcript/blockedPrompt';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import {
+  blockedPromptSignature,
+  isBlockedPromptEmpty,
+  isMentionPopup,
+  optionKeys,
+  parseBlockedPrompt,
+} from '../transcript/blockedPrompt';
 import { extractLivePreview } from '../transcript/livePreview';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
 
@@ -99,6 +108,94 @@ describe('blocked prompt parsing', () => {
 
   it('is not fooled by prose that merely contains digits', () => {
     expect(parseBlockedPrompt('I found 3 errors\nand 2 warnings').options).toHaveLength(0);
+  });
+
+  // herdr's own rule for Codex's `@` picker: all three tab labels at once (#120).
+  it('recognises the Codex mention picker only by all three of its tabs', () => {
+    expect(isMentionPopup('@src\n All Results  Filesystem Only  Plugins\n 1. a.ts')).toBe(true);
+    expect(isMentionPopup('Search the Plugins folder for All Results')).toBe(false);
+  });
+});
+
+/**
+ * Real screens, captured with `herdr pane read --source visible` from Claude
+ * Code 2.1.280 and Codex 0.154 running in a herdr 0.9.1 pane (#107). Paths and
+ * host names are replaced; nothing else is.
+ */
+const screen = (name: string) =>
+  readFileSync(join(__dirname, 'fixtures', 'screens', `${name}.txt`), 'utf8');
+const labels = (name: string) => parseBlockedPrompt(screen(name)).options.map((o) => `${o.number}. ${o.label}`);
+
+describe('captured menus', () => {
+  // A description that starts "1." reset the menu and took option 1's place,
+  // and the question went with it.
+  it('reads an AskUserQuestion whose description starts with a number', () => {
+    const prompt = parseBlockedPrompt(screen('ask-plain-numbered-description'));
+    expect(prompt.question).toBe('Which database should the service use?');
+    expect(labels('ask-plain-numbered-description')).toEqual([
+      '1. Postgres', '2. SQLite', '3. DynamoDB', '4. Type something.', '5. Chat about this',
+    ]);
+  });
+
+  it('keeps a preview panel out of the labels', () => {
+    expect(parseBlockedPrompt(screen('ask-preview')).question).toBe('Which layout should the settings page use?');
+    expect(labels('ask-preview')).toEqual(['1. Cards', '2. List']);
+  });
+
+  it('reads a multi-select question as ticks, not labels with boxes in them', () => {
+    const prompt = parseBlockedPrompt(screen('ask-multiselect'));
+    expect(prompt.multiSelect).toBe(true);
+    expect(prompt.options.slice(0, 3)).toEqual([
+      { number: 1, label: 'Type check', checked: false },
+      { number: 2, label: 'Lint', checked: false },
+      { number: 3, label: 'Unit tests', checked: false },
+    ]);
+    // Its review is an ordinary menu.
+    const review = parseBlockedPrompt(screen('ask-multiselect-review'));
+    expect(review.question).toBe('Ready to submit your answers?');
+    expect(review.multiSelect).toBeUndefined();
+  });
+
+  // Ticking changes nothing but the box, and the reply must not look
+  // undelivered for the whole pending timeout.
+  it('changes signature when a row is ticked', () => {
+    const before = parseBlockedPrompt(screen('ask-multiselect'));
+    const after = parseBlockedPrompt(screen('ask-multiselect').replace('2. [ ] Lint', '2. [✔] Lint'));
+    expect(after.options[1]?.checked).toBe(true);
+    expect(blockedPromptSignature(after)).not.toBe(blockedPromptSignature(before));
+  });
+
+  it('keeps a wrapped permission option to its first line', () => {
+    expect(parseBlockedPrompt(screen('permission-bash')).question).toBe('Do you want to proceed?');
+    expect(labels('permission-bash')).toEqual(['1. Yes', '2. Yes, and always allow access to', '3. No']);
+  });
+
+  // `›` was not a known cursor, so Codex's highlighted first option vanished.
+  it("reads Codex's menus, highlighted option included, without shortcut letters", () => {
+    expect(labels('codex-approval')).toEqual([
+      '1. Yes, proceed',
+      "2. Yes, and don't ask again for commands that start with `date +%s > stamp2.txt`",
+      '3. No, and tell Codex what to do differently',
+    ]);
+    expect(labels('codex-trust')).toEqual(['1. Yes, continue', '2. No, quit']);
+  });
+
+  // Claude's folder-trust dialog has no numbers at all. Better no options (the
+  // generic chips) than a guess.
+  it('offers nothing for an unnumbered menu', () => {
+    expect(isBlockedPromptEmpty(parseBlockedPrompt(screen('trust')))).toBe(true);
+  });
+});
+
+describe('option keys', () => {
+  const option = { number: 2, label: 'SQLite' };
+  it('sends the digit alone where it is the answer', () => {
+    expect(optionKeys(option, { submitWithEnter: false })).toEqual(['2']);
+    expect(optionKeys({ ...option, checked: false }, { multiSelect: true })).toEqual(['2']);
+  });
+  it('adds Enter for agents that need it, and by default', () => {
+    expect(optionKeys(option, { submitWithEnter: true })).toEqual(['2', 'Enter']);
+    expect(optionKeys(option)).toEqual(['2', 'Enter']);
   });
 });
 

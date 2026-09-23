@@ -127,3 +127,31 @@ describe('inline parsing', () => {
     expect(parseInline('`ls *.ts`')).toEqual([{ kind: 'code', text: 'ls *.ts' }]);
   });
 });
+
+describe('fences and link targets (#108)', () => {
+  it('keeps a three-backtick example inside a four-backtick block', () => {
+    const text = ['````markdown', 'Use a fence:', '```js', 'x()', '```', '````', 'after'].join('\n');
+    expect(parseMarkdown(text)).toEqual([
+      { kind: 'code', language: 'markdown', content: 'Use a fence:\n```js\nx()\n```' },
+      { kind: 'paragraph', text: 'after' },
+    ]);
+  });
+
+  it('reads ~~~ fences', () => {
+    expect(parseMarkdown('~~~sh\nls -la\n~~~')).toEqual([{ kind: 'code', language: 'sh', content: 'ls -la' }]);
+  });
+
+  it('is not closed by a fence of the other kind or with an info string', () => {
+    expect(parseMarkdown('~~~\n```\nstill code\n~~~')).toEqual([
+      { kind: 'code', language: null, content: '```\nstill code' },
+    ]);
+  });
+
+  it('keeps balanced parentheses in a link target', () => {
+    expect(parseInline('see [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)) here')).toEqual([
+      { kind: 'text', text: 'see ' },
+      { kind: 'link', text: 'Rust', href: 'https://en.wikipedia.org/wiki/Rust_(programming_language)' },
+      { kind: 'text', text: ' here' },
+    ]);
+  });
+});

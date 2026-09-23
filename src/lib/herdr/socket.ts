@@ -1,5 +1,5 @@
-import { HerdrError, decodeEnvelope, herdrErrorFrom } from './protocol';
-import { shellQuote, withPath } from './shell';
+import { HerdrError, decodeEnvelope, herdrError, herdrErrorFrom } from './protocol';
+import { commandWord, shellQuote, withPath } from './shell';
 import type { HerdrTransport } from './transport';
 
 /**
@@ -19,14 +19,18 @@ import type { HerdrTransport } from './transport';
  * one request per connection. Only `events.subscribe` keeps it open.
  *
  * HOW A REQUEST GETS TO THE SOCKET. Nothing on the phone can open a Unix
- * socket on the host, so a small program on the host does it. Two candidates,
- * probed once per client:
+ * socket on the host, so a small program on the host does it. Three
+ * candidates, probed once per client, in this order:
  *
  * - `python3`: a six-line bridge passed on the command line. Present on every
  *   Linux herdr runs on and on any Mac with the developer tools. 17 ms per
  *   round-trip on loopback.
  * - `herdr api-bridge`: the jerryfane fork's own subcommand. Fastest, but
  *   fork-only; upstream answers `unknown command`.
+ * - `herdr remote-api-bridge`: upstream's own relay, from 0.9.1. What a host
+ *   without python3 uses (a Mac without the developer tools, a slim
+ *   container), which otherwise fell back to polling the CLI (#116). See
+ *   `remoteBridgeCommand` for why it cannot simply be piped a request.
  *
  * `nc -U` was measured and rejected: macOS `nc` exits at stdin EOF, so a
  * request that takes longer than the write (`agent.prompt` with `wait`, any
@@ -89,6 +93,7 @@ export class HerdrSocket {
       throw (
         herdrErrorFrom(result.stdout) ??
         herdrErrorFrom(result.stderr) ??
+        bridgeStderr(result.stderr) ??
         new HerdrError(
           'ssh_command_failed',
           `The socket bridge failed on the host (exit ${result.exitCode}): ${firstLine(result.stderr)}`
@@ -175,7 +180,7 @@ export class HerdrSocket {
 
 /** A way to reach the socket on a host, and where the socket is. */
 export interface SocketRoute {
-  readonly bridge: 'python3' | 'api-bridge';
+  readonly bridge: 'python3' | 'api-bridge' | 'remote-api-bridge';
   readonly socketPath: string;
 }
 
@@ -203,12 +208,18 @@ export type SocketEvent =
 const PROBE_TIMEOUT_MS = 8000;
 
 /**
- * Bytes a single argument may be on the host. Linux caps one argv string at
- * 128 KiB (`MAX_ARG_STRLEN`); macOS is looser but the fork's bridge documents
- * hitting E2BIG at the same figure. Requests here are a prompt plus a few
- * dozen bytes of envelope, so this is a guard, not a budget.
+ * Bytes a whole command may be on the host. sshd hands the command to the
+ * login shell as ONE argument (`$SHELL -c <command>`), and Linux caps one argv
+ * string at 128 KiB (`MAX_ARG_STRLEN`); macOS is looser but the fork's bridge
+ * documents hitting E2BIG at the same figure. A little is kept back for what
+ * the transport adds around the command (the session prefix, the done mark).
+ *
+ * Checked on the finished command, not the request: the api-bridge route
+ * base64s the request (4/3 larger) and quoting grows every `'` fourfold, so
+ * prompts of roughly 96-120 KiB used to pass a check on the request and then
+ * fail on the host (#105).
  */
-export const MAX_REQUEST_BYTES = 120 * 1024;
+export const MAX_COMMAND_BYTES = 126 * 1024;
 
 /**
  * The shell command that delivers `request` to the socket and prints what
@@ -217,12 +228,21 @@ export const MAX_REQUEST_BYTES = 120 * 1024;
  * Exported for tests, which pin the shape of each bridge without a host.
  */
 export function commandFor(route: SocketRoute, request: string, herdr: string): string {
-  if (utf8Length(request) > MAX_REQUEST_BYTES) {
-    throw new HerdrError(
-      'request_too_large',
-      'That message is too long to send in one go. Shorten it, or send it in parts.'
-    );
-  }
+  const command = bridgeCommand(route, request, herdr);
+  if (utf8Length(command) > MAX_COMMAND_BYTES) throw tooLarge();
+  return command;
+}
+
+/** The refusal for a message too long to send in one command. */
+export function tooLarge(): HerdrError {
+  return new HerdrError(
+    'request_too_large',
+    'That message is too long to send in one go. Shorten it, or send it in parts.'
+  );
+}
+
+/** The request as the host will receive it, for this route. */
+function bridgeCommand(route: SocketRoute, request: string, herdr: string): string {
   switch (route.bridge) {
     case 'python3':
       // `-S` skips site-packages; the bridge needs only the standard library
@@ -235,8 +255,43 @@ export function commandFor(route: SocketRoute, request: string, herdr: string): 
       // request survives any shell. Run from inside a herdr pane the HERDR_*
       // variables would point it at the pane's own session; a phone is never
       // in one, but the command is the same either way.
-      return withPath(`${shellQuote(herdr)} api-bridge ${base64(request)}`);
+      return withPath(`${commandWord(herdr)} api-bridge ${base64(request)}`);
+    case 'remote-api-bridge':
+      return withPath(remoteBridgeCommand(herdr, request));
   }
+}
+
+/**
+ * Upstream's bridge copies stdin to the socket and the socket to stdout, and
+ * the server takes the end of stdin as the client leaving. Measured on 0.9.1:
+ * piped a request, a subscription stopped right after `subscription_started`,
+ * and a request that waits (`agent.prompt` with `wait`) came back with no
+ * output at all, exit 0.
+ *
+ * So stdin is a FIFO held open by a sleeping writer. Holding it with a pipe
+ * from `sleep` would work too, but the shell waits for every member of a
+ * pipeline and the answer would sit there until the sleep ran out; here the
+ * holder is killed (and reaped quietly) as soon as the bridge exits, and the
+ * bridge's own status is the command's. Checked under sh, dash, bash and zsh.
+ */
+function remoteBridgeCommand(herdr: string, request: string): string {
+  return [
+    'd=$(mktemp -d) && mkfifo "$d/in" && {',
+    `{ printf '%s\n' ${shellQuote(request)}; exec sleep 2147483647; } > "$d/in" & h=$!;`,
+    `${commandWord(herdr)} remote-api-bridge < "$d/in"; s=$?;`,
+    'kill "$h" 2>/dev/null; wait "$h" 2>/dev/null; rm -rf "$d"; (exit "$s"); }',
+  ].join(' ');
+}
+
+/**
+ * What a bridge's stderr says, when it is something the app has a word for.
+ * Upstream's bridge reports a missing socket as a Rust error, not an envelope.
+ */
+function bridgeStderr(stderr: string): HerdrError | null {
+  if (stderr.includes('failed to connect to remote Herdr API socket')) {
+    return herdrError('server_not_running', firstLine(stderr));
+  }
+  return null;
 }
 
 /**
@@ -277,13 +332,14 @@ const PYTHON_BRIDGE = [
  * are there. Homebrew's python3 is fine anywhere.
  */
 export function probeScript(herdr: string): string {
-  const h = shellQuote(herdr);
+  const h = commandWord(herdr);
   return [
     `sock=$(${h} status server 2>/dev/null | sed -n 's/^socket: //p' | head -n 1)`,
     '[ -n "$sock" ] || sock="${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}"',
     'py=$(command -v python3 2>/dev/null)',
     'if [ -n "$py" ] && { [ "$(uname)" != Darwin ] || [ "$py" != /usr/bin/python3 ] || xcode-select -p >/dev/null 2>&1; }; then b=python3',
     `elif ${h} api-bridge >/dev/null 2>&1; then b=api-bridge`,
+    `elif [ "$(${h} remote-api-bridge --check </dev/null 2>/dev/null)" = herdr-api-bridge-v1 ]; then b=remote-api-bridge`,
     'else b=none; fi',
     'echo "BRIDGE $b"; echo "SOCK $sock"',
   ].join('; ');
@@ -307,7 +363,9 @@ export function parseProbe(stdout: string): SocketRoute | null {
     else if (line.startsWith('SOCK ')) socketPath = line.slice(5).trim();
   }
   if (socketPath === null || socketPath.length === 0) return null;
-  if (bridge === 'python3' || bridge === 'api-bridge') return { bridge, socketPath };
+  if (bridge === 'python3' || bridge === 'api-bridge' || bridge === 'remote-api-bridge') {
+    return { bridge, socketPath };
+  }
   return null;
 }
 
@@ -350,7 +408,7 @@ function firstLine(text: string): string {
   return text.trim().split('\n')[0] ?? '';
 }
 
-function utf8Length(text: string): number {
+export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 

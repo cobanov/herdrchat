@@ -5,8 +5,9 @@ import { haptics } from '@/lib/haptics';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import {
+  CONTINUE_KEYS,
   isPendingKeys,
   optionKeys,
   type BlockedPending,
@@ -42,6 +43,8 @@ export function BlockedBar({
 }) {
   const { colors } = useTheme();
   const busy = pending !== null;
+  // The label's first line, so a checkbox centres on it rather than on the top edge.
+  const labelLine = useScaledLine(typography.subhead.lineHeight);
 
   const press = (keys: readonly string[]) => {
     haptics.selection();
@@ -72,7 +75,7 @@ export function BlockedBar({
       {prompt !== null && prompt.options.length > 0 ? (
         <>
           {prompt.options.map((option) => {
-            const keys = optionKeys(option);
+            const keys = optionKeys(option, prompt);
             // An option this app cannot type is still SHOWN, just not offered.
             // Hiding it would renumber the menu against the one on the terminal,
             // and then "option 9" means two different things in two places.
@@ -84,13 +87,13 @@ export function BlockedBar({
                 key={option.number}
                 onPress={keys === null ? undefined : () => press(keys)}
                 disabled={dim}
-                accessibilityRole="button"
+                accessibilityRole={option.checked === undefined ? 'button' : 'checkbox'}
                 accessibilityLabel={
                   untypable
                     ? `Option ${option.number}: ${option.label}. Not available from this app.`
                     : `Option ${option.number}: ${option.label}`
                 }
-                accessibilityState={{ disabled: dim, busy: tapped }}
+                accessibilityState={{ disabled: dim, busy: tapped, checked: option.checked }}
                 testID={`blocked-option-${option.number}`}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
@@ -100,18 +103,28 @@ export function BlockedBar({
                   paddingVertical: spacing.sm,
                   borderRadius: radius.sm,
                   backgroundColor:
-                    dim || pressed ? colors.fillSubtle : `${colors.attention}1F`,
+                    dim || pressed ? colors.fillSubtle : colors.attentionMuted,
                 })}>
                 {tapped ? (
-                  <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: 16 }} />
+                  <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: size.optionNumber }} />
                 ) : (
                   <Text
                     variant="footnote"
                     color={dim ? 'secondary' : 'attention'}
                     weight="700"
-                    style={{ fontVariant: ['tabular-nums'], minWidth: 16, textAlign: 'right' }}>
+                    style={{ fontVariant: ['tabular-nums'], minWidth: size.optionNumber, textAlign: 'right' }}>
                     {option.number}
                   </Text>
+                )}
+                {option.checked !== undefined && (
+                  <View style={{ height: labelLine, justifyContent: 'center' }}>
+                    <Icon
+                      name={option.checked ? 'checkmark.square.fill' : 'square'}
+                      size={16}
+                      tintColor={dim ? colors.secondaryLabel : colors.attention}
+                      fallback={<Text variant="subhead" color={dim ? 'secondary' : 'attention'}>{option.checked ? '☑' : '☐'}</Text>}
+                    />
+                  </View>
                 )}
                 <Text variant="subhead" color={dim ? 'secondary' : 'label'} style={{ flex: 1 }}>
                   {option.label}
@@ -119,12 +132,23 @@ export function BlockedBar({
               </Pressable>
             );
           })}
-          {prompt.options.some((option) => optionKeys(option) === null) && (
+          {prompt.multiSelect === true && (
+            // Ticking sends nothing to the agent. This moves on, to the next
+            // question or to the review, which is an ordinary menu.
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Chip label="Continue" keys={CONTINUE_KEYS} pending={pending} onPress={press} />
+            </View>
+          )}
+          {prompt.options.some((option) => optionKeys(option, prompt) === null) && (
             <Text variant="caption" color="secondary">
               Options above 9 can’t be typed from here. Answer this one in the terminal.
             </Text>
           )}
         </>
+      ) : prompt?.dismissOnly === true ? (
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <Chip label="Close picker" keys={['Escape']} pending={pending} onPress={press} />
+        </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>
@@ -165,7 +189,7 @@ function Chip({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.sm,
         borderRadius: radius.full,
-        backgroundColor: busy || pressed ? colors.fillSubtle : `${colors.attention}1F`,
+        backgroundColor: busy || pressed ? colors.fillSubtle : colors.attentionMuted,
       })}>
       {tapped ? (
         <ActivityIndicator size="small" color={colors.attention} />

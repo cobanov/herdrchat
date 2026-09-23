@@ -58,7 +58,10 @@ export function Header({
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            // The label a person reads is the one Voice Control listens for.
+            // "Close" here while the screen said "Done" left "Tap Done" with
+            // nothing to find (#112).
+            accessibilityLabel="Done"
             testID="header-close"
             hitSlop={spacing.sm}
             style={({ pressed }) => ({

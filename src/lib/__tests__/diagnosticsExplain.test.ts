@@ -16,6 +16,8 @@ const agent = (overrides: Partial<AgentInfo> = {}): AgentInfo => ({
   terminalId: null,
   workspaceId: 'w1',
   agentSession: null,
+  stateChangeSeq: null,
+  completionSeq: null,
   ...overrides,
 });
 

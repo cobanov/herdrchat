@@ -3,10 +3,13 @@ import {
   disconnect,
   exec,
   streamLines,
+  SshStreamError,
   type ConnectResult,
   type ExecResult,
   type SshConfig,
 } from '../../../modules/herdr-ssh/src';
+import { checkDoneMark, withDoneMark } from './doneMark';
+import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
 import type { HerdrTransport } from './transport';
 import { withJsDeadline } from './timeouts';
 
@@ -92,10 +95,28 @@ export class SshHerdrTransport implements HerdrTransport {
     return this.opening;
   }
 
+  /**
+   * Run a command, and make it SAY that it finished.
+   *
+   * The iOS SSH library reports a command killed by a signal as exit 0 (it
+   * ignores SSH's `exit-signal`), so a herdr that crashed mid-write looked
+   * like a success, and so did a read cut short, which then looked complete
+   * (#103). Every command therefore ends in `&& printf <mark>`, which prints
+   * only when it exited 0. An exit 0 without the mark is a command that was
+   * killed. `&&` behaves the same in sh, bash, zsh and fish, where `$?` would
+   * not. Non-zero exits pass through untouched: they already say what they
+   * mean.
+   */
   async exec(command: string, timeoutMs: number): Promise<ExecResult> {
+    // The backstop for every path, CLI sends included: past this the host's
+    // shell refuses the command (E2BIG) with an error that names nothing (#105).
+    if (utf8Length(command) > MAX_COMMAND_BYTES) {
+      return { ok: false, code: 'request_too_large', message: tooLarge().message };
+    }
     const opened = await this.open();
     if (!opened.ok) return opened;
-    return withJsDeadline(exec(this.id, command, timeoutMs), timeoutMs);
+    const result = await withJsDeadline(exec(this.id, withDoneMark(command), timeoutMs), timeoutMs);
+    return checkDoneMark(result);
   }
 
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
@@ -103,7 +124,9 @@ export class SshHerdrTransport implements HerdrTransport {
     const opened = await this.open();
     if (signal?.aborted) return;
     if (!opened.ok) {
-      throw new Error(opened.message);
+      // With its code, so a stream that cannot open says WHY (a changed host
+      // key, missing credentials) rather than only what (#109).
+      throw new SshStreamError(opened);
     }
     yield* streamLines(this.id, command, startTimeoutMs, signal);
   }

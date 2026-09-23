@@ -1,0 +1,28 @@
+me@host …/askq  master?3
+❯ claude --model haiku "$(cat prompt.txt)"
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /home/me/work/askq
+
+
+❯ Call the AskUserQuestion tool exactly once with this input and nothing else, then wait for my answer:
+  {"questions":[{"question":"Which database should the service
+  use?","header":"Database","multiSelect":false,"options":[{"label":"Postgres","description":"1. Mature and relational.
+  2. Needs its own server."},{"label":"SQLite","description":"Embedded, zero setup, one
+  file."},{"label":"DynamoDB","description":"Managed, scales without tuning."}]}]}
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Database
+
+Which database should the service use?
+
+❯ 1. Postgres
+     1. Mature and relational. 2. Needs its own server.
+  2. SQLite
+     Embedded, zero setup, one file.
+  3. DynamoDB
+     Managed, scales without tuning.
+  4. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

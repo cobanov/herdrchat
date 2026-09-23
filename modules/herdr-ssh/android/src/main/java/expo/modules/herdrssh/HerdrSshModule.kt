@@ -109,6 +109,9 @@ class HerdrSshModule : Module() {
     OnDestroy {
       streams.values.forEach { it.stop() }
       streams.clear()
+      // Closed, not just forgotten: clearing the map left every socket open
+      // until the process died (#110).
+      connections.values.forEach { it.abandon() }
       connections.clear()
     }
   }

@@ -21,6 +21,7 @@ import { displayText } from '@/lib/transcript/message';
 import {
   blockedPromptSignature,
   blockedPendingTimeout,
+  isMentionPopup,
   parseBlockedPrompt,
   resolveBlockedPending,
   type BlockedPending,
@@ -57,9 +58,13 @@ const RECENT_BYTES_WIDE = 3_000_000;
 const RECENT_MESSAGES = 150;
 const THIN_HISTORY = 10;
 /**
- * On resume, rewind this far before the stored cursor: a disconnect can leave it
- * mid-line, and re-reading the boundary line in full costs nothing (dedupe drops
- * what we've seen) while losing it costs a message.
+ * On resume, the tail re-reads the line at the stored cursor: a disconnect can
+ * leave the cursor mid-line, and re-reading the boundary line in full costs
+ * nothing (dedupe drops what we've seen) while losing it costs a message. The
+ * host says where that line starts (#109). A blind rewind by a byte count could
+ * land inside a multi-byte character, and the lossy decode of that fragment
+ * pushed the cursor a few bytes past where it really was. This fixed rewind is
+ * only the fallback when the host cannot be asked.
  */
 const RESUME_REWIND = 4096;
 /**
@@ -108,6 +113,9 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** First and longest wait before looking again for a sibling's absent transcript. */
+const ABSENT_RETRY_MS = 5_000;
+const ABSENT_RETRY_MAX_MS = 60_000;
 /** How long a send cut off by the connection waits for its transcript receipt. */
 const TRANSPORT_RECEIPT_WAIT_MS = 8_000;
 const RECEIPT_CHECK_MS = 100;
@@ -138,6 +146,11 @@ export interface ThreadState {
   messages: ChatMessage[];
   status: AgentStatus;
   agents: AgentInfo[];
+  /**
+   * The workspace's name on the host, from the last snapshot. A deep link or a
+   * notification may arrive without one, and a rename elsewhere changes it.
+   */
+  workspaceLabel: string | null;
   blockedPrompt: BlockedPrompt | null;
   /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
   blockedPending: BlockedPending | null;
@@ -166,7 +179,11 @@ export interface ThreadState {
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
   failedIds: Set<string>;
-  send: (text: string) => Promise<void>;
+  /**
+   * Resolves whether the message was taken. `false` comes back at once, before
+   * anything is sent, so the composer can put the draft back (#100).
+   */
+  send: (text: string) => Promise<boolean>;
   retry: (id: string) => Promise<void>;
   sendKeys: (keys: readonly string[]) => Promise<void>;
   /** Stop the working agent. `hard` sends Ctrl-C and may end the session. */
@@ -195,6 +212,7 @@ export function useThread(
   const [loading, setLoading] = useState(client !== null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
+  const [workspaceLabel, setWorkspaceLabel] = useState<string | null>(null);
   const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
   const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
   // Mirrors the state for the poll closure and for the synchronous double-tap
@@ -280,6 +298,8 @@ export function useThread(
   const boundSig = useRef<string | null>(null);
   /** The panes the bound session was seen in, sorted and joined. */
   const boundPanes = useRef('');
+  /** Agents whose transcript file was absent, and when to look again (#99). */
+  const absentRetry = useRef(new Map<string, { at: number; delay: number }>());
   /** The saved history was already put on screen for an unreachable host. */
   const offlineSeeded = useRef(false);
   const [offline, setOffline] = useState(false);
@@ -460,7 +480,25 @@ export function useThread(
   const startTails = useCallback(async (live: readonly AgentInfo[]) => {
     if (client === null || boundSig.current === null) return;
     const identified = live.filter(hasSessionId);
-    if (identified.length === 0 || identified.every(agent => tails.current.has(sessionSignature([agent])!))) return;
+    if (identified.length === 0) return;
+    /*
+      An agent whose transcript file does not exist yet has no tail, and a
+      missing tail restarts every sibling (below). While a healthy sibling was
+      streaming, that aborted and re-opened its SSH tail on every poll, for as
+      long as the other file stayed absent (#99). So with something live, an
+      absent file is retried on a backoff instead; with nothing live there is
+      nothing to disturb, and it is retried every poll so a new chat's first
+      messages are not delayed.
+    */
+    const now = Date.now();
+    const someLive = identified.some(agent => tails.current.has(sessionSignature([agent])!));
+    const settled = identified.every(agent => {
+      const key = sessionSignature([agent])!;
+      if (tails.current.has(key)) return true;
+      const retry = absentRetry.current.get(key);
+      return someLive && retry !== undefined && now < retry.at;
+    });
+    if (settled) return;
 
     // One opening snapshot for the whole workspace. Reserving every native
     // session before awaiting also prevents an event from starting it twice.
@@ -505,10 +543,14 @@ export function useThread(
           }
           if (probe.kind === 'absent') {
             if (agent.agent === 'codex') store.forgetCodexTranscript(id);
+            const previous = absentRetry.current.get(key);
+            const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
+            absentRetry.current.set(key, { at: Date.now() + delay, delay });
             release(key);
             return null; // A new agent can receive its first prompt before writing a file.
           }
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+          absentRetry.current.delete(key);
           const cached = await tailCursor(db, connectionId, workspaceId, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
         } catch (thrown) {
@@ -542,7 +584,7 @@ export function useThread(
 
       setTailError(openingError);
       for (const source of windows) {
-        const followFrom = source.recent?.consumedBytes ?? Math.max(0, source.cached! - RESUME_REWIND);
+        const followFrom = source.recent?.consumedBytes ?? await resumePoint(store, source.path, source.cached!);
         if (source.recent !== null) {
           await setTailCursor(db, connectionId, workspaceId, source.path, followFrom);
         }
@@ -630,6 +672,8 @@ export function useThread(
         if (!alive.current || stopped) return;
         const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
         setAgents(live);
+        const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
+        if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
         const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex');
         const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
@@ -710,8 +754,19 @@ export function useThread(
         let parsedPrompt: BlockedPrompt | null = null;
         if (blocked !== undefined) {
           const raw = await client.paneVisible(blocked.paneId, 40);
-          const parsed = parseBlockedPrompt(raw);
-          parsedPrompt = parsed.options.length === 0 ? null : parsed;
+          if (blocked.agent === 'codex' && isMentionPopup(raw)) {
+            parsedPrompt = {
+              question: 'Codex has its file picker open. Close it here, or pick a file in the terminal.',
+              options: [],
+              dismissOnly: true,
+            };
+          } else {
+            const parsed = parseBlockedPrompt(raw);
+            // Claude answers on the digit alone; see `optionKeys`.
+            parsedPrompt = parsed.options.length === 0
+              ? null
+              : { ...parsed, submitWithEnter: blocked.agent !== 'claude' };
+          }
         }
         setBlockedPrompt(parsedPrompt);
 
@@ -1023,7 +1078,7 @@ export function useThread(
   );
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string): Promise<boolean> => {
       const text = raw.trim();
       if (
         text.length === 0 ||
@@ -1033,7 +1088,7 @@ export function useThread(
         sessionState === 'unsupported' ||
         sessionState === 'replaced'
       ) {
-        return;
+        return false;
       }
       sending.current = true;
       // A new message is a new attempt; the last one's warning has done its job.
@@ -1054,20 +1109,28 @@ export function useThread(
       } finally {
         sending.current = false;
       }
+      return true;
     },
     [primaryPane, rebuild, deliver, loading, sessionState]
   );
 
+  /** Retries in flight, by echo id. A second tap on "retry" sent it twice (#100). */
+  const retrying = useRef(new Set<string>());
   const retry = useCallback(
     async (id: string) => {
       const echo = echoes.current.find((message) => message.id === id);
-      if (echo === undefined || primaryPane === null) return;
+      if (echo === undefined || primaryPane === null || retrying.current.has(id)) return;
+      retrying.current.add(id);
       setFailedIds((previous) => {
         const next = new Set(previous);
         next.delete(id);
         return next;
       });
-      await deliver(displayText(echo), id, primaryPane);
+      try {
+        await deliver(displayText(echo), id, primaryPane);
+      } finally {
+        retrying.current.delete(id);
+      }
     },
     [primaryPane, deliver]
   );
@@ -1183,6 +1246,7 @@ export function useThread(
     messages,
     status,
     agents,
+    workspaceLabel,
     blockedPrompt,
     blockedPending,
     isBlocked: blockedPane !== null,
@@ -1207,6 +1271,15 @@ export function useThread(
     },
     reload,
   };
+}
+
+/** Where a tail resuming from `cursor` starts: the start of the line there. */
+async function resumePoint(store: TranscriptStore, path: string, cursor: number): Promise<number> {
+  try {
+    return await store.lineStartBefore(path, cursor);
+  } catch {
+    return Math.max(0, cursor - RESUME_REWIND);
+  }
 }
 
 /**
