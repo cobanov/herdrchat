@@ -61,7 +61,8 @@
       ],
       "expo-status-bar",
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withReleaseSigning"
     ]
   }
 }

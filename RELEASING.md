@@ -107,9 +107,51 @@ so it has to work in every submitted build.
 
 ## Android
 
-There is no Android release path in this repo. The module builds and the app
-compiles, but it has not been runtime-verified. See the
-[current limitations](docs/getting-started.md#known-limitations).
+```bash
+# Bump expo.android.versionCode in app.json first; Play rejects a duplicate.
+scripts/android-release.sh               # signed .aab and .apk in dist/, then Play if a key is set
+scripts/android-release.sh --no-upload   # stop after the verified files
+HERDRCHAT_PLAY_KEY=~/.herdrchat/play-service-account.json scripts/android-release.sh
+```
+
+Release builds are signed with the Play upload key by
+`plugins/withReleaseSigning.js` when `HERDRCHAT_STORE_FILE` and
+`HERDRCHAT_STORE_PASSWORD` resolve. The script defaults them to
+`~/.herdrchat/upload-keystore.jks` (alias `upload`) and the login Keychain
+(account `herdrchat`, service `herdrchat-upload-key`). Without them Gradle signs
+with the debug key, so the script compares both outputs' signer against the
+upload certificate and stops on any difference. From an SSH session the
+Keychain is locked, as it is for iOS codesigning; unlock it in that session
+first.
+
+The upload goes to the `internal` track (the TestFlight analogue, no review)
+through the Play Developer API (`scripts/play-upload.py`). The API cannot do the
+one-time setup:
+
+1. **Upload key**: exists at `~/.herdrchat/upload-keystore.jks`. Back up the
+   file and its password off this machine, and enrol in Play App Signing, so a
+   lost upload key is recoverable.
+2. **Create the app** in the Play Console: package `dev.herdr.herdrchat`
+   (permanent, lowercase unlike the iOS bundle id), free, then *Set up your
+   app*:
+
+   | Item | Answer |
+   |---|---|
+   | Privacy policy | https://herdrchat.cobanov.dev/privacy/ |
+   | Data safety | No data collected or shared. Host details and SSH keys stay on the device (Android Keystore) and go only to the user's own host. Notifications are iOS-only, so the relay is not involved on Android. |
+   | Content rating | Utility / productivity, no objectionable content |
+   | Target audience | 18+, a developer tool |
+   | Ads, government, financial features | None |
+   | Account deletion | Not applicable: there are no accounts |
+
+3. **Service account** for uploads: Google Cloud Console, in the project linked
+   to the Play account, create a service account and a JSON key (keep it outside
+   the repository, for example `~/.herdrchat/play-service-account.json`), then
+   in Play Console → Users and permissions invite its email with *Release
+   manager* on this app.
+
+A Play build and a sideloaded debug-signed APK have different signers, so one
+does not install over the other; uninstall first.
 
 ## Push relay
 

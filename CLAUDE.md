@@ -119,7 +119,7 @@ confirmed on a real device; the Simulator cannot register at all.
 shapes the payload itself and sends only to this app. Any change to what it
 receives changes the privacy policy (`site/privacy/`) in the same commit.
 
-Android compiles and the SSH module is implemented in Kotlin/sshj, but it has
-never been run and there is **no Android release path in this branch** — no
-`scripts/play.sh`, no EAS equivalent. iOS ships via `scripts/testflight.sh`,
-which targets the Expo app (see RELEASING.md).
+Android ships through `scripts/android-release.sh` (signed AAB and APK, Play
+upload with a service-account key; see RELEASING.md), which still needs the
+Play Console app and that key. iOS ships via `scripts/testflight.sh`. Android
+has no notifications: APNs is iOS-only and there is no FCM path.
