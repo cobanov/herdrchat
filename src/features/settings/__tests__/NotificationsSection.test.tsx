@@ -18,6 +18,7 @@ jest.mock('@/state/settings', () => ({
 }));
 jest.mock('@/state/connections', () => ({
   isDemo: (id: string) => id === 'demo',
+  clientFor: () => ({ watcherStatus: async () => ({ kind: 'missing', manual: false }) }),
   useSelectedConnection: () => mockConnection,
   useConnections: () => [],
 }));

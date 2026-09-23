@@ -70,7 +70,8 @@
     "preset": "jest-expo",
     "roots": [
       "<rootDir>/src",
-      "<rootDir>/modules"
+      "<rootDir>/modules",
+      "<rootDir>/relay"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",

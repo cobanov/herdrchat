@@ -1,0 +1,30 @@
+# HerdrChat push relay. See src/relay.ts for what it does and does not do.
+#
+# Deploy:  wrangler deploy
+# Key:     wrangler secret put APNS_KEY      (the AuthKey_XXXX.p8 contents)
+#          wrangler secret put APNS_KEY_ID   (its 10-character key id)
+name = "herdrchat-relay"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [{ pattern = "push.herdrchat.cobanov.dev", custom_domain = true }]
+
+[vars]
+APNS_TEAM_ID = "6U58AKY6F8"
+APNS_TOPIC = "dev.herdr.HerdrChat"
+
+# Generous for a person (agents rarely finish more than a few times a minute),
+# tight for anyone trying to flood a device whose token they somehow hold.
+[[ratelimits]]
+name = "PER_TOKEN"
+namespace_id = "2701"
+simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "PER_IP"
+namespace_id = "2702"
+simple = { limit = 120, period = 60 }
+
+# Nothing about a request is recorded: no request logs, no traces.
+[observability]
+enabled = false

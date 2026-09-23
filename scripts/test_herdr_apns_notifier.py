@@ -1,16 +1,20 @@
 import importlib.util
+import io
+import json
 import os
 from pathlib import Path
+import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 
-def load_notifier():
+def load_notifier(env=None):
     spec = importlib.util.spec_from_file_location(
         "herdr_apns_notifier", Path(__file__).with_name("herdr-apns-notifier.py")
     )
     module = importlib.util.module_from_spec(spec)
-    with patch.dict(os.environ, {}, clear=True), patch("os.path.exists", return_value=False):
+    with patch.dict(os.environ, env or {}, clear=True), patch("os.path.exists", return_value=False):
         spec.loader.exec_module(module)
     return module
 
@@ -28,9 +32,22 @@ class ApnsConfigTests(unittest.TestCase):
             with self.subTest(field=field), patch.multiple(
                 notifier, KEY_ID="test-key", TEAM_ID="test-team", KEY_PATH=__file__
             ), patch.object(notifier, field, None), patch.object(notifier.os, "makedirs") as mkdir:
-                with self.assertRaisesRegex(SystemExit, "APNS_KEY_ID, APNS_TEAM_ID.*APNS_KEY_PATH"):
+                with self.assertRaisesRegex(SystemExit, "APNS_KEY_ID, APNS_TEAM_ID and APNS_KEY_PATH.*Missing"):
                     notifier.main()
                 mkdir.assert_not_called()
+
+    # #95: with no key of their own, App Store users go through the relay.
+    def test_no_key_at_all_means_the_relay(self):
+        notifier = load_notifier()
+        self.assertEqual(notifier.mode(), "relay")
+        self.assertTrue(notifier.RELAY_URL.startswith("https://"))
+        with patch.multiple(notifier, KEY_ID="k", TEAM_ID="t", KEY_PATH="/keys/push.p8"):
+            self.assertEqual(notifier.mode(), "direct")
+
+    def test_a_named_session_reads_its_own_tokens(self):
+        self.assertTrue(load_notifier().TOKENS_DIR.endswith("apns-tokens"))
+        self.assertTrue(load_notifier({"HERDR_SESSION": "work"}).TOKENS_DIR.endswith("apns-tokens/sessions/work"))
+        self.assertTrue(load_notifier({"HERDR_SESSION": "default"}).TOKENS_DIR.endswith("apns-tokens"))
 
     def test_key_must_be_a_readable_file(self):
         notifier = load_notifier()
@@ -38,7 +55,7 @@ class ApnsConfigTests(unittest.TestCase):
             with self.subTest(is_file=is_file, readable=readable), patch.multiple(
                 notifier, KEY_ID="test-key", TEAM_ID="test-team", KEY_PATH="/keys/push.p8"
             ), patch("os.path.isfile", return_value=is_file), patch("os.access", return_value=readable):
-                with self.assertRaisesRegex(SystemExit, "readable APNS_KEY_PATH"):
+                with self.assertRaisesRegex(SystemExit, "readable APNs auth key"):
                     notifier.main()
 
 
@@ -65,7 +82,8 @@ class RoutingPayloadTests(unittest.TestCase):
                 patch.object(notifier, "snapshot_agents", side_effect=snapshots), \
                 patch.object(notifier, "workspace_labels", return_value={"w1": "api"}), \
                 patch.object(notifier, "device_tokens", return_value=token_files), \
-                patch.object(notifier, "send_push", side_effect=lambda tok, t, b, extra=None: seen.append((tok, extra))), \
+                patch.object(notifier, "send_push",
+                             side_effect=lambda tok, t, b, extra=None, env="production": seen.append((tok, extra, env)) or (200, None)), \
                 patch.object(notifier.time, "sleep"):
             with self.assertRaises(KeyboardInterrupt):
                 notifier.main()
@@ -73,11 +91,55 @@ class RoutingPayloadTests(unittest.TestCase):
 
     def test_each_device_gets_its_own_connection_and_the_session(self):
         notifier = load_notifier()
-        seen = self.run_one_change(notifier, [("tok-a", "conn-a"), ("tok-b", None)])
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production"), ("tok-b", None, "sandbox")])
         self.assertEqual(seen, [
-            ("tok-a", {"workspace": "w1", "label": "api", "session": "sess-1", "connection": "conn-a"}),
-            ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}),
+            ("tok-a", {"workspace": "w1", "label": "api", "session": "sess-1", "connection": "conn-a"}, "production"),
+            ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}, "sandbox"),
         ])
+
+
+class RelayTests(unittest.TestCase):
+    """#95: what the relay receives, and what the watcher does with its answer."""
+
+    def test_sends_only_the_fields_the_relay_accepts(self):
+        notifier = load_notifier()
+        sent = {}
+
+        class Reply:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        def urlopen(request, timeout):
+            sent["url"] = request.full_url
+            sent["body"] = json.loads(request.data)
+            return Reply()
+
+        with patch.object(notifier.urllib.request, "urlopen", side_effect=urlopen):
+            result = notifier.send_push("ab" * 32, "api is waiting for you", "claude is waiting for a reply.",
+                                        {"workspace": "w1", "connection": "c"}, env="sandbox")
+        self.assertEqual(result, (200, None))
+        self.assertEqual(sent["url"], notifier.RELAY_URL)
+        self.assertEqual(sent["body"], {
+            "token": "ab" * 32, "env": "sandbox", "title": "api is waiting for you",
+            "body": "claude is waiting for a reply.", "data": {"workspace": "w1", "connection": "c"},
+        })
+
+    def test_reads_apples_reason_from_a_refusal(self):
+        notifier = load_notifier()
+        error = urllib.error.HTTPError(notifier.RELAY_URL, 410, "Gone", {}, io.BytesIO(b'{"reason":"Unregistered"}'))
+        with patch.object(notifier.urllib.request, "urlopen", side_effect=error):
+            self.assertEqual(notifier.send_push("ab" * 32, "t", "b"), (410, "Unregistered"))
+
+    def test_forgets_a_retired_token_and_keeps_the_rest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            notifier = load_notifier()
+            notifier.TOKENS_DIR = folder
+            for name, token in (("a", "dead"), ("b", "alive"), ("c", "dead")):
+                Path(folder, f"{name}.json").write_text(json.dumps({"token": token, "env": "production"}))
+            notifier.forget_token("dead")
+            self.assertEqual(sorted(os.listdir(folder)), ["b.json"])
+            self.assertEqual(notifier.device_tokens(), [("alive", None, "production")])
 
 
 

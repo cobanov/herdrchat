@@ -22,6 +22,13 @@ import {
   SEND_TIMEOUT_MS,
 } from './timeouts';
 import type { HerdrTransport } from './transport';
+import {
+  parseWatcherStatus,
+  watcherInstallCommand,
+  watcherRemoveCommand,
+  watcherStatusCommand,
+  type WatcherState,
+} from '../notifier/watcher';
 import { AGENT_VERBS_VERSION, atLeast } from './version';
 
 // Kept here for `TranscriptStore` and the tests that grew up importing them from the client.
@@ -250,6 +257,26 @@ export class HerdrClient {
    * `installHerdr`, which pipes a remote script into a shell — this runs a
    * subcommand of a binary already trusted enough to be driving the machine.
    */
+  // MARK: - Notification watcher
+
+  /** Whether this host runs the notification watcher, and which version. */
+  async watcherStatus(): Promise<WatcherState> {
+    return parseWatcherStatus(await this.shell(watcherStatusCommand(), POLL_TIMEOUT_MS));
+  }
+
+  /**
+   * Install or update the notification watcher as a service on this host, and
+   * start it. Answers with the state it ended in.
+   */
+  async installWatcher(): Promise<WatcherState> {
+    return parseWatcherStatus(await this.shell(watcherInstallCommand(this.herdr), LAUNCH_TIMEOUT_MS));
+  }
+
+  /** Stop and remove the app-installed watcher for this host's session. */
+  async removeWatcher(): Promise<void> {
+    await this.shell(watcherRemoveCommand(), SEND_TIMEOUT_MS);
+  }
+
   /**
    * The integrations this app relies on (Claude, Codex) that the host reports
    * as `outdated`. herdr 0.9.1 moved the Claude integration from v9 to v10

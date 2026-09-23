@@ -26,6 +26,37 @@ it('writes the connection id into the token file', async () => {
   expect(commands[0]).toContain('"token":"abc123"');
 });
 
+// A named session's phones register in their own folder, which is the only one
+// that session's watcher reads, and a copy an older build left in the shared
+// folder goes (the default session's watcher would push to it).
+it.each([
+  { session: undefined, file: '.config/herdrchat/apns-tokens/device-1.json' },
+  { session: 'work', file: '.config/herdrchat/apns-tokens/sessions/work/device-1.json' },
+])('registers in the folder the watcher for session $session reads', async ({ session, file }) => {
+  const { execFileSync } = jest.requireActual<typeof import('node:child_process')>('node:child_process');
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } =
+    jest.requireActual<typeof import('node:fs')>('node:fs');
+  const { tmpdir } = jest.requireActual<typeof import('node:os')>('node:os');
+  const home = mkdtempSync(`${tmpdir()}/hc-push-`);
+  try {
+    mkdirSync(`${home}/.config/herdrchat/apns-tokens`, { recursive: true });
+    writeFileSync(`${home}/.config/herdrchat/apns-tokens/device-1.json`, '{"token":"old"}');
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        const env = { NODE_ENV: 'test' as const, HOME: home, PATH: '/usr/bin:/bin', ...(session === undefined ? {} : { HERDR_SESSION: session }) };
+        execFileSync('sh', ['-c', command], { env });
+        return { ok: true, exitCode: 0, stdout: '', stderr: '' };
+      },
+      streamLines: async function* () {},
+    };
+    await uploadPushToken(transport, 'device-1', 'abc123', 'dev.herdr.HerdrChat', 'conn-42');
+    expect(JSON.parse(readFileSync(`${home}/${file}`, 'utf8'))).toMatchObject({ token: 'abc123' });
+    expect(existsSync(`${home}/.config/herdrchat/apns-tokens/device-1.json`)).toBe(session === undefined);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 describe('deviceFileId', () => {
   it('keeps characters that are already inert', () => {
     expect(deviceFileId('A1b2-c3D4')).toBe('A1b2-c3D4');

@@ -110,3 +110,31 @@ so it has to work in every submitted build.
 There is no Android release path in this repo. The module builds and the app
 compiles, but it has not been runtime-verified. See the
 [current limitations](docs/getting-started.md#known-limitations).
+
+## Push relay
+
+Notifications for the App Store build go through `relay/`, a Cloudflare Worker
+at `push.herdrchat.cobanov.dev` that holds the team's APNs key (#95). It has its
+own deploy, separate from the app:
+
+```bash
+cd relay
+export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
+wrangler deploy
+# Once, and again whenever the key is rotated. APNs keys are created under
+# Certificates, Identifiers & Profiles → Keys, with "Apple Push Notifications
+# service" enabled, and can be downloaded only once.
+wrangler secret put APNS_KEY_ID          # the 10-character key id
+wrangler secret put APNS_KEY < AuthKey_XXXXXXXXXX.p8
+curl https://push.herdrchat.cobanov.dev/   # {"configured":true}
+```
+
+The Worker is tested with the app (`npx jest relay`). It has no request logs or
+traces by design (`observability` is off in `wrangler.toml`); keep it that way,
+and keep `site/privacy/` in step with what it receives.
+
+The watcher the app installs on a host is embedded at build time. After
+changing `scripts/herdr-apns-notifier.py`, bump its `WATCHER_VERSION` (hosts
+running an older one are offered the update) and run
+`node scripts/embed-watcher.mjs`; a test fails until you do.
+

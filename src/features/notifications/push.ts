@@ -7,24 +7,38 @@ import { shellQuote, withPath } from '@/lib/herdr/shell';
 import type { HerdrTransport } from '@/lib/herdr/transport';
 
 /**
- * Push notifications, without a push server of ours.
+ * Push notifications.
  *
- * The host already knows when an agent blocks or finishes — it is the machine
- * running them. So the delivery path is: the phone gets an APNs device token
- * from Apple and writes it onto the host over the SSH connection it already
- * has; a watcher on the host (`scripts/herdr-apns-notifier.py`) signs a JWT
- * with an APNs `.p8` auth key and pushes straight to Apple.
+ * The host already knows when an agent blocks or finishes: it is the machine
+ * running them. So the phone gets an APNs device token from Apple and writes it
+ * onto the host over the SSH connection it already has, and a watcher on the
+ * host (`scripts/herdr-apns-notifier.py`) sends a notification when an agent
+ * needs you.
  *
- * Nothing of ours sits in the middle, which is the same property the rest of
- * the app has: no account, no server, no third party holding your tokens.
+ * Apple accepts a push only when it is signed by the team that built the app,
+ * so for the App Store build the watcher hands each notification to the
+ * HerdrChat relay (`relay/`), which holds that key, signs it and forwards it
+ * without keeping anything (#95). Someone who builds and signs the app
+ * themselves can point the watcher at their own key and skip the relay.
  *
- * The token is not a secret in the credential sense — it only lets whoever
- * holds it send *this app on this device* a notification — but it identifies a
- * device, so it goes to the user's own machine and nowhere else.
+ * The token is not a secret in the credential sense (it only lets whoever holds
+ * it send this app on this device a notification) but it identifies a device,
+ * so it is written to the user's own machine, and the relay sees it only for
+ * the moment it takes to deliver.
  */
 
-/** Where the host-side watcher looks for device tokens. */
-const TOKEN_DIR = '"$HOME/.config/herdrchat/apns-tokens"';
+/**
+ * Where the host-side watcher looks for device tokens.
+ *
+ * A named herdr session's phones register in a folder of their own, and its
+ * watcher reads only that one: a push names a workspace, and `w1` in one
+ * session is a different chat from `w1` in another. `HERDR_SESSION` is set by
+ * `withSession` only for a named session, so the default session keeps the
+ * folder it has always had. Expanded inside double quotes: a session name is
+ * never re-read as shell syntax.
+ */
+const TOKEN_ROOT = '"$HOME/.config/herdrchat/apns-tokens"';
+const TOKEN_DIR = '"$HOME/.config/herdrchat/apns-tokens${HERDR_SESSION:+/sessions/$HERDR_SESSION}"';
 
 export type PushStatus =
   | { state: 'unsupported'; reason: string; detail?: string }
@@ -139,9 +153,14 @@ export async function uploadPushToken(
   connectionId: string
 ): Promise<void> {
   const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId });
+  const file = `${shellQuote(deviceId)}.json`;
+  // Builds before session folders wrote a named session's token to the shared
+  // folder, where the default session's watcher pushed to it. Moving it is
+  // this line: the old copy goes when the new one is written.
+  const moved = `{ [ -z "$HERDR_SESSION" ] || rm -f ${TOKEN_ROOT}/${file}; }`;
   await run(
     transport,
-    `mkdir -p ${TOKEN_DIR} && printf '%s' ${shellQuote(payload)} > ${TOKEN_DIR}/${shellQuote(deviceId)}.json`
+    `mkdir -p ${TOKEN_DIR} && printf '%s' ${shellQuote(payload)} > ${TOKEN_DIR}/${file} && ${moved}`
   );
 }
 

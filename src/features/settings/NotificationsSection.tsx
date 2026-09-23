@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, View } from 'react-native';
 
 import { Button } from '@/components/Button';
@@ -16,6 +16,8 @@ import {
   requestPushToken,
   uploadPushToken,
 } from '@/features/notifications/push';
+import { useWatcher } from '@/features/notifications/useWatcher';
+import { WatcherRow } from '@/features/notifications/WatcherRow';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, isDemo, useConnections, useSelectedConnection } from '@/state/connections';
 import { setSetting } from '@/state/db';
@@ -34,6 +36,11 @@ export function NotificationsSection() {
   const enabled = useSettings((state) => state.notifications);
   const connection = useSelectedConnection();
   const connections = useConnections((state) => state.connections);
+  const client = useMemo(
+    () => (connection === null || isDemo(connection.id) ? null : clientFor(connection)),
+    [connection]
+  );
+  const watcher = useWatcher(client, enabled);
 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{
@@ -106,9 +113,7 @@ export function NotificationsSection() {
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
       await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId, connection.id);
       persist(true);
-      setNote({
-        message: `Registered with ${connection.name}. The watcher on that machine needs the push key of the team that signed this build.`,
-      });
+      setNote({ message: `Registered with ${connection.name}.` });
     } catch (thrown) {
       // A HerdrError already says something a person can act on. Anything else
       // is a raw throw, so it goes in the detail line rather than becoming the
@@ -135,10 +140,9 @@ export function NotificationsSection() {
   return (
     <Section
       title="Notifications"
-      // Says what it takes before anyone flips the switch (#95). Apple accepts a
-      // push only with a key from the team that signed the app, so a watcher can
-      // reach a build its owner signed, and cannot yet reach the App Store build.
-      footer="Your phone registers its push token on the host over SSH, and a watcher you run there sends the push straight to Apple. Nothing passes through a server of ours. Apple only accepts pushes signed with the push key of the team that built the app, so this works with a build you sign yourself; the App Store version can't be set up this way yet. See the setup guide.">
+      // Says where a notification goes before anyone flips the switch (#95):
+      // this is the one feature that passes through something of ours.
+      footer="Your phone registers its push token on the host over SSH. A watcher there sends each notification through the HerdrChat relay, which signs it for Apple and keeps nothing. If you build the app yourself, the watcher can use your own push key instead.">
       <Toggle
         label="Notify when an agent needs me"
         detail="Blocked or finished agents, pushed from your own machine."
@@ -147,6 +151,7 @@ export function NotificationsSection() {
         disabled={busy}
         testID="toggle-notifications"
       />
+      {enabled && connection !== null && <WatcherRow host={connection.name || connection.host} watcher={watcher} />}
       {note !== null && (
         <View
           style={{
