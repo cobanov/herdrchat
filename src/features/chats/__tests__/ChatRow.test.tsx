@@ -24,6 +24,8 @@ const summary = (agent: string | null): ChatSummary => ({
     terminalId: null,
     workspaceId: 'w1',
     agentSession: null,
+    stateChangeSeq: null,
+    completionSeq: null,
   }],
   preview: null,
   sessionSig: null,

@@ -3,7 +3,8 @@ import { act, renderHook } from '@testing-library/react-native';
 import { HerdrClient } from '@/lib/herdr/client';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { useWorkspaces } from '../useWorkspaces';
+import { refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
+import { TranscriptStore } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 
 let mockPolling = true;
@@ -188,4 +189,27 @@ it('does not rearm a covered list after an in-flight refresh completes', async (
   });
   expect(fetch).toHaveBeenCalledTimes(1);
   await unmount();
+});
+
+// A turn that starts and ends between two polls looks idle both times; only
+// herdr's state counter shows it happened (#115).
+it('refreshes an idle chat whose state counter moved between polls', async () => {
+  const store = new TranscriptStore({} as never);
+  const fetch = jest.spyOn(store, 'latestMessages');
+  const previews = new Map<string, CachedPreview>();
+  const seqs = new Map<string, number>();
+  const tick = { current: 0 };
+  const at = (seq: number) => decodeSnapshot({
+    agents: [{
+      workspace_id: 'chat', pane_id: 'pane', agent: 'claude', agent_status: 'idle', cwd: '/test',
+      agent_session: { kind: 'id', value: 'session' }, state_change_seq: seq,
+    }],
+  }).agents;
+
+  await refreshPreviews(store, at(4), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await refreshPreviews(store, at(4), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await refreshPreviews(store, at(6), previews, tick, false, seqs);
+  expect(fetch).toHaveBeenCalledTimes(2);
 });

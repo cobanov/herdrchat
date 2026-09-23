@@ -80,6 +80,8 @@ const agent: AgentInfo = {
   terminalId: null,
   workspaceId: 'chat',
   agentSession: { kind: 'id', value: 'session', agent: 'claude', source: null },
+  stateChangeSeq: null,
+  completionSeq: null,
 };
 const snapshot = (agents: AgentInfo[]): Snapshot => ({
   agents,

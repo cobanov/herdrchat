@@ -119,6 +119,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
 
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
+  const seqs = useRef(new Map<string, number>());
   const alive = useRef(true);
 
   /** Resolves true when the poll failed, so the loop knows whether to back off. */
@@ -145,7 +146,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       dropStalePreviews(workspaces, snapshot.agents, previews.current);
       const force = forcePreviews.current;
       forcePreviews.current = false;
-      await refreshPreviews(store, snapshot.agents, previews.current, tick, force);
+      await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
       setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current, snapshot.restoreErrors));
@@ -299,13 +300,19 @@ function groupByWorkspace(agents: readonly AgentInfo[]): Map<string, AgentInfo[]
  * Refresh the last-message previews in one batched round-trip. Active or
  * preview-less workspaces refresh every poll; everything else joins a full sweep
  * every fifth poll, so steady-state traffic stays small.
+ *
+ * `seqs` holds each pane's `stateChangeSeq` from the last successful refresh. A
+ * turn that starts and ends between two polls looks idle both times, so it
+ * used to wait for the sweep, up to five polls, for its reply to show and its
+ * dot to light. A moved counter refreshes that chat now (#115).
  */
 export async function refreshPreviews(
   store: TranscriptStore,
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
   tick: { current: number },
-  force = false
+  force = false,
+  seqs: Map<string, number> = new Map()
 ): Promise<void> {
   tick.current += 1;
   const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
@@ -338,12 +345,26 @@ export async function refreshPreviews(
     const active = group.some(
       (item) => item.agentStatus !== 'idle' && item.agentStatus !== 'unknown'
     );
-    if (!fullSweep && !active && previews.get(workspaceId)?.sessionSig === sessionSig) continue;
+    const moved = group.some((item) => {
+      const last = seqs.get(item.paneId);
+      return item.stateChangeSeq !== null && last !== undefined && last !== item.stateChangeSeq;
+    });
+    if (!fullSweep && !active && !moved && previews.get(workspaceId)?.sessionSig === sessionSig) continue;
 
     requests.push({ workspaceId, cwd: agent.cwd, sessionId, agent: agent.agent ?? undefined });
     requestedFor.set(workspaceId, sessionSig);
   }
-  if (requests.length === 0) return;
+  // Only after a refresh that worked, so a failed one is retried next poll.
+  const remember = () => {
+    seqs.clear();
+    for (const agent of agents) {
+      if (agent.stateChangeSeq !== null) seqs.set(agent.paneId, agent.stateChangeSeq);
+    }
+  };
+  if (requests.length === 0) {
+    remember();
+    return;
+  }
 
   // Best-effort: a failed fetch keeps the previous snippets rather than
   // erroring the whole list.
@@ -353,6 +374,7 @@ export async function refreshPreviews(
   } catch {
     return;
   }
+  remember();
 
   for (const [workspaceId, message] of latest) {
     const text = previewText(message);

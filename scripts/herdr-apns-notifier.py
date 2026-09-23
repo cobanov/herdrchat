@@ -173,6 +173,36 @@ def workspace_labels():
         return {}
 
 
+def should_notify(agent, previous):
+    """Whether this agent's state is news since the last poll, and what to remember.
+
+    `previous` is what the last call returned for the same pane, or None for a
+    pane not seen before. Counters are used when herdr sends them, since a
+    status compared between polls misses anything that happens in between:
+
+    - completion_seq (herdr #4457) is set only for finished work and moves on
+      every completion, so a turn that starts and ends between two polls still
+      notifies, and a restore or startup that lands on "done" does not.
+    - state_change_seq (herdr 0.9.0) moves on every state change, so an agent
+      that answered one prompt and stopped at the next between polls notifies
+      again even though it reads "blocked" both times.
+
+    Without either, a change of status is the only signal, as before.
+    """
+    status = agent.get("agent_status")
+    seq = agent.get("state_change_seq")
+    completion = agent.get("completion_seq")
+    memo = (status, seq, completion)
+    last_status, last_seq, last_completion = previous if previous is not None else (None, None, None)
+    if status not in NOTIFY_ON or status not in STYLES:
+        return False, memo
+    if status == "done" and completion is not None:
+        return completion != last_completion, memo
+    if seq is not None and last_seq is not None:
+        return seq != last_seq, memo
+    return status != last_status, memo
+
+
 def main():
     if not KEY_ID or not TEAM_ID or not KEY_PATH or not os.path.isfile(KEY_PATH) or not os.access(KEY_PATH, os.R_OK):
         sys.exit("Set APNS_KEY_ID, APNS_TEAM_ID and a readable APNS_KEY_PATH for an APNs auth key. "
@@ -189,7 +219,8 @@ def main():
             for a in agents:
                 pane = a.get("pane_id")
                 status = a.get("agent_status")
-                if seeded and last.get(pane) != status and status in NOTIFY_ON and status in STYLES:
+                news, memo = should_notify(a, last.get(pane))
+                if seeded and news:
                     label = labels.get(a.get("workspace_id"), a.get("workspace_id", "agent"))
                     name = a.get("agent") or "agent"
                     title, body = (t.format(label=label, name=name) for t in STYLES[status])
@@ -201,7 +232,7 @@ def main():
                         extra["session"] = session["value"]
                     for tok, connection in tokens:
                         send_push(tok, title, body, dict(extra, connection=connection) if connection else extra)
-                last[pane] = status
+                last[pane] = memo
             seeded = True
         time.sleep(POLL_SECONDS)
 

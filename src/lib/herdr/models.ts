@@ -49,6 +49,19 @@ export interface AgentInfo {
   terminalId: string | null;
   workspaceId: string;
   agentSession: AgentSessionRef | null;
+  /**
+   * herdr's counter at this pane's last state change. A different value on the
+   * next poll means it changed in between, even if it came back to the same
+   * state: a turn that started and finished between two polls. Null from a
+   * herdr too old to send it.
+   */
+  stateChangeSeq: number | null;
+  /**
+   * Set only when the current idle state is finished work, to that
+   * transition's `stateChangeSeq`; startup, restore and session switches leave
+   * it null (herdr #4457). Null from older herdr, which cannot tell.
+   */
+  completionSeq: number | null;
 }
 
 /**
@@ -199,6 +212,10 @@ function optionalStr(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function optionalNum(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function num(value: unknown): number {
   return typeof value === 'number' ? value : 0;
 }
@@ -239,6 +256,8 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     terminalId: optionalStr(value.terminal_id),
     workspaceId: str(value.workspace_id),
     agentSession: decodeAgentSessionRef(value.agent_session),
+    stateChangeSeq: optionalNum(value.state_change_seq),
+    completionSeq: optionalNum(value.completion_seq),
   };
 }
 

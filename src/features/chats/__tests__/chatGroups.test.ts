@@ -23,7 +23,7 @@ it('matches a folder or provider without requiring a transcript or session id', 
   const workspace = chat('Release', 'idle');
   workspace.agents = [{
     agent: 'codex', agentStatus: 'idle', cwd: '/work/Acme/API', foregroundCwd: null,
-    focused: true, paneId: 'p1', tabId: 't1', terminalId: null, workspaceId: 'Release', agentSession: null,
+    focused: true, paneId: 'p1', tabId: 't1', terminalId: null, workspaceId: 'Release', agentSession: null, stateChangeSeq: null, completionSeq: null,
   }];
   expect(ids(groupChats([workspace], 'acme/api'))).toEqual(['idle', 'Release']);
   expect(ids(groupChats([workspace], 'CODEX'))).toEqual(['idle', 'Release']);
