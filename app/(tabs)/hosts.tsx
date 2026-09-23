@@ -16,13 +16,14 @@ import { deviceFileId, removePushToken } from '@/features/notifications/push';
 import {
   clearSecrets,
   clientFor,
+  DEMO_CONNECTION_ID,
   invalidateClient,
   isDemo,
   newConnection,
   useConnections,
   type ServerConnection,
 } from '@/state/connections';
-import { deleteConnection, setSetting } from '@/state/db';
+import { clearConnectionSettings, deleteConnection, setSetting } from '@/state/db';
 import { SELECTED_KEY } from '@/state/Hydrate';
 
 /** Manage saved herdr hosts. Selecting one switches the whole app to it. */
@@ -70,7 +71,11 @@ export default function ServersScreen() {
           // What the user actually asked for, and it happens now.
           await clearSecrets(connection.id);
           await deleteConnection(db, connection.id);
+          await clearConnectionSettings(db, connection.id);
           remove(connection.id);
+          // The store picked a new selection; remember it, or the next launch
+          // would restore the deleted host's id (#90).
+          await setSetting(db, SELECTED_KEY, useConnections.getState().selectedId ?? DEMO_CONNECTION_ID);
 
           // Close the transport only once the cleanup has had its turn:
           // invalidating first would abort the request just fired.

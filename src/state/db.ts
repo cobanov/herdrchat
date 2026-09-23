@@ -268,6 +268,28 @@ export async function setSetting(
   );
 }
 
+export async function deleteSetting(db: SQLite.SQLiteDatabase, key: string): Promise<void> {
+  await db.runAsync('DELETE FROM settings WHERE key = ?', key);
+}
+
+/**
+ * Settings remembered per host, keyed `<name>.<connection id>` (the last folder
+ * and permission mode a new chat used). They go with the host, or a deleted
+ * host's folder would be offered to the next one that happened to reuse its id.
+ */
+export async function clearConnectionSettings(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string
+): Promise<void> {
+  const suffix = `.${connectionId}`;
+  await db.runAsync(
+    'DELETE FROM settings WHERE length(key) > length(?) AND substr(key, -length(?)) = ?',
+    suffix,
+    suffix,
+    suffix
+  );
+}
+
 // MARK: - Cache maintenance
 
 /** How many cached bubbles are on disk, across every host. */

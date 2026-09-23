@@ -5,6 +5,7 @@ import { confirmDestructive } from '@/components/ActionSheet';
 import { ActionRow, Divider, Section } from '@/components/SettingsList';
 import { haptics } from '@/lib/haptics';
 import { useConnections } from '@/state/connections';
+import { useSettings } from '@/state/settings';
 import { clearCachedMessages } from '@/state/db';
 import { resetAppData } from './reset';
 
@@ -50,6 +51,7 @@ export function DangerZone({ onCacheCleared }: { onCacheCleared: () => void }) {
           // showing an empty list anyway would hide data still on the device —
           // and leave the retry below with nothing to retry.
           setAll(remaining, null);
+          useSettings.getState().set('notifications', false);
           if (remaining.length === 0) {
             haptics.success();
             setNote('Everything was erased.');
