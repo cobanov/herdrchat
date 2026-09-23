@@ -85,20 +85,39 @@ function isCodex(raw: Record<string, unknown>): boolean {
 }
 
 /**
- * Claude escapes a cwd into a project directory name by replacing every
- * character that is not ASCII-alphanumeric with a hyphen, e.g.
- * `/Users/x/Documents/obsidian/07_homelab` → `-Users-x-Documents-obsidian-07-homelab`
- * (verified empirically against ~/.claude/projects).
+ * The project folder Claude Code files a cwd's transcripts under, e.g.
+ * `/Users/x/Documents/obsidian/07_homelab` → `-Users-x-Documents-obsidian-07-homelab`.
  *
- * Restricting the output to `[A-Za-z0-9-]` also keeps the name shell-safe when
- * interpolated, which is why callers may skip quoting it.
+ * A port of Claude Code's own function (2.1.280), not an approximation of it:
+ *
+ *     k  = e => e.replace(/[^a-zA-Z0-9]/g, "-")
+ *     kT = e => { n = k(e); return n.length <= 200 ? n
+ *                   : `${n.slice(0, 200)}-${Math.abs(hash(e)).toString(36)}` }
+ *
+ * Two details the earlier approximation missed, and each left a thread waiting
+ * forever on a file under a different name (#89):
+ * - the replace works on UTF-16 units, so an emoji (two units) is two hyphens;
+ * - past 200 characters the name is cut and a hash of the whole path appended.
+ *
+ * The output stays within `[A-Za-z0-9-]`, which keeps it shell-safe when
+ * interpolated, so callers may skip quoting it.
  */
 export function projectDirName(cwd: string): string {
-  let name = '';
-  for (const char of cwd) {
-    name += /[A-Za-z0-9]/.test(char) ? char : '-';
+  const name = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+  if (name.length <= PROJECT_DIR_MAX) return name;
+  return `${name.slice(0, PROJECT_DIR_MAX)}-${Math.abs(claudeHash(cwd)).toString(36)}`;
+}
+
+/** Where Claude Code starts cutting a project folder name. */
+const PROJECT_DIR_MAX = 200;
+
+/** Claude Code's string hash: Java's `hashCode` over UTF-16 units, in 32 bits. */
+function claudeHash(text: string): number {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
   }
-  return name;
+  return hash;
 }
 
 // MARK: - Internals

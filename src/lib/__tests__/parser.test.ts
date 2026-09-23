@@ -155,6 +155,22 @@ describe('project directory escaping', () => {
   it('never emits a character that could escape a shell word', () => {
     expect(projectDirName("/tmp/'; rm -rf /")).toMatch(/^[A-Za-z0-9-]+$/);
   });
+
+  // #89. Expected values computed independently (Python, Java hashCode over
+  // UTF-16 units) from Claude Code 2.1.280's own function.
+  it('turns an emoji into two hyphens, one per UTF-16 unit, like Claude', () => {
+    expect(projectDirName('/Users/x/📁proj')).toBe('-Users-x---proj');
+  });
+
+  it('cuts a name over 200 characters and appends the hash of the whole path', () => {
+    const long = `/Users/dev/projects/${'very-long-folder-name/'.repeat(10)}app`;
+    const expected =
+      '-Users-dev-projects-very-long-folder-name-very-long-folder-name-very-long-folder-name-' +
+      'very-long-folder-name-very-long-folder-name-very-long-folder-name-very-long-folder-name-' +
+      'very-long-folder-name-very-y4imwq';
+    expect(projectDirName(long)).toBe(expected);
+    expect(projectDirName(long)).toMatch(/^[A-Za-z0-9-]+$/);
+  });
 });
 
 describe('one-pass entry parsing', () => {

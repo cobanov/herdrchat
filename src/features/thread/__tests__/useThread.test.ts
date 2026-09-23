@@ -54,6 +54,8 @@ jest.mock('@/lib/transcript/store', () => ({
   TranscriptStore: class {
     homeDirectory = async () => '/test';
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
+    claudeTranscriptPath = async (_cwd: string, id: string) => `/test/${id}.jsonl`;
+    findClaudeTranscript = async () => null;
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
     fileProbe = async () => mockProbe;

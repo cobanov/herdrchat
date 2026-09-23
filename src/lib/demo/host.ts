@@ -262,6 +262,7 @@ export class DemoHost implements HerdrTransport {
   /** `sh` reading transcripts. Returns null when the command is not one of these. */
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
+    if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
 
     // The size probe, which asks four questions before it measures anything —
     // is the folder there, can it be searched, is the file there, can it be

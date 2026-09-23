@@ -40,6 +40,16 @@ import type { SessionMeta } from './sessionMeta';
  * exists.
  */
 const homeByTransport = new WeakMap<HerdrTransport, Promise<string>>();
+const claudeDirByTransport = new WeakMap<HerdrTransport, Promise<string>>();
+
+/**
+ * Where Claude Code keeps its data on the host. It honours `CLAUDE_CONFIG_DIR`,
+ * so a hardcoded `~/.claude` missed every transcript of someone who set it
+ * (#89). Only as good as the SSH session's environment: a variable exported
+ * from an interactive shell rc is not seen here.
+ */
+const CLAUDE_DIR_COMMAND = 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"';
+const CLAUDE_DIR_SHELL = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
 const codexPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
 
 export class TranscriptStore {
@@ -69,6 +79,54 @@ export class TranscriptStore {
     // host may simply have been busy; drop it so the next caller tries again.
     void pending.catch(() => homeByTransport.delete(this.transport));
     return pending;
+  }
+
+  /** Claude Code's data folder on the host, cached like `homeDirectory`. */
+  async claudeDirectory(): Promise<string> {
+    const cached = claudeDirByTransport.get(this.transport);
+    if (cached !== undefined) return cached;
+    const pending = this.shell(CLAUDE_DIR_COMMAND, POLL_TIMEOUT_MS).then((raw) => {
+      const dir = raw.trim();
+      if (!dir.startsWith('/')) {
+        throw new HerdrError('home_unknown', "The host didn't say where Claude keeps its data.");
+      }
+      return dir;
+    });
+    claudeDirByTransport.set(this.transport, pending);
+    void pending.catch(() => claudeDirByTransport.delete(this.transport));
+    return pending;
+  }
+
+  /**
+   * The transcript path for a Claude session: `<claude dir>/projects/<folder
+   * for cwd>/<session id>.jsonl`. Null for an id that isn't obviously inert.
+   */
+  async claudeTranscriptPath(cwd: string, sessionId: string): Promise<string | null> {
+    if (sessionId.length === 0 || !/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+    return `${await this.claudeDirectory()}/projects/${projectDirName(cwd)}/${sessionId}.jsonl`;
+  }
+
+  /**
+   * Find a Claude session's transcript by its exact file name in any project
+   * folder, for when it is not where the pane's cwd says. A session started at
+   * a repo root and moved into `.claude/worktrees/<name>` is filed under the
+   * worktree's folder, while herdr may still report the root (#89).
+   *
+   * Not a guess: the name is the session id herdr reported, and only that exact
+   * file can match. What CLAUDE.md forbids is "the newest file in the folder".
+   */
+  async findClaudeTranscript(sessionId: string): Promise<string | null> {
+    if (sessionId.length === 0 || !/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+    const result = await this.transport.exec(
+      withPath(
+        `for f in "${CLAUDE_DIR_SHELL}"/projects/*/${sessionId}.jsonl; do ` +
+          `[ -f "$f" ] && { printf '%s' "$f"; exit 0; }; done; exit ${ABSENT_EXIT}`
+      ),
+      POLL_TIMEOUT_MS
+    );
+    if (!result.ok || result.exitCode !== 0) return null;
+    const path = result.stdout.trim();
+    return path.startsWith('/') && path.endsWith(`/${sessionId}.jsonl`) ? path : null;
   }
 
   private async readHomeDirectory(): Promise<string> {
@@ -520,7 +578,11 @@ export class TranscriptStore {
         script += `f=${shellQuote(path)}; `;
       } else if (request.agent === undefined || request.agent === 'claude') {
         const dir = projectDirName(request.cwd);
-        script += `f="$HOME/.claude/projects/${dir}/${request.sessionId}.jsonl"; `;
+        const id = request.sessionId;
+        script += `f="${CLAUDE_DIR_SHELL}/projects/${dir}/${id}.jsonl"; `;
+        // Not under the cwd's folder (a worktree session, #89): the exact id
+        // in any project folder. Never a different file.
+        script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
       } else continue;
       script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;

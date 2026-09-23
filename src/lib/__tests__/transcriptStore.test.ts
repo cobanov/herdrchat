@@ -772,6 +772,45 @@ describe('preview marker collision', () => {
  * instance survives: `startTail` builds a new store every invocation and
  * `useWorkspaces.refresh` builds one on a three-second poll.
  */
+describe('Claude transcript location (#89)', () => {
+  const answering = (reply: (command: string) => ExecResult): HerdrTransport => ({
+    exec: async (command: string) => reply(command),
+    streamLines: async function* () {},
+  });
+
+  it('builds the path under the folder Claude Code reports, honouring CLAUDE_CONFIG_DIR', async () => {
+    const transport = answering((command) =>
+      command.includes('CLAUDE_CONFIG_DIR') ? ok('/data/claude') : ok('')
+    );
+    await expect(new TranscriptStore(transport).claudeTranscriptPath('/srv/app', 'abc-123')).resolves.toBe(
+      '/data/claude/projects/-srv-app/abc-123.jsonl'
+    );
+  });
+
+  it('refuses an id that is not obviously inert', async () => {
+    const store = new TranscriptStore(answering(() => ok('/home/me/.claude')));
+    await expect(store.claudeTranscriptPath('/srv', '../../etc/passwd')).resolves.toBeNull();
+    await expect(store.findClaudeTranscript("a'; rm -rf /")).resolves.toBeNull();
+  });
+
+  it('finds a session filed under another project folder by its exact name only', async () => {
+    const commands: string[] = [];
+    const store = new TranscriptStore(answering((command) => {
+      commands.push(command);
+      return ok('/home/me/.claude/projects/-repo--claude-worktrees-fix/abc-123.jsonl');
+    }));
+    await expect(store.findClaudeTranscript('abc-123')).resolves.toBe(
+      '/home/me/.claude/projects/-repo--claude-worktrees-fix/abc-123.jsonl'
+    );
+    expect(commands[0]).toContain('/projects/*/abc-123.jsonl');
+  });
+
+  it('accepts nothing but a file with that exact name', async () => {
+    const store = new TranscriptStore(answering(() => ok('/home/me/.claude/projects/x/other.jsonl')));
+    await expect(store.findClaudeTranscript('abc-123')).resolves.toBeNull();
+  });
+});
+
 describe('homeDirectory caching', () => {
   /** Counts `$HOME` lookups and can hold them open to force a concurrent race. */
   class HomeTransport implements HerdrTransport {

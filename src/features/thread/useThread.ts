@@ -481,13 +481,22 @@ export function useThread(
           const id = agent.agentSession!.value!;
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
-          const path = agent.agent === 'codex'
+          let path = agent.agent === 'codex'
             ? await store.codexTranscriptPath(id)
-            : store.sessionTranscriptPath(await store.homeDirectory(), agent.cwd, id);
+            : await store.claudeTranscriptPath(agent.cwd, id);
           if (path === null) throw new Error(agent.agent === 'codex'
             ? 'The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.'
             : 'The agent reported an invalid session id. Resume the session on the host, then reload.');
-          const probe = await store.fileProbe(path);
+          let probe = await store.fileProbe(path);
+          if (probe.kind === 'absent' && agent.agent !== 'codex') {
+            // Not under the folder the pane's cwd names. The same session id may
+            // be filed under a worktree's folder instead (#89).
+            const found = await store.findClaudeTranscript(id);
+            if (found !== null && found !== path) {
+              path = found;
+              probe = await store.fileProbe(path);
+            }
+          }
           if (probe.kind === 'absent') {
             if (agent.agent === 'codex') store.forgetCodexTranscript(id);
             release(key);
