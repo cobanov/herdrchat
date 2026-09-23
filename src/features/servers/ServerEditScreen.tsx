@@ -10,6 +10,7 @@ import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
+import { KeyField } from '@/features/servers/KeyField';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { connectionRecovery, type RecoveryAction } from '@/lib/connectionRecovery';
 import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
@@ -418,16 +419,7 @@ export default function ServerEditScreen() {
             }}
           />
           {authKind === 'privateKey' ? (
-            <Field
-              label="OpenSSH private key"
-              placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…'}
-              value={secret}
-              onChangeText={invalidate(setSecret)}
-              multiline
-              mono
-              autoCapitalize="none"
-              testID="field-secret"
-            />
+            <KeyField value={secret} onChangeText={invalidate(setSecret)} />
           ) : (
             <Field
               label="Password"

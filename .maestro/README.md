@@ -14,6 +14,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `new-chat` | the sheet's fields, permission mode, both exits | no |
 | `folder-picker` | opening over the sheet, abandon vs. commit | no |
 | `add-server` | that the connection test really connects | **yes** |
+| `host-editor-check` | one host's Test connection, ending on the result you name (`EXPECT_ID`: `test-ok`, `connection-recovery`, `test-key-changed`); used for each failure mode against an isolated sshd | **yes**, env only |
 | `thread-back` | that a thread can be left by swiping, not only by the chevron | **yes** |
 | `thread-bottom` | initial bottom, jump, reload and reopen | **yes**, final reply `HELLO` |
 | `thread-opening` | iPhone initial bottom, background return, reopen, draft and reload in both themes | no, selects Demo explicitly |
