@@ -183,7 +183,7 @@ describe('subscribe', () => {
     return new HerdrSocket(transport, 'herdr');
   }
 
-  it('swallows subscription_started and yields events and refusals', async () => {
+  it('reports subscription_started once, then yields events and refusals', async () => {
     const socket = streamingHost([
       '{"id":"hc:events.subscribe:1","result":{"type":"subscription_started"}}',
       '',
@@ -196,6 +196,7 @@ describe('subscribe', () => {
       events.push(event);
     }
     expect(events).toEqual([
+      { kind: 'started' },
       {
         kind: 'event',
         event: 'pane.agent_status_changed',

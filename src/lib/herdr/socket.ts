@@ -139,6 +139,9 @@ export class HerdrSocket {
         // Throws with the server's code if the subscription was refused.
         decodeEnvelope(text);
         started = true;
+        // Said out loud, because events do not replay: whatever changed while
+        // no stream was open is only caught by reading the state now (#94).
+        yield { kind: 'started' };
         continue;
       }
       const event = decodeEvent(text);
@@ -177,8 +180,13 @@ export interface Subscription {
 
 /** What a subscription connection yields. */
 export type SocketEvent =
+  /** The server accepted the subscription. Always the first item, exactly once. */
+  | { kind: 'started' }
   | { kind: 'event'; event: string; data: Record<string, unknown> }
-  /** The server declined one subscription entry; the rest are still live. */
+  /**
+   * An error on the stream: an entry the server declined, or `events_lost`
+   * (herdr #4225), a subscriber that fell behind and is about to be closed.
+   */
   | { kind: 'refused'; code: string; message: string };
 
 /**
