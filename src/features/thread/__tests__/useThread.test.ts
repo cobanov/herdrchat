@@ -13,6 +13,8 @@ import { useThread } from '../useThread';
 let mockPolling = true;
 let mockLive = true;
 let mockProbe: FileProbe = { kind: 'size', bytes: 0 };
+/** Per-path probe, when a test needs agents whose files differ. */
+let mockProbeFor: ((path: string) => FileProbe) | null = null;
 const mockCodexPath = jest.fn<Promise<string | null>, [string]>(async () => '/test/codex.jsonl');
 let mockRecentMessages: ChatMessage[] = [];
 const mockRecent = jest.fn(async (_path: string, _label: string | null, _bytes: number, _limit: number) => ({
@@ -58,7 +60,7 @@ jest.mock('@/lib/transcript/store', () => ({
     findClaudeTranscript = async () => null;
     codexTranscriptPath = mockCodexPath;
     forgetCodexTranscript = jest.fn();
-    fileProbe = async () => mockProbe;
+    fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
     recent = mockRecent;
     older = mockOlder;
     sessionMeta = mockSessionMeta;
@@ -105,6 +107,7 @@ beforeEach(() => {
   mockPolling = true;
   mockLive = true;
   mockProbe = { kind: 'size', bytes: 0 };
+  mockProbeFor = null;
   mockCodexPath.mockResolvedValue('/test/codex.jsonl');
   mockRecentMessages = [];
   mockRecent.mockReset().mockImplementation(async () => ({
@@ -482,6 +485,27 @@ it('shows the saved history, read-only, when the host cannot be reached', async 
   expect(result.current.messages.map((message) => message.id)).toEqual(['saved-1']);
   expect(result.current.offline).toBe(true);
   expect(result.current.canSend).toBe(false);
+  await unmount();
+});
+
+// #99: a sibling whose transcript does not exist yet used to abort and
+// restart the healthy agent's SSH tail on every poll.
+it('does not restart a healthy tail on every poll while a sibling has no file yet', async () => {
+  mockLive = false;
+  mockLiveReceipt = true; // the healthy tail stays open, as a real one does
+  mockProbeFor = (path) => (path.includes('fresh') ? { kind: 'absent' } : { kind: 'size', bytes: 10 });
+  const sibling: AgentInfo = { ...agent, paneId: 'pane-2', agentSession: { kind: 'id', value: 'fresh', agent: 'claude', source: null } };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, sibling]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  const startsAfterOpen = mockTailStarts.length;
+  // Two polls inside the first 5 s retry window: nothing restarts.
+  await act(async () => { await jest.advanceTimersByTimeAsync(2 * 2_100); });
+  expect(mockTailStarts.length).toBe(startsAfterOpen);
+  // Thirty seconds of 2 s polls: the retry backs off (5 s, then 10 s, then
+  // 20 s), where it used to restart on every one of about fifteen polls.
+  await act(async () => { await jest.advanceTimersByTimeAsync(26_000); });
+  expect(mockTailStarts.length - startsAfterOpen).toBeLessThanOrEqual(2);
   await unmount();
 });
 

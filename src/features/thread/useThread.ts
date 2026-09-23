@@ -108,6 +108,9 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** First and longest wait before looking again for a sibling's absent transcript. */
+const ABSENT_RETRY_MS = 5_000;
+const ABSENT_RETRY_MAX_MS = 60_000;
 /** How long a send cut off by the connection waits for its transcript receipt. */
 const TRANSPORT_RECEIPT_WAIT_MS = 8_000;
 const RECEIPT_CHECK_MS = 100;
@@ -280,6 +283,8 @@ export function useThread(
   const boundSig = useRef<string | null>(null);
   /** The panes the bound session was seen in, sorted and joined. */
   const boundPanes = useRef('');
+  /** Agents whose transcript file was absent, and when to look again (#99). */
+  const absentRetry = useRef(new Map<string, { at: number; delay: number }>());
   /** The saved history was already put on screen for an unreachable host. */
   const offlineSeeded = useRef(false);
   const [offline, setOffline] = useState(false);
@@ -460,7 +465,25 @@ export function useThread(
   const startTails = useCallback(async (live: readonly AgentInfo[]) => {
     if (client === null || boundSig.current === null) return;
     const identified = live.filter(hasSessionId);
-    if (identified.length === 0 || identified.every(agent => tails.current.has(sessionSignature([agent])!))) return;
+    if (identified.length === 0) return;
+    /*
+      An agent whose transcript file does not exist yet has no tail, and a
+      missing tail restarts every sibling (below). While a healthy sibling was
+      streaming, that aborted and re-opened its SSH tail on every poll, for as
+      long as the other file stayed absent (#99). So with something live, an
+      absent file is retried on a backoff instead; with nothing live there is
+      nothing to disturb, and it is retried every poll so a new chat's first
+      messages are not delayed.
+    */
+    const now = Date.now();
+    const someLive = identified.some(agent => tails.current.has(sessionSignature([agent])!));
+    const settled = identified.every(agent => {
+      const key = sessionSignature([agent])!;
+      if (tails.current.has(key)) return true;
+      const retry = absentRetry.current.get(key);
+      return someLive && retry !== undefined && now < retry.at;
+    });
+    if (settled) return;
 
     // One opening snapshot for the whole workspace. Reserving every native
     // session before awaiting also prevents an event from starting it twice.
@@ -505,10 +528,14 @@ export function useThread(
           }
           if (probe.kind === 'absent') {
             if (agent.agent === 'codex') store.forgetCodexTranscript(id);
+            const previous = absentRetry.current.get(key);
+            const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
+            absentRetry.current.set(key, { at: Date.now() + delay, delay });
             release(key);
             return null; // A new agent can receive its first prompt before writing a file.
           }
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+          absentRetry.current.delete(key);
           const cached = await tailCursor(db, connectionId, workspaceId, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
         } catch (thrown) {
