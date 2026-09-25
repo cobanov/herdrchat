@@ -6,6 +6,10 @@ Runs on the herdr host (the machine the agents run on). Polls herdr with
 input) or `done` (finished), it sends a push to every phone registered here,
 so HerdrChat notifies you even when it is closed.
 
+The push says which chat it is and what happened, in the agent's own words:
+the opening of its closing message, or the question or command it is waiting
+on, read from the end of that session's transcript and cut to a line or two.
+
 Two ways to reach Apple:
 
 - Through the HerdrChat relay (the default, and the only way for the App Store
@@ -32,6 +36,8 @@ Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
     APNS_ENV        Direct mode: force "production" or "sandbox"; by default
                     each token's own environment is used.
     NOTIFY_ON       States to notify on (default "blocked,done").
+    NOTIFY_PREVIEW  "0" to send only the chat's name and state, never what
+                    the agent said (default "1").
     POLL_SECONDS    Poll interval (default 3).
     HERDR_BIN       herdr binary (default: herdr).
     HERDR_SESSION   The herdr session to watch (default: herdr's default).
@@ -41,6 +47,7 @@ import base64
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -49,7 +56,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 2
+WATCHER_VERSION = 3
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -254,6 +261,168 @@ def workspace_labels():
         return {}
 
 
+# ---- What the agent said. Read from the end of its own transcript.
+PREVIEW = os.environ.get("NOTIFY_PREVIEW", "1").strip().lower() not in ("0", "false", "no", "off")
+CLAUDE_PROJECTS = os.path.join(HOME, ".claude", "projects")
+CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
+SUMMARY_LIMIT = 200
+TAIL_BYTES = 1 << 20
+
+
+def transcript_path(agent, session_id):
+    """The transcript a session id names. The id IS the file name: two chats
+    opened on one folder share a project directory, so "the newest file there"
+    can belong to the other chat. Without an id there is nothing safe to read."""
+    if not session_id or not re.fullmatch(r"[0-9A-Za-z-]{8,64}", session_id):
+        return None
+    if agent == "claude":
+        hits = glob.glob(os.path.join(CLAUDE_PROJECTS, "*", session_id + ".jsonl"))
+    elif agent == "codex":
+        hits = glob.glob(os.path.join(CODEX_SESSIONS, "*", "*", "*", "rollout-*-" + session_id + ".jsonl"))
+    else:
+        hits = []
+    return hits[0] if hits else None
+
+
+def tail_entries(path):
+    """The transcript's last entries, newest first."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - TAIL_BYTES))
+            lines = handle.read().split(b"\n")
+    except OSError:
+        return []
+    if size > TAIL_BYTES:
+        lines = lines[1:]  # the first line is cut
+    entries = []
+    for line in reversed(lines):
+        try:
+            entries.append(json.loads(line))
+        except ValueError:
+            continue
+    return entries
+
+
+def describe_tool(name, args):
+    """A pending tool call in a few words: what the agent is waiting to do."""
+    args = args if isinstance(args, dict) else {}
+    questions = args.get("questions") if name == "AskUserQuestion" else None
+    if questions and isinstance(questions[0], dict) and questions[0].get("question"):
+        return str(questions[0]["question"])
+    if name == "Bash" and args.get("command"):
+        return "Run: " + str(args["command"]).strip().splitlines()[0]
+    target = args.get("file_path") or args.get("notebook_path")
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit") and target:
+        return name + ": " + os.path.basename(str(target))
+    if name == "ExitPlanMode":
+        return "Review the plan."
+    return "Use " + name if name else ""
+
+
+def last_words(agent, entries, status):
+    """What the agent last said, or for a waiting agent what it waits on."""
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if agent == "claude":
+            if entry.get("type") != "assistant" or entry.get("isSidechain"):
+                continue
+            blocks = (entry.get("message") or {}).get("content") or []
+            if isinstance(blocks, str):
+                blocks = [{"type": "text", "text": blocks}]
+            blocks = [b for b in blocks if isinstance(b, dict)]
+            tools = [b for b in blocks if b.get("type") == "tool_use"]
+            if status == "blocked" and tools:
+                return describe_tool(tools[-1].get("name"), tools[-1].get("input"))
+            text = "\n\n".join(b.get("text") or "" for b in blocks if b.get("type") == "text").strip()
+            if text:
+                return text
+        elif agent == "codex":
+            payload = entry.get("payload") or {}
+            kind = payload.get("type")
+            if kind == "task_complete" and payload.get("last_agent_message"):
+                return payload["last_agent_message"]
+            if kind == "agent_message" and payload.get("message"):
+                return payload["message"]
+            if status == "blocked" and isinstance(kind, str) and kind.endswith("approval_request"):
+                command = payload.get("command")
+                if isinstance(command, list):
+                    command = " ".join(map(str, command))
+                return "Run: " + str(command) if command else "Approve a change."
+    return ""
+
+
+def summarize(text, limit=SUMMARY_LIMIT):
+    """The opening of a message as one plain line: markdown, code and tables
+    gone, cut at the end of a sentence where one falls late enough."""
+    text = re.sub(r"```.*?(?:```|$)", " ", str(text), flags=re.S)
+    paragraphs, current = [], []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("|") or re.fullmatch(r"[-=*_ ]{3,}", line):
+            line = ""
+        line = re.sub(r"^(?:#{1,6}|>|[-*+]|\d+[.)])\s+", "", line)
+        if line:
+            current.append(line)
+        elif current:
+            paragraphs.append(" ".join(current))
+            current = []
+    if current:
+        paragraphs.append(" ".join(current))
+    out = ""
+    for paragraph in paragraphs:
+        out = out + " " + paragraph if out else paragraph
+        if len(out) >= 60:
+            break
+    out = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", out)
+    out = re.sub(r"\*\*|__|`", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    if len(out) <= limit:
+        return out
+    cut = out[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end >= limit // 3:
+        return cut[: end + 1]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > 0 else cut).rstrip(",;:") + "\u2026"
+
+
+def chat_title(entries, terminal_title):
+    """The chat's name: the title Claude Code gives the conversation (or the one
+    you set), else the terminal's title when it is one. A resumed or starting
+    session titles the terminal with its command or id, which names nothing."""
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("type") in ("custom-title", "ai-title"):
+            title = entry.get("customTitle") or entry.get("aiTitle")
+            if title:
+                return str(title).strip()
+    title = (terminal_title or "").strip()
+    if not title or title.startswith("\\") or "--resume" in title or re.search(r"[0-9a-f]{8}-[0-9a-f]{4}", title):
+        return ""
+    return title
+
+
+def notification_text(agent, status, label, terminal_title, session_id):
+    """Title and body for a push: which chat, and what happened in the agent's
+    own words. With NOTIFY_PREVIEW=0, only the chat's name and state."""
+    name = {"claude": "Claude", "codex": "Codex"}.get(agent or "", agent or "agent")
+    if not PREVIEW:
+        title, body = (t.format(label=label, name=name) for t in STYLES[status])
+        return title, body
+    path = transcript_path(agent, session_id)
+    entries = tail_entries(path) if path else []
+    chat = chat_title(entries, terminal_title)
+    title = label + " \u00b7 " + chat if chat and label and label.lower() not in chat.lower() else chat or label
+    said = summarize(last_words(agent, entries, status)) if entries else ""
+    if status == "blocked":
+        body = "Waiting for you: " + said if said else name + " is waiting for your reply."
+    else:
+        body = said or name + " finished its task."
+    return title[:120], body[:240]
+
+
 def should_notify(agent, previous):
     """Whether this agent's state is news since the last poll, and what to remember.
 
@@ -308,11 +477,13 @@ def main():
                 news, memo = should_notify(a, last.get(pane))
                 if seeded and news:
                     label = labels.get(a.get("workspace_id"), a.get("workspace_id", "agent"))
-                    name = a.get("agent") or "agent"
-                    title, body = (t.format(label=label, name=name) for t in STYLES[status])
-                    extra = {"workspace": a.get("workspace_id"), "label": label}
                     session = a.get("agent_session") or {}
-                    if session.get("kind") == "id" and session.get("value"):
+                    session_id = session.get("value") if session.get("kind") == "id" else None
+                    title, body = notification_text(
+                        a.get("agent"), status, label, a.get("terminal_title_stripped"), session_id
+                    )
+                    extra = {"workspace": a.get("workspace_id"), "label": label}
+                    if session_id:
                         # Lets the app tell this chat from a later one in the
                         # same workspace slot.
                         extra["session"] = session["value"]

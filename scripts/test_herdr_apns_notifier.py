@@ -188,5 +188,90 @@ class TransitionTests(unittest.TestCase):
         self.assertEqual(fired, [False, False])
 
 
+class PreviewTests(unittest.TestCase):
+    """A push says which chat and what happened, in the agent's own words."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        root = Path(self.dir.name)
+        self.claude, self.codex = root / "claude", root / "codex"
+        (self.claude / "-Users-me-work").mkdir(parents=True)
+        (self.codex / "2026" / "09" / "25").mkdir(parents=True)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def notifier(self, env=None):
+        notifier = load_notifier(env)
+        notifier.CLAUDE_PROJECTS, notifier.CODEX_SESSIONS = str(self.claude), str(self.codex)
+        return notifier
+
+    def claude_transcript(self, session, *entries):
+        path = self.claude / "-Users-me-work" / f"{session}.jsonl"
+        path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+
+    @staticmethod
+    def said(*blocks):
+        return {"type": "assistant", "message": {"content": list(blocks)}}
+
+    def test_summary_drops_markdown_and_ends_on_a_sentence(self):
+        notifier = self.notifier()
+        text = ("## Result\n\n**APNs key** is loaded and the relay says `configured:true`. The rest is on the phone. "
+                + "More detail follows here. " * 12 + "\n\n```bash\nnpm test\n```\n| a | b |")
+        line = notifier.summarize(text)
+        self.assertTrue(line.startswith("Result APNs key is loaded and the relay says configured:true."), line)
+        self.assertLessEqual(len(line), notifier.SUMMARY_LIMIT)
+        self.assertTrue(line.endswith("."))
+        self.assertNotIn("npm test", line)
+
+    def test_finished_claude_turn_quotes_its_closing_message_under_the_chat_name(self):
+        notifier = self.notifier()
+        self.claude_transcript(
+            "s-0000001",
+            {"type": "ai-title", "aiTitle": "Fix the tests"},
+            self.said({"type": "tool_use", "name": "Bash", "input": {"command": "npm test"}}),
+            self.said({"type": "text", "text": "All 502 tests pass. The flaky one waited on a timer."}),
+            {"type": "user", "message": {"content": "thanks"}, "isSidechain": True},
+        )
+        title, body = notifier.notification_text("claude", "done", "work", "\\builtin claude --resume s-0000001", "s-0000001")
+        self.assertEqual(title, "work · Fix the tests")
+        self.assertEqual(body, "All 502 tests pass. The flaky one waited on a timer.")
+
+    def test_waiting_claude_names_its_question_or_command(self):
+        notifier = self.notifier()
+        ask = {"type": "tool_use", "name": "AskUserQuestion", "input": {"questions": [{"question": "Ship it now?"}]}}
+        self.claude_transcript("s-0000002", self.said({"type": "text", "text": "Ready."}, ask))
+        self.assertEqual(notifier.notification_text("claude", "blocked", "work", "", "s-0000002")[1],
+                         "Waiting for you: Ship it now?")
+        run = {"type": "tool_use", "name": "Bash", "input": {"command": "rm -rf build\nls"}}
+        self.claude_transcript("s-0000003", self.said(run))
+        self.assertEqual(notifier.notification_text("claude", "blocked", "work", "", "s-0000003")[1],
+                         "Waiting for you: Run: rm -rf build")
+
+    def test_finished_codex_turn_quotes_its_last_message(self):
+        notifier = self.notifier()
+        path = self.codex / "2026" / "09" / "25" / "rollout-2026-09-25T10-00-00-c-0000001.jsonl"
+        path.write_text(json.dumps({"type": "event_msg", "payload": {
+            "type": "task_complete", "last_agent_message": "Release notes are written."}}) + "\n")
+        self.assertEqual(notifier.notification_text("codex", "done", "docs", "Write notes", "c-0000001"),
+                         ("docs · Write notes", "Release notes are written."))
+
+    def test_never_reads_a_transcript_its_session_does_not_name(self):
+        notifier = self.notifier()
+        # Another chat in the same folder: newest, and not ours.
+        self.claude_transcript("s-0000009", self.said({"type": "text", "text": "Someone else's secret."}))
+        for session in ("s-0000001", None, "../../s-0000009"):
+            with self.subTest(session=session):
+                self.assertEqual(
+                    notifier.notification_text("claude", "done", "work", "f79b4b69-7da7-4a", session),
+                    ("work", "Claude finished its task."))
+
+    def test_preview_off_sends_only_the_chat_name_and_state(self):
+        notifier = self.notifier({"NOTIFY_PREVIEW": "0"})
+        self.claude_transcript("s-0000004", self.said({"type": "text", "text": "Private detail."}))
+        self.assertEqual(notifier.notification_text("claude", "done", "work", "Fix", "s-0000004"),
+                         ("work is done", "Claude finished its task."))
+
+
 if __name__ == "__main__":
     unittest.main()
