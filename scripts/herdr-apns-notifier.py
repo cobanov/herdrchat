@@ -158,18 +158,34 @@ def device_tokens():
     the token's APNs environment).
 
     The connection id is how a tap on the phone knows which of its hosts sent
-    the push. Token files from app builds before it have none (None here)."""
-    out = []
-    for path in glob.glob(os.path.join(TOKENS_DIR, "*.json")):
+    the push. Token files from app builds before it have none (None here).
+
+    One phone can leave several files carrying the same token (earlier app
+    builds registered under other names), and each file would be one more copy
+    of every push. A token is pushed once, with the file that knows its
+    connection, else the newest."""
+    best = {}
+    for path in sorted(glob.glob(os.path.join(TOKENS_DIR, "*.json")), key=_mtime):
         try:
-            data = json.load(open(path))
-            tok = data.get("token")
-            if tok:
-                env = "sandbox" if data.get("env") in ("sandbox", "development") else "production"
-                out.append((tok, data.get("connection"), env))
+            with open(path) as handle:
+                data = json.load(handle)
         except (OSError, ValueError):
             continue
-    return out
+        tok = data.get("token")
+        if not tok:
+            continue
+        env = "sandbox" if data.get("env") in ("sandbox", "development") else "production"
+        entry = (tok, data.get("connection"), env)
+        if tok not in best or entry[1] or not best[tok][1]:
+            best[tok] = entry
+    return list(best.values())
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0
 
 
 def forget_token(device_token: str):

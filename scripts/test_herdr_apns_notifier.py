@@ -98,6 +98,21 @@ class RoutingPayloadTests(unittest.TestCase):
         ])
 
 
+class TokenTests(unittest.TestCase):
+    def test_one_phone_with_several_files_gets_one_push_that_knows_its_host(self):
+        with tempfile.TemporaryDirectory() as folder:
+            notifier = load_notifier()
+            notifier.TOKENS_DIR = folder
+            files = [("old.json", {"token": "tok-a"}), ("new.json", {"token": "tok-a", "connection": "conn-a"}),
+                     ("newer.json", {"token": "tok-a", "env": "production"}), ("other.json", {"token": "tok-b"})]
+            for age, (name, data) in enumerate(files):
+                path = Path(folder) / name
+                path.write_text(json.dumps(data))
+                os.utime(path, (1000 + age, 1000 + age))
+            self.assertEqual(sorted(notifier.device_tokens()),
+                             [("tok-a", "conn-a", "production"), ("tok-b", None, "production")])
+
+
 class RelayTests(unittest.TestCase):
     """#95: what the relay receives, and what the watcher does with its answer."""
 
