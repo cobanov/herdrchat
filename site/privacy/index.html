@@ -42,7 +42,7 @@
 <div class="wrap prose">
 
   <h1>Privacy Policy</h1>
-  <p class="stamp">HerdrChat · last updated 23 September 2026</p>
+  <p class="stamp">HerdrChat · last updated 25 September 2026</p>
 
   <div class="callout">
     <p>
@@ -135,11 +135,19 @@
     the team that published the app, so the watcher sends each one to the
     HerdrChat relay at <code>push.herdrchat.cobanov.dev</code>, which signs it
     and passes it to Apple. What the relay receives is the device token, the
-    notification's title and text (the chat's name and which agent it is), and
-    identifiers the app uses to open the right chat: the workspace, session and
-    host entry. It stores none of it and records no request logs, and it
-    accepts only notifications for HerdrChat. Its source is in the app's
-    repository.
+    notification's title and text, and identifiers the app uses to open the
+    right chat: the workspace, session and host entry. The title is the chat's
+    name. The text is a line or two in the agent's own words, read on your host
+    from the end of that chat: the opening of its closing message, or the
+    question or command it is waiting on. It stores none of it and records no
+    request logs, and it accepts only notifications for HerdrChat. Its source
+    is in the app's repository.
+  </p>
+  <p>
+    To keep what the agent said off the relay, set <code>NOTIFY_PREVIEW=0</code>
+    in <code>~/.config/herdrchat/apns.env</code> on your host: notifications
+    then carry only the chat's name and whether the agent finished or is
+    waiting.
   </p>
   <p>
     If you build and sign the app yourself, the watcher can use your own Apple
