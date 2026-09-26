@@ -1,0 +1,40 @@
+# iPhone, Demo only. Tool calls start hidden, and the thread header's switch
+# shows and hides them. Clear the stored choice first, so the default is tested:
+#   sqlite3 "$(xcrun simctl get_app_container booted dev.herdr.HerdrChat data)/Documents/SQLite/herdrchat.db" \
+#     "delete from settings where key='showToolActivity'"
+# Run with APPEARANCE=Dark, then Light.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+# The Demo host is the one a fresh install opens on.
+- assertVisible:
+    id: server-switcher
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      text: '${APPEARANCE}'
+    direction: DOWN
+- tapOn: '${APPEARANCE}'
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w1
+# The chips sit inside an accessible bubble, out of the accessibility tree, so
+# the switch's own state is asserted and the chips are checked on screenshots:
+# the "Found it" bubble carries a Read chip.
+- assertVisible: '.*Found it.*'
+- assertVisible:
+    id: thread-tool-toggle
+    checked: false
+- takeScreenshot: tools-hidden
+- tapOn:
+    id: thread-tool-toggle
+- assertVisible:
+    id: thread-tool-toggle
+    checked: true
+- takeScreenshot: tools-shown
+- tapOn:
+    id: thread-tool-toggle
+- assertVisible:
+    id: thread-tool-toggle
+    checked: false

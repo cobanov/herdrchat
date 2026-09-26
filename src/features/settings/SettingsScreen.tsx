@@ -20,8 +20,9 @@ import { NotificationsSection } from '@/features/settings/NotificationsSection';
 import { SupportSection } from '@/features/settings/SupportSection';
 import { useLinkedSection } from '@/features/settings/useLinkedSection';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
-import { cachedMessageCount, setSetting } from '@/state/db';
-import { encodeBool, useSettings, type PollScale, type Settings } from '@/state/settings';
+import { cachedMessageCount } from '@/state/db';
+import { saveSetting } from '@/state/saveSetting';
+import { useSettings, type PollScale, type Settings } from '@/state/settings';
 import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
 
@@ -60,11 +61,7 @@ export default function SettingsScreen() {
   }, [db]);
   useEffect(refreshCacheSize, [refreshCacheSize]);
 
-  /** Persist alongside the store, so the mirror never drifts from the source. */
-  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    settings.set(key, value);
-    void setSetting(db, key, typeof value === 'boolean' ? encodeBool(value) : String(value));
-  };
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => saveSetting(db, key, value);
 
   const { target, scrollRef, onMeasure } = useLinkedSection();
 
@@ -127,7 +124,7 @@ export default function SettingsScreen() {
             <Section title="Conversations">
               <Toggle
                 label="Tool activity"
-                detail="Show tool calls, results and thinking as chips inside messages."
+                detail="Show tool calls, results and thinking as chips inside messages. Also switchable from a chat's header."
                 value={settings.showToolActivity}
                 onChange={(next) => update('showToolActivity', next)}
                 testID="toggle-tool-activity"

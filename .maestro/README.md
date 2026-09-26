@@ -19,6 +19,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `thread-bottom` | initial bottom, jump, reload and reopen | **yes**, final reply `HELLO` |
 | `thread-opening` | iPhone initial bottom, background return, reopen, draft and reload in both themes | no, selects Demo explicitly |
 | `thread-scroll` | a reader in history stays there across a background return, and sending brings them to the end, in both themes | no, sends only to local Demo |
+| `tool-activity` | tool calls hidden by default, the header switch shows and hides them, in both themes; clear the stored choice first (see the flow) | no, selects Demo explicitly |
 | `thread-header` | floating glass header, long title, keyboard and scrolling under it; includes `thread-opening` | no, sends only to local Demo |
 | `composer` | multiline draft, keyboard and final-message clearance screenshot | **yes**, final reply `HELLO` |
 | `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
