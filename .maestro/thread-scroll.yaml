@@ -1,0 +1,66 @@
+# iPhone, Demo only. Where the thread scrolls: a reader in history stays there
+# when the app comes back, and sending takes them to the end from anywhere.
+# Run with APPEARANCE=Dark, then Light.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+# The Demo host is the one a fresh install opens on.
+- assertVisible:
+    id: server-switcher
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      text: '${APPEARANCE}'
+    direction: DOWN
+- tapOn: '${APPEARANCE}'
+- tapOn: Chats
+- tapOn:
+    id: chat-group-idle
+- tapOn:
+    id: chat-row-w2
+# Enough conversation to scroll through; each reply is a paragraph.
+- repeat:
+    times: 4
+    commands:
+      - tapOn:
+          id: composer-input
+      - inputText: Filling the thread so it scrolls
+      - tapOn:
+          id: composer-send
+      - extendedWaitUntil:
+          visible: '.*nothing actually ran.*'
+          timeout: 10000
+      - waitForAnimationToEnd
+- hideKeyboard
+- assertNotVisible:
+    id: jump-to-bottom
+# Back into history.
+- swipe:
+    start: '50%, 30%'
+    end: '50%, 80%'
+    duration: 600
+- waitForAnimationToEnd
+- assertVisible:
+    id: jump-to-bottom
+- takeScreenshot: thread-scroll-reading
+# Coming back to the app used to throw a reader to the end.
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- waitForAnimationToEnd
+- assertVisible:
+    id: jump-to-bottom
+# Sending from history used to leave the new message off screen.
+- tapOn:
+    id: composer-input
+- inputText: Sent from history
+- tapOn:
+    id: composer-send
+- extendedWaitUntil:
+    visible: '.*You said “Sent from history”.*'
+    timeout: 10000
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: jump-to-bottom
+- takeScreenshot: thread-scroll-sent

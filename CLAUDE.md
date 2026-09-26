@@ -73,6 +73,15 @@ block; Codex keeps it as typed. `splitImages` must leave exactly what was
 typed, or the echo is never confirmed and the bubble says "Failed to send".
 Matching text alone confirmed a picture-only message with any tool result.
 
+**Only `useThreadScroll` moves the thread list.** The rules are one pure
+function (`src/lib/threadScroll.ts`): the reader is following the end or
+reading, only the reader's own scrolls and asks (send, jump, reload) change
+that, and everything else only keeps a follower at the end. The screen once
+spread this over four flags, five forced scrolls and the list's own autoscroll,
+and each fix reopened another case. A tail restart continues the window
+(`continueWindow`) rather than re-keying the list, which rebuilt it at the end
+under a reader.
+
 **Byte offsets are UTF-8 bytes.** The host counts bytes; `String.length` counts
 UTF-16 units. The drift silently skips messages on any transcript with an emoji.
 
