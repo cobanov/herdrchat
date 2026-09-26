@@ -42,7 +42,7 @@
 <div class="wrap prose">
 
   <h1>Privacy Policy</h1>
-  <p class="stamp">HerdrChat · last updated 25 September 2026</p>
+  <p class="stamp">HerdrChat · last updated 26 September 2026</p>
 
   <div class="callout">
     <p>
@@ -95,6 +95,9 @@
       and read positions that let a thread reopen where you left it.</li>
     <li><strong>Preferences</strong> — appearance, and which optional message
       kinds to show.</li>
+    <li><strong>Pictures you send</strong>: a scaled-down copy of each, so the
+      conversation can show it. Clearing cached messages or erasing all data
+      deletes them.</li>
   </ul>
   <p>
     Removing a host deletes its saved credentials and pinned fingerprint.
@@ -121,6 +124,14 @@
     their own settings and privacy policies. HerdrChat does not make model API
     requests itself. The built-in Demo uses local fictional conversations and
     sends no prompts to a host or AI provider.
+  </p>
+  <p>
+    When you add a picture to a message, the app reads that one picture from
+    your photo library or clipboard, never the rest of it. It is scaled down on
+    the phone and written over SSH to <code>~/.cache/herdrchat/uploads</code>
+    on your own machine, where it is kept for a week, and the message names it
+    so the agent can open it. From there it goes wherever that agent sends what
+    it reads.
   </p>
 
   <h2>Notifications</h2>

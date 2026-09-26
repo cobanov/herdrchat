@@ -88,6 +88,18 @@ export const size = {
   jumpButton: 40,
   /** The column an option's number sits in, so one- and two-digit labels align. */
   optionNumber: 16,
+  /** The composer's send glyph. */
+  composerGlyph: 28,
+  /** The composer's add-a-picture glyph, a step quieter than send. */
+  composerAccessoryGlyph: 24,
+  /** A picture waiting in the composer, before it is sent. */
+  attachmentThumb: 64,
+  /** The remove badge on a waiting picture, its cross, and the ring that lifts it off the picture. */
+  attachmentRemove: 22,
+  attachmentRemoveGlyph: 10,
+  attachmentRemoveRing: 2,
+  /** The longer side of a sent picture in a bubble. */
+  bubbleImage: 220,
 } as const;
 
 /**

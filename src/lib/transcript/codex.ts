@@ -1,4 +1,5 @@
 import { codexAssistantText, codexUserText } from './harness';
+import { splitImages } from './images';
 import type { ChatMessage, MessageSegment } from './message';
 import type { TranscriptEntry } from './parser';
 
@@ -71,7 +72,16 @@ function responseMessage(
       // Internal analysis is not a user-facing assistant response.
       if (payload.channel === 'analysis') return null;
       const content = contentText(payload.content, role === 'user');
-      const text = role === 'assistant' ? codexAssistantText(content) : content;
+      if (role === 'user') {
+        // A path sent from the phone is a picture; so is an image Codex holds
+        // without one (pasted into its terminal).
+        const { text, paths } = splitImages(content);
+        const segments: MessageSegment[] = text ? [{ kind: 'text', text }] : [];
+        segments.push(...paths.map((path) => ({ kind: 'image' as const, path })));
+        for (let index = paths.length; index < imageCount(payload.content); index += 1) segments.push({ kind: 'image', path: '' });
+        return segments.length ? { role, segments } : null;
+      }
+      const text = codexAssistantText(content);
       if (!text.trim()) return null;
       return { role, segments: [{ kind: 'text', text }] };
     }
@@ -116,9 +126,15 @@ function contentText(content: unknown, omitHarness = false): string {
       const text = codexUserText(value.text);
       return text === null ? [] : [text];
     }
-    if (value.type === 'input_image') return ['[Image]'];
+    // In a user message the picture becomes its own segment (see `imageCount`).
+    if (value.type === 'input_image') return omitHarness ? [] : ['[Image]'];
     return [];
   }).join('\n');
+}
+
+/** How many pictures a content list carries. */
+function imageCount(content: unknown): number {
+  return Array.isArray(content) ? content.filter((block: unknown) => record(block)?.type === 'input_image').length : 0;
 }
 
 function preview(value: unknown): string | null {

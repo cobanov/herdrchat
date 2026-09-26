@@ -1,0 +1,63 @@
+# iPhone, Demo only. Sends a picture with a message.
+# Needs a picture in the simulator's library first:
+#   xcrun simctl addmedia booted <picture.jpg>
+# Run with APPEARANCE=Dark, then Light.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+# The Demo host is the one a fresh install opens on.
+- assertVisible:
+    id: server-switcher
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      text: '${APPEARANCE}'
+    direction: DOWN
+- tapOn: '${APPEARANCE}'
+- tapOn: Chats
+- tapOn:
+    id: chat-group-idle
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: composer-attach
+- tapOn:
+    id: composer-attach
+# The system photo picker runs in its own process; the newest picture is the
+# first cell of its grid.
+- waitForAnimationToEnd
+- takeScreenshot: attachments-picker
+- tapOn:
+    point: 17%,27%
+# Its confirm control is a checkmark in the top-right corner (iOS 26 and
+# later), unlabelled and localised, so it is tapped by position.
+- tapOn:
+    point: 90%,15%
+- extendedWaitUntil:
+    visible:
+      id: composer-attachment-remove-0
+    timeout: 10000
+- tapOn:
+    id: composer-input
+- inputText: What is written in this picture?
+- takeScreenshot: attachments-composer
+- tapOn:
+    id: composer-send
+- extendedWaitUntil:
+    visible:
+      id: bubble-image
+    timeout: 10000
+- takeScreenshot: attachments-sent
+# A tap opens the picture full screen; another closes it.
+- tapOn:
+    id: bubble-image
+- extendedWaitUntil:
+    visible:
+      id: image-viewer-close
+    timeout: 5000
+- takeScreenshot: attachments-viewer
+- tapOn:
+    id: image-viewer-close
+- assertVisible:
+    id: bubble-image

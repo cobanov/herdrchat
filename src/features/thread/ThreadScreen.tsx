@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { showActionSheet } from '@/components/ActionSheet';
 import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Glass } from '@/components/Glass';
@@ -21,6 +22,13 @@ import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { TypingDots, WaitingBar } from '@/components/Activity';
+import {
+  clipboardHasImage,
+  MAX_ATTACHMENTS,
+  pasteAttachment,
+  pickAttachments,
+  type Attachment,
+} from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
@@ -153,6 +161,50 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+
+  // Pictures waiting to go with the next message. They stay until a send is
+  // taken, so a failed upload leaves them in place with the draft.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [preparing, setPreparing] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const addAttachments = async (source: 'library' | 'paste') => {
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) return;
+    setPreparing(true);
+    setAttachError(null);
+    try {
+      const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
+      const ready = added.filter((item): item is Attachment => item !== null);
+      if (ready.length > 0) setAttachments((previous) => [...previous, ...ready].slice(0, MAX_ATTACHMENTS));
+    } catch (thrown) {
+      setAttachError(`Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+    } finally {
+      setPreparing(false);
+    }
+  };
+  // Straight to the library, unless the clipboard holds a picture to paste.
+  const offerAttachment = async () => {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachError(`A message can carry ${MAX_ATTACHMENTS} pictures.`);
+      return;
+    }
+    if (!(await clipboardHasImage())) {
+      await addAttachments('library');
+      return;
+    }
+    showActionSheet({
+      title: 'Add a picture',
+      actions: [
+        { label: 'Photo Library', onPress: () => void addAttachments('library') },
+        { label: 'Paste Picture', onPress: () => void addAttachments('paste') },
+      ],
+    });
+  };
+  const sendWithAttachments = async (text: string) => {
+    const accepted = await thread.send(text, attachments);
+    if (accepted) setAttachments([]);
+    return accepted;
+  };
 
   /**
    * Installing herdr's Claude integration from here.
@@ -568,8 +620,12 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 // Storing what someone typed for a feature that no longer exists
                 // is a liability, not a convenience, the table and its cleanup
                 // stay only so existing rows are still erased by Reset app data.
-                onSend={(text) => thread.send(text)}
+                onSend={sendWithAttachments}
                 disabled={thread.isSending || !thread.canSend}
+                attachments={attachments}
+                onAttach={() => void offerAttachment()}
+                onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
+                uploading={preparing || (thread.isSending && attachments.length > 0)}
               />
             </View>
           )}
@@ -641,6 +697,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   )}
                 </Glass>
               </View>
+              {attachError !== null && (
+                <ErrorBanner message={attachError} onDismiss={() => setAttachError(null)} />
+              )}
               {thread.error !== null && (
                 <ErrorBanner
                   message={

@@ -34,9 +34,12 @@ describe('Codex rollout history', () => {
     const markdown = '| A | B |\n|---|---|\n| 1 | 2 |\n\n```ts\nconst x = 1;\n```';
     expect(displayText(parseTranscriptLine(message('assistant', markdown))!)).toBe(markdown);
     expect(displayText(parseTranscriptLine(message('assistant', 'OK'))!)).toBe('OK');
-    expect(displayText(parseTranscriptLine(line('response_item', { type: 'message', role: 'user', content: [
+    // The picture is its own segment, not text: the bubble shows it as one.
+    const withPicture = parseTranscriptLine(line('response_item', { type: 'message', role: 'user', content: [
       { type: 'input_text', text: 'Look here' }, { type: 'input_image', image_url: 'data:image/png;base64,private' },
-    ] }))!)).toBe('Look here\n[Image]');
+    ] }))!;
+    expect(displayText(withPicture)).toBe('Look here');
+    expect(withPicture.segments).toContainEqual({ kind: 'image', path: '' });
   });
 
   it('filters harness-only input and analysis, not normal questions about instructions', () => {

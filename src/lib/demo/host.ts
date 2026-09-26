@@ -264,6 +264,14 @@ export class DemoHost implements HerdrTransport {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
     if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
 
+    // A picture on its way up. The demo keeps nothing; it answers the last
+    // command the way a host does, with where the file would be, so sending a
+    // picture runs the same code here as against a real machine.
+    const upload = /"\$HOME\/\.cache\/herdrchat\/uploads\/([A-Za-z0-9-]+\.(?:jpg|png))(\.part)?"/.exec(body);
+    if (upload !== null) {
+      return out(body.includes('base64 -d') ? `${DEMO_HOME}/.cache/herdrchat/uploads/${upload[1]}\n` : '');
+    }
+
     // The size probe, which asks four questions before it measures anything —
     // is the folder there, can it be searched, is the file there, can it be
     // read. A fictional host has no permissions to get wrong, so the only two

@@ -14,6 +14,15 @@
 #   APPLE_TEAM_ID=<team> ASC_KEY_ID=<key> ASC_ISSUER_ID=<uuid> scripts/testflight.sh
 #   ... scripts/testflight.sh --no-upload   # stop at the .ipa
 #
+# From a background session (SSH, launchd), where the login keychain cannot be
+# unlocked and codesign fails with errSecInternalComponent, sign from a keychain
+# whose password is on disk instead:
+#   SIGNING_KEYCHAIN=~/Library/Keychains/x.keychain-db SIGNING_KEYCHAIN_PASSWORD_FILE=~/.x/.kcpass \
+#   ASC_SIGNING_CERT=<sha1 of a distribution cert in it> ASC_PROFILE_NAME=<App Store profile holding it> \
+#   ... scripts/testflight.sh
+# The archive is then signed for distribution directly (manual signing on the
+# app target only), since no development identity lives in that keychain.
+#
 # See RELEASING.md.
 #
 # NOTE: TestFlight rate-limits uploads per app per day (altool 90382). Bump the
@@ -58,6 +67,26 @@ if [[ ! -f "$KEY_PATH" ]]; then
   exit 1
 fi
 
+if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
+  if [[ ! -f "$SIGNING_KEYCHAIN" ]]; then
+    echo "ERROR: no keychain at $SIGNING_KEYCHAIN" >&2
+    exit 1
+  fi
+  if [[ -n "${SIGNING_KEYCHAIN_PASSWORD_FILE:-}" ]]; then
+    security unlock-keychain -p "$(cat "$SIGNING_KEYCHAIN_PASSWORD_FILE")" "$SIGNING_KEYCHAIN"
+  fi
+  # Xcode resolves identities through the search list. `grep -c`, not `-q`:
+  # see the pipefail note further down.
+  if [ "$(security list-keychains -d user | grep -cF "$SIGNING_KEYCHAIN")" -eq 0 ]; then
+    # shellcheck disable=SC2046
+    security list-keychains -d user -s "$SIGNING_KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+  fi
+  if [ "$(security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" | grep -cF "$SIGNING_CERT")" -eq 0 ]; then
+    echo "ERROR: $SIGNING_CERT is not a signing identity in $SIGNING_KEYCHAIN." >&2
+    exit 1
+  fi
+fi
+
 AUTH=(-allowProvisioningUpdates
       -authenticationKeyPath "$KEY_PATH"
       -authenticationKeyID "$KEY_ID"
@@ -95,16 +124,39 @@ rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p "$BUILD_DIR"
 
 echo "==> Archiving (Release)…"
-xcodebuild archive \
-  -workspace "ios/${SCHEME}.xcworkspace" \
-  -scheme "$SCHEME" \
-  -configuration Release \
-  -destination 'generic/platform=iOS' \
-  -archivePath "$ARCHIVE" \
-  DEVELOPMENT_TEAM="$TEAM_ID" \
-  CODE_SIGN_STYLE=Automatic \
-  COMPILER_INDEX_STORE_ENABLE=NO \
-  "${AUTH[@]}"
+if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
+  # Manual distribution signing on the app target alone: set on the command
+  # line it would reach every Pods target too. ios/ is regenerated above, so
+  # this edits a build product, not the project's configuration.
+  GEM_HOME="$(brew --prefix cocoapods)/libexec" ruby -rxcodeproj -e '
+    project = Xcodeproj::Project.open(ARGV[0])
+    target = project.targets.find { |t| t.name == ARGV[1] } or abort("no target #{ARGV[1]}")
+    target.build_configurations.select { |c| c.name == "Release" }.each do |c|
+      c.build_settings.merge!(
+        "CODE_SIGN_STYLE" => "Manual", "CODE_SIGN_IDENTITY" => ARGV[2],
+        "PROVISIONING_PROFILE_SPECIFIER" => ARGV[3], "DEVELOPMENT_TEAM" => ARGV[4],
+        "OTHER_CODE_SIGN_FLAGS" => "--keychain #{ARGV[5]}")
+    end
+    project.save' "ios/${SCHEME}.xcodeproj" "$SCHEME" "$SIGNING_CERT" "$PROFILE_NAME" "$TEAM_ID" "$SIGNING_KEYCHAIN"
+  xcodebuild archive \
+    -workspace "ios/${SCHEME}.xcworkspace" \
+    -scheme "$SCHEME" \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -archivePath "$ARCHIVE" \
+    COMPILER_INDEX_STORE_ENABLE=NO
+else
+  xcodebuild archive \
+    -workspace "ios/${SCHEME}.xcworkspace" \
+    -scheme "$SCHEME" \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -archivePath "$ARCHIVE" \
+    DEVELOPMENT_TEAM="$TEAM_ID" \
+    CODE_SIGN_STYLE=Automatic \
+    COMPILER_INDEX_STORE_ENABLE=NO \
+    "${AUTH[@]}"
+fi
 
 fi
 

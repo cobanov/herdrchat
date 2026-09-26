@@ -42,6 +42,8 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   'gearshape.fill': 'settings',
   magnifyingglass: 'search',
   pencil: 'edit',
+  photo: 'image',
+  'photo.on.rectangle': 'photo_library',
   plus: 'add',
   'server.rack': 'dns',
   square: 'check_box_outline_blank',
