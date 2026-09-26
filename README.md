@@ -33,6 +33,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 - **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
+- **Show it, don't describe it.** Add a screenshot or photo to a message; it goes to your machine over SSH and the agent opens it there.
 - **Keep your machine yours.** Connect over SSH, usually through Tailscale. Credentials stay in the iOS Keychain; host keys are pinned.
 
 ## Try it

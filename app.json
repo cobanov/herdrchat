@@ -63,6 +63,14 @@
       "expo-status-bar",
       "expo-secure-store",
       "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HerdrChat opens your photo library only when you choose a picture to send to your agent.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "./plugins/withReleaseSigning"
     ]
   }

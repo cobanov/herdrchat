@@ -10,6 +10,7 @@ import {
   type ServerConnection,
 } from '@/state/connections';
 import { SELECTED_KEY } from '@/state/Hydrate';
+import { clearAttachmentCopies } from '@/state/attachmentFiles';
 import {
   clearCachedMessages,
   clearConnectionSettings,
@@ -92,6 +93,8 @@ export async function resetAppData(
   // so a host that failed above does not skip it. Cached messages from a host
   // you just erased are the thing you least want left behind.
   await clearCachedMessages(db);
+  // The phone's copies of pictures it sent go with the conversations.
+  clearAttachmentCopies();
   // The selection and the notifications switch describe hosts that are gone.
   await deleteSetting(db, SELECTED_KEY);
   await deleteSetting(db, 'notifications');

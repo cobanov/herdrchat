@@ -6,6 +6,7 @@ import { ActionRow, Divider, Section } from '@/components/SettingsList';
 import { haptics } from '@/lib/haptics';
 import { useConnections } from '@/state/connections';
 import { useSettings } from '@/state/settings';
+import { clearAttachmentCopies } from '@/state/attachmentFiles';
 import { clearCachedMessages } from '@/state/db';
 import { resetAppData } from './reset';
 
@@ -33,6 +34,7 @@ export function DangerZone({ onCacheCleared }: { onCacheCleared: () => void }) {
         'Threads reload from each host next time you open them. Nothing on your machines changes.',
       confirmLabel: 'Clear cache',
       onConfirm: () => {
+        clearAttachmentCopies();
         void clearCachedMessages(db).then(onCacheCleared);
       },
     });

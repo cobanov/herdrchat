@@ -1,6 +1,7 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
 import { claudeUserText, isClaudeHarnessLine } from './harness';
+import { splitImages } from './images';
 import type { SessionMeta } from './sessionMeta';
 
 /**
@@ -222,16 +223,41 @@ function roleOf(type: unknown): MessageRole | null {
  */
 function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
   if (typeof content === 'string') {
-    const text = role === 'user' ? claudeUserText(content) : content;
-    return text === null || text.trim().length === 0 ? [] : [{ kind: 'text', text }];
+    if (role === 'user') return userTextSegments(content);
+    return content.trim().length === 0 ? [] : [{ kind: 'text', text: content }];
   }
   if (!Array.isArray(content)) return [];
   const segments: MessageSegment[] = [];
+  let pictures = 0;
   for (const block of content) {
+    const value = asRecord(block);
+    if (role === 'user' && value?.type === 'text') {
+      segments.push(...userTextSegments(typeof value.text === 'string' ? value.text : ''));
+      continue;
+    }
+    if (role === 'user' && value?.type === 'image') {
+      pictures += 1;
+      continue;
+    }
     const segment = segmentFrom(block, role);
     if (segment !== null) segments.push(segment);
   }
+  // A picture pasted straight into the terminal has no source note: still a
+  // picture, just one whose path is unknown.
+  const named = segments.filter((segment) => segment.kind === 'image').length;
+  for (let index = named; index < pictures; index += 1) segments.push({ kind: 'image', path: '' });
   return segments;
+}
+
+/** A user's text, harness removed, with the pictures it references as their own segments. */
+function userTextSegments(raw: string): MessageSegment[] {
+  const text = claudeUserText(raw);
+  if (text === null) return [];
+  const { text: typed, paths } = splitImages(text);
+  return [
+    ...(typed.length === 0 ? [] : [{ kind: 'text' as const, text: typed }]),
+    ...paths.map((path) => ({ kind: 'image' as const, path })),
+  ];
 }
 
 function segmentFrom(block: unknown, role: MessageRole): MessageSegment | null {

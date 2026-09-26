@@ -3,6 +3,7 @@ import { memo, useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { showActionSheet, type SheetAction } from './ActionSheet';
+import { BubbleImage } from './BubbleImage';
 import { Markdown } from './Markdown';
 import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
@@ -38,7 +39,8 @@ export const Bubble = memo(function Bubble({
   // this only has to drop the chips from mixed turns.
   const visibleSegments = showToolActivity
     ? message.segments
-    : message.segments.filter((segment) => segment.kind === 'text');
+    : message.segments.filter((segment) => segment.kind === 'text' || segment.kind === 'image');
+  const pictures = message.segments.filter((segment) => segment.kind === 'image').length;
 
   const corners = {
     borderTopLeftRadius: radius.md,
@@ -97,7 +99,7 @@ export const Bubble = memo(function Bubble({
         // stay a tap on whatever it landed on.
         delayLongPress={400}
         accessibilityRole="button"
-        accessibilityLabel={`${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${timeLabel ? `, ${timeLabel}` : ''}`}
+        accessibilityLabel={`${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${pictures > 0 ? `, ${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : ''}${timeLabel ? `, ${timeLabel}` : ''}`}
         accessibilityHint="Long press to copy"
         accessibilityActions={[{ name: 'longpress', label: 'Copy message' }]}
         onAccessibilityAction={(event) => {
@@ -167,6 +169,8 @@ function Segment({ segment, onTint }: { segment: MessageSegment; onTint: boolean
       );
     case 'toolResult':
       return <ToolChip glyph="✓" label="tool result" />;
+    case 'image':
+      return <BubbleImage path={segment.path} onTint={onTint} />;
   }
 }
 

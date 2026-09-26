@@ -16,8 +16,11 @@ import {
   type AgentStatus,
 } from '@/lib/herdr/models';
 import { TranscriptStore } from '@/lib/transcript/store';
-import type { ChatMessage } from '@/lib/transcript/message';
-import { displayText } from '@/lib/transcript/message';
+import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
+import { displayText, imagePaths, receiptKey } from '@/lib/transcript/message';
+import { promptWithImages } from '@/lib/transcript/images';
+import { uploadImage, type OutgoingImage } from '@/lib/attachments/upload';
+import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
 import {
   blockedPromptSignature,
   blockedPendingTimeout,
@@ -183,9 +186,11 @@ export interface ThreadState {
   failedIds: Set<string>;
   /**
    * Resolves whether the message was taken. `false` comes back at once, before
-   * anything is sent, so the composer can put the draft back (#100).
+   * anything is sent, so the composer can put the draft back (#100). Pictures
+   * are uploaded to the host first; if one cannot be, nothing is sent and
+   * `false` comes back with the reason in `actionError`.
    */
-  send: (text: string) => Promise<boolean>;
+  send: (text: string, images?: readonly OutgoingImage[]) => Promise<boolean>;
   retry: (id: string) => Promise<void>;
   sendKeys: (keys: readonly string[]) => Promise<void>;
   /** Stop the working agent. `hard` sends Ctrl-C and may end the session. */
@@ -354,7 +359,7 @@ export function useThread(
       const before = echoBaselines.current.get(echo.id);
       const receipt = arrivals.current.find(message => message.role === 'user' &&
         !before?.has(message.id) && !claimedReceipts.current.has(message.id) &&
-        displayText(message).trim() === displayText(echo).trim());
+        receiptKey(message) === receiptKey(echo));
       if (receipt === undefined) return true;
       claimedReceipts.current.add(receipt.id);
       confirmedEchoIds.current.add(echo.id);
@@ -1104,40 +1109,64 @@ export function useThread(
   );
 
   const send = useCallback(
-    async (raw: string): Promise<boolean> => {
+    async (raw: string, images: readonly OutgoingImage[] = []): Promise<boolean> => {
       const text = raw.trim();
       if (
-        text.length === 0 ||
+        (text.length === 0 && images.length === 0) ||
         primaryPane === null ||
         sending.current ||
         loading ||
         sessionState === 'unsupported' ||
-        sessionState === 'replaced'
+        sessionState === 'replaced' ||
+        (images.length > 0 && client === null)
       ) {
         return false;
       }
       sending.current = true;
       // A new message is a new attempt; the last one's warning has done its job.
       setActionError(null);
-      const echo: ChatMessage = {
-        id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        role: 'user',
-        segments: [{ kind: 'text', text }],
-        timestamp: Date.now(),
-        agentLabel: null,
-        isSidechain: false,
-      };
-      echoBaselines.current.set(echo.id, new Set(arrivals.current.map(message => message.id)));
-      echoes.current.push(echo);
-      rebuild();
       try {
-        await deliver(text, echo.id, primaryPane);
+        // Pictures go to the host before the prompt that names them. One that
+        // cannot be written stops the send: better the draft back than a
+        // message pointing at a file that is not there.
+        const paths: string[] = [];
+        if (images.length > 0 && client !== null) {
+          setIsSending(true);
+          try {
+            for (const image of images) {
+              const uploaded = await uploadImage(client.transport, image, SEND_TIMEOUT_MS);
+              if (!uploaded.ok) {
+                setActionError(`Couldn't send the picture: ${uploaded.message}`);
+                return false;
+              }
+              paths.push(uploaded.path);
+            }
+          } finally {
+            setIsSending(false);
+          }
+        }
+        const segments: MessageSegment[] = [
+          ...(text.length > 0 ? [{ kind: 'text' as const, text }] : []),
+          ...paths.map((path) => ({ kind: 'image' as const, path })),
+        ];
+        const echo: ChatMessage = {
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          role: 'user',
+          segments,
+          timestamp: Date.now(),
+          agentLabel: null,
+          isSidechain: false,
+        };
+        echoBaselines.current.set(echo.id, new Set(arrivals.current.map(message => message.id)));
+        echoes.current.push(echo);
+        rebuild();
+        await deliver(promptWithImages(text, paths), echo.id, primaryPane);
+        return true;
       } finally {
         sending.current = false;
       }
-      return true;
     },
-    [primaryPane, rebuild, deliver, loading, sessionState]
+    [primaryPane, rebuild, deliver, loading, sessionState, client]
   );
 
   /** Retries in flight, by echo id. A second tap on "retry" sent it twice (#100). */
@@ -1153,7 +1182,8 @@ export function useThread(
         return next;
       });
       try {
-        await deliver(displayText(echo), id, primaryPane);
+        // The pictures are already on the host; only the prompt goes again.
+        await deliver(promptWithImages(displayText(echo), imagePaths(echo)), id, primaryPane);
       } finally {
         retrying.current.delete(id);
       }

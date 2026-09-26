@@ -316,6 +316,52 @@ it('keeps a repeated prompt visible until a NEW host message acknowledges it', a
   await unmount();
 });
 
+const UPLOADED = '/Users/me/.cache/herdrchat/uploads/mf2x9a1k-3kd81zq0.jpg';
+
+it('uploads pictures before the prompt that names them, and shows them in the echo', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  const order: string[] = [];
+  jest.spyOn(client.transport, 'exec').mockImplementation(async (command) => {
+    if (command.includes('herdrchat/uploads')) order.push('upload');
+    return { ok: true, exitCode: 0, stderr: '', stdout: command.includes('base64 -d') ? `${UPLOADED}\n` : '' };
+  });
+  prompt.mockImplementation(async () => { order.push('prompt'); return 'delivered'; });
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let accepted = false;
+  await act(async () => {
+    accepted = await result.current.send('what is this?', [{ name: 'mf2x9a1k-3kd81zq0.jpg', base64: 'AAAA' }]);
+  });
+  expect(accepted).toBe(true);
+  expect(order.at(-1)).toBe('prompt');
+  expect(order.filter((step) => step === 'upload').length).toBeGreaterThanOrEqual(2);
+  expect(prompt).toHaveBeenCalledWith(expect.any(String), `what is this?\n\n${UPLOADED}`);
+  expect(result.current.messages.at(-1)?.segments).toEqual([
+    { kind: 'text', text: 'what is this?' },
+    { kind: 'image', path: UPLOADED },
+  ]);
+  await unmount();
+});
+
+it('sends nothing when a picture cannot be uploaded, and says why', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+  jest.spyOn(client.transport, 'exec').mockImplementation(async (command) =>
+    command.includes('herdrchat/uploads')
+      ? { ok: false, code: 'transport_failed', message: 'channel closed' }
+      : { ok: true, exitCode: 0, stderr: '', stdout: '' });
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let accepted = true;
+  await act(async () => {
+    accepted = await result.current.send('', [{ name: 'mf2x9a1k-3kd81zq0.jpg', base64: 'AAAA' }]);
+  });
+  expect(accepted).toBe(false);
+  expect(prompt).not.toHaveBeenCalled();
+  expect(result.current.error).toContain('channel closed');
+  expect(result.current.messages.some((message) => message.id.startsWith('local-'))).toBe(false);
+  await unmount();
+});
+
 it('accepts a Codex transcript receipt even when terminal delivery cannot be observed', async () => {
   mockLiveReceipt = true;
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));

@@ -65,6 +65,14 @@ offers no "newest transcript" call at all, deliberately.
 directory collapse onto a single map entry, and the second one silently never
 streams.
 
+**A sent picture is a path, and a sent message is matched by its text and its
+picture count.** The app uploads a picture over SSH to
+`~/.cache/herdrchat/uploads/` and puts the path on its own line in the prompt.
+Claude Code turns that line into `[Image #1]` plus an `[Image: source: …]`
+block; Codex keeps it as typed. `splitImages` must leave exactly what was
+typed, or the echo is never confirmed and the bubble says "Failed to send".
+Matching text alone confirmed a picture-only message with any tool result.
+
 **Byte offsets are UTF-8 bytes.** The host counts bytes; `String.length` counts
 UTF-16 units. The drift silently skips messages on any transcript with an emoji.
 
