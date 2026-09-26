@@ -2,16 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AppState,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showActionSheet } from '@/components/ActionSheet';
@@ -37,6 +28,7 @@ import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
@@ -49,13 +41,6 @@ import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
-
-/**
- * How close to the end still counts as "at the bottom": enough slack to survive
- * a rubber-band and sub-pixel rounding, small enough that a scrolled-back reader
- * is never mistaken for one at the end.
- */
-const BOTTOM_SLACK = threadLayout.bottomSlack;
 
 /** One workspace conversation. */
 export default function ThreadScreen({ workspaceId, title, onBack }: {
@@ -87,28 +72,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const showToolActivity = useSettings((state) => state.showToolActivity);
   const showSidechain = useSettings((state) => state.showSidechain);
 
-  const [atBottom, setAtBottom] = useState(true);
-  /**
-   * Content and viewport heights, kept so `atBottom` can be recomputed when the
-   * list grows rather than only when someone scrolls.
-   */
-  const pinnedToBottom = useRef(true);
-  /**
-   * Whether the reader has dragged since the list was last put at the end.
-   * Only a reader can unpin it: a scroll event from layout (a long last message
-   * measuring taller than estimated) unpinned it before, and the thread opened
-   * short of its last lines with nothing bringing it back (#4 acceptance).
-   */
-  const readerScrolled = useRef(false);
-  const anchorAfterControlsResize = useRef(false);
-  const viewportHeight = useRef(0);
-  const scrollOffset = useRef(0);
   // Measured height of the floating control stack, so the list can reserve
   // exactly that much room underneath its content.
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
   const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
+  const scroll = useThreadScroll(listRef, thread.historyVersion);
 
   // The agents array is rebuilt by every status poll, so it cannot go in the
   // dependency list below, the effect would re-run every couple of seconds and
@@ -201,6 +171,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     });
   };
   const sendWithAttachments = async (text: string) => {
+    // Before the send, so the message lands in a list already following the end.
+    scroll.followEnd(false);
     const accepted = await thread.send(text, attachments);
     if (accepted) setAttachments([]);
     return accepted;
@@ -239,62 +211,6 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
       })
       .finally(() => setInstalling(false));
   }, [client, installing, agentKind]);
-
-  /**
-   * Whether the viewport sits at the end, measured rather than inferred.
-   *
-   * Earlier versions tracked this with a "did the reader drag" flag and an
-   * imperative `scrollToEnd` in an effect, and it kept losing: FlashList lays
-   * out asynchronously, so a scroll issued the moment `messages` changed
-   * resolved against estimated heights and landed short. The list now anchors
-   * itself natively (see `maintainVisibleContentPosition` below) and this
-   * measurement is used only to decide whether to show the jump button.
-   */
-  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    viewportHeight.current = layoutMeasurement.height;
-    scrollOffset.current = contentOffset.y;
-    const distanceFromEnd = contentSize.height - contentOffset.y - layoutMeasurement.height;
-    if (readerScrolled.current) pinnedToBottom.current = distanceFromEnd <= BOTTOM_SLACK;
-    setAtBottom(distanceFromEnd <= BOTTOM_SLACK);
-  }, []);
-
-  /**
-   * The native scroll view, scrolled directly. FlashList's own `scrollToEnd`
-   * finishes in a timer that dereferences its scroll view without a check, and
-   * a list that unmounts in between (a reload remounts it by `key`) threw there:
-   * Reload crashed the app every time on Android (#4 acceptance), and an
-   * uncaught error is fatal in any release build.
-   */
-  const scrollListToEnd = useCallback((animated: boolean) => {
-    listRef.current?.getNativeScrollRef()?.scrollToEnd({ animated });
-  }, []);
-
-  const restoreBottom = useCallback(() => {
-    pinnedToBottom.current = true;
-    readerScrolled.current = false;
-    scrollListToEnd(false);
-  }, [scrollListToEnd]);
-
-  useFocusEffect(
-    useCallback(() => {
-      restoreBottom();
-    }, [restoreBottom])
-  );
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') restoreBottom();
-    });
-    return () => subscription.remove();
-  }, [restoreBottom]);
-
-  const jumpToBottom = useCallback(() => {
-    pinnedToBottom.current = true;
-    readerScrolled.current = false;
-    scrollListToEnd(true);
-    setAtBottom(true);
-  }, [scrollListToEnd]);
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
@@ -422,20 +338,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               }}
               scrollIndicatorInsets={{ top: headerHeight }}
               /**
-               * The fix for "the chat isn't at the bottom".
-               *
-               * This is native and runs during layout, so it cannot lose a race the
-               * way a JS `scrollToEnd` does. `startRenderingFromBottom` means the
-               * first frame is already at the end rather than scrolling there after
-               * measuring, and the threshold keeps it pinned as the tail appends :
-               * but only while the reader is near the end, so scrolling back through
-               * history is never yanked.
+               * The first frame is already at the end rather than scrolling there
+               * after measuring, and rows keep their place as older history lands
+               * above them. Following the end after that is `useThreadScroll`'s
+               * alone: the list's own autoscroll (anyone within a fifth of a screen
+               * of the end) raced it and pulled readers that had just left.
                */
-              maintainVisibleContentPosition={{
-                startRenderingFromBottom: true,
-                autoscrollToBottomThreshold: 0.2,
-                animateAutoScrollToBottom: false,
-              }}
+              maintainVisibleContentPosition={{ startRenderingFromBottom: true }}
               // Reaching the top is a request for more history. Safe to fire more
               // than once: loadOlder walks a single anchor, so a repeat call either
               // finds the previous one still running or continues from where it
@@ -444,50 +353,18 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 if (historyInteraction.current === thread.historyVersion) void thread.loadOlder();
               }}
               onStartReachedThreshold={0.5}
+              {...scroll.listProps}
               onScrollBeginDrag={() => {
-                readerScrolled.current = true;
+                scroll.listProps.onScrollBeginDrag();
                 historyInteraction.current = thread.historyVersion;
                 // A short first window may already be at the top before the
                 // reader drags, so onStartReached will not fire a second time.
-                if (scrollOffset.current <= 0) void thread.loadOlder();
+                if (scroll.atTop()) void thread.loadOlder();
               }}
               // A measured spacer keeps the first message clear of the overlay.
               ListHeaderComponent={<View />}
               ListHeaderComponentStyle={{ height: headerHeight }}
-              onScroll={onScroll}
-              onLayout={(event) => {
-                viewportHeight.current = event.nativeEvent.layout.height;
-                if (pinnedToBottom.current) restoreBottom();
-              }}
               scrollEventThrottle={64}
-              /**
-               * `atBottom` starts true and, before this, only ever changed on a
-               * scroll event, so a thread that opened NOT at the bottom, or whose
-               * content grew past the viewport without the reader touching it, kept
-               * claiming it was at the end. The jump button is suppressed while
-               * that flag is true, which left the one control for getting back to
-               * the newest message hidden exactly when it was needed.
-               *
-               * Content size changes on every batch of history, so this is where
-               * the flag can be honest without waiting for a finger.
-               */
-              onContentSizeChange={(_width, height) => {
-                if (anchorAfterControlsResize.current) {
-                  anchorAfterControlsResize.current = false;
-                  restoreBottom();
-                  setAtBottom(true);
-                  return;
-                }
-                // Pinned, the end follows the content: a message measured taller
-                // than its estimate grows the list after the first frame.
-                if (pinnedToBottom.current) {
-                  restoreBottom();
-                  setAtBottom(true);
-                  return;
-                }
-                const distance = height - scrollOffset.current - viewportHeight.current;
-                setAtBottom(distance <= BOTTOM_SLACK);
-              }}
               renderItem={({ item, index }) => (
                 <View
                   style={{
@@ -572,9 +449,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               bottom: controlsHeight,
             }}>
             <JumpToBottom
-              visible={!atBottom && rows.length > 0}
-              unreadBelow={!atBottom && waiting}
-              onPress={jumpToBottom}
+              visible={scroll.awayFromEnd && rows.length > 0}
+              unreadBelow={scroll.awayFromEnd && waiting}
+              onPress={() => scroll.followEnd(true)}
             />
           </View>
 
@@ -590,11 +467,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
             <View
               onLayout={(event) => {
                 const height = event.nativeEvent.layout.height;
-                if (height === controlsHeight) return;
-                // Wait until the matching footer has actually been laid out.
-                // Scrolling here still uses the previous, shorter content size.
-                anchorAfterControlsResize.current = pinnedToBottom.current;
-                setControlsHeight(height);
+                // The footer's clearance follows, and the list follows its
+                // content size change.
+                if (height !== controlsHeight) setControlsHeight(height);
               }}
               style={{
                 position: 'absolute',
@@ -681,12 +556,10 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     <Pressable
                       onPress={() => {
                         haptics.light();
-                        // No scroll: the reloaded list remounts (its key is the
-                        // history version) and starts at the bottom by itself.
-                        void thread.reload().then(() => {
-                          pinnedToBottom.current = true;
-                          setAtBottom(true);
-                        });
+                        // The reloaded list remounts (its key is the history
+                        // version) and starts at the end by itself.
+                        scroll.followEnd(false);
+                        void thread.reload();
                       }}
                       accessibilityRole="button"
                       accessibilityLabel="Reload this conversation"

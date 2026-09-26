@@ -853,6 +853,33 @@ it('restarts a dropped tail at once and quietly, and speaks up only if that fail
   await unmount();
 });
 
+// Reported: scrolling up through a long answer threw the reader to the bottom.
+// A tail restart re-read the end and replaced the window, and the list, keyed by
+// the history version, rebuilt itself at the end.
+it('continues the window on a tail restart, keeping older history and the list', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  jest.mocked(tailCursor).mockResolvedValue(10_000);
+  mockRecent.mockResolvedValue({ messages: [turn('a', 1), turn('b', 2), turn('c', 3)], consumedBytes: 50_000, startByte: 40_000 });
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.historyVersion).toBe(1);
+  mockOlder.mockResolvedValue({ messages: [turn('z', 0)], startByte: 30_000, reachedStart: false });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a', 'b', 'c']);
+
+  // The stream ended; the next poll restarts it and re-reads a later window.
+  mockRecent.mockResolvedValue({ messages: [turn('b', 2), turn('c', 3), turn('d', 4)], consumedBytes: 60_000, startByte: 45_000 });
+  mockProbe = { kind: 'size', bytes: 60_000 };
+  const starts = mockTailStarts.length;
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
+  expect(mockTailStarts.length).toBeGreaterThan(starts);
+  expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a', 'b', 'c', 'd']);
+  expect(result.current.historyVersion).toBe(1);
+  await unmount();
+});
+
 // A page of older history for one conversation can arrive after the workspace
 // slot has moved on to another. It must never land in the new one (574ef79).
 it('drops a page of older history that arrives after the session changed', async () => {

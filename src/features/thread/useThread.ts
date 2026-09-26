@@ -31,6 +31,7 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { continueWindow } from '@/lib/transcript/window';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
   appendMessages,
@@ -588,11 +589,17 @@ export function useThread(
         if (windows.length > 1) latest.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
         await replaceMessages(db, connectionId, workspaceId, sig, latest);
         if (!current()) return;
-        arrivals.current = latest;
-        seen.current = new Set(latest.map(message => message.id));
-        olderSource.current = null;
+        // A restart re-reads the end of the transcript. When that continues what
+        // is on screen, keep the older history the reader paged back to and the
+        // list as it is, so a reader mid-scroll stays put. Only a window that
+        // cannot continue (a gap, or the first read) is a new list.
+        const continued = continueWindow(arrivals.current, latest);
+        const keptOlder = continued !== null && continued.length > latest.length;
+        arrivals.current = continued ?? latest;
+        seen.current = new Set(arrivals.current.map(message => message.id));
+        if (!keptOlder) olderSource.current = null;
         rebuild();
-        setHistoryVersion(version => version + 1);
+        if (continued === null) setHistoryVersion(version => version + 1);
       }
 
       setTailError(openingError);
