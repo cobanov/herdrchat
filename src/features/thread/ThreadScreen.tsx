@@ -26,6 +26,7 @@ import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
+import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
@@ -549,6 +550,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     </View>
                   )}
                 </View>
+                <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
                   {thread.status === 'working' ? (
                     <StopButton onStop={(hard) => void thread.interrupt(hard)} />
@@ -565,7 +567,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                       accessibilityLabel="Reload this conversation"
                       testID="thread-reload"
                       style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon name="arrow.clockwise" size={19} tintColor={colors.label} fallback={<Text>↻</Text>} />
+                      <Icon name="arrow.clockwise" size={size.headerGlyph} tintColor={colors.label} fallback={<Text>↻</Text>} />
                     </Pressable>
                   )}
                 </Glass>

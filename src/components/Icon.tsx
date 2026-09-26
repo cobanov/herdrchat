@@ -50,6 +50,8 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   'square.and.pencil': 'edit_square',
   'stop.circle': 'stop_circle',
   tray: 'inbox',
+  'wrench.and.screwdriver': 'build',
+  'wrench.and.screwdriver.fill': 'build',
   xmark: 'close',
   'xmark.circle.fill': 'cancel',
 };

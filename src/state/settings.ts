@@ -12,9 +12,10 @@ import type { ThemePreference } from '@/theme/ThemeProvider';
 export interface Settings {
   themePreference: ThemePreference;
   /**
-   * Show the agent's machinery — tool calls, tool results, thinking — as chips
-   * inside bubbles. Off gives you only what the agent actually said, which is
-   * what some people want from a phone.
+   * Show the agent's machinery (tool calls, tool results, thinking) as chips
+   * inside bubbles. Off by default: a run of a dozen tool chips between two
+   * sentences made the thread read like a log rather than a conversation.
+   * Switchable from Settings and from each chat's header.
    */
   showToolActivity: boolean;
   /** Subagent chatter. Off by default: it is rarely what you opened the app for. */
@@ -66,7 +67,7 @@ export function decodePollScale(value: string | null): PollScale {
 
 export const SETTINGS_DEFAULTS: Settings = {
   themePreference: 'system',
-  showToolActivity: true,
+  showToolActivity: false,
   showSidechain: false,
   haptics: true,
   notifications: false,
