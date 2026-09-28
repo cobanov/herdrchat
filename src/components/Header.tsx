@@ -29,6 +29,7 @@ export function Header({
   actionLabel,
   onAction,
   onClose,
+  closeLabel = 'Done',
 }: {
   title: string;
   subtitle?: string | null;
@@ -42,6 +43,12 @@ export function Header({
    * presented screen needs a real button too.
    */
   onClose?: () => void;
+  /**
+   * What the dismiss control says. "Done" reads as "keep what I did", so a
+   * form whose close throws the input away says "Cancel" instead: people
+   * filled a new host, tapped Done and lost it.
+   */
+  closeLabel?: string;
 }) {
   const { colors } = useTheme();
   const titleLine = useScaledLine(headerTitleLine);
@@ -61,7 +68,7 @@ export function Header({
             // The label a person reads is the one Voice Control listens for.
             // "Close" here while the screen said "Done" left "Tap Done" with
             // nothing to find (#112).
-            accessibilityLabel="Done"
+            accessibilityLabel={closeLabel}
             testID="header-close"
             hitSlop={spacing.sm}
             style={({ pressed }) => ({
@@ -72,7 +79,7 @@ export function Header({
               opacity: pressed ? 0.5 : 1,
             })}>
             <Text variant="headline" color="tint">
-              Done
+              {closeLabel}
             </Text>
           </Pressable>
         )}

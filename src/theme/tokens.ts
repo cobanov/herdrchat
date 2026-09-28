@@ -102,6 +102,11 @@ export const size = {
   attachmentRemoveRing: 2,
   /** The longer side of a sent picture in a bubble. */
   bubbleImage: 220,
+  /**
+   * Host and port on one line of the host form, as flex weights. A quarter of
+   * a phone's line still holds a five-digit port at the default text size.
+   */
+  hostPortWeights: [3, 1],
 } as const;
 
 /**
