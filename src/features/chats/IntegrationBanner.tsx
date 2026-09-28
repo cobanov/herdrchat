@@ -4,13 +4,12 @@ import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
 
-const NAMES = { claude: 'Claude', codex: 'Codex' } as const;
+const NAMES = { claude: 'Claude', codex: 'Codex', omp: 'OMP' } as const;
 
 /**
- * herdr on this host reports its Claude or Codex integration as out of date,
- * usually after a herdr upgrade (0.9.1 moved Claude's to v10). The fix is one
- * reinstall, which the banner offers; running agents pick it up the next time
- * they start or resume.
+ * herdr on this host reports one of its chat-agent integrations as out of date,
+ * usually after a herdr upgrade. The fix is one reinstall, which the banner
+ * offers; running agents pick it up the next time they start or resume.
  */
 export function IntegrationBanner({
   outdated,
@@ -18,7 +17,7 @@ export function IntegrationBanner({
   error,
   onUpdate,
 }: {
-  outdated: readonly ('claude' | 'codex')[];
+  outdated: readonly ('claude' | 'codex' | 'omp')[];
   updating: boolean;
   error: string | null;
   onUpdate: () => void;

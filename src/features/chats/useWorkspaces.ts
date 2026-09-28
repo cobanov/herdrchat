@@ -11,7 +11,7 @@ import { HerdrError } from '@/lib/herdr/protocol';
 import {
   needsAttention,
   sessionSignature,
-  hasSessionId,
+  hasSessionReference,
   type AgentInfo,
   type AgentStatus,
   type RestoreError,
@@ -343,7 +343,7 @@ export async function refreshPreviews(
     // to the newest .jsonl here. The row shows its live status line instead of a
     // preview that might belong to a foreign conversation.
     const agent =
-      group.find((item) => item.focused && hasSessionId(item)) ?? group.find(hasSessionId);
+      group.find((item) => item.focused && hasSessionReference(item)) ?? group.find(hasSessionReference);
     const sessionId = agent?.agentSession?.value ?? null;
     if (agent === undefined || sessionId === null) continue;
 
@@ -359,7 +359,7 @@ export async function refreshPreviews(
     });
     if (!fullSweep && !active && !moved && previews.get(workspaceId)?.sessionSig === sessionSig) continue;
 
-    requests.push({ workspaceId, cwd: agent.cwd, sessionId, agent: agent.agent ?? undefined });
+    requests.push({ workspaceId, cwd: agent.cwd, sessionId, sessionKind: agent.agentSession?.kind, agent: agent.agent ?? undefined });
     requestedFor.set(workspaceId, sessionSig);
   }
   // Only after a refresh that worked, so a failed one is retried next poll.

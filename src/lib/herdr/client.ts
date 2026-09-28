@@ -39,6 +39,9 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
  */
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 
+/** The built-in integrations HerdrChat can install and update. */
+export type IntegrationName = 'claude' | 'codex' | 'omp';
+
 /**
  * How long to let herdr watch for the agent to react.
  *
@@ -245,12 +248,11 @@ export class HerdrClient {
   }
 
   /**
-   * Install one of herdr's agent integrations on the host.
+   * Install one of herdr's chat-agent integrations on the host.
    *
-   * The Claude integration is what makes herdr report `agent_session.value` —
-   * the transcript filename this whole app is built on. Without it every pane
-   * reports a null session, the thread cannot identify which conversation it is
-   * looking at, and it refuses to guess.
+   * An integration makes herdr report the agent's native session reference.
+   * Without it the thread cannot identify which conversation it is looking at,
+   * and it refuses to guess.
    *
    * We already detected that precisely and told the user which command to run;
    * this is the same thing with the terminal step removed. Less invasive than
@@ -278,30 +280,30 @@ export class HerdrClient {
   }
 
   /**
-   * The integrations this app relies on (Claude, Codex) that the host reports
-   * as `outdated`. herdr 0.9.1 moved the Claude integration from v9 to v10
-   * (when its SessionStart hook fires) and says to reinstall, and nothing
-   * tells a user who upgraded herdr that theirs is now stale (#93).
+   * The chat-agent integrations that the host reports as `outdated`. herdr
+   * tells a user who upgraded it that an existing integration is stale (#93).
    *
    * Null when the host cannot be asked: no socket, or a herdr without
    * `integration.list`. Best effort, so any failure is also null, never a
    * banner of its own.
    */
-  async outdatedIntegrations(): Promise<('claude' | 'codex')[] | null> {
+  async outdatedIntegrations(): Promise<IntegrationName[] | null> {
     if ((await this.socket.detect()) === null) return null;
     try {
       const result = await this.socket.call('integration.list', {}, POLL_TIMEOUT_MS);
       return asArray(field(result, 'integrations')).flatMap((item) => {
         if (typeof item !== 'object' || item === null) return [];
         const { target, state } = item as { target?: unknown; state?: unknown };
-        return (target === 'claude' || target === 'codex') && state === 'outdated' ? [target] : [];
+        return (target === 'claude' || target === 'codex' || target === 'omp') && state === 'outdated'
+          ? [target]
+          : [];
       });
     } catch {
       return null;
     }
   }
 
-  async installIntegration(name = 'claude'): Promise<void> {
+  async installIntegration(name: IntegrationName = 'claude'): Promise<void> {
     const output = await this.shell(
       shellCommand([this.herdr, 'integration', 'install', name]),
       INSTALL_TIMEOUT_MS

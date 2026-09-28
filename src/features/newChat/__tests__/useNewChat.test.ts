@@ -51,13 +51,13 @@ it('closes the half-made workspace when the retry is for another folder', async 
   expect(client.createWorkspace).toHaveBeenCalledTimes(2);
 });
 
-// #114: a new chat can start Codex, which takes no Claude permission flags.
-it('starts Codex without Claude permission arguments', async () => {
+// Non-Claude agents launch directly, without Claude's permission arguments.
+it.each(['codex', 'omp'] as const)('starts %s without Claude permission arguments', async (agent) => {
   const client = fakeClient();
   const { result } = await renderHook(() => useStartChat('host'));
   await act(async () => {
-    await result.current.start(client as unknown as HerdrClient, { ...choice, agent: 'codex' });
+    await result.current.start(client as unknown as HerdrClient, { ...choice, agent });
   });
-  expect(client.startNamedAgent).toHaveBeenCalledWith('w1:p1', expect.any(String), 'codex', [], 'codex');
-  expect(mockDb.runAsync).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO settings'), 'agent.host', 'codex');
+  expect(client.startNamedAgent).toHaveBeenCalledWith('w1:p1', expect.any(String), agent, [], agent);
+  expect(mockDb.runAsync).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO settings'), 'agent.host', agent);
 });

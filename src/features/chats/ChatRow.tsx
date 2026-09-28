@@ -14,7 +14,12 @@ export const AVATAR_SIZE = size.chatBadge;
  * How the agents herdr detects are named on a row. Letta Code joined in herdr
  * 0.9.1 (#120); anything else shows herdr's own id.
  */
-const AGENT_NAMES: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', letta: 'Letta' };
+const AGENT_NAMES: Readonly<Record<string, string>> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  omp: 'OMP',
+  letta: 'Letta',
+};
 
 /** Something a row can do besides open, named for assistive technology. */
 export interface RowAction {

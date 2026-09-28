@@ -14,10 +14,11 @@ import {
 import { HerdrError } from '@/lib/herdr/protocol';
 import { getSetting, setSetting } from '@/state/db';
 
-/** The agents a new chat can start. Both have full chat support once running. */
-export type NewChatAgent = 'claude' | 'codex';
+/** The agents a new chat can start. All have chat support once running. */
+export type NewChatAgent = 'claude' | 'codex' | 'omp';
 
-const isAgent = (value: unknown): value is NewChatAgent => value === 'claude' || value === 'codex';
+const isAgent = (value: unknown): value is NewChatAgent =>
+  value === 'claude' || value === 'codex' || value === 'omp';
 
 export interface Remembered {
   cwd: string;
@@ -99,7 +100,7 @@ export function useStartChat(connectionId: string | null) {
         agentName(creation.workspace.label),
         choice.agent,
         choice.agent === 'claude' ? launchArgs(choice.mode) : [],
-        choice.agent === 'claude' ? launchCommand(choice.mode) : 'codex'
+        choice.agent === 'claude' ? launchCommand(choice.mode) : choice.agent
       );
       pending.current = null;
       const key = (name: string) => `${name}.${connectionId ?? 'none'}`;

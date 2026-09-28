@@ -74,11 +74,12 @@ export function ThreadPlaceholder({
   onBack?: () => void;
   title: string;
   sessionState: SessionState;
-  agentKind?: 'claude' | 'codex';
+  agentKind?: 'claude' | 'codex' | 'omp';
   onInstallIntegration?: () => void;
   installing: boolean;
   installError: string | null;
 }) {
+  const agentName = agentKind === 'omp' ? 'OMP' : agentKind === 'codex' ? 'Codex' : 'Claude';
   return (
     <View
       style={{
@@ -99,7 +100,7 @@ export function ThreadPlaceholder({
         <>
           <Text variant="title3" style={{ textAlign: 'center' }}>Chat history is not supported for this agent</Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            HerdrChat can read Claude Code and Codex conversations. Open this agent in the host terminal to read its output.
+            HerdrChat can read Claude Code, Codex, and OMP conversations. Open this agent in the host terminal to read its output.
           </Text>
         </>
       ) : sessionState === 'missing' ? (
@@ -111,11 +112,11 @@ export function ThreadPlaceholder({
             Can&apos;t identify this chat
           </Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            The agent isn&apos;t reporting which {agentKind === 'codex' ? 'Codex' : 'Claude'} session it is, so this thread can&apos;t be
+            The agent isn&apos;t reporting which {agentName} session it is, so this thread can&apos;t be
             told apart from others in the same folder.
           </Text>
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
-            Install the integration, then resume this same session on the host when the agent is idle.
+            Install the integration, then resume or switch to this same session on the host when the agent is idle.
             The integration reports at session start. Your running agent will not be restarted by this button.
             {agentKind === 'codex' ? ' This adds a Codex launcher in ~/.local/bin for future chats. In the current Codex chat, find its session id with /status. When idle, exit and run herdrchat-codex resume <session-id>. Review the Herdr hook in /hooks if prompted.' : ''}
           </Text>

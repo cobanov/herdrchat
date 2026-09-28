@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { HerdrClient } from '@/lib/herdr/client';
+import type { HerdrClient, IntegrationName } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 
 export interface OutdatedIntegrations {
   /** Integrations the host reports as outdated. Empty when none, or unknown. */
-  outdated: readonly ('claude' | 'codex')[];
+  outdated: readonly IntegrationName[];
   updating: boolean;
   error: string | null;
   /** Reinstall every outdated integration, then ask the host again. */
@@ -13,7 +13,7 @@ export interface OutdatedIntegrations {
 }
 
 /**
- * Asks the host once per client whether herdr's Claude or Codex integration is
+ * Asks the host once per client whether herdr's chat-agent integrations are
  * out of date, and offers the reinstall (#93). A host that cannot be asked
  * reports nothing: this is advice, never an error of its own.
  *
@@ -21,7 +21,7 @@ export interface OutdatedIntegrations {
  * uses it is itself keyed by connection, which resets this state with it.
  */
 export function useOutdatedIntegrations(client: HerdrClient | null): OutdatedIntegrations {
-  const [outdated, setOutdated] = useState<readonly ('claude' | 'codex')[]>([]);
+  const [outdated, setOutdated] = useState<readonly IntegrationName[]>([]);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

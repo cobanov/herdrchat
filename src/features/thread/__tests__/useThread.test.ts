@@ -69,6 +69,8 @@ jest.mock('@/lib/transcript/store', () => ({
     findClaudeTranscript = async () => null;
     lineStartBefore = async (_path: string, byte: number) => byte - 321;
     codexTranscriptPath = mockCodexPath;
+    ompTranscriptPath = async (value: string) => value;
+    verifyOmpTranscript = async () => undefined;
     forgetCodexTranscript = jest.fn();
     fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
     recent = mockRecent;
@@ -239,6 +241,24 @@ it('resolves a Codex transcript by native session id and namespaces its cache', 
   expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'codex:session');
   expect(result.current.loading).toBe(false);
   expect(result.current.sessionState).toBe('ok');
+  await unmount();
+});
+
+it('opens a reported OMP path and keeps independently reported thinking settings across turns', async () => {
+  mockRecentMessages = [{ id: 'omp-reply', role: 'assistant', timestamp: 1, agentLabel: null,
+    isSidechain: false, segments: [{ kind: 'text', text: 'OMP reply' }] }];
+  mockLiveMeta = [
+    { model: null, effort: 'high', contextTokens: null },
+    { model: 'gpt-5', contextTokens: 200 },
+  ];
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{
+    ...agent, agent: 'omp',
+    agentSession: { agent: 'omp', kind: 'path', source: 'herdr:omp', value: '/custom/chat.jsonl' },
+  }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.sessionState).toBe('ok');
+  expect(result.current.error).toBeNull();
+  expect(result.current.sessionMeta).toEqual({ model: 'gpt-5', effort: 'high', contextTokens: 200 });
   await unmount();
 });
 
