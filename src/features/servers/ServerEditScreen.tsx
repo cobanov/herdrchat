@@ -2,11 +2,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
-import { Field, SegmentedField } from '@/components/Field';
+import { Field, FieldRow, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
@@ -16,7 +16,7 @@ import { connectionRecovery, type RecoveryAction } from '@/lib/connectionRecover
 import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
 import { shouldResetPin } from '@/lib/hostkey';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
@@ -341,7 +341,10 @@ export default function ServerEditScreen() {
 
   return (
     <Screen presentation="sheet">
-      <Header title={isNew ? 'New host' : 'Edit host'} onClose={close} />
+      {/* Cancel, not Done: this control throws the form away, and "Done" read
+          as "keep it", so a filled-in host was lost by the one tap that looked
+          like finishing. Saving is the button at the foot of the sheet. */}
+      <Header title={isNew ? 'New host' : 'Edit host'} onClose={close} closeLabel="Cancel" />
 
       {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets); Android
           has no such prop, and with edge-to-edge the window no longer resizes,
@@ -358,12 +361,9 @@ export default function ServerEditScreen() {
         contentContainerStyle={{
           padding: screenPadding,
           gap: spacing.lg,
-          paddingBottom: spacing.xxxl,
         }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        // Without this the keyboard covers the submit button at the end of the
-        // form, which is the one control the whole screen exists to reach.
         automaticallyAdjustKeyboardInsets>
         <View
           onLayout={(event) => {
@@ -377,21 +377,23 @@ export default function ServerEditScreen() {
             onChangeText={invalidate(setName)}
             testID="field-name"
           />
-          <Field
-            label="Host"
-            placeholder="100.x.y.z or a Tailscale name"
-            value={host}
-            onChangeText={invalidate(setHost)}
-            autoCapitalize="none"
-            testID="field-host"
-          />
-          <Field
-            label="Port"
-            value={port}
-            onChangeText={invalidate(setPort)}
-            keyboardType="number-pad"
-            testID="field-port"
-          />
+          <FieldRow weights={size.hostPortWeights}>
+            <Field
+              label="Host"
+              placeholder="100.x.y.z or a name"
+              value={host}
+              onChangeText={invalidate(setHost)}
+              autoCapitalize="none"
+              testID="field-host"
+            />
+            <Field
+              label="Port"
+              value={port}
+              onChangeText={invalidate(setPort)}
+              keyboardType="number-pad"
+              testID="field-port"
+            />
+          </FieldRow>
           <Field
             label="Username"
             value={username}
@@ -437,38 +439,95 @@ export default function ServerEditScreen() {
           </Text>
         </View>
 
+        {/* Blank session is the common case and the right default. Naming one
+            only matters on a host running more than one, where we previously
+            drove whichever the default resolved to without saying so. */}
         <View
           onLayout={(event) => {
             fieldOffsets.current.path = event.nativeEvent.layout.y;
-          }}>
-          <Field
-            label="herdr path"
-            value={herdrPath}
-            onChangeText={invalidate(setHerdrPath)}
-            autoCapitalize="none"
-            testID="field-herdr-path"
-          />
-        </View>
-
-        {/* Blank is the common case and the right default. Naming a session only
-            matters on a host running more than one, where we previously drove
-            whichever the default resolved to without saying so. */}
-        <View style={{ gap: spacing.xs }}>
-          <Field
-            label="herdr session"
-            placeholder="Default"
-            value={sessionName}
-            onChangeText={invalidate(setSessionName)}
-            autoCapitalize="none"
-            testID="field-session"
-          />
+          }}
+          style={{ gap: spacing.sm }}>
+          <FieldRow>
+            <Field
+              label="herdr path"
+              value={herdrPath}
+              onChangeText={invalidate(setHerdrPath)}
+              autoCapitalize="none"
+              testID="field-herdr-path"
+            />
+            <Field
+              label="herdr session"
+              placeholder="Default"
+              value={sessionName}
+              onChangeText={invalidate(setSessionName)}
+              autoCapitalize="none"
+              testID="field-session"
+            />
+          </FieldRow>
           <Text variant="caption" color="secondary">
-            Leave empty unless this machine runs more than one herdr session. The name is what
-            `herdr session list` shows.
+            Leave the session empty unless this machine runs more than one herdr session.
           </Text>
         </View>
 
-        <View style={{ gap: spacing.md }}>
+        {/* What a test found beyond a plain pass sits at the end of the form,
+            and the form scrolls to it: the recovery button is the next thing to
+            press, so it must not open below the fold. */}
+        {test.kind === 'failed' && (
+          <View
+            onLayout={() => form.current?.scrollToEnd({ animated: true })}
+            style={{
+              padding: spacing.md,
+              borderRadius: radius.sm,
+              backgroundColor: colors.fillSubtle,
+              gap: spacing.sm,
+            }}>
+            <Text variant="subhead" weight="600">
+              {connectionRecovery(test.code).title}
+            </Text>
+            <Text variant="footnote" color="secondary">
+              {test.message}
+            </Text>
+            <Button
+              title={installing ? 'Working…' : connectionRecovery(test.code).label}
+              variant="tinted"
+              loading={installing}
+              onPress={() => void recover(connectionRecovery(test.code).action)}
+              testID="connection-recovery"
+            />
+          </View>
+        )}
+
+        {test.kind === 'keyChanged' && (
+          <View onLayout={() => form.current?.scrollToEnd({ animated: true })}>
+            <KeyChangedPanel message={test.message} presented={test.presented} saved={storedPin} onTrust={trustNewKey} />
+          </View>
+        )}
+
+        {/* Shown once there is something true to show: a key a test just
+            accepted, or the pin this host is already bound to. */}
+        {fingerprint !== null && test.kind !== 'keyChanged' && <HostFingerprint fingerprint={fingerprint} />}
+      </ScrollView>
+
+      {/* Test and Save are pinned below the form rather than at its end. At
+          the end they sat under the fold of a long form, and the only control
+          left in sight was the header's, which is how a new host got dropped
+          instead of saved. */}
+      <View
+        style={{
+          paddingHorizontal: screenPadding,
+          paddingTop: spacing.md,
+          paddingBottom: Math.max(insets.bottom, spacing.lg),
+          gap: spacing.sm,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.separator,
+          backgroundColor: colors.systemBackground,
+        }}>
+        {test.kind === 'ok' && (
+          <Text variant="subhead" color="tint" weight="600" style={{ textAlign: 'center' }} testID="test-ok">
+            Connected. herdr {test.version ?? 'is answering'}.
+          </Text>
+        )}
+        <FieldRow>
           <Button
             title={test.kind === 'testing' ? 'Testing…' : 'Test connection'}
             variant="tinted"
@@ -477,66 +536,19 @@ export default function ServerEditScreen() {
             onPress={() => void runTest()}
             testID="test-connection"
           />
-
-          {test.kind === 'ok' && (
-            <View
-              style={{
-                padding: spacing.md,
-                borderRadius: radius.sm,
-                backgroundColor: colors.tintMuted,
-              }}>
-              <Text variant="subhead" color="tint" weight="600" testID="test-ok">
-                Connected. herdr {test.version ?? 'is answering'}.
-              </Text>
-            </View>
-          )}
-
-          {test.kind === 'failed' && (
-            <View
-              style={{
-                padding: spacing.md,
-                borderRadius: radius.sm,
-                backgroundColor: colors.fillSubtle,
-                gap: spacing.sm,
-              }}>
-              <Text variant="subhead" weight="600">
-                {connectionRecovery(test.code).title}
-              </Text>
-              <Text variant="footnote" color="secondary">
-                {test.message}
-              </Text>
-              <Button
-                title={installing ? 'Working…' : connectionRecovery(test.code).label}
-                variant="tinted"
-                loading={installing}
-                onPress={() => void recover(connectionRecovery(test.code).action)}
-                testID="connection-recovery"
-              />
-            </View>
-          )}
-
-          {test.kind === 'keyChanged' && (
-            <KeyChangedPanel message={test.message} presented={test.presented} saved={storedPin} onTrust={trustNewKey} />
-          )}
-
-          {/* Shown once there is something true to show: a key a test just
-              accepted, or the pin this host is already bound to. */}
-          {fingerprint !== null && test.kind !== 'keyChanged' && <HostFingerprint fingerprint={fingerprint} />}
-
           <Button
             title="Save"
             onPress={() => void save()}
             disabled={test.kind !== 'ok'}
             testID="save-server"
           />
-          {test.kind !== 'ok' && (
-            <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
-              Test the connection before saving, so a typo doesn’t become a chat list that silently
-              fails to load.
-            </Text>
-          )}
-        </View>
-      </ScrollView>
+        </FieldRow>
+        {test.kind !== 'ok' && (
+          <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+            Save turns on once the connection test passes.
+          </Text>
+        )}
+      </View>
       </KeyboardAvoidingView>
     </Screen>
   );

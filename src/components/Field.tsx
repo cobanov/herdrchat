@@ -1,3 +1,4 @@
+import { Children, type ReactNode } from 'react';
 import {
   Pressable,
   TextInput,
@@ -45,6 +46,27 @@ export function Field({ label, mono = false, multiline, ...rest }: FieldProps) {
         }}
         {...rest}
       />
+    </View>
+  );
+}
+
+/**
+ * Fields that share a line, such as host and port.
+ *
+ * `weights` splits the width, one entry per child, so a port takes a quarter
+ * of the line and the host the rest. Past the accessibility text sizes the
+ * fields stack, the same breakpoint the segmented picker uses: two labels side
+ * by side at AX5 truncate before either field is readable.
+ */
+export function FieldRow({ children, weights }: { children: ReactNode; weights?: readonly number[] }) {
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale >= STACK_ABOVE_FONT_SCALE;
+
+  return (
+    <View style={{ flexDirection: stacked ? 'column' : 'row', gap: stacked ? spacing.sm : spacing.md }}>
+      {Children.map(children, (child, index) => (
+        <View style={stacked ? undefined : { flex: weights?.[index] ?? 1 }}>{child}</View>
+      ))}
     </View>
   );
 }
