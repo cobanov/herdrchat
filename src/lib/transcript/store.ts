@@ -613,7 +613,8 @@ export class TranscriptStore {
       const messages = parseTranscript(block.slice(headerEnd + 1));
       const last = findLast(
         messages,
-        (message) => !message.isSidechain && !isToolOnly(message)
+        // A command's note ("Cancelled") is neither news nor the conversation.
+        (message) => !message.isSidechain && !isToolOnly(message) && message.role !== 'system'
       );
       if (last !== undefined) result.set(workspaceId, last);
     }

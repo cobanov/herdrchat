@@ -1,6 +1,6 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
-import { claudeUserText, isClaudeHarnessLine } from './harness';
+import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine } from './harness';
 import { splitImages } from './images';
 import type { SessionMeta } from './sessionMeta';
 
@@ -142,6 +142,17 @@ function messageFrom(
   if (role === 'user' && isClaudeHarnessLine(raw)) return null;
 
   const message = asRecord(raw.message);
+  const output = role === 'user' ? commandOutput(message?.content) : null;
+  if (output !== null) {
+    return {
+      id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+      role: 'system',
+      segments: [{ kind: 'text', text: output }],
+      timestamp: parseTimestamp(raw.timestamp),
+      agentLabel,
+      isSidechain: raw.isSidechain === true,
+    };
+  }
   const segments = segmentsFrom(message?.content, role);
   if (segments.length === 0) return null;
 
@@ -153,6 +164,14 @@ function messageFrom(
     agentLabel,
     isSidechain: raw.isSidechain === true,
   };
+}
+
+/** A slash command's printed result, whether the turn is a string or one text block. */
+function commandOutput(content: unknown): string | null {
+  if (typeof content === 'string') return claudeCommandOutput(content);
+  if (!Array.isArray(content) || content.length !== 1) return null;
+  const block = asRecord(content[0]);
+  return block?.type === 'text' && typeof block.text === 'string' ? claudeCommandOutput(block.text) : null;
 }
 
 /**
@@ -204,9 +223,13 @@ function metaFrom(raw: Record<string, unknown>): SessionMeta | null {
   const contextTokens =
     counts.length === 0 ? null : counts.reduce((total, value) => total + value, 0);
   const model = typeof message.model === 'string' ? message.model : null;
+  // Claude writes the turn's effort beside the message (2.1.285: `effort`,
+  // plus a `perTurnEffort` that is null unless set for one turn). Checked
+  // like Codex's: a short lowercase word, never free text in the header.
+  const effort = typeof raw.effort === 'string' && /^[a-z]{1,16}$/.test(raw.effort) ? raw.effort : null;
 
   if (model === null && contextTokens === null) return null;
-  return { model, contextTokens };
+  return { model, effort, contextTokens };
 }
 
 function roleOf(type: unknown): MessageRole | null {

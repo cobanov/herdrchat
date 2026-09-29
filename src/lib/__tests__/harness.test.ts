@@ -59,7 +59,7 @@ describe('Claude harness lines (#78)', () => {
 
   it.each([
     ['<task-notification>\n<task-id>x</task-id>\n</task-notification>'],
-    ['<local-command-stdout>Set model to Opus</local-command-stdout>'],
+    ['<local-command-stdout></local-command-stdout>'],
     ['<local-command-caveat>Caveat: …</local-command-caveat>'],
     ['<bash-stdout>total 8</bash-stdout><bash-stderr></bash-stderr>'],
     ['<system-reminder>stay on task</system-reminder>'],
@@ -72,6 +72,17 @@ describe('Claude harness lines (#78)', () => {
     const command = '<command-message>model</command-message>\n<command-name>/model</command-name>\n<command-args></command-args>';
     expect(claudeUserText(command)).toBe('/model');
     expect(claudeUserText('<command-name>/review</command-name><command-args> 42 </command-args>')).toBe('/review 42');
+  });
+
+  // Measured on 2.1.285: the only trace in the chat that /effort did anything.
+  it('shows what a slash command printed as a note', () => {
+    const line = user('<local-command-stdout>Set model to `Opus 5.5 (default)` and saved as your default for new sessions</local-command-stdout>');
+    const message = parseTranscriptLine(line);
+    expect(message?.role).toBe('system');
+    expect(message?.segments).toEqual([
+      { kind: 'text', text: 'Set model to Opus 5.5 (default) and saved as your default for new sessions' },
+    ]);
+    expect(parseTranscriptLine(user([{ type: 'text', text: '<local-command-stdout>Cancelled</local-command-stdout>' }]))?.role).toBe('system');
   });
 
   it('shows shell mode as a ! command', () => {

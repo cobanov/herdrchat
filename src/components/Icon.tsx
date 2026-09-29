@@ -46,6 +46,7 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   'photo.on.rectangle': 'photo_library',
   plus: 'add',
   'server.rack': 'dns',
+  'slider.horizontal.3': 'tune',
   square: 'check_box_outline_blank',
   'square.and.pencil': 'edit_square',
   'stop.circle': 'stop_circle',

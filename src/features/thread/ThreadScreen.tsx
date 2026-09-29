@@ -21,6 +21,9 @@ import {
   type Attachment,
 } from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
+import { CommandNote } from '@/features/thread/CommandNote';
+import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
+import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
@@ -34,6 +37,7 @@ import { sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
+import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
@@ -132,6 +136,10 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+  // Only Claude's built-ins are offered; a Codex chat still sends what is typed.
+  const suggestions = thread.agents.some((agent) => agent.agent === 'claude')
+    ? commandSuggestions(draft, CLAUDE_COMMANDS)
+    : [];
 
   // Pictures waiting to go with the next message. They stay until a send is
   // taken, so a failed upload leaves them in place with the draft.
@@ -215,7 +223,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
-    thread.sessionMeta?.effort ?? null,
+    // "high effort", not a bare "high" that could be anything.
+    thread.sessionMeta?.effort == null ? null : `${thread.sessionMeta.effort} effort`,
     thread.workingDirName,
     // The connection before the agent: "online" under a banner saying the
     // chat is offline or paused contradicted it (#4 acceptance).
@@ -389,11 +398,15 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                         {item.message.agentLabel}
                       </Text>
                     )}
-                  <Bubble
-                    message={item.message}
-                    isLastInGroup={item.endsGroup}
-                    timeLabel={item.endsGroup ? formatTime(item.message.timestamp) : null}
-                  />
+                  {item.message.role === 'system' ? (
+                    <CommandNote message={item.message} />
+                  ) : (
+                    <Bubble
+                      message={item.message}
+                      isLastInGroup={item.endsGroup}
+                      timeLabel={item.endsGroup ? formatTime(item.message.timestamp) : null}
+                    />
+                  )}
                   {thread.failedIds.has(item.message.id) && (
                     <Pressable
                       onPress={() => void thread.retry(item.message.id)}
@@ -482,6 +495,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 paddingTop: spacing.sm,
                 paddingBottom: bottomInset,
               }}>
+              {thread.overlay !== null && !thread.isBlocked && (
+                <CommandPanelBar
+                  overlay={thread.overlay}
+                  busy={thread.overlayBusy}
+                  onKeys={(keys) => void thread.sendOverlayKeys(keys)}
+                />
+              )}
+              {suggestions.length > 0 && thread.overlay === null && (
+                <CommandSuggestions commands={suggestions} onPick={(command) => setDraft(`/${command.name} `)} />
+              )}
               {thread.isBlocked && (
                 <BlockedBar
                   prompt={thread.blockedPrompt}

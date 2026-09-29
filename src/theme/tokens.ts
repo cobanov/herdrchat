@@ -107,6 +107,10 @@ export const size = {
    * a phone's line still holds a five-digit port at the default text size.
    */
   hostPortWeights: [3, 1],
+  /** A glyph in a slash command's panel: its title mark, a tick, a stepper arrow. */
+  panelGlyph: 14,
+  /** How tall an information panel's text (/usage, /status) may grow before it scrolls. */
+  panelNotesMaxHeight: 180,
 } as const;
 
 /**
