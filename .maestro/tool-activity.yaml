@@ -1,5 +1,5 @@
-# iPhone, Demo only. Tool calls start hidden, and the thread header's switch
-# shows and hides them. Clear the stored choice first, so the default is tested:
+# iPhone, Demo only. Tool calls fold into one summary line per run ("Read 1
+# file"), closed by default; the thread header's switch opens every run. Clear the stored choice first, so the default is tested:
 #   sqlite3 "$(xcrun simctl get_app_container booted dev.herdr.HerdrChat data)/Documents/SQLite/herdrchat.db" \
 #     "delete from settings where key='showToolActivity'"
 # Run with APPEARANCE=Dark, then Light.
@@ -19,10 +19,9 @@ appId: dev.herdr.HerdrChat
 - tapOn: Chats
 - tapOn:
     id: chat-row-w1
-# The chips sit inside an accessible bubble, out of the accessibility tree, so
-# the switch's own state is asserted and the chips are checked on screenshots:
-# the "Found it" bubble carries a Read chip.
 - assertVisible: '.*Found it.*'
+- assertVisible: 'Read 1 file'
+- assertNotVisible: 'Read client.ts'
 - assertVisible:
     id: thread-tool-toggle
     checked: false
@@ -32,6 +31,7 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: thread-tool-toggle
     checked: true
+- assertVisible: 'Read client.ts'
 - takeScreenshot: tools-shown
 - tapOn:
     id: thread-tool-toggle

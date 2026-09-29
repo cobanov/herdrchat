@@ -26,6 +26,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/components/Glass', () => ({
   Glass: (props: ViewProps) => <MockView {...props} />,
+  EdgeFade: () => null,
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
@@ -60,7 +61,7 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(header.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
   expect(header.getByTestId('error-banner')).toHaveTextContent('Conversation updates paused. Reconnecting.');
   expect(screen.getAllByTestId('error-banner')).toHaveLength(1);
-  expect(screen.getByTestId('thread-header')).toHaveProp('edgeAttached', true);
+  expect(within(screen.getByTestId('thread-header')).getByTestId('thread-title')).toBeTruthy();
   expect(screen.getByTestId('thread-header-safe-area')).toHaveProp('edges', ['top', 'left', 'right']);
   expect(screen.getByTestId('thread-header-overlay')).toHaveStyle({ position: 'absolute', top: 0, left: 0, right: 0 });
   expect(screen.getByTestId('screen-content').props.style.maxWidth).toBeUndefined();

@@ -10,9 +10,11 @@
  * - a rule of `▔` drawn across its top, and
  * - a key-hint line at its foot ending in "Esc to cancel".
  *
- * Both are required. Agents print numbered lists all the time; the frame is
- * what separates a panel from prose. Codex draws its panels differently and
- * is not recognised here.
+ * Both are required, except for a confirmation that follows a pick ("Switch
+ * model?"), which has no hint line: it counts when a menu fills the rest of
+ * the screen with no composer under it. Agents print numbered lists all the
+ * time; the frame is what separates a panel from prose. Codex draws its
+ * panels differently and is not recognised here.
  *
  * Answering is by keys, never by digit. A digit in Claude's model picker
  * commits the row at once AND saves it as the default for new sessions, so a
@@ -64,12 +66,18 @@ export interface PaneOverlay {
 /** The panel on this screen, or null when there is none. */
 export function parsePaneOverlay(screen: string): PaneOverlay | null {
   const lines = screen.split('\n').map((line) => stripAnsi(line).replace(/\s+$/, ''));
-  const hintIndex = findLastIndex(lines, (line) => ESC_HINT.test(line));
-  if (hintIndex < 0) return null;
-  const ruleIndex = findLastIndex(lines.slice(0, hintIndex), (line) => line.includes(TOP_RULE));
+  const ruleIndex = findLastIndex(lines, (line) => line.includes(TOP_RULE));
   if (ruleIndex < 0) return null;
-
-  const body = lines.slice(ruleIndex + 1, hintIndex);
+  const hintIndex = findLastIndex(lines, (line) => ESC_HINT.test(line));
+  // A confirmation ("Switch model?") comes with no hint line at all. Without
+  // one the panel runs to the end of the screen, and must hold a menu and no
+  // composer (whose frame is a line of ─) to count.
+  const hinted = hintIndex > ruleIndex;
+  const end = hinted ? hintIndex : lines.length;
+  const body = lines.slice(ruleIndex + 1, end);
+  if (!hinted && (body.some((line) => COMPOSER_RULE.test(line)) || !body.some((line) => OPTION.test(line.trim())))) {
+    return null;
+  }
   const actions: OverlayAction[] = [];
   let adjust: PaneOverlay['adjust'] = null;
   let scale: OverlayScale | null = null;
@@ -133,9 +141,14 @@ export function parsePaneOverlay(screen: string): PaneOverlay | null {
 
   const [title, ...notes] = paragraphs(texts);
   if (title === undefined) return null;
-  for (const segment of (lines[hintIndex] ?? '').split(' · ')) {
-    const action = hintAction(segment.trim());
-    if (action !== null) actions.push(action);
+  if (hinted) {
+    for (const segment of (lines[hintIndex] ?? '').split(' · ')) {
+      const action = hintAction(segment.trim());
+      if (action !== null) actions.push(action);
+    }
+  } else {
+    // Claude's menus take Enter on the cursor's row and Esc to back out.
+    actions.push({ keys: ['Enter'], key: 'Enter', label: 'Confirm' }, { keys: ['Escape'], key: 'Esc', label: 'Cancel' });
   }
   // Cancel last, where a row of buttons puts the way out.
   actions.sort((a, b) => Number(a.key === 'Esc') - Number(b.key === 'Esc'));
@@ -162,7 +175,10 @@ export function overlayScaleKeys(overlay: PaneOverlay, level: number): string[] 
 
 const TOP_RULE = '▔'.repeat(8);
 const ESC_HINT = /\bEsc to (cancel|close|exit|go back)\b/i;
-const OPTION = /^(❯\s*)?(\d{1,2})\.\s+(.+)$/;
+/** The composer's frame: a line of nothing but ─. */
+const COMPOSER_RULE = /^\s*─{8,}\s*$/;
+/** A row: the cursor or a scroll arrow (a list longer than the panel), a number, the label. */
+const OPTION = /^(?:(❯)|[↓↑])?\s*(\d{1,2})\.\s+(.+)$/;
 const TICK = '✔';
 const SCALE_MARKER = '▲';
 const ADJUST_HINT = '←/→ to adjust';

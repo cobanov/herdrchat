@@ -131,6 +131,17 @@ const SYNTHETIC_MODEL = '<synthetic>';
 /** How much of a tool's input the chip may carry. A chip shows one line anyway. */
 const TOOL_INPUT_PREVIEW_CHARS = 2_000;
 
+/**
+ * How much of a tool's result is kept. The thread shows a few lines of it
+ * under an opened call; the rest (a whole file read, a test log) stays on
+ * the host rather than in every cached row.
+ */
+const TOOL_RESULT_PREVIEW_CHARS = 4_000;
+
+function capped(text: string): string {
+  return text.length <= TOOL_RESULT_PREVIEW_CHARS ? text : `${text.slice(0, TOOL_RESULT_PREVIEW_CHARS)}…`;
+}
+
 function messageFrom(
   raw: Record<string, unknown>,
   line: string,
@@ -302,9 +313,15 @@ function segmentFrom(block: unknown, role: MessageRole): MessageSegment | null {
         kind: 'toolUse',
         name: typeof value.name === 'string' ? value.name : 'tool',
         input: compactJson(value.input),
+        ...(typeof value.id === 'string' ? { id: value.id } : {}),
       };
     case 'tool_result':
-      return { kind: 'toolResult', text: flattenContent(value.content) };
+      return {
+        kind: 'toolResult',
+        text: capped(flattenContent(value.content)),
+        ...(typeof value.tool_use_id === 'string' ? { toolUseId: value.tool_use_id } : {}),
+        ...(value.is_error === true ? { isError: true } : {}),
+      };
     default:
       return null;
   }

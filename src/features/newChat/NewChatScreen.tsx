@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
+import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
 import { openChat } from '@/features/chats/navigation';
 import {
@@ -97,8 +98,7 @@ export default function NewChatScreen() {
       <ScrollView
         contentContainerStyle={{ padding: screenPadding, gap: spacing.lg }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets>
+        keyboardDismissMode="interactive">
         <View style={{ gap: spacing.sm }}>
           <Field
             label="Working directory"
@@ -170,16 +170,7 @@ export default function NewChatScreen() {
       {/* Start is pinned below the form rather than at its end, for the reason
           the host form's Save is: at the end it sat under the fold, and the
           only control in sight was the header's. */}
-      <View
-        style={{
-          paddingHorizontal: screenPadding,
-          paddingTop: spacing.md,
-          paddingBottom: Math.max(insets.bottom, spacing.lg),
-          gap: spacing.sm,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.separator,
-          backgroundColor: colors.systemBackground,
-        }}>
+      <SheetFooter>
         {/* Beside the button that failed, not at the end of the form, where it
             opened below the fold. */}
         {error !== null && (
@@ -199,7 +190,7 @@ export default function NewChatScreen() {
             Start turns on once there is a working directory.
           </Text>
         )}
-      </View>
+      </SheetFooter>
       </KeyboardAvoidingView>
     </Screen>
   );

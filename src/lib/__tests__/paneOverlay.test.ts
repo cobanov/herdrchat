@@ -83,3 +83,28 @@ describe('slash command panels', () => {
     expect(overlay.actions).toEqual([{ keys: ['Escape'], key: 'Esc', label: 'Cancel' }]);
   });
 });
+
+// A Max plan's model list is longer than the panel: rows below the fold are
+// marked with a scroll arrow instead of the cursor.
+it('keeps a row marked with a scroll arrow', () => {
+  const overlay = parsePaneOverlay(
+    ['▔▔▔▔▔▔▔▔▔▔', '   Select model', '   ❯ 9.  Opus 4.8     Best', '   ↓ 10. Opus 4.7     Best', '      … +2 models', '   Enter to set as default · Esc to cancel'].join('\n')
+  )!;
+  expect(overlay.options.map((option) => [option.number, option.label, option.highlighted])).toEqual([
+    [9, 'Opus 4.8', true],
+    [10, 'Opus 4.7', false],
+  ]);
+  expect(overlay.notes).toEqual(['… +2 models']);
+});
+
+// Measured on 2.1.285: "Use this session only" on a new model asks again,
+// and that panel has no hint line.
+it('reads the confirmation that follows a model pick', () => {
+  const overlay = parsePaneOverlay(screen('claude-model-switch-confirm.txt'))!;
+  expect(overlay.title).toBe('Switch model?');
+  expect(overlay.options.map((option) => [option.label, option.highlighted])).toEqual([
+    ['Yes, switch to Sonnet 5.5', true],
+    ['No, go back', false],
+  ]);
+  expect(overlay.actions.map((action) => action.label)).toEqual(['Confirm', 'Cancel']);
+});

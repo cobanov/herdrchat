@@ -759,6 +759,9 @@ export function useThread(
     // dies with them, so the honest thing is to stop and re-poll immediately on
     // resume, which is what remounting this effect does.
     if (client === null || !polling) return;
+    // A panel may already be open: opened from the desk, or left open when
+    // the app went to the background. Look once each time polling starts.
+    let lookForPanel = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
@@ -907,8 +910,9 @@ export function useThread(
 
         // A panel only sits over an idle Claude, and never beside a question.
         const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
-        if (watching && blocked === undefined && !working && primary?.agent === 'claude') {
-          keepFast = true;
+        if ((watching || lookForPanel) && blocked === undefined && !working && primary?.agent === 'claude') {
+          lookForPanel = false;
+          if (watching) keepFast = true;
           await readOverlay(primary.paneId);
         } else if (overlayPane.current !== null) {
           overlayPane.current = null;

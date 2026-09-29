@@ -65,7 +65,9 @@ export function CommandPanelBar({
       )}
 
       {overlay.options.length > 0 && (
-        <View style={{ gap: spacing.xxs }} accessibilityRole="radiogroup">
+        // A long picker (a Max plan lists a dozen models) scrolls in place
+        // rather than pushing the panel up under the header.
+        <ScrollView style={{ maxHeight: size.panelOptionsMaxHeight }} contentContainerStyle={{ gap: spacing.xxs }} accessibilityRole="radiogroup">
           {overlay.options.map((option) => {
             const keys = overlayOptionKeys(overlay, option);
             return (
@@ -104,7 +106,7 @@ export function CommandPanelBar({
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       )}
 
       {overlay.scale !== null && (

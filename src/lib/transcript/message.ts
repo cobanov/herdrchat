@@ -25,8 +25,9 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type MessageSegment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
-  | { kind: 'toolUse'; name: string; input: string | null }
-  | { kind: 'toolResult'; text: string }
+  /** `id` pairs a call with its result; absent on Codex and on older cached rows. */
+  | { kind: 'toolUse'; name: string; input: string | null; id?: string }
+  | { kind: 'toolResult'; text: string; toolUseId?: string; isError?: boolean }
   /**
    * A picture sent with the message. `path` is where it lives on the host, or
    * empty when the transcript holds the picture but not where it came from

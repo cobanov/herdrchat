@@ -53,6 +53,12 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   tray: 'inbox',
   'wrench.and.screwdriver': 'build',
   'wrench.and.screwdriver.fill': 'build',
+  'checklist': 'checklist',
+  cpu: 'memory',
+  'doc.text': 'description',
+  globe: 'language',
+  'puzzlepiece.extension': 'extension',
+  terminal: 'terminal',
   xmark: 'close',
   'xmark.circle.fill': 'cancel',
 };

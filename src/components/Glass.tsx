@@ -1,3 +1,4 @@
+import MaskedView from '@react-native-masked-view/masked-view';
 import { BlurView } from 'expo-blur';
 import {
   GlassContainer as ExpoGlassContainer,
@@ -167,6 +168,51 @@ export function GlassContainer({
     );
   }
   return <View style={style}>{children}</View>;
+}
+
+/**
+ * A soft top edge: whatever scrolls under it blurs into the page, at full
+ * strength behind the controls and fading to clear over its last `glass.edgeTail`
+ * points, with no bar and no line.
+ *
+ * The blur is masked by a solid block plus a stack of bands of falling alpha,
+ * a stepped gradient that reads as a smooth one at this size, so no gradient
+ * module is needed. A page-coloured scrim follows the same shape so a title
+ * stays readable over a code block. Where there is no blur (Android, Reduce
+ * Transparency) the scrim alone does it, fully opaque behind the controls.
+ */
+export function EdgeFade() {
+  const { colors, scheme, reduceTransparency } = useTheme();
+  const blur = Platform.OS === 'ios' && !reduceTransparency;
+  const shape = (paint: (strength: number) => ViewStyle) => (
+    <View style={StyleSheet.absoluteFill}>
+      <View style={[{ flex: 1 }, paint(1)]} />
+      {Array.from({ length: glass.edgeSteps }, (_, index) => (
+        <View
+          key={index}
+          style={[{ height: glass.edgeTail / glass.edgeSteps }, paint(1 - (index + 0.5) / glass.edgeSteps)]}
+        />
+      ))}
+    </View>
+  );
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {blur && (
+        <MaskedView style={StyleSheet.absoluteFill} maskElement={shape((strength) => ({ backgroundColor: `rgba(0,0,0,${strength})` }))}>
+          <BlurView
+            intensity={glass.edgeIntensity}
+            tint={scheme === 'dark' ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight'}
+            style={StyleSheet.absoluteFill}
+          />
+        </MaskedView>
+      )}
+      {shape((strength) => ({
+        backgroundColor: colors.systemBackground,
+        opacity: strength * (blur ? glass.edgeScrim : 1),
+      }))}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

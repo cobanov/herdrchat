@@ -2,13 +2,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
 import { Field, FieldRow, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
+import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
 import { KeyField } from '@/features/servers/KeyField';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -363,8 +364,7 @@ export default function ServerEditScreen() {
           gap: spacing.lg,
         }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets>
+        keyboardDismissMode="on-drag">
         <View
           onLayout={(event) => {
             fieldOffsets.current.address = event.nativeEvent.layout.y;
@@ -512,16 +512,7 @@ export default function ServerEditScreen() {
           the end they sat under the fold of a long form, and the only control
           left in sight was the header's, which is how a new host got dropped
           instead of saved. */}
-      <View
-        style={{
-          paddingHorizontal: screenPadding,
-          paddingTop: spacing.md,
-          paddingBottom: Math.max(insets.bottom, spacing.lg),
-          gap: spacing.sm,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.separator,
-          backgroundColor: colors.systemBackground,
-        }}>
+      <SheetFooter>
         {test.kind === 'ok' && (
           <Text variant="subhead" color="tint" weight="600" style={{ textAlign: 'center' }} testID="test-ok">
             Connected. herdr {test.version ?? 'is answering'}.
@@ -548,7 +539,7 @@ export default function ServerEditScreen() {
             Save turns on once the connection test passes.
           </Text>
         )}
-      </View>
+      </SheetFooter>
       </KeyboardAvoidingView>
     </Screen>
   );
