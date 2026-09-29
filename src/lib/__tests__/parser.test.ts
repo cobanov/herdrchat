@@ -106,7 +106,17 @@ describe('assistant metadata', () => {
         },
       },
     });
-    expect(assistantMeta(line)).toEqual({ model: 'claude-opus-4-8', contextTokens: 32_100 });
+    expect(assistantMeta(line)).toEqual({ model: 'claude-opus-4-8', effort: null, contextTokens: 32_100 });
+  });
+
+  // Measured on 2.1.285: the effort sits beside the message, not inside it.
+  it('reads the effort Claude records with the turn', () => {
+    const meta = (effort: unknown) =>
+      assistantMeta(JSON.stringify({ type: 'assistant', effort, perTurnEffort: null, message: { model: 'claude-opus-5-5' } }));
+    expect(meta('xhigh')).toEqual({ model: 'claude-opus-5-5', effort: 'xhigh', contextTokens: null });
+    for (const bad of [undefined, null, 3, 'High effort', 'high\nprivate text']) {
+      expect(meta(bad)?.effort).toBeNull();
+    }
   });
 
   it('ignores non-assistant lines', () => {
@@ -191,7 +201,7 @@ describe('one-pass entry parsing', () => {
     const entry = parseTranscriptEntry(line);
     expect(entry.message?.id).toBe('a1');
     expect(entry.message?.role).toBe('assistant');
-    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 100 });
+    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', effort: null, contextTokens: 100 });
   });
 
   it('still reports metadata for a turn that draws no bubble', () => {
@@ -206,7 +216,7 @@ describe('one-pass entry parsing', () => {
 
     const entry = parseTranscriptEntry(line);
     expect(entry.message).toBeNull();
-    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 5 });
+    expect(entry.meta).toEqual({ model: 'claude-opus-4-8', effort: null, contextTokens: 5 });
   });
 
   it('has no metadata to report for a user turn', () => {

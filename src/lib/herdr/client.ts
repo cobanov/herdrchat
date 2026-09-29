@@ -481,6 +481,34 @@ export class HerdrClient {
   }
 
   /**
+   * Type a slash command into an agent and submit it, without waiting on it.
+   *
+   * `sendPrompt` waits for the agent to start working, and a local command
+   * never does: `/model` opens a panel and `/effort high` just prints, with
+   * the agent `idle` throughout (Claude Code 2.1.285). The wait therefore
+   * always ran out and the command was reported as stuck, and on the legacy
+   * path the recovery Enter landed in the open panel and picked its
+   * highlighted row. The caller confirms a command by what it did instead:
+   * a panel on screen, a transcript line, or the agent moving.
+   */
+  async sendCommand(paneId: string, text: string): Promise<void> {
+    if ((await this.socket.detect()) !== null) {
+      try {
+        await this.socket.call('agent.prompt', { target: paneId, text }, SEND_TIMEOUT_MS);
+        return;
+      } catch (thrown) {
+        if (!(thrown instanceof HerdrError)) throw thrown;
+        if (thrown.code === 'agent_blocked') throw new HerdrError('agent_blocked', AGENT_BLOCKED_MESSAGE);
+        if (!isUnknownMethod(thrown)) throw thrown;
+      }
+    } else if (await this.supportsAgentPrompt()) {
+      checkEnvelope(await this.shell(shellCommand([this.herdr, 'agent', 'prompt', paneId, text]), SEND_TIMEOUT_MS));
+      return;
+    }
+    await this.sendMessage(paneId, text);
+  }
+
+  /**
    * `agent.prompt` on the socket. Same three answers as the CLI path, read off
    * different fields:
    *

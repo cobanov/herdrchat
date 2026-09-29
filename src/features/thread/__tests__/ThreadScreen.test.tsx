@@ -26,6 +26,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/components/Glass', () => ({
   Glass: (props: ViewProps) => <MockView {...props} />,
+  EdgeFade: () => null,
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
@@ -45,7 +46,7 @@ jest.mock('@/features/thread/useThread', () => ({
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,
     workingDirName: 'project-with-a-long-folder-name', status: 'idle',
-    isBlocked: false, isSending: false, canSend: true, loading: mockLoading,
+    isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
     reload: mockReload, clearError: mockClearError,
@@ -60,7 +61,7 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(header.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
   expect(header.getByTestId('error-banner')).toHaveTextContent('Conversation updates paused. Reconnecting.');
   expect(screen.getAllByTestId('error-banner')).toHaveLength(1);
-  expect(screen.getByTestId('thread-header')).toHaveProp('edgeAttached', true);
+  expect(within(screen.getByTestId('thread-header')).getByTestId('thread-title')).toBeTruthy();
   expect(screen.getByTestId('thread-header-safe-area')).toHaveProp('edges', ['top', 'left', 'right']);
   expect(screen.getByTestId('thread-header-overlay')).toHaveStyle({ position: 'absolute', top: 0, left: 0, right: 0 });
   expect(screen.getByTestId('screen-content').props.style.maxWidth).toBeUndefined();
@@ -86,7 +87,7 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
   mockSessionMeta = { model: 'gpt-5.6', effort: 'high' };
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high · project-with-a-long-folder-name · online');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name · online');
 });
 
 it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {

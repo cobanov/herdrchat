@@ -11,9 +11,10 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, size } from '@/theme/tokens';
 
 /**
- * Tool calls shown or hidden, from the conversation itself. The same setting
+ * Tool runs opened or folded, from the conversation itself. The same setting
  * as Settings → Conversations, so it holds for every chat: a thread is mostly
- * read as a conversation, and the machinery is wanted only now and then.
+ * read as a conversation, and the calls under each run's summary line are
+ * wanted only now and then. A run tapped open or shut keeps that choice.
  */
 export function ToolActivityToggle() {
   const db = useSQLiteContext();

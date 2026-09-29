@@ -8,11 +8,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { showActionSheet } from '@/components/ActionSheet';
 import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
-import { Glass } from '@/components/Glass';
+import { EdgeFade, Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { TypingDots, WaitingBar } from '@/components/Activity';
+import { TypingDots, WorkingIndicator } from '@/components/Activity';
 import {
   clipboardHasImage,
   MAX_ATTACHMENTS,
@@ -21,12 +21,16 @@ import {
   type Attachment,
 } from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
+import { CommandNote } from '@/features/thread/CommandNote';
+import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
+import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
+import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
@@ -34,14 +38,15 @@ import { sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
+import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
-import { isToolOnly, type ChatMessage } from '@/lib/transcript/message';
+import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
+import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
 
 /** One workspace conversation. */
 export default function ThreadScreen({ workspaceId, title, onBack }: {
@@ -55,7 +60,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const insets = useSafeAreaInsets();
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
-  const listRef = useRef<FlashListRef<Row>>(null);
+  const listRef = useRef<FlashListRef<PlacedItem>>(null);
   const historyInteraction = useRef<number | null>(null);
 
   /**
@@ -70,7 +75,6 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const hydrated = useConnections((state) => state.hydrated);
   const hostGone = hydrated && connection === null;
 
-  const showToolActivity = useSettings((state) => state.showToolActivity);
   const showSidechain = useSettings((state) => state.showSidechain);
 
   // Measured height of the floating control stack, so the list can reserve
@@ -110,8 +114,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   );
 
   const rows = useMemo(
-    () => buildRows(thread.messages, { showToolActivity, showSidechain }),
-    [thread.messages, showToolActivity, showSidechain]
+    () => threadItems(thread.messages, { showSidechain }),
+    [thread.messages, showSidechain]
   );
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 
@@ -132,6 +136,10 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+  // Only Claude's built-ins are offered; a Codex chat still sends what is typed.
+  const suggestions = thread.agents.some((agent) => agent.agent === 'claude')
+    ? commandSuggestions(draft, CLAUDE_COMMANDS)
+    : [];
 
   // Pictures waiting to go with the next message. They stay until a send is
   // taken, so a failed upload leaves them in place with the draft.
@@ -215,7 +223,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
 
   const subtitle = [
     modelDisplayName(thread.sessionMeta?.model ?? null),
-    thread.sessionMeta?.effort ?? null,
+    // "high effort", not a bare "high" that could be anything.
+    thread.sessionMeta?.effort == null ? null : `${thread.sessionMeta.effort} effort`,
     thread.workingDirName,
     // The connection before the agent: "online" under a banner saying the
     // chat is offline or paused contradicted it (#4 acceptance).
@@ -223,6 +232,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+
+  // A command's panel needs the room the keyboard takes, and nothing typed
+  // goes to it: its rows and actions are taps.
+  const panelOpen = thread.overlay !== null;
+  useEffect(() => {
+    if (panelOpen) Keyboard.dismiss();
+  }, [panelOpen]);
 
   /**
    * The bottom safe-area inset exists to clear the home indicator. A raised
@@ -332,7 +348,8 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               testID="thread-messages"
               ref={listRef}
               data={rows}
-              keyExtractor={(row) => row.message.id}
+              keyExtractor={(row) => row.item.key}
+              getItemType={(row) => row.item.kind}
               contentContainerStyle={{
                 paddingHorizontal: screenPadding,
                 paddingTop: spacing.sm,
@@ -366,53 +383,53 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               ListHeaderComponent={<View />}
               ListHeaderComponentStyle={{ height: headerHeight }}
               scrollEventThrottle={64}
-              renderItem={({ item, index }) => (
-                <View
-                  style={{
-                    paddingTop: item.startsGroup ? spacing.md : spacing.xxs,
-                  }}>
-                  {/* FlashList bottom-aligns rows but not its ListHeader. Keep
-                      this label with the oldest bubble, not above the glass. */}
-                  {index === 0 && (
-                    <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
-                  )}
-                  {item.startsGroup &&
-                    item.message.agentLabel !== null &&
-                    item.message.role !== 'user' && (
-                      <Text
-                        variant="caption2"
-                        color="secondary"
-                        style={{
-                          paddingLeft: spacing.md,
-                          paddingBottom: spacing.xxs,
-                        }}>
+              renderItem={({ item: placed, index }) => {
+                const { item } = placed;
+                return (
+                  <View style={{ paddingTop: placed.startsTurn ? spacing.xl : spacing.sm }}>
+                    {/* FlashList bottom-aligns rows but not its ListHeader. Keep
+                        this label with the oldest row, not above the glass. */}
+                    {index === 0 && (
+                      <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
+                    )}
+                    {item.kind === 'agent' && placed.startsTurn && item.message.agentLabel !== null && (
+                      <Text variant="caption2" color="secondary" style={{ paddingBottom: spacing.xxs }}>
                         {item.message.agentLabel}
                       </Text>
                     )}
-                  <Bubble
-                    message={item.message}
-                    isLastInGroup={item.endsGroup}
-                    timeLabel={item.endsGroup ? formatTime(item.message.timestamp) : null}
-                  />
-                  {thread.failedIds.has(item.message.id) && (
-                    <Pressable
-                      onPress={() => void thread.retry(item.message.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Failed to send. Retry."
-                      // A caption is ~16pt tall; the target is the full 44pt,
-                      // since this is the one way back for a lost message (#112).
-                      style={{
-                        alignSelf: 'flex-end',
-                        minHeight: minTouchTarget,
-                        justifyContent: 'center',
-                      }}>
-                      <Text variant="caption" color="attention">
-                        Failed to send, retry
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              )}
+                    {item.kind === 'tools' ? (
+                      <ToolRun runKey={item.key} calls={item.calls} thoughts={item.thoughts.length} />
+                    ) : item.kind === 'subagent' ? (
+                      <SubagentCard call={item.call} />
+                    ) : item.kind === 'note' ? (
+                      <CommandNote message={item.message} />
+                    ) : (
+                      <Bubble
+                        message={item.message}
+                        isLastInGroup={placed.endsGroup}
+                        timeLabel={item.kind === 'user' && placed.endsGroup ? formatTime(item.message.timestamp) : null}
+                      />
+                    )}
+                    {(item.kind === 'user' || item.kind === 'agent') && thread.failedIds.has(item.message.id) && (
+                      <Pressable
+                        onPress={() => void thread.retry(item.message.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Failed to send. Retry."
+                        // A caption is ~16pt tall; the target is the full 44pt,
+                        // since this is the one way back for a lost message (#112).
+                        style={{
+                          alignSelf: 'flex-end',
+                          minHeight: minTouchTarget,
+                          justifyContent: 'center',
+                        }}>
+                        <Text variant="caption" color="attention">
+                          Failed to send, retry
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              }}
               ListFooterComponent={
                 <View
                   style={{
@@ -423,18 +440,12 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     // bubble even though its new height has been measured.
                     paddingBottom: controlsHeight + spacing.lg,
                   }}>
-                  {waiting &&
-                    (thread.livePreview !== null ? (
-                      <LivePreviewBubble text={thread.livePreview} />
-                    ) : (
-                      <View
-                        style={{
-                          paddingHorizontal: spacing.xxl,
-                          paddingVertical: spacing.md,
-                        }}>
-                        <WaitingBar />
-                      </View>
-                    ))}
+                  {waiting && (
+                    <View style={{ gap: spacing.md }}>
+                      {thread.livePreview !== null && <LivePreviewBubble text={thread.livePreview} />}
+                      <WorkingIndicator writing={thread.livePreview !== null} />
+                    </View>
+                  )}
                 </View>
               }
             />
@@ -482,6 +493,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 paddingTop: spacing.sm,
                 paddingBottom: bottomInset,
               }}>
+              {thread.overlay !== null && !thread.isBlocked && (
+                <CommandPanelBar
+                  overlay={thread.overlay}
+                  busy={thread.overlayBusy}
+                  onKeys={(keys) => void thread.sendOverlayKeys(keys)}
+                />
+              )}
+              {suggestions.length > 0 && thread.overlay === null && (
+                <CommandSuggestions commands={suggestions} onPick={(command) => setDraft(`/${command.name} `)} />
+              )}
               {thread.isBlocked && (
                 <BlockedBar
                   prompt={thread.blockedPrompt}
@@ -514,7 +535,11 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         pointerEvents="box-none"
         onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
         style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
-        <Glass edgeAttached testID="thread-header">
+        {/* No bar: the conversation scrolls up under the controls and blurs
+            into the page (EdgeFade), the way a document's top edge does. The
+            extra room below the controls is the fade's own tail. */}
+        <View testID="thread-header" style={{ paddingBottom: glass.edgeTail }}>
+          <EdgeFade />
           <SafeAreaView testID="thread-header-safe-area" edges={['top', 'left', 'right']}>
             <View style={{ width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
               <View style={{
@@ -537,7 +562,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   </Glass>
                 )}
                 <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
-                  <Text testID="thread-title" variant="title3" numberOfLines={1}>
+                  <Text testID="thread-title" variant="headline" numberOfLines={1}>
                     {heading}
                   </Text>
                   {subtitle.length > 0 && (
@@ -587,52 +612,10 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               )}
             </View>
           </SafeAreaView>
-        </Glass>
+        </View>
       </View>
     </Screen>
   );
-}
-
-interface Row {
-  message: ChatMessage;
-  startsGroup: boolean;
-  endsGroup: boolean;
-}
-
-/**
- * Bubbles worth showing, with run boundaries precomputed.
- *
- * Sidechain chatter (subagent internals) and raw tool-result turns are hidden:
- * a tool result arrives as a "user" turn, and rendering it as something the
- * person typed would be actively wrong.
- */
-function buildRows(
-  messages: readonly ChatMessage[],
-  options: { showToolActivity: boolean; showSidechain: boolean }
-): Row[] {
-  const visible = messages.filter((message) => {
-    if (message.isSidechain && !options.showSidechain) return false;
-    // A tool result arrives as a "user" turn; rendering it as something the
-    // person typed would be actively wrong, so it never shows.
-    if (message.role === 'user' && isToolOnly(message)) return false;
-    // With chips hidden, an assistant turn that was pure machinery has nothing
-    // left to draw, an empty bubble is worse than no bubble.
-    if (!options.showToolActivity && isToolOnly(message)) return false;
-    return true;
-  });
-  return visible.map((message, index) => {
-    const previous = index > 0 ? visible[index - 1] : undefined;
-    const next = index + 1 < visible.length ? visible[index + 1] : undefined;
-    return {
-      message,
-      startsGroup:
-        previous === undefined ||
-        previous.role !== message.role ||
-        previous.agentLabel !== message.agentLabel,
-      endsGroup:
-        next === undefined || next.role !== message.role || next.agentLabel !== message.agentLabel,
-    };
-  });
 }
 
 function statusWord(status: string): string | null {

@@ -1,11 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
-import { Field } from '@/components/Field';
+import { Field, SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
+import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
 import { openChat } from '@/features/chats/navigation';
 import {
@@ -21,13 +23,9 @@ import { radius, screenPadding, spacing } from '@/theme/tokens';
 
 import { useRemembered, useStartChat, type NewChatAgent } from './useNewChat';
 
-const AGENTS: readonly { id: NewChatAgent; title: string; detail: string }[] = [
-  { id: 'claude', title: 'Claude Code', detail: 'Starts Claude with the permission mode below.' },
-  {
-    id: 'codex',
-    title: 'Codex',
-    detail: 'Starts Codex. Its session is reported after your first message.',
-  },
+const AGENTS: readonly { value: NewChatAgent; label: string }[] = [
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'codex', label: 'Codex' },
 ];
 
 /**
@@ -37,6 +35,7 @@ const AGENTS: readonly { id: NewChatAgent; title: string; detail: string }[] = [
 export default function NewChatScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const connection = useSelectedConnection();
   const pickedCwd = useNewChatDraft((state) => state.pickedCwd);
   const clearPicked = useNewChatDraft((state) => state.clear);
@@ -86,15 +85,20 @@ export default function NewChatScreen() {
 
   return (
     <Screen presentation="sheet">
-      <Header title="New chat" onClose={() => router.back()} />
+      {/* Cancel, not Done, as on the host form: this control drops the sheet
+          without starting anything, and "Done" read as the way to start. */}
+      <Header title="New chat" onClose={() => router.back()} closeLabel="Cancel" />
 
+      {/* Android has no automaticallyAdjustKeyboardInsets and, edge to edge,
+          no window resize, so the footer would sit behind the keys. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'android' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'android' ? insets.top : 0}
+        style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={{ padding: screenPadding, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+        contentContainerStyle={{ padding: screenPadding, gap: spacing.lg }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        // Without this the keyboard covers the submit button at the end of the
-        // form, which is the one control the whole screen exists to reach.
-        automaticallyAdjustKeyboardInsets>
+        keyboardDismissMode="interactive">
         <View style={{ gap: spacing.sm }}>
           <Field
             label="Working directory"
@@ -111,38 +115,20 @@ export default function NewChatScreen() {
             onPress={() => router.push({ pathname: '/folder-picker', params: { start: cwd } })}
             testID="choose-folder"
           />
-          <Text variant="caption" color="secondary">
-            The agent starts in this directory. Type a path, or browse the host’s folders to pick one.
-          </Text>
         </View>
 
+        <Field
+          label="Name (optional)"
+          placeholder="Automatic (folder name)"
+          value={label}
+          onChangeText={setLabel}
+          testID="field-label"
+        />
+
         {/* #114: Codex chats were fully supported once running, but could only
-            be started on the host. */}
-        <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
-          <Text variant="footnote" color="secondary">
-            Agent
-          </Text>
-          {AGENTS.map((choice) => {
-            const selected = choice.id === agent;
-            return (
-              <Pressable
-                key={choice.id}
-                onPress={() => setEditedAgent(choice.id)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`${choice.title}. ${choice.detail}`}
-                testID={`agent-${choice.id}`}
-                style={option(selected)}>
-                <Text variant="headline" color={selected ? 'tint' : 'label'}>
-                  {choice.title}
-                </Text>
-                <Text variant="footnote" color="secondary">
-                  {choice.detail}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+            be started on the host. Two choices with nothing to explain fit one
+            line; the permission modes below keep their descriptions. */}
+        <SegmentedField label="Agent" options={AGENTS} value={agent} onChange={setEditedAgent} />
 
         {agent === 'claude' && (
           <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
@@ -173,30 +159,39 @@ export default function NewChatScreen() {
           </View>
         )}
 
-        <Field
-          label="Name (optional)"
-          placeholder="Automatic (folder name)"
-          value={label}
-          onChangeText={setLabel}
-          testID="field-label"
-        />
-
-        {error !== null && (
-          <View style={{ padding: spacing.md, borderRadius: radius.sm, backgroundColor: colors.fillSubtle }}>
-            <Text variant="footnote" color="secondary">
-              {error}
-            </Text>
-          </View>
+        {agent === 'codex' && (
+          <Text variant="caption" color="secondary">
+            Codex reports its session after your first message.
+          </Text>
         )}
 
+      </ScrollView>
+
+      {/* Start is pinned below the form rather than at its end, for the reason
+          the host form's Save is: at the end it sat under the fold, and the
+          only control in sight was the header's. */}
+      <SheetFooter>
+        {/* Beside the button that failed, not at the end of the form, where it
+            opened below the fold. */}
+        {error !== null && (
+          <Text variant="footnote" color="attention" style={{ textAlign: 'center' }} testID="new-chat-error">
+            {error}
+          </Text>
+        )}
         <Button
-          title="Start"
+          title={creating ? 'Starting…' : agent === 'codex' ? 'Start Codex' : 'Start Claude Code'}
           onPress={() => void onStart()}
           loading={creating}
           disabled={cwd.trim().length === 0}
           testID="start-chat"
         />
-      </ScrollView>
+        {cwd.trim().length === 0 && (
+          <Text variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+            Start turns on once there is a working directory.
+          </Text>
+        )}
+      </SheetFooter>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

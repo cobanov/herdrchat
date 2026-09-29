@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { act, renderHook } from '@testing-library/react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -909,4 +912,59 @@ it('drops a page of older history that arrives after the session changed', async
   });
   expect(result.current.messages.map((message) => message.id)).toEqual(['second-chat']);
   await unmount();
+});
+
+// Claude Code 2.1.285 keeps the agent idle under /model's panel, so waiting
+// for `working` always failed, and the legacy Enter picked the panel's row.
+describe('slash commands', () => {
+  const picker = readFileSync(join(__dirname, '../../../lib/__tests__/fixtures/screens/claude-model-picker.txt'), 'utf8');
+
+  it('sends a command without the prompt wait, shows its panel, and never presses Enter', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    const prompt = jest.spyOn(client, 'sendPrompt');
+    const command = jest.spyOn(client, 'sendCommand').mockResolvedValue(undefined);
+    jest.spyOn(client, 'paneVisible').mockResolvedValue(picker);
+    const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    let sent: Promise<unknown> | undefined;
+    await act(async () => { sent = result.current.send('/model'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(1_500); await sent; });
+    expect(command).toHaveBeenCalledWith(agent.paneId, '/model');
+    expect(prompt).not.toHaveBeenCalled();
+    expect(result.current.overlay?.title).toBe('Select model');
+    expect(result.current.failedIds.size).toBe(0);
+    expect(keys).not.toHaveBeenCalled();
+
+    // A row tap moves the cursor; the panel's own action commits.
+    await act(async () => { void result.current.sendOverlayKeys(['Down']); await jest.advanceTimersByTimeAsync(400); });
+    expect(keys).toHaveBeenLastCalledWith(agent.paneId, ['Down']);
+    await unmount();
+  });
+
+  it('says so when a command shows no sign of running', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    jest.spyOn(client, 'sendCommand').mockResolvedValue(undefined);
+    jest.spyOn(client, 'paneVisible').mockResolvedValue('❯ \n');
+    const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    let sent: Promise<unknown> | undefined;
+    await act(async () => { sent = result.current.send('/usage'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_500); await sent; });
+    expect(result.current.overlay).toBeNull();
+    expect(result.current.failedIds.size).toBe(1);
+    expect(result.current.error).toContain("Couldn't see that command run");
+    expect(keys).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  it('sends a path as an ordinary prompt', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+    const command = jest.spyOn(client, 'sendCommand');
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await result.current.send('/Users/me/notes.md what is this?'); });
+    expect(prompt).toHaveBeenCalled();
+    expect(command).not.toHaveBeenCalled();
+    await unmount();
+  });
 });

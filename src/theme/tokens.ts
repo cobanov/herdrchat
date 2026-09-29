@@ -107,6 +107,26 @@ export const size = {
    * a phone's line still holds a five-digit port at the default text size.
    */
   hostPortWeights: [3, 1],
+  /** A glyph in a slash command's panel: its title mark, a tick, a stepper arrow. */
+  panelGlyph: 14,
+  /** How tall an information panel's text (/usage, /status) may grow before it scrolls. */
+  panelNotesMaxHeight: 180,
+  /** How tall a panel's list of rows may grow before it scrolls. */
+  panelOptionsMaxHeight: 240,
+  /**
+   * A folded run of tool calls: its summary line, each call's row, and the
+   * rail the rows hang off (the branch is `toolRail` wide and curves at
+   * `radius.xs`). Rows are a thumb's height apart, not a full touch target:
+   * the summary is the control, a row opens its output as a convenience.
+   */
+  toolSummaryHeight: 28,
+  toolRow: 30,
+  toolRail: 14,
+  toolGlyph: 12,
+  /** How much of a call's output an opened row shows before it stops. */
+  toolOutputLines: 12,
+  /** The tile holding a subagent card's icon. */
+  agentTile: 22,
 } as const;
 
 /**
@@ -220,6 +240,24 @@ export const glass = {
   /** BlurView strength standing in for Liquid Glass below iOS 26, per variant. */
   clearIntensity: 40,
   regularIntensity: 70,
+  /**
+   * The thread's top edge: content scrolling under the header blurs into the
+   * page instead of stopping at a bar (zeron's soft scroll edge). Full
+   * strength behind the status bar and the controls, then clear over
+   * `edgeTail` points in `edgeSteps` bands. `edgeScrim` is how much page colour
+   * sits over the blur, so the title reads over a busy code block.
+   */
+  edgeIntensity: 90,
+  edgeTail: 28,
+  edgeSteps: 28,
+  edgeScrim: 0.85,
+} as const;
+
+/** The working indicator's dot grid: 3 × 3 dots, and one breath of the wave in ms. */
+export const activity = {
+  gridDot: 4,
+  gridGap: 2,
+  gridCycle: 750,
 } as const;
 
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */

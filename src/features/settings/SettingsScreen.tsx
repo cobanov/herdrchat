@@ -123,8 +123,8 @@ export default function SettingsScreen() {
           {show('conversations') && <><HighlightOnLink section="conversations" target={target} onMeasure={onMeasure}>
             <Section title="Conversations">
               <Toggle
-                label="Tool activity"
-                detail="Show tool calls, results and thinking as chips inside messages. Also switchable from a chat's header."
+                label="Open tool runs"
+                detail="Show each call under a run's summary line (“Ran 3 commands”) instead of the line alone. Also switchable from a chat's header."
                 value={settings.showToolActivity}
                 onChange={(next) => update('showToolActivity', next)}
                 testID="toggle-tool-activity"

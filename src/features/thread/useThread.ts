@@ -31,6 +31,8 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
+import { isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
@@ -129,13 +131,32 @@ const STALLED_WARNING = 'The agent never picked that up, it may be stuck at a pr
 const UNCONFIRMED_WARNING = "Couldn't confirm delivery, the message may be stuck in the terminal. Try again.";
 const DELIVERY_UNKNOWN_WARNING =
   "The connection dropped while sending, so the message may have arrived. Check the chat before sending it again.";
+const COMMAND_UNCONFIRMED_WARNING = "Couldn't see that command run. Check the terminal before sending it again.";
 /** Warnings about whether a message landed. Its transcript receipt answers them. */
 const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
   CODEX_DELIVERY_NOTICE,
   STALLED_WARNING,
   UNCONFIRMED_WARNING,
   DELIVERY_UNKNOWN_WARNING,
+  COMMAND_UNCONFIRMED_WARNING,
 ]);
+
+/**
+ * After a slash command, how long to look for the panel it may open. Claude
+ * draws one within a second; this is the ceiling, not the usual case.
+ */
+const OVERLAY_WATCH_MS = 8_000;
+/** When to look for a new panel straight after a command, before the poll comes round. */
+const OVERLAY_FIRST_LOOKS_MS = [400, 1_200] as const;
+/** Between a key into a panel and reading what it did. */
+const OVERLAY_SETTLE_MS = 300;
+/** Rows of screen to read: a panel plus the composer under it. */
+const OVERLAY_LINES = 40;
+/**
+ * How long a command may show nothing at all before its bubble says so. It
+ * counts as run on a transcript line, a panel, or the agent starting to work.
+ */
+const COMMAND_CONFIRM_MS = 10_000;
 
 /** States that prove the agent read a prompt: it started, or it stopped to ask. */
 const REACTED = ['working', 'blocked'] as const;
@@ -159,6 +180,14 @@ export interface ThreadState {
   /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
   blockedPending: BlockedPending | null;
   isBlocked: boolean;
+  /**
+   * A slash command's panel open on the pane (`/model`, `/effort`), which the
+   * agent's status does not report: it stays `idle` under one.
+   */
+  overlay: PaneOverlay | null;
+  /** Keys are on their way to the panel; its controls wait. */
+  overlayBusy: boolean;
+  sendOverlayKeys: (keys: readonly string[]) => Promise<void>;
   sessionMeta: SessionMeta | null;
   livePreview: string | null;
   workingDirName: string | null;
@@ -229,6 +258,14 @@ export function useThread(
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<PaneOverlay | null>(null);
+  const [overlayBusy, setOverlayBusy] = useState(false);
+  /** The pane the open panel is on, or null. Read by the poll, which must not re-run on it. */
+  const overlayPane = useRef<string | null>(null);
+  /** Until when the poll looks for a panel with no panel open yet. */
+  const overlayWatchUntil = useRef(0);
+  /** When a panel was last on screen, which confirms the command that opened it. */
+  const overlaySeenAt = useRef(0);
   /*
     Errors live in three slots, because each has its own owner and its own
     reason to go away. The poll clears only what the poll raised: a warning
@@ -673,12 +710,58 @@ export function useThread(
     }
   }, [client, db, connectionId, workspaceId, ingest, applyMeta, rebuild]);
 
+  /**
+   * Read the pane for a slash command's panel.
+   *
+   * Only while one is expected or open: this is a screen read over SSH, and a
+   * read on every poll of every thread is what sank the first attempt at
+   * slash commands (it queued behind itself and timed out unrelated calls).
+   */
+  const readOverlay = useCallback(async (paneId: string) => {
+    if (client === null) return;
+    const found = parsePaneOverlay(await client.paneVisible(paneId, OVERLAY_LINES));
+    if (!alive.current) return;
+    if (found !== null) overlaySeenAt.current = Date.now();
+    overlayPane.current = found === null ? null : paneId;
+    setOverlay(found);
+  }, [client]);
+
+  const watchOverlay = useCallback((paneId: string) => {
+    overlayWatchUntil.current = Date.now() + OVERLAY_WATCH_MS;
+    for (const delay of OVERLAY_FIRST_LOOKS_MS) {
+      setTimeout(() => {
+        if (alive.current && overlayPane.current === null) void readOverlay(paneId).catch(() => undefined);
+      }, delay);
+    }
+    kick.current();
+  }, [readOverlay]);
+
+  const sendOverlayKeys = useCallback(async (keys: readonly string[]) => {
+    const paneId = overlayPane.current;
+    if (client === null || paneId === null || overlayBusy) return;
+    setOverlayBusy(true);
+    try {
+      if (keys.length > 0) await client.sendKeys(paneId, keys);
+      await new Promise((resolve) => setTimeout(resolve, OVERLAY_SETTLE_MS));
+      // A panel can lead to another (a confirmation), so keep looking a while.
+      overlayWatchUntil.current = Date.now() + OVERLAY_WATCH_MS;
+      await readOverlay(paneId);
+    } catch (thrown) {
+      setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+    } finally {
+      if (alive.current) setOverlayBusy(false);
+    }
+  }, [client, overlayBusy, readOverlay]);
+
   // Status poll, which doubles as the tail watchdog.
   useEffect(() => {
     // Backgrounded: iOS suspends these timers anyway, but the socket usually
     // dies with them, so the honest thing is to stop and re-poll immediately on
     // resume, which is what remounting this effect does.
     if (client === null || !polling) return;
+    // A panel may already be open: opened from the desk, or left open when
+    // the app went to the background. Look once each time polling starts.
+    let lookForPanel = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
@@ -824,6 +907,17 @@ export function useThread(
           live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
         const working = live.some((agent) => agent.agentStatus === 'working');
         keepFast = working;
+
+        // A panel only sits over an idle Claude, and never beside a question.
+        const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
+        if ((watching || lookForPanel) && blocked === undefined && !working && primary?.agent === 'claude') {
+          lookForPanel = false;
+          if (watching) keepFast = true;
+          await readOverlay(primary.paneId);
+        } else if (overlayPane.current !== null) {
+          overlayPane.current = null;
+          setOverlay(null);
+        }
         if (working && primary !== undefined) {
           const raw = await client.paneVisible(primary.paneId, 30);
           setLivePreview(extractLivePreview(raw));
@@ -929,6 +1023,7 @@ export function useThread(
     polling,
     pollScale,
     rebuild,
+    readOverlay,
   ]);
 
   const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
@@ -1055,6 +1150,23 @@ export function useThread(
       setIsSending(true);
       try {
         const pane = await currentPane(polled);
+
+        if (pane.agent === 'claude' && isSlashCommand(text)) {
+          // Never `sendPrompt` and never a second Enter: see `sendCommand`.
+          const sentAt = Date.now();
+          await client.sendCommand(pane.paneId, text);
+          if (!current()) return;
+          watchOverlay(pane.paneId);
+          const ran = () => confirmed() || overlaySeenAt.current >= sentAt;
+          while (current() && !ran() && Date.now() - sentAt < COMMAND_CONFIRM_MS) {
+            await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
+          }
+          if (!current() || ran() || (await paneState(pane.paneId)) === 'reacted') return;
+          setFailedIds((previous) => new Set(previous).add(echoId));
+          setActionError(COMMAND_UNCONFIRMED_WARNING);
+          return;
+        }
+
         const wasWorking = pane.agentStatus === 'working';
         const outcome = await client.sendPrompt(pane.paneId, text);
         if (!current() || confirmed()) return;
@@ -1112,7 +1224,7 @@ export function useThread(
         setIsSending(false);
       }
     },
-    [client, currentPane]
+    [client, currentPane, watchOverlay]
   );
 
   const send = useCallback(
@@ -1315,6 +1427,9 @@ export function useThread(
     blockedPrompt,
     blockedPending,
     isBlocked: blockedPane !== null,
+    overlay,
+    overlayBusy,
+    sendOverlayKeys,
     sessionMeta,
     livePreview,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,

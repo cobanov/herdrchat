@@ -14,6 +14,8 @@
  * for older versions that only wrote the text.
  */
 
+import { stripAnsi } from './ansi';
+
 /**
  * A Claude `user` line the user did not type, judged by its structured fields.
  *
@@ -61,6 +63,29 @@ export function claudeUserText(text: string): string | null {
   const rest = peelHarness(unwrapped);
   return rest.length === 0 ? null : rest;
 }
+
+/**
+ * What a local slash command printed, or null when this is not that.
+ *
+ * Claude records `/model`, `/effort` and the like as a user turn holding only
+ * `<local-command-stdout>` ("Set effort level to medium (this session only):
+ * …"). That line is the one sign in the chat that the command did anything,
+ * so it is shown as a note rather than hidden with the rest of the harness.
+ * Empty output (most panels close with nothing to say) shows nothing.
+ */
+export function claudeCommandOutput(text: string): string | null {
+  const trimmed = text.trim();
+  const tag = COMMAND_OUTPUT_TAGS.find((candidate) => isSingleElement(trimmed, candidate));
+  if (tag === undefined) return null;
+  const output = stripAnsi(element(trimmed, tag) ?? '').replaceAll('`', '').trim();
+  if (output.length === 0) return null;
+  return output.length > COMMAND_OUTPUT_MAX ? `${output.slice(0, COMMAND_OUTPUT_MAX)}…` : output;
+}
+
+const COMMAND_OUTPUT_TAGS = ['local-command-stdout', 'local-command-stderr'] as const;
+
+/** A note, not a transcript: the rest stays in the terminal. */
+const COMMAND_OUTPUT_MAX = 600;
 
 /**
  * The text a Codex user message should show, or null to show nothing.

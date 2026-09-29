@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import Animated, {
   Easing,
@@ -11,8 +11,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { activity, radius, spacing } from '@/theme/tokens';
 
 /** Three softly pulsing dots. Used beside "working…" wherever presence is shown. */
 export function TypingDots({ color, size = 5 }: { color?: string; size?: number }) {
@@ -132,5 +133,89 @@ export function WaitingBar({ height = 3 }: { height?: number }) {
         style={[{ height, borderRadius: radius.full, backgroundColor: colors.tint }, style]}
       />
     </View>
+  );
+}
+
+/**
+ * "Working… 2m 13s" under the conversation while the agent is busy, with a
+ * small grid of dots breathing in a diagonal wave (after zeron's).
+ *
+ * The clock starts when this mounts, which is when the thread first saw the
+ * agent working: it says how long you have been waiting, not how long the
+ * turn has run on the host, which the status does not report.
+ */
+export function WorkingIndicator({ writing }: { writing: boolean }) {
+  const { colors, reduceMotion } = useTheme();
+  const [since] = useState(() => Date.now());
+  const [now, setNow] = useState(since);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const tints = [colors.tint, colors.attention, colors.destructive];
+
+  return (
+    <View
+      testID="working-indicator"
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${writing ? 'Writing' : 'Working'}, ${elapsed(now - since)}`}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      <View style={{ gap: activity.gridGap }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {tints.map((tint, row) => (
+          <View key={row} style={{ flexDirection: 'row', gap: activity.gridGap }}>
+            {[0, 1, 2].map((column) => (
+              <GridDot key={column} color={tint} delay={((2 - row + Math.abs(column - 1)) / 4) * activity.gridCycle} still={reduceMotion} />
+            ))}
+          </View>
+        ))}
+      </View>
+      <Text variant="footnote" weight="500" color="secondary">
+        {writing ? 'Writing…' : 'Working…'}
+      </Text>
+      <Text variant="footnote" color="tertiary" style={{ fontVariant: ['tabular-nums'] }}>
+        {elapsed(now - since)}
+      </Text>
+    </View>
+  );
+}
+
+/** "12s", "11m 43s", "1h 5m". */
+export function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function GridDot({ color, delay, still }: { color: string; delay: number; still: boolean }) {
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    if (still) {
+      cancelAnimation(opacity);
+      opacity.set(0.6);
+      return;
+    }
+    const half = activity.gridCycle / 2;
+    opacity.set(
+      withDelay(
+        delay,
+        withRepeat(
+          withSequence(
+            withTiming(0.12, { duration: half, easing: Easing.inOut(Easing.quad) }),
+            withTiming(1, { duration: half, easing: Easing.inOut(Easing.quad) })
+          ),
+          -1,
+          false
+        )
+      )
+    );
+    return () => cancelAnimation(opacity);
+  }, [delay, still, opacity]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  return (
+    <Animated.View
+      style={[{ width: activity.gridDot, height: activity.gridDot, borderRadius: radius.full, backgroundColor: color }, style]}
+    />
   );
 }

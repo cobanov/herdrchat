@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { showActionSheet, type SheetAction } from './ActionSheet';
@@ -12,14 +12,18 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
-import { useSettings } from '@/state/settings';
 
 /**
- * A chat bubble: 18pt continuous corners, no shadow, system surfaces.
+ * One message in the thread.
  *
- * Following the iMessage convention, only the LAST bubble of a run gets the
- * small tail corner; bubbles inside a run stay fully rounded. That is what makes
- * three consecutive messages read as one utterance instead of a stack of boxes.
+ * Yours is a bubble: 18pt continuous corners, the tail only on the LAST bubble
+ * of a run, which is what makes three messages read as one utterance.
+ *
+ * The agent's is not. Its prose runs the full width of the column on the page
+ * itself, the way a document reads, because a reply is often long, carries
+ * code, and is the thing the screen is for; a bubble around it only narrowed
+ * it and framed it as chatter. Tool activity is not drawn here at all: the
+ * thread folds it into runs (see `threadItems`).
  */
 export const Bubble = memo(function Bubble({
   message,
@@ -31,15 +35,8 @@ export const Bubble = memo(function Bubble({
   timeLabel?: string | null;
 }) {
   const { colors } = useTheme();
-  const showToolActivity = useSettings((state) => state.showToolActivity);
   const outgoing = message.role === 'user';
-
-  // With tool activity off, a turn that was ONLY machinery would render as an
-  // empty bubble — so the thread filters those out entirely (see buildRows) and
-  // this only has to drop the chips from mixed turns.
-  const visibleSegments = showToolActivity
-    ? message.segments
-    : message.segments.filter((segment) => segment.kind === 'text' || segment.kind === 'image');
+  const visibleSegments = message.segments.filter((segment) => segment.kind === 'text' || segment.kind === 'image');
   const pictures = message.segments.filter((segment) => segment.kind === 'image').length;
 
   const corners = {
@@ -89,35 +86,49 @@ export const Bubble = memo(function Bubble({
     showActionSheet({ title: outgoing ? 'Your message' : 'Agent message', actions });
   }, [message, outgoing]);
 
+  const a11y = {
+    accessibilityRole: 'button' as const,
+    accessibilityLabel: `${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${pictures > 0 ? `, ${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : ''}${timeLabel ? `, ${timeLabel}` : ''}`,
+    accessibilityHint: 'Long press to copy',
+    accessibilityActions: [{ name: 'longpress', label: 'Copy message' }],
+    onAccessibilityAction: (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === 'longpress') copy();
+    },
+  };
+
+  if (!outgoing) {
+    return (
+      <Pressable onLongPress={copy} delayLongPress={400} {...a11y} testID={`bubble-${message.id}`} style={{ gap: spacing.sm }}>
+        {visibleSegments.map((segment, index) => (
+          <Segment key={index} segment={segment} onTint={false} />
+        ))}
+      </Pressable>
+    );
+  }
+
   return (
     <View style={{ flexDirection: 'row' }}>
-      {outgoing && <Gutter />}
+      <Gutter />
       <Pressable
         onLongPress={copy}
         // Never a tap handler. A bubble containing an expandable tool chip has
         // its own press targets inside it, and a tap on the bubble itself must
         // stay a tap on whatever it landed on.
         delayLongPress={400}
-        accessibilityRole="button"
-        accessibilityLabel={`${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${pictures > 0 ? `, ${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : ''}${timeLabel ? `, ${timeLabel}` : ''}`}
-        accessibilityHint="Long press to copy"
-        accessibilityActions={[{ name: 'longpress', label: 'Copy message' }]}
-        onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === 'longpress') copy();
-        }}
+        {...a11y}
         testID={`bubble-${message.id}`}
         style={[
           {
             flexShrink: 1,
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.sm,
-            backgroundColor: outgoing ? colors.bubbleOutgoing : colors.bubbleIncoming,
+            backgroundColor: colors.bubbleOutgoing,
             gap: spacing.xs,
           },
           corners,
         ]}>
         {visibleSegments.map((segment, index) => (
-          <Segment key={index} segment={segment} onTint={outgoing} />
+          <Segment key={index} segment={segment} onTint />
         ))}
         {isLastInGroup && timeLabel !== null && timeLabel !== undefined && (
           // Trailing-aligned WITHOUT `flex: 1`. A greedy timestamp stretches
@@ -137,7 +148,6 @@ export const Bubble = memo(function Bubble({
           </View>
         )}
       </Pressable>
-      {!outgoing && <Gutter />}
     </View>
   );
 });
@@ -156,74 +166,9 @@ function Segment({ segment, onTint }: { segment: MessageSegment; onTint: boolean
   switch (segment.kind) {
     case 'text':
       return <Markdown text={segment.text} onTint={onTint} />;
-    case 'thinking':
-      return <ToolChip glyph="…" label="thought" />;
-    case 'toolUse':
-      return (
-        <ToolChip
-          glyph="❯"
-          label={segment.input !== null ? `${segment.name} ${segment.input}` : segment.name}
-          accent
-          expandable={segment.input !== null}
-        />
-      );
-    case 'toolResult':
-      return <ToolChip glyph="✓" label="tool result" />;
     case 'image':
       return <BubbleImage path={segment.path} onTint={onTint} />;
+    default:
+      return null;
   }
-}
-
-/**
- * Tool activity as a terminal token: monospaced, quiet, unmistakably CLI.
- *
- * Deliberately undesigned — this is the agent's machinery, not its answer, and
- * dressing it up would compete with the message it sits inside. Tapping an
- * expandable chip reveals the full call in place, so a long command can be read
- * without leaving the thread.
- */
-export function ToolChip({
-  glyph,
-  label,
-  accent = false,
-  expandable = false,
-}: {
-  glyph: string;
-  label: string;
-  accent?: boolean;
-  expandable?: boolean;
-}) {
-  const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <Pressable
-      onPress={expandable ? () => setExpanded((value) => !value) : undefined}
-      disabled={!expandable}
-      accessibilityRole={expandable ? 'button' : undefined}
-      accessibilityLabel={expandable ? `Tool call: ${label}` : label}
-      accessibilityState={expandable ? { expanded } : undefined}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: spacing.xs,
-        alignSelf: 'flex-start',
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.xs,
-        borderRadius: radius.xs,
-        backgroundColor: colors.fillSubtle,
-      }}>
-      <Text variant="caption2" mono weight="700" color={accent ? 'tint' : 'secondary'}>
-        {glyph}
-      </Text>
-      <Text
-        variant="caption2"
-        mono
-        color="secondary"
-        numberOfLines={expandable && expanded ? undefined : 1}
-        style={{ flexShrink: 1 }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
 }

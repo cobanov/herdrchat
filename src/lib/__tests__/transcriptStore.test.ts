@@ -558,7 +558,7 @@ describe('TranscriptStore.tail', () => {
     expect(chunks[0]?.message?.role).toBe('user');
     expect(chunks[0]?.meta).toBeNull();
     expect(chunks[1]?.message?.role).toBe('assistant');
-    expect(chunks[1]?.meta).toEqual({ model: 'claude-opus-4-8', contextTokens: 25_000 });
+    expect(chunks[1]?.meta).toEqual({ model: 'claude-opus-4-8', effort: null, contextTokens: 25_000 });
   });
 
   it('advances the cursor by UTF-8 bytes, not UTF-16 units', async () => {
