@@ -3,7 +3,7 @@
     "name": "HerdrChat",
     "slug": "herdrchat",
     "scheme": "herdrchat",
-    "version": "0.9.0",
+    "version": "0.10.0",
     "primaryColor": "#5459D4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
