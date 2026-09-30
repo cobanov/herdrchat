@@ -91,11 +91,17 @@ class RoutingPayloadTests(unittest.TestCase):
 
     def test_each_device_gets_its_own_connection_and_the_session(self):
         notifier = load_notifier()
-        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production"), ("tok-b", None, "sandbox")])
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset()), ("tok-b", None, "sandbox", frozenset())])
         self.assertEqual(seen, [
             ("tok-a", {"workspace": "w1", "label": "api", "session": "sess-1", "connection": "conn-a"}, "production"),
             ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}, "sandbox"),
         ])
+
+    def test_a_chat_muted_on_one_phone_still_reaches_the_other(self):
+        notifier = load_notifier()
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset({"sess-1"})),
+                                              ("tok-b", "conn-b", "production", frozenset({"sess-other"}))])
+        self.assertEqual([tok for tok, _extra, _env in seen], ["tok-b"])
 
 
 class TokenTests(unittest.TestCase):
@@ -110,7 +116,17 @@ class TokenTests(unittest.TestCase):
                 path.write_text(json.dumps(data))
                 os.utime(path, (1000 + age, 1000 + age))
             self.assertEqual(sorted(notifier.device_tokens()),
-                             [("tok-a", "conn-a", "production"), ("tok-b", None, "production")])
+                             [("tok-a", "conn-a", "production", frozenset()), ("tok-b", None, "production", frozenset())])
+
+    def test_reads_the_muted_sessions_and_ignores_anything_else_there(self):
+        with tempfile.TemporaryDirectory() as folder:
+            notifier = load_notifier()
+            notifier.TOKENS_DIR = folder
+            Path(folder, "a.json").write_text(json.dumps({"token": "tok-a", "muted": ["s1", 5, "s2"]}))
+            Path(folder, "b.json").write_text(json.dumps({"token": "tok-b", "muted": "s1"}))
+            self.assertEqual(sorted(notifier.device_tokens()),
+                             [("tok-a", None, "production", frozenset({"s1", "s2"})),
+                              ("tok-b", None, "production", frozenset())])
 
 
 class RelayTests(unittest.TestCase):
@@ -154,7 +170,7 @@ class RelayTests(unittest.TestCase):
                 Path(folder, f"{name}.json").write_text(json.dumps({"token": token, "env": "production"}))
             notifier.forget_token("dead")
             self.assertEqual(sorted(os.listdir(folder)), ["b.json"])
-            self.assertEqual(notifier.device_tokens(), [("alive", None, "production")])
+            self.assertEqual(notifier.device_tokens(), [("alive", None, "production", frozenset())])
 
 
 

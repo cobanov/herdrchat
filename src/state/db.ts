@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import type { ChatPref } from '@/lib/chatPrefs';
 import type { ThreadRead } from '@/lib/unread';
 import type { ServerConnection } from './connections';
 
@@ -102,6 +103,18 @@ export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       PRIMARY KEY (connection_id, text)
     );
 
+    -- Pinned and muted chats. Stamped with the session for the reason
+    -- thread_reads is: a pin or mute on a recycled workspace slot must not
+    -- carry over to the next chat in it (see src/lib/chatPrefs.ts).
+    CREATE TABLE IF NOT EXISTS chat_prefs (
+      connection_id TEXT NOT NULL,
+      workspace_id  TEXT NOT NULL,
+      session_sig   TEXT NOT NULL,
+      pinned_at     INTEGER,
+      muted         INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (connection_id, workspace_id)
+    );
+
     -- Superseded by thread_reads. Safe to drop unconditionally: the old table
     -- had no session_sig and nothing ever wrote to it, so there is no state to
     -- migrate. Named differently on purpose, so this DROP cannot delete the new
@@ -191,6 +204,7 @@ export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): P
     await db.runAsync('DELETE FROM tail_cursors WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM previews WHERE connection_id = ?', id);
     await db.runAsync('DELETE FROM thread_reads WHERE connection_id = ?', id);
+    await db.runAsync('DELETE FROM chat_prefs WHERE connection_id = ?', id);
     // The user's own words, typed on a host they just removed. Leaving them
     // behind also let a re-added host inherit another host's prompt history,
     // because connection ids are reused from the row that made them.
@@ -240,6 +254,62 @@ export async function loadThreadReads(
   );
   return new Map(
     rows.map((row) => [row.workspace_id, { sessionSig: row.session_sig, openedAt: row.opened_at }])
+  );
+}
+
+// MARK: - Pinned and muted chats
+
+/** Every pin and mute for one server, by workspace. */
+export async function loadChatPrefs(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string
+): Promise<Map<string, ChatPref>> {
+  const rows = await db.getAllAsync<{
+    workspace_id: string;
+    session_sig: string;
+    pinned_at: number | null;
+    muted: number;
+  }>(
+    'SELECT workspace_id, session_sig, pinned_at, muted FROM chat_prefs WHERE connection_id = ?',
+    connectionId
+  );
+  return new Map(
+    rows.map((row) => [
+      row.workspace_id,
+      { sessionSig: row.session_sig, pinnedAt: row.pinned_at, muted: row.muted === 1 },
+    ])
+  );
+}
+
+/**
+ * Pin or mute a chat, or undo either. A row left over from an earlier chat in
+ * the slot is replaced outright, so its other choice does not carry over.
+ */
+export async function saveChatPref(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string,
+  change: { pinnedAt?: number | null; muted?: boolean }
+): Promise<void> {
+  const current = (await loadChatPrefs(db, connectionId)).get(workspaceId);
+  const base = current !== undefined && current.sessionSig === sessionSig ? current : { pinnedAt: null, muted: false };
+  const pinnedAt = change.pinnedAt !== undefined ? change.pinnedAt : base.pinnedAt;
+  const muted = change.muted ?? base.muted;
+  if (pinnedAt === null && !muted) {
+    await db.runAsync('DELETE FROM chat_prefs WHERE connection_id = ? AND workspace_id = ?', connectionId, workspaceId);
+    return;
+  }
+  await db.runAsync(
+    `INSERT INTO chat_prefs (connection_id, workspace_id, session_sig, pinned_at, muted)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (connection_id, workspace_id) DO UPDATE SET
+       session_sig = excluded.session_sig, pinned_at = excluded.pinned_at, muted = excluded.muted`,
+    connectionId,
+    workspaceId,
+    sessionSig,
+    pinnedAt,
+    muted ? 1 : 0
   );
 }
 

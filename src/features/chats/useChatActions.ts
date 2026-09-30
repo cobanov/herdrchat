@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import type * as SQLite from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 
-import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
+import { confirmDestructive, showActionSheet, type SheetAction } from '@/components/ActionSheet';
 import { haptics } from '@/lib/haptics';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { forgetWorkspace } from '@/state/threadCache';
@@ -33,7 +33,8 @@ export function useChatActions({
   clearError: () => void;
   renameChat: (summary: ChatSummary) => void;
   closeChat: (summary: ChatSummary) => void;
-  manageChat: (summary: ChatSummary) => void;
+  /** `extra` goes above Rename and Close: pin and mute, which are the chat list's. */
+  manageChat: (summary: ChatSummary, extra?: readonly SheetAction[]) => void;
 } {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -85,12 +86,13 @@ export function useChatActions({
    * reachable only by a gesture is an action most people never reach.
    */
   const manageChat = useCallback(
-    (summary: ChatSummary) => {
+    (summary: ChatSummary, extra: readonly SheetAction[] = []) => {
       if (client === null) return;
       haptics.medium();
       showActionSheet({
         title: summary.title,
         actions: [
+          ...extra,
           { label: 'Rename…', onPress: () => renameChat(summary) },
           { label: 'Close chat', destructive: true, onPress: () => closeChat(summary) },
         ],

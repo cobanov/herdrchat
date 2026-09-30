@@ -1,0 +1,23 @@
+import { activePref, mutedSessionIds, type ChatPref } from '../chatPrefs';
+
+const pref = (sessionSig: string, extra: Partial<ChatPref> = {}): ChatPref => ({ sessionSig, pinnedAt: null, muted: false, ...extra });
+
+describe('chat prefs', () => {
+  // herdr reuses workspace ids: a new chat in a pinned slot is not pinned.
+  it('applies only to the conversation it was made for', () => {
+    const prefs = new Map([['w1', pref('s-old', { pinnedAt: 1 })]]);
+    expect(activePref(prefs, 'w1', 's-old')?.pinnedAt).toBe(1);
+    expect(activePref(prefs, 'w1', 's-new')).toBeNull();
+    expect(activePref(prefs, 'w1', null)).toBeNull();
+    expect(activePref(prefs, 'w2', 's-old')).toBeNull();
+  });
+
+  it('hands the watcher raw session ids, Codex marks removed', () => {
+    expect(mutedSessionIds([
+      pref('b,a', { muted: true }),
+      pref('codex:c', { muted: true }),
+      pref('d', { pinnedAt: 5 }),
+      pref('a', { muted: true }),
+    ])).toEqual(['a', 'b', 'c']);
+  });
+});

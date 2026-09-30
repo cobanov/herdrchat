@@ -18,7 +18,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "75",
+      "buildNumber": "76",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -31,7 +31,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "versionCode": 64,
+      "versionCode": 65,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"

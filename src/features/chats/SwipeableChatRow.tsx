@@ -14,21 +14,19 @@ import { ChatRow } from './ChatRow';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
- * A chat row with trailing swipe actions.
+ * A chat row with swipe actions: Pin and Mute on the leading side, Rename and
+ * Close on the trailing one, as Messages splits them.
  *
  * `ChatRow` stays presentational — it does not know it can be swiped, which is
  * what lets it keep being used wherever a row is drawn without one.
  *
- * TRAILING ONLY, and that is the actual constraint rather than the one the code
- * used to state. This screen previously argued against swipe actions because
- * they "would fight the back gesture on the way out of a thread" — but the chats
- * list is a tab root and has no back gesture at all. What is true is narrower: a
- * leading action would begin in the left-edge strip that the interactive pop
- * owns on any screen that IS pushed, so keeping actions on the trailing side
- * means this component stays safe if it is ever reused inside one.
+ * The leading side is safe here because the chats list is a tab root (and the
+ * iPad sidebar) with no back gesture to fight: a leading action would begin in
+ * the left-edge strip an interactive pop owns. Reusing this row on a pushed
+ * screen means dropping `onTogglePin` and `onToggleMute`, which removes them.
  *
- * Two actions, not more. Past three the panel is wider than the row's text and
- * the swipe stops being a shortcut.
+ * Two actions a side, not more. Past three the panel is wider than the row's
+ * text and the swipe stops being a shortcut.
  */
 const ACTION_WIDTH = 76;
 
@@ -40,6 +38,10 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onLongPress,
   onRename,
   onClose,
+  pinned = false,
+  muted = false,
+  onTogglePin,
+  onToggleMute,
   onSwiped,
 }: {
   summary: ChatSummary;
@@ -49,6 +51,11 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onLongPress: () => void;
   onRename: () => void;
   onClose: () => void;
+  pinned?: boolean;
+  muted?: boolean;
+  /** Absent while the chat has no session to pin or mute by. */
+  onTogglePin?: () => void;
+  onToggleMute?: () => void;
   /**
    * The gesture was used. Opening the panel is enough — someone who swipes,
    * reads the two actions and swipes back has learned the gesture, and going on
@@ -109,6 +116,43 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
     [onRename, onClose]
   );
 
+  const renderLeftActions = useCallback(
+    (_progress: unknown, _translation: unknown, methods: SwipeableMethods) => (
+      <View style={{ flexDirection: 'row' }}>
+        {onTogglePin !== undefined && (
+          <SwipeAction
+            label={pinned ? 'Unpin' : 'Pin'}
+            symbol={pinned ? 'pin.slash' : 'pin.fill'}
+            tone="tint"
+            onPress={() => {
+              methods.close();
+              onTogglePin();
+            }}
+          />
+        )}
+        {onToggleMute !== undefined && (
+          <SwipeAction
+            label={muted ? 'Unmute' : 'Mute'}
+            symbol={muted ? 'bell' : 'bell.slash'}
+            tone="neutral"
+            onPress={() => {
+              methods.close();
+              onToggleMute();
+            }}
+          />
+        )}
+      </View>
+    ),
+    [pinned, muted, onTogglePin, onToggleMute]
+  );
+  const leading = onTogglePin !== undefined || onToggleMute !== undefined;
+  const rowActions = [
+    ...(onTogglePin !== undefined ? [{ name: 'pin', label: pinned ? 'Unpin' : 'Pin', run: onTogglePin }] : []),
+    ...(onToggleMute !== undefined ? [{ name: 'mute', label: muted ? 'Unmute notifications' : 'Mute notifications', run: onToggleMute }] : []),
+    { name: 'rename', label: 'Rename', run: onRename },
+    { name: 'close', label: 'Close chat', run: onClose },
+  ];
+
   return (
     <ReanimatedSwipeable
       containerStyle={{ borderRadius: radius.sm, overflow: 'hidden', marginBottom: spacing.sm }}
@@ -118,7 +162,9 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
       // threshold is a fraction of the panel rather than the default half-width
       // of the whole row.
       rightThreshold={ACTION_WIDTH / 2}
+      leftThreshold={ACTION_WIDTH / 2}
       overshootRight={false}
+      overshootLeft={false}
       // The panel opening is the moment the gesture committed. Feeling it here
       // rather than on the action tap is what tells you the swipe worked while
       // your thumb is still covering the row.
@@ -127,17 +173,17 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
         onSwiped();
       }}
       testID={`chat-swipe-${summary.workspaceId}`}
-      renderRightActions={renderRightActions}>
+      renderRightActions={renderRightActions}
+      renderLeftActions={leading ? renderLeftActions : undefined}>
       <ChatRow
         summary={summary}
         unread={unread}
         selected={selected}
         onPress={onPress}
         onLongPress={onLongPress}
-        actions={[
-          { name: 'rename', label: 'Rename', run: onRename },
-          { name: 'close', label: 'Close chat', run: onClose },
-        ]}
+        pinned={pinned}
+        muted={muted}
+        actions={rowActions}
       />
     </ReanimatedSwipeable>
   );
@@ -151,12 +197,12 @@ function SwipeAction({
 }: {
   label: string;
   symbol: IconName;
-  tone: 'neutral' | 'destructive';
+  tone: 'neutral' | 'tint' | 'destructive';
   onPress: () => void;
 }) {
   const { colors } = useTheme();
-  const background = tone === 'destructive' ? colors.destructive : colors.fillSubtle;
-  const foreground = tone === 'destructive' ? colors.onTint : colors.label;
+  const background = tone === 'destructive' ? colors.destructive : tone === 'tint' ? colors.tint : colors.fillSubtle;
+  const foreground = tone === 'neutral' ? colors.label : colors.onTint;
 
   return (
     <Pressable

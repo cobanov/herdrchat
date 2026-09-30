@@ -24,6 +24,10 @@ it('writes the connection id into the token file', async () => {
   await uploadPushToken(transport, 'device-1', 'abc123', 'dev.herdr.HerdrChat', 'conn-42');
   expect(commands[0]).toContain('"connection":"conn-42"');
   expect(commands[0]).toContain('"token":"abc123"');
+  expect(commands[0]).toContain('"muted":[]');
+  await uploadPushToken(transport, 'device-1', 'abc123', 'dev.herdr.HerdrChat', 'conn-42', ['sess-a', 'sess-b']);
+  // What the watcher skips for this phone only.
+  expect(commands[1]).toContain('"muted":["sess-a","sess-b"]');
 });
 
 // A named session's phones register in their own folder, which is the only one
