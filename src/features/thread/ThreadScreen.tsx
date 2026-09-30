@@ -43,7 +43,7 @@ import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
-import { modelDisplayName } from '@/lib/transcript/sessionMeta';
+import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
@@ -221,10 +221,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
       .finally(() => setInstalling(false));
   }, [client, installing, agentKind]);
 
+  // A /model or /effort that has just run wins over the last reply's.
+  const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
+  const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
   const subtitle = [
-    modelDisplayName(thread.sessionMeta?.model ?? null),
+    commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
-    thread.sessionMeta?.effort == null ? null : `${thread.sessionMeta.effort} effort`,
+    effort === null ? null : `${effort} effort`,
     thread.workingDirName,
     // The connection before the agent: "online" under a banner saying the
     // chat is offline or paused contradicted it (#4 acceptance).

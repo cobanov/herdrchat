@@ -108,3 +108,28 @@ it('reads the confirmation that follows a model pick', () => {
   ]);
   expect(overlay.actions.map((action) => action.label)).toEqual(['Confirm', 'Cancel']);
 });
+
+// Codex 0.154, unedited captures: /model, then the reasoning level.
+describe('Codex pickers', () => {
+  it('reads the model picker: its rows, the cursor and the one in use', () => {
+    const overlay = parsePaneOverlay(screen('codex-model-picker.txt'))!;
+    expect(overlay.title).toBe('Select Model and Effort');
+    expect(overlay.options.map((o) => o.label)).toEqual([
+      'gpt-6-astra (default)', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-daybreak-blue-latest', 'gpt-5.5',
+    ]);
+    expect(overlay.options[1]).toMatchObject({ highlighted: true, current: true, detail: 'Older generation workhorse model.' });
+    expect(overlay.actions.map((a) => [a.key, a.label])).toEqual([['Enter', 'Confirm'], ['Esc', 'Back']]);
+    expect(overlayOptionKeys(overlay, overlay.options[5]!)).toEqual(['Down', 'Down', 'Down', 'Down']);
+  });
+
+  it('reads the reasoning level that follows', () => {
+    const overlay = parsePaneOverlay(screen('codex-effort-picker.txt'))!;
+    expect(overlay.title).toBe('Select Reasoning Level for gpt-5.6-sol');
+    expect(overlay.options.find((o) => o.highlighted)).toMatchObject({ label: 'Extra high', current: true });
+  });
+
+  it('does not claim a Codex screen without its picker', () => {
+    expect(parsePaneOverlay(screen('codex-approval.txt'))).toBeNull();
+    expect(parsePaneOverlay(screen('codex-trust.txt'))).toBeNull();
+  });
+});

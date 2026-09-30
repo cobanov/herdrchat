@@ -1,0 +1,16 @@
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+
+  Select Model and Effort
+  Access legacy models by running codex -m <model_name> or in your config.toml
+
+  1. gpt-6-astra (default)     Frontier intelligence for the most demanding work.
+› 2. gpt-5.6-sol (current)     Older generation workhorse model.
+  3. gpt-5.6-terra             Older balanced model for straightforward work.
+  4. gpt-5.6-luna              Older fast and efficient model.
+  5. gpt-daybreak-blue-latest  Latest frontier agentic coding model for broad defensive cybersecurity work.
+  6. gpt-5.5                   Legacy coding model.
+
+  Press enter to confirm or esc to go back

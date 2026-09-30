@@ -217,7 +217,7 @@ export function toolKind(name: string): ToolKind {
 // MARK: - Internals
 
 /** Claude's Bash, and Codex's shell tools. */
-const COMMAND_TOOLS = new Set(['Bash', 'BashOutput', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin']);
+const COMMAND_TOOLS = new Set(['Bash', 'BashOutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin']);
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'ToolSearch', 'web_search']);
 const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'update_plan']);

@@ -957,6 +957,25 @@ describe('slash commands', () => {
     await unmount();
   });
 
+  // Codex 0.154: its /model picker has no transcript line, before or after.
+  it('drives a Codex picker the same way, and does not call a silent command lost', async () => {
+    const codex = { ...agent, agent: 'codex', agentSession: { kind: 'id' as const, value: 'cx', agent: 'codex', source: null } };
+    const codexPicker = readFileSync(join(__dirname, '../../../lib/__tests__/fixtures/screens/codex-model-picker.txt'), 'utf8');
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([codex]));
+    const prompt = jest.spyOn(client, 'sendPrompt');
+    const command = jest.spyOn(client, 'sendCommand').mockResolvedValue(undefined);
+    jest.spyOn(client, 'paneVisible').mockResolvedValue(codexPicker);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    let sent: Promise<unknown> | undefined;
+    await act(async () => { sent = result.current.send('/model'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(11_000); await sent; });
+    expect(command).toHaveBeenCalledWith(codex.paneId, '/model');
+    expect(prompt).not.toHaveBeenCalled();
+    expect(result.current.overlay?.title).toBe('Select Model and Effort');
+    expect(result.current.failedIds.size).toBe(0);
+    await unmount();
+  });
+
   it('sends a path as an ordinary prompt', async () => {
     jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
     const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');

@@ -1,3 +1,4 @@
+import { codexFailed } from '../transcript/codex';
 import { assistantMeta, parseTranscript, parseTranscriptEntry, parseTranscriptLine } from '../transcript/parser';
 import { displayText, isToolOnly } from '../transcript/message';
 import { modelDisplayName } from '../transcript/sessionMeta';
@@ -72,8 +73,26 @@ describe('Codex rollout history', () => {
 
   it.each(['function_call_output', 'custom_tool_call_output'])('keeps %s out of user bubbles', type => {
     const parsed = parseTranscriptLine(line('response_item', { type, call_id: 'call-1', output: 'test output' }));
-    expect(parsed?.segments).toEqual([{ kind: 'toolResult', text: 'test output' }]);
+    expect(parsed?.segments).toEqual([{ kind: 'toolResult', text: 'test output', toolUseId: 'call-1' }]);
     expect(isToolOnly(parsed!)).toBe(true);
+  });
+
+  // Codex has no error flag on a result; it says so in the text (0.154).
+  it.each([
+    ['Script failed\nWall time 0.0 seconds\nOutput:\nScript error: apply_patch verification failed', true],
+    ['Script completed\nWall time 0.1 seconds\nOutput:\n{"chunk_id":"a","exit_code":1,"output":"no such file"}', true],
+    ['Script completed\nOutput:\n{"exit_code":0,"output":"{\\"exit_code\\":1}"}', false],
+    ['Process exited with code 2\nboom', true],
+    ['Script completed\nWall time 1.8 seconds\nOutput:\nall good', false],
+  ])('reads a failure out of the result text: %s', (text, failed) => {
+    expect(codexFailed(text)).toBe(failed);
+  });
+
+  it('pairs a result with its call and marks a failure', () => {
+    const parsed = parseTranscriptLine(line('response_item', { type: 'function_call_output', call_id: 'call-9', output: 'Script failed\nboom' }));
+    expect(parsed?.segments).toEqual([{ kind: 'toolResult', text: 'Script failed\nboom', toolUseId: 'call-9', isError: true }]);
+    const call = parseTranscriptLine(line('response_item', { type: 'function_call', call_id: 'call-9', name: 'exec', arguments: '{}' }));
+    expect(call?.segments[0]).toMatchObject({ kind: 'toolUse', name: 'exec', id: 'call-9' });
   });
 
   it('bounds tool input and ignores encrypted reasoning', () => {

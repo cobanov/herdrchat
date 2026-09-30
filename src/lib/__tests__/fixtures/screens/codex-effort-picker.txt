@@ -1,0 +1,14 @@
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+
+  Select Reasoning Level for gpt-5.6-sol
+
+  1. Low (default)         Fast responses with lighter reasoning
+  2. Medium                Balances speed and reasoning depth for everyday tasks
+  3. High                  Greater reasoning depth for complex problems
+› 4. Extra high (current)  Extra high reasoning depth for complex problems
+  5. More reasoning…       Max and Ultra consume usage limits faster
+
+  Press enter to confirm or esc to go back
