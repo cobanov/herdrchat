@@ -1,11 +1,12 @@
 # UI regression suite: the Maestro flows in scripts/e2e.sh, against the Demo
 # host, on an iOS simulator with a Release build (no Metro, no dev menu).
-# Free for this public repository; slow (a native build), so it runs on pull
-# requests and on demand rather than on every push to main.
+# Free for this public repository, but slow: the native build alone took about
+# 50 minutes on a GitHub macOS runner. So it runs on demand (Actions, E2E, Run
+# workflow, or `gh workflow run e2e.yml --ref <branch>`), and `npm run e2e` on
+# a local simulator is the gate before shipping.
 name: E2E
 
 on:
-  pull_request:
   workflow_dispatch:
 
 concurrency:

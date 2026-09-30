@@ -115,8 +115,8 @@ check.
 
 **Every bug fix and every feature adds a test that would have caught it.**
 Logic goes in jest; anything a person sees or taps goes in a Maestro flow
-under `.maestro/regression/`, run by `npm run e2e` and by the E2E workflow on
-every pull request. The flows need no host: the Demo (`src/lib/demo/`) plays
+under `.maestro/regression/`, run by `npm run e2e` before shipping (the E2E
+workflow runs the same on a GitHub runner on demand; its native build is slow). The flows need no host: the Demo (`src/lib/demo/`) plays
 the agent, including its scenarios (`scenarios.ts`: slash-command panels, a
 question in parts, a tool run with a failure). A feature the Demo cannot show
 gets a Demo scenario first. The person using this app tests on a phone; they
