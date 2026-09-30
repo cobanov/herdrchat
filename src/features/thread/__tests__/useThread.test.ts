@@ -968,3 +968,26 @@ describe('slash commands', () => {
     await unmount();
   });
 });
+
+// Several questions in one AskUserQuestion keep the agent `blocked` from the
+// first to the review screen, so no status event announces the next one. With
+// the event stream live the poll idled at 30 s and the answered question stayed.
+it('shows the next question soon after an answer, with the event stream live', async () => {
+  mockLive = true;
+  const blocked = { ...agent, agentStatus: 'blocked' as const };
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([blocked]));
+  const screens = ['Pick a color\n❯ 1. Blue\n  2. Green\n', 'Pick a size\n❯ 1. Small\n  2. Large\n'];
+  const read = jest.spyOn(client, 'paneVisible').mockImplementation(async () => screens[0]!);
+  jest.spyOn(client, 'sendKeys').mockImplementation(async () => {
+    screens.shift();
+  });
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(500); });
+  expect(result.current.blockedPrompt?.question).toBe('Pick a color');
+  await act(async () => { await result.current.sendKeys(['1']); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(1_500); });
+  expect(result.current.blockedPrompt?.question).toBe('Pick a size');
+  expect(result.current.blockedPending).toBeNull();
+  expect(read).toHaveBeenCalled();
+  await unmount();
+});

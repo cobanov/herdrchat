@@ -76,3 +76,16 @@ describe('pictures', () => {
     expect(screen.queryByTestId('composer-attach')).toBeNull();
   });
 });
+
+// A long draft and the keyboard can cover the whole chat.
+it('offers to hide the keyboard while typing, and keeps the draft', async () => {
+  const { Keyboard } = jest.requireActual<typeof import('react-native')>('react-native');
+  const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => undefined);
+  const screen = await render(<Harness onSend={async () => true} />);
+  expect(screen.queryByTestId('composer-hide-keyboard')).toBeNull();
+  await fireEvent(screen.getByTestId('composer-input'), 'focus');
+  await fireEvent.changeText(screen.getByTestId('composer-input'), 'a long prompt');
+  await fireEvent.press(screen.getByTestId('composer-hide-keyboard'));
+  expect(dismiss).toHaveBeenCalled();
+  expect(screen.getByTestId('composer-input').props.value).toBe('a long prompt');
+});

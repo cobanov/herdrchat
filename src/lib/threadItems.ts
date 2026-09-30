@@ -15,7 +15,7 @@
 
 import type { ChatMessage, MessageSegment } from './transcript/message';
 
-export type ToolKind = 'command' | 'edit' | 'read' | 'search' | 'fetch' | 'todo' | 'agent' | 'tool';
+export type ToolKind = 'command' | 'edit' | 'read' | 'search' | 'fetch' | 'todo' | 'question' | 'agent' | 'tool';
 
 export interface ToolCall {
   /** Stable within the thread: the message id plus the segment's index. */
@@ -168,6 +168,7 @@ export function toolRunSummary(calls: readonly ToolCall[], thoughts: number): st
     count('search') > 0 ? `searched ${plural(count('search'), 'time', 'times')}` : null,
     count('fetch') > 0 ? `fetched ${plural(count('fetch'), 'page', 'pages')}` : null,
     count('todo') > 0 ? 'updated todos' : null,
+    count('question') > 0 ? `asked ${plural(count('question'), 'question', 'questions')}` : null,
     count('tool') > 0 ? `called ${plural(count('tool'), 'tool', 'tools')}` : null,
     failed > 0 ? `${failed} failed` : null,
   ].filter((part): part is string => part !== null);
@@ -192,6 +193,8 @@ export function toolCallLine(call: ToolCall): { verb: string; detail: string } {
       return { verb: 'Fetch', detail: field('url') ?? call.input ?? '' };
     case 'todo':
       return { verb: 'Todo', detail: 'updated the list' };
+    case 'question':
+      return { verb: 'Ask', detail: field('question') ?? 'a question' };
     case 'agent':
       return { verb: 'Agent', detail: field('description') ?? field('subagent_type') ?? call.input ?? '' };
     case 'tool':
@@ -206,6 +209,7 @@ export function toolKind(name: string): ToolKind {
   if (SEARCH_TOOLS.has(name)) return 'search';
   if (name === 'WebFetch') return 'fetch';
   if (TODO_TOOLS.has(name)) return 'todo';
+  if (name === 'AskUserQuestion') return 'question';
   if (name === 'Agent' || name === 'Task') return 'agent';
   return 'tool';
 }
@@ -241,7 +245,8 @@ function editedPath(call: ToolCall): string | null {
  */
 function inputField(input: string | null, name: string): string | null {
   if (input === null) return null;
-  const match = new RegExp(`(?:^\\{|, )${name}: ([\\s\\S]*?)(?=, [a-z_]+: |\\}$)`).exec(input);
+  // Nested one level too: AskUserQuestion's `{questions: [{question: …}]}`.
+  const match = new RegExp(`(?:^\\{|\\[\\{|, )${name}: ([\\s\\S]*?)(?=, [a-z_]+: |\\}\\]|\\}$)`).exec(input);
   const value = match?.[1]?.trim();
   return value === undefined || value.length === 0 ? null : value;
 }

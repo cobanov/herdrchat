@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
@@ -205,6 +205,25 @@ export function Composer({
               fontSize: typography.body.fontSize,
             }}
           />
+
+          {/* While typing, the keyboard and a long draft can take the whole
+              screen and hide the chat. This puts it away without sending; the
+              draft stays. */}
+          {focused && (
+            <Pressable
+              onPress={() => Keyboard.dismiss()}
+              accessibilityRole="button"
+              accessibilityLabel="Hide keyboard"
+              testID="composer-hide-keyboard"
+              style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon
+                name="keyboard.chevron.compact.down"
+                size={size.composerAccessoryGlyph}
+                tintColor={colors.secondaryLabel}
+                fallback={<Text variant="title3" color="secondary">⌄</Text>}
+              />
+            </Pressable>
+          )}
 
           <AnimatedPressable
             onPress={send}
