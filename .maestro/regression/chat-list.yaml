@@ -1,0 +1,61 @@
+# Pin, mute and the swipe actions on the chat list (PR #138, #139).
+# Leaves the Demo as it found it: every pin and mute is undone.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+
+# Leading swipe: Pin and Mute.
+- swipe:
+    from:
+      id: chat-row-w2
+    direction: RIGHT
+- waitForAnimationToEnd
+- assertVisible:
+    id: swipe-action-pin
+- assertVisible:
+    id: swipe-action-mute
+- takeScreenshot: chat-list-leading-${APPEARANCE}
+- tapOn:
+    id: swipe-action-pin
+# A group that appears at the top must be on screen, not above it (#138).
+- extendedWaitUntil:
+    visible:
+      id: chat-group-pinned
+    timeout: 5000
+- assertVisible:
+    id: chat-row-w2
+
+# Long press: the same choices, now reading Unpin, and Mute.
+- longPressOn:
+    id: chat-row-w2
+- tapOn: Mute notifications
+- longPressOn:
+    id: chat-row-w2
+- assertVisible: Unpin
+- assertVisible: Unmute notifications
+- takeScreenshot: chat-list-menu-${APPEARANCE}
+- tapOn: Unmute notifications
+- longPressOn:
+    id: chat-row-w2
+- tapOn: Unpin
+- assertNotVisible:
+    id: chat-group-pinned
+
+# Trailing swipe: Rename and Close, and it closes again cleanly.
+- swipe:
+    from:
+      id: chat-row-w3
+    direction: LEFT
+- waitForAnimationToEnd
+- assertVisible:
+    id: swipe-action-rename
+- assertVisible:
+    id: swipe-action-close
+- takeScreenshot: chat-list-trailing-${APPEARANCE}
+- swipe:
+    from:
+      id: chat-row-w3
+    direction: RIGHT
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: swipe-action-close

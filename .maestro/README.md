@@ -1,5 +1,23 @@
 # Maestro flows
 
+## The regression suite
+
+`npm run e2e` runs `scripts/e2e.sh`: the flows under `regression/` plus the
+Demo flows below, each in dark and light, against the built-in Demo host. The
+E2E workflow runs the same script on every pull request with a Release build.
+Every fix and feature adds a flow here (or a jest test), so a phone is not
+where regressions are found.
+
+| Flow | Covers |
+|------|--------|
+| `regression/chat-list` | pin and mute (swipe right, long press), the Pinned group appearing on screen, the trailing swipe opening and closing |
+| `regression/new-chat` | Start reachable with the keyboard up, Cancel |
+| `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+
+The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
+`/model`, `/effort`, "ask me two questions", "run the checks".
+
+
 Run against a booted simulator with the app installed and Metro running:
 
 ```bash

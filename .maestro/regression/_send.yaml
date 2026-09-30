@@ -1,0 +1,22 @@
+# Send what is in the composer. The keyboard goes down first (with the
+# composer's own button): XCTest's taps on Send with the keyboard up were
+# dropped about half the time on the simulator, which a phone does not do.
+appId: dev.herdr.HerdrChat
+---
+- runFlow:
+    when:
+      visible:
+        id: composer-hide-keyboard
+    commands:
+      - tapOn:
+          id: composer-hide-keyboard
+      - waitForAnimationToEnd
+# Send turns on once the agent has been seen; tapping before is a no-op.
+- extendedWaitUntil:
+    visible:
+      id: composer-send
+      enabled: true
+    timeout: 15000
+- tapOn:
+    id: composer-send
+    retryTapIfNoChange: true

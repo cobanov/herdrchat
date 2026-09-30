@@ -1,0 +1,69 @@
+# UI regression suite: the Maestro flows in scripts/e2e.sh, against the Demo
+# host, on an iOS simulator with a Release build (no Metro, no dev menu).
+# Free for this public repository; slow (a native build), so it runs on pull
+# requests and on demand rather than on every push to main.
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the iOS project
+        run: npx expo prebuild -p ios --clean
+
+      - name: Build for the simulator (Release, bundle embedded)
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/HerdrChat.xcworkspace -scheme HerdrChat \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/e2e CODE_SIGNING_ALLOWED=NO build | tail -n 40
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator and install the app
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["isAvailable"] and x["platform"]=="iOS"]; print(r[-1]["identifier"])')
+          type=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; t=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if x["name"].startswith("iPhone") and "Pro" in x["name"] and "Max" not in x["name"]]; print(t[-1])')
+          udid=$(xcrun simctl create e2e "$type" "$runtime")
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" build/e2e/Build/Products/Release-iphonesimulator/HerdrChat.app
+          echo "E2E_DEVICE=$udid" >> "$GITHUB_ENV"
+
+      - name: Run the flows
+        env:
+          E2E_OUT: ${{ github.workspace }}/e2e-output
+        run: sh scripts/e2e.sh
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: e2e-output
+          retention-days: 14

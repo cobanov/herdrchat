@@ -1,0 +1,40 @@
+# Shared start for the regression flows: a cold launch, the Demo host, the
+# appearance under test, and back on Chats.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: server-switcher
+    timeout: 15000
+# A tap in the first moment after launch can go unanswered, so it is tried
+# again if Hosts did not open, rather than failing the whole run.
+- tapOn:
+    id: server-switcher
+- runFlow:
+    when:
+      notVisible:
+        id: server-demo
+    commands:
+      - waitForAnimationToEnd
+      - tapOn:
+          id: server-switcher
+- extendedWaitUntil:
+    visible:
+      id: server-demo
+    timeout: 10000
+- tapOn:
+    id: server-demo
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      text: '${APPEARANCE}'
+    direction: DOWN
+- tapOn: '${APPEARANCE}'
+- tapOn: Chats
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 10000

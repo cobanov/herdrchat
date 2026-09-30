@@ -106,11 +106,21 @@ store — `router.setParams` after `router.back()` applies to the route being le
 npx tsc --noEmit      # zero errors
 npx expo lint         # zero errors
 npx jest              # src/lib and hooks
-maestro test .maestro/
+npm run e2e           # UI regression suite on a simulator, Demo host, dark + light
 ```
 
-Then actually look at the app in both light and dark mode. A screenshot you
-didn't open is not a check.
+Then actually look at the app in both light and dark mode, starting with the
+screenshots `npm run e2e` leaves behind. A screenshot you didn't open is not a
+check.
+
+**Every bug fix and every feature adds a test that would have caught it.**
+Logic goes in jest; anything a person sees or taps goes in a Maestro flow
+under `.maestro/regression/`, run by `npm run e2e` and by the E2E workflow on
+every pull request. The flows need no host: the Demo (`src/lib/demo/`) plays
+the agent, including its scenarios (`scenarios.ts`: slash-command panels, a
+question in parts, a tool run with a failure). A feature the Demo cannot show
+gets a Demo scenario first. The person using this app tests on a phone; they
+should not be the one to find what broke.
 
 ## Building
 

@@ -75,7 +75,8 @@ function line({ type, uuid, timestamp, content, model }: Line): string {
     message.model = model;
     message.usage = { input_tokens: 18_420, cache_read_input_tokens: 61_300 };
   }
-  return JSON.stringify({ type, uuid, timestamp, message });
+  // Claude records the turn's effort beside the message; the header shows it.
+  return JSON.stringify(model === undefined ? { type, uuid, timestamp, message } : { type, uuid, timestamp, effort: 'high', message });
 }
 
 const MODEL = 'claude-opus-5';
@@ -216,3 +217,31 @@ export const DEMO_BLOCKED_SCREEN = [
   '  2. No, tell me more first',
   '',
 ].join('\n');
+
+/**
+ * What Claude records for a slash command once it has run: the command as
+ * typed, then what it printed. Both are `user` turns, as in a real transcript.
+ */
+export function commandLines(command: string, printed: string, uuids: [string, string], timestamp: string): string[] {
+  const [name = '', ...args] = command.trim().split(/\s+/);
+  const typed = `<command-name>${name}</command-name>\n<command-message>${name.slice(1)}</command-message>\n<command-args>${args.join(' ')}</command-args>`;
+  return [
+    line({ type: 'user', uuid: uuids[0], timestamp, content: typed }),
+    line({ type: 'user', uuid: uuids[1], timestamp, content: `<local-command-stdout>${printed}</local-command-stdout>` }),
+  ];
+}
+
+/** An assistant turn that is one tool call. */
+export function toolUseLine(name: string, input: Record<string, unknown>, id: string, uuid: string, timestamp: string): string {
+  return line({ type: 'assistant', uuid, timestamp, model: MODEL, content: [{ type: 'tool_use', id, name, input }] });
+}
+
+/** A tool's result, which Claude writes as a `user` turn. */
+export function toolResultLine(id: string, text: string, isError: boolean, uuid: string, timestamp: string): string {
+  return line({
+    type: 'user',
+    uuid,
+    timestamp,
+    content: [{ type: 'tool_result', tool_use_id: id, content: text, ...(isError ? { is_error: true } : {}) }],
+  });
+}

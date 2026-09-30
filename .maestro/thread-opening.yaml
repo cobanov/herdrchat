@@ -3,8 +3,21 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: server-switcher
+    timeout: 15000
 - tapOn:
     id: server-switcher
+# The first tap after launch can go unanswered; see regression/_start.yaml.
+- runFlow:
+    when:
+      notVisible:
+        id: server-demo
+    commands:
+      - waitForAnimationToEnd
+      - tapOn:
+          id: server-switcher
 - tapOn:
     id: server-demo
 - tapOn: Settings

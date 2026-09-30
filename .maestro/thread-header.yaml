@@ -20,6 +20,9 @@ appId: dev.herdr.HerdrChat
       - inputText: '${output.prompt}'
       - tapOn:
           id: composer-send
+          # A tap on the simulator can be dropped while the thread is still
+          # scrolling to its end; this re-taps only if nothing changed.
+          retryTapIfNoChange: true
       - extendedWaitUntil:
           visible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
           timeout: 20000

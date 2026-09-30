@@ -1,0 +1,126 @@
+# The thread's features against the Demo's scenarios (src/lib/demo/scenarios.ts):
+# effort in the header, a folded tool run, a question in two parts, the
+# keyboard button, and the /model and /effort panels.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+# Send stays off until the thread has loaded; wait for its history first.
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- assertVisible: .*high effort.*
+
+# A run of tool calls folds into one line and opens onto its calls.
+- tapOn:
+    id: composer-input
+- inputText: run the checks
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*One test failed on the first run.*
+    timeout: 15000
+- waitForAnimationToEnd
+- tapOn: Ran 2 commands · edited 1 file · read 1 file · 1 failed
+# A list still scrolling to its end takes the first tap as "stop" on the
+# simulator; if the run did not open, tap it once more.
+- runFlow:
+    when:
+      notVisible: Run npm test
+    commands:
+      - waitForAnimationToEnd
+      - tapOn: Ran 2 commands · edited 1 file · read 1 file · 1 failed
+- assertVisible: Run npm test
+- takeScreenshot: thread-tool-run-${APPEARANCE}
+
+# Each question follows the last without reopening the chat (PR #137).
+- tapOn:
+    id: composer-input
+- inputText: ask me two questions
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: Pick a color
+    timeout: 15000
+- tapOn:
+    id: blocked-option-1
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: Pick a size
+    timeout: 5000
+- tapOn:
+    id: blocked-option-2
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: Ready to submit your answers?
+    timeout: 5000
+- tapOn:
+    id: blocked-option-1
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: .*You picked Blue and Large.*
+    timeout: 15000
+
+# The keyboard can be put away without sending.
+- tapOn:
+    id: composer-input
+- inputText: a draft that stays
+- tapOn:
+    id: composer-hide-keyboard
+- assertNotVisible:
+    id: composer-hide-keyboard
+- assertVisible: a draft that stays
+- tapOn:
+    id: composer-input
+- eraseText: 30
+- tapOn:
+    id: composer-hide-keyboard
+
+# /model: the palette, the panel, a row, and "this session only" (PR #136).
+- tapOn:
+    id: composer-input
+- inputText: /
+- waitForAnimationToEnd
+- tapOn:
+    id: command-suggestion-model
+    retryTapIfNoChange: true
+- assertVisible: /model.*
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: command-panel
+    timeout: 10000
+- assertVisible: Select model
+- tapOn:
+    id: command-option-3
+    retryTapIfNoChange: true
+- takeScreenshot: thread-model-panel-${APPEARANCE}
+- tapOn:
+    id: command-action-s
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: Set model to Sonnet 5 for this session only
+    timeout: 10000
+- assertNotVisible:
+    id: command-panel
+
+# /effort: the slider jumps to a level.
+- tapOn:
+    id: composer-input
+- inputText: /effort
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: command-level-xhigh
+    timeout: 10000
+- tapOn:
+    id: command-level-xhigh
+    retryTapIfNoChange: true
+- tapOn:
+    id: command-action-s
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: Set effort level to xhigh (this session only)
+    timeout: 10000
+- tapOn:
+    id: thread-back
