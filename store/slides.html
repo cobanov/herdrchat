@@ -316,6 +316,8 @@ const ipadFrame = (src, style) => `
 const icon = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
   key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4.5"/><path d="m11.5 11.5 8-8M16.5 6.5l2.5 2.5M14 9l2 2"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z"/><path d="M12 14v7"/></svg>',
+  mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 9.5-4.9M18 11v2l2 3H8"/><path d="M10 20a2 2 0 0 0 4 0"/><path d="M3 3l18 18"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 11.3-5.5"/></svg>',
 };
 
@@ -374,7 +376,18 @@ const iphone = [
       <div class="opt"><b>2</b>No, tell me more first</div>
           </div>
   `,
-  // 4. Notifications.
+  // 4. Slash commands.
+  () => `
+    <div class="glow" style="width:1200px;height:1200px;right:-300px;top:1600px;background:#4b50c8"></div>
+    <div class="grid"></div>
+    <div class="copy">
+      <div class="eyebrow"><i></i>Slash commands</div>
+      <h1>Switch the model <span class="tint">from your phone.</span></h1>
+      <p class="sub">Type / for /model, /effort and more. The picker opens right in the chat.</p>
+    </div>
+    ${phone('slash.png', '--w:900px;left:210px;top:980px')}
+  `,
+  // 5. Notifications.
   () => `
     <div class="glow" style="width:1200px;height:1200px;right:-300px;top:1300px;background:#4b50c8"></div>
     <div class="grid"></div>
@@ -392,7 +405,7 @@ const iphone = [
         </div>
       </div>`, '--w:960px;left:180px;top:1100px')}
   `,
-  // 5. Pictures.
+  // 6. Pictures.
   () => `
     <div class="glow" style="width:1200px;height:1200px;left:-200px;top:1500px;background:#1f7a55"></div>
     <div class="grid"></div>
@@ -404,7 +417,22 @@ const iphone = [
     ${phone('picture.png', '--w:780px;left:470px;top:1080px')}
     <div class="float shot" style="left:60px;top:1290px;transform:rotate(-5deg)"><img src="raw/pantry-login.png"></div>
   `,
-  // 6. Privacy.
+  // 7. Pin and mute.
+  () => `
+    <div class="glow" style="width:1100px;height:1100px;left:-300px;top:1400px;background:#a86208"></div>
+    <div class="grid"></div>
+    <div class="copy">
+      <div class="eyebrow" style="color:var(--amber)"><i></i>Pin &amp; mute</div>
+      <h1>Pin what matters. <span class="amber">Quiet the rest.</span></h1>
+      <p class="sub">Swipe a chat to keep it on top, or to turn off its notifications.</p>
+    </div>
+    ${phone('pinned.png', '--w:960px;left:180px;top:1100px')}
+    <div class="chips" style="top:2560px;flex-direction:row;gap:24px">
+      <div class="chip" style="flex:1">${icon.pin}<div>Pinned<br>to the top</div></div>
+      <div class="chip" style="flex:1">${icon.mute}<div>Muted<br>per chat</div></div>
+    </div>
+  `,
+  // 8. Privacy.
   () => `
     <div class="glow" style="width:1300px;height:1300px;left:0;top:900px;background:#3a3e9a"></div>
     <div class="grid"></div>
