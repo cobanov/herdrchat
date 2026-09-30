@@ -24,7 +24,8 @@ Dependency-free: python3 and, in direct mode, `openssl` and `curl`.
 Device tokens: the HerdrChat app writes its token to
 ~/.config/herdrchat/apns-tokens/<id>.json over SSH (under sessions/<name>/
 for a named herdr session); this watcher pushes to every token it finds there.
-A token Apple reports as retired is deleted.
+A token Apple reports as retired is deleted. The file also lists the agent
+session ids muted on that phone; those chats are not pushed to it.
 
 Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
     HERDRCHAT_RELAY_URL  Relay endpoint (default the HerdrChat relay).
@@ -56,7 +57,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 3
+WATCHER_VERSION = 4
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -155,7 +156,7 @@ def mode():
 
 def device_tokens():
     """Registered devices: (APNs token, the app's connection id for this host,
-    the token's APNs environment).
+    the token's APNs environment, the session ids muted on that phone).
 
     The connection id is how a tap on the phone knows which of its hosts sent
     the push. Token files from app builds before it have none (None here).
@@ -175,7 +176,9 @@ def device_tokens():
         if not tok:
             continue
         env = "sandbox" if data.get("env") in ("sandbox", "development") else "production"
-        entry = (tok, data.get("connection"), env)
+        muted = data.get("muted")
+        muted = frozenset(m for m in muted if isinstance(m, str)) if isinstance(muted, list) else frozenset()
+        entry = (tok, data.get("connection"), env, muted)
         if tok not in best or entry[1] or not best[tok][1]:
             best[tok] = entry
     return list(best.values())
@@ -503,7 +506,9 @@ def main():
                         # Lets the app tell this chat from a later one in the
                         # same workspace slot.
                         extra["session"] = session["value"]
-                    for tok, connection, env in tokens:
+                    for tok, connection, env, muted in tokens:
+                        if session_id and session_id in muted:
+                            continue
                         status, reason = send_push(
                             tok, title, body, dict(extra, connection=connection) if connection else extra, env=env
                         )

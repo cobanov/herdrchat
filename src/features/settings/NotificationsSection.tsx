@@ -16,6 +16,7 @@ import {
   requestPushToken,
   uploadPushToken,
 } from '@/features/notifications/push';
+import { mutedForHost } from '@/features/notifications/mutedChats';
 import { useWatcher } from '@/features/notifications/useWatcher';
 import { WatcherRow } from '@/features/notifications/WatcherRow';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -111,7 +112,8 @@ export function NotificationsSection() {
       if (connection === null) return;
 
       const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '';
-      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId, connection.id);
+      const muted = await mutedForHost(db, connection.id);
+      await uploadPushToken(clientFor(connection).transport, id, status.token, bundleId, connection.id, muted);
       persist(true);
       setNote({ message: `Registered with ${connection.name}.` });
     } catch (thrown) {

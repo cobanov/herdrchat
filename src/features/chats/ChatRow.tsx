@@ -24,11 +24,14 @@ export interface RowAction {
 }
 
 export const ChatRow = memo(function ChatRow({
-  summary, unread, selected = false, onPress, onLongPress, actions = [],
+  summary, unread, selected = false, pinned = false, muted = false, onPress, onLongPress, actions = [],
 }: {
   summary: ChatSummary;
   unread: boolean;
   selected?: boolean;
+  pinned?: boolean;
+  /** Notifications for this chat are off on this phone. */
+  muted?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   /**
@@ -63,7 +66,7 @@ export const ChatRow = memo(function ChatRow({
       onAccessibilityAction={(event) => {
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
-      accessibilityLabel={[summary.title || summary.workspaceId, context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
+      accessibilityLabel={[summary.title || summary.workspaceId, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
       testID={`chat-row-${summary.workspaceId}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -79,7 +82,11 @@ export const ChatRow = memo(function ChatRow({
       </View>
 
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
-        <Text variant="headline" numberOfLines={2}>{summary.title || summary.workspaceId}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+          <Text variant="headline" numberOfLines={2} style={{ flexShrink: 1 }}>{summary.title || summary.workspaceId}</Text>
+          {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
+          {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
+        </View>
         <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
         {restoreFailed !== null ? (
           <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">

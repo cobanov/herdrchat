@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { openChat } from '@/features/chats/navigation';
+import { mutedForHost } from '@/features/notifications/mutedChats';
 import { deviceFileId, existingPushToken, uploadPushToken } from '@/features/notifications/push';
 import { SELECTED_KEY } from '@/state/Hydrate';
 import { clientFor, isDemo, useConnections } from '@/state/connections';
@@ -52,7 +53,8 @@ export function usePushTokenRefresh(): void {
         useConnections.getState().connections.map(async (target) => {
           if (isDemo(target.id)) return;
           try {
-            await uploadPushToken(clientFor(target).transport, id, token, bundleId, target.id);
+            const muted = await mutedForHost(db, target.id);
+            await uploadPushToken(clientFor(target).transport, id, token, bundleId, target.id, muted);
           } catch {
             /* unreachable host — it catches the next launch */
           }

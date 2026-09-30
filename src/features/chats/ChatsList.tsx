@@ -15,6 +15,7 @@ import { openChat } from './navigation';
 import { groupChats } from './chatGroups';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
+import { useChatPrefs } from '@/features/chats/useChatPrefs';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
 import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
@@ -67,7 +68,8 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     useWorkspaces(client);
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
-  const rows = useMemo(() => groupChats(summaries, query), [summaries, query]);
+  const prefs = useChatPrefs(db, connection, summaries);
+  const rows = useMemo(() => groupChats(summaries, query, prefs.pinnedAt), [summaries, query, prefs.pinnedAt]);
   /** One flag for both recovery actions, only one is ever offered at a time. */
   const [fixing, setFixing] = useState(false);
   // A key change is not one failure among many: it is the only one where the
@@ -211,6 +213,9 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       {/* Rename and close fail outside the poll's own error path, so they get
           their own banner, dismissible, because unlike a connection error this
           one is about an action that is over. */}
+      {prefs.error !== null && (
+        <ErrorBanner message={prefs.error} onDismiss={prefs.clearError} />
+      )}
       {actions.error !== null && (
         <ErrorBanner message={actions.error} onDismiss={actions.clearError} />
       )}
@@ -316,6 +321,12 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           extraData={selectedWorkspaceId}
           keyExtractor={(item) => item.kind === 'group' ? `group-${item.id}` : item.summary.workspaceId}
           getItemType={(item) => item.kind}
+          // FlashList keeps the first visible row in place by default, so a
+          // group that appears at the top (a chat pinned, or one that starts
+          // needing you) landed ABOVE the screen at a scroll of zero, and the
+          // chat you had just pinned seemed to vanish. The top of this list is
+          // the part that matters, so it stays put instead.
+          maintainVisibleContentPosition={{ disabled: true }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           // The tab bar floats OVER the list, so the last row has to be able to
@@ -354,16 +365,27 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
               </View>
             );
             const item = row.summary;
+            const pinned = prefs.isPinned(item);
+            const muted = prefs.isMuted(item);
+            // Both belong to a conversation, so both wait for its session id.
+            const personal = item.sessionSig !== null;
             return (
               <SwipeableChatRow
                 summary={item}
+                pinned={pinned}
+                muted={muted}
+                onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
+                onToggleMute={personal ? () => prefs.toggleMute(item) : undefined}
                 selected={item.workspaceId === selectedWorkspaceId}
                 unread={item.workspaceId !== selectedWorkspaceId && isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
                 onPress={() => {
                   Keyboard.dismiss();
                   openChat(connection.id, item.workspaceId, item.title);
                 }}
-                onLongPress={() => actions.manageChat(item)}
+                onLongPress={() => actions.manageChat(item, personal ? [
+                  { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
+                  { label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) },
+                ] : [])}
                 onSwiped={markHintSeen}
                 onRename={() => actions.renameChat(item)}
                 onClose={() => actions.closeChat(item)}

@@ -28,3 +28,11 @@ it('matches a folder or provider without requiring a transcript or session id', 
   expect(ids(groupChats([workspace], 'acme/api'))).toEqual(['idle', 'Release']);
   expect(ids(groupChats([workspace], 'CODEX'))).toEqual(['idle', 'Release']);
 });
+
+it('puts pinned chats first, in pin order, whatever they are doing', () => {
+  const pinned = new Map([['idle-b', 20], ['approval', 10]]);
+  expect(ids(groupChats(chats, '', pinned))).toEqual([
+    'pinned', 'approval', 'idle-b', 'working', 'busy', 'idle', 'idle-a', 'unknown',
+  ]);
+  expect(ids(groupChats(chats, 'idle-b', pinned))).toEqual(['pinned', 'idle-b']);
+});

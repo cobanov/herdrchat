@@ -197,7 +197,7 @@ export async function forgetWorkspace(
   workspaceId: string
 ): Promise<void> {
   await inTransaction(db, async () => {
-    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads']) {
+    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs']) {
       await db.runAsync(
         `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
         connectionId,

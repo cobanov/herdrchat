@@ -125,6 +125,8 @@ export const size = {
   toolGlyph: 12,
   /** How much of a call's output an opened row shows before it stops. */
   toolOutputLines: 12,
+  /** The pin and muted marks beside a chat row's title. */
+  rowBadgeGlyph: 12,
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
 } as const;

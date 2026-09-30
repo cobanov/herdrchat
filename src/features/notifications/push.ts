@@ -150,9 +150,15 @@ export async function uploadPushToken(
    * every push, so a tap opens this host's chat rather than whichever host is
    * selected (#91). Workspace ids are per host; `w1` exists on all of them.
    */
-  connectionId: string
+  connectionId: string,
+  /**
+   * Session ids of the chats muted on this phone. The watcher skips pushes
+   * for them to this device only, so muting here leaves another phone on the
+   * same host notified. Watchers before version 4 ignore the field.
+   */
+  muted: readonly string[] = []
 ): Promise<void> {
-  const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId });
+  const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId, muted });
   const file = `${shellQuote(deviceId)}.json`;
   // Builds before session folders wrote a named session's token to the shared
   // folder, where the default session's watcher pushed to it. Moving it is
