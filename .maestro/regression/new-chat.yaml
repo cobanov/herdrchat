@@ -1,0 +1,32 @@
+# The new-chat sheet keeps Start usable with the keyboard up (PR #136).
+# XCTest counts controls behind the keyboard as visible, so the check is that
+# a tap on Start reaches Start: on the Demo it answers that starting a chat
+# needs your own host, and a tap that landed on the keyboard would not.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: header-action
+- assertVisible: New chat
+- assertVisible: Cancel
+- tapOn:
+    id: field-cwd
+- inputText: /home/demo/notes
+- tapOn:
+    id: field-label
+- inputText: Regression
+# Typing can leave the simulator's keyboard down; a tap on the field brings
+# it back, which is the state this flow is about.
+- tapOn:
+    id: field-label
+- waitForAnimationToEnd
+- takeScreenshot: new-chat-keyboard-${APPEARANCE}
+- tapOn:
+    id: start-chat
+- extendedWaitUntil:
+    visible:
+      id: new-chat-error
+    timeout: 10000
+- assertVisible: .*your own host.*
+- tapOn: Cancel
+- assertVisible: Chats

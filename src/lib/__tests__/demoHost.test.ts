@@ -2,6 +2,9 @@ import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
 import { DEMO_SESSION_IDS, DEMO_WORKSPACES, transcriptFor } from '../demo/fixtures';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
+import { displayText } from '../transcript/message';
+import { parsePaneOverlay } from '../transcript/paneOverlay';
+import { threadItems, toolRunSummary } from '../threadItems';
 import { TranscriptStore } from '../transcript/store';
 
 /** A demo workspace's transcript path, built by the real path rules. */
@@ -231,5 +234,76 @@ describe('DemoHost as an agent', () => {
     const after = (await store.recent(path, 'claude', 262_144)).messages;
     expect(after.length).toBeGreaterThan(before.length);
     expect(after.at(-1)!.role).toBe('assistant');
+  });
+});
+
+// The Demo is also the UI tests' host: every feature needs a scenario it can
+// run without SSH, read by the same parsers a real Claude screen goes through.
+describe('DemoHost scenarios', () => {
+  const messagesOf = async (host: DemoHost, index: number) => {
+    const { store, path } = await transcriptOf(host, index);
+    return (await store.recent(path, 'claude', 262_144)).messages;
+  };
+
+  it('opens /model as a panel over an idle agent, and records the pick when it closes', async () => {
+    const host = new DemoHost();
+    const client = new HerdrClient(host);
+    await client.sendCommand('w2:p1', '/model');
+    expect((await client.workspaces())[1]!.agentStatus).toBe('idle');
+    const panel = parsePaneOverlay(await client.paneVisible('w2:p1', 40))!;
+    expect(panel.title).toBe('Select model');
+    expect(panel.options.find((o) => o.highlighted)?.number).toBe(1);
+
+    await client.sendKeys('w2:p1', ['Down', 'Down']);
+    expect(parsePaneOverlay(await client.paneVisible('w2:p1', 40))!.options.find((o) => o.highlighted)?.label).toBe('Sonnet 5');
+    await client.sendKeys('w2:p1', ['s']);
+    expect(parsePaneOverlay(await client.paneVisible('w2:p1', 40))).toBeNull();
+    const last = (await messagesOf(host, 1)).slice(-2);
+    expect(last.map((m) => [m.role, JSON.stringify(m.segments)])).toEqual([
+      ['user', expect.stringContaining('/model')],
+      ['system', expect.stringContaining('Set model to Sonnet 5 for this session only')],
+    ]);
+  });
+
+  it('moves the /effort slider and cancels it', async () => {
+    const host = new DemoHost();
+    const client = new HerdrClient(host);
+    await client.sendCommand('w2:p1', '/effort');
+    expect(parsePaneOverlay(await client.paneVisible('w2:p1', 40))!.scale).toEqual({ levels: ['low', 'medium', 'high', 'xhigh', 'max'], current: 2 });
+    await client.sendKeys('w2:p1', ['Right']);
+    expect(parsePaneOverlay(await client.paneVisible('w2:p1', 40))!.scale?.current).toBe(3);
+    await client.sendKeys('w2:p1', ['Escape']);
+    expect(JSON.stringify((await messagesOf(host, 1)).at(-1)!.segments)).toContain('Cancelled');
+  });
+
+  it('asks two questions and a review, one screen after another, while staying blocked', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'Ask me two questions');
+    const question = async () => parseBlockedPrompt(await client.paneVisible('w2:p1', 40)).question;
+    expect((await client.workspaces())[1]!.agentStatus).toBe('blocked');
+    expect(await question()).toBe('Pick a color');
+    await client.sendKeys('w2:p1', ['1']);
+    expect(await question()).toBe('Pick a size');
+    await client.sendKeys('w2:p1', ['2']);
+    expect(await question()).toBe('Ready to submit your answers?');
+    expect((await client.workspaces())[1]!.agentStatus).toBe('blocked');
+    await client.sendKeys('w2:p1', ['1']);
+    now += 10_000;
+    expect((await client.workspaces())[1]!.agentStatus).toBe('idle');
+    expect(displayText((await messagesOf(host, 1)).at(-1)!)).toBe('You picked Blue and Large.');
+  });
+
+  it('runs a set of checks as tool calls with one failure', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'run the checks please');
+    now += 10_000;
+    const items = threadItems(await messagesOf(host, 1), { showSidechain: false });
+    const run = items.find((placed) => placed.item.kind === 'tools')!.item;
+    expect(run.kind === 'tools' && toolRunSummary(run.calls, run.thoughts.length)).toBe('Ran 2 commands · edited 1 file · read 1 file · 1 failed');
+    expect(items.at(-1)!.item.kind).toBe('agent');
   });
 });

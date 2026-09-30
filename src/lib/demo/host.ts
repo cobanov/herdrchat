@@ -16,13 +16,27 @@ import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from '../herdr/transport';
 import { projectDirName } from '../transcript/parser';
 import {
+  DEMO_PHRASES,
+  DEMO_QUESTIONS,
+  effortPanelScreen,
+  modelPanelScreen,
+  panelFor,
+  panelKey,
+  questionAnswer,
+  questionScreen,
+  type DemoPanel,
+} from './scenarios';
+import {
   answeredReply,
+  commandLines,
   DEMO_BLOCKED_SCREEN,
   DEMO_HOME,
   DEMO_SESSION_IDS,
   DEMO_WORKSPACES,
   replyFor,
   replyLine,
+  toolResultLine,
+  toolUseLine,
   transcriptFor,
   userLine,
 } from './fixtures';
@@ -165,7 +179,16 @@ interface Pending {
   prompt: string;
   /** Which menu key they tapped, when they answered a prompt instead. */
   answer?: string;
+  /** A scenario's own turns, written instead of the usual reply. */
+  lines?: (next: () => string, timestamp: string) => string[];
   dueAt: number;
+}
+
+/** A question asked in parts: which part is on screen, and what was picked so far. */
+interface Questions {
+  step: number;
+  answers: string[];
+  toolId: string;
 }
 
 export class DemoHost implements HerdrTransport {
@@ -176,6 +199,9 @@ export class DemoHost implements HerdrTransport {
   /** Agent status by pane, mutable because answering a prompt unblocks it. */
   private readonly statuses = new Map<string, string>();
   private pending: Pending[] = [];
+  /** A slash command's panel open over a pane's composer. */
+  private readonly panels = new Map<string, DemoPanel>();
+  private readonly questions = new Map<string, Questions>();
   private counter = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {
@@ -202,8 +228,12 @@ export class DemoHost implements HerdrTransport {
     const ready = this.pending.filter(reply => reply.dueAt <= now);
     this.pending = this.pending.filter(reply => reply.dueAt > now);
     for (const due of ready) {
-      const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
-      this.append(due.paneId, replyLine(text, this.uuid(), this.stamp()));
+      if (due.lines !== undefined) {
+        for (const written of due.lines(() => this.uuid(), this.stamp())) this.append(due.paneId, written);
+      } else {
+        const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
+        this.append(due.paneId, replyLine(text, this.uuid(), this.stamp()));
+      }
       this.statuses.set(due.paneId,
         this.pending.some(reply => reply.paneId === due.paneId) ? 'working' : 'idle');
     }
@@ -375,6 +405,10 @@ export class DemoHost implements HerdrTransport {
     // `pane read <pane> --source visible --lines N`
     if (argv[1] === 'pane' && argv[2] === 'read') {
       const paneId = argv[3] ?? '';
+      const panel = this.panels.get(paneId);
+      if (panel !== undefined) return out(panel.kind === 'model' ? modelPanelScreen(panel) : effortPanelScreen(panel));
+      const questions = this.questions.get(paneId);
+      if (questions !== undefined) return out(questionScreen(questions.step, questions.answers));
       return out(this.statusOf(paneId) === 'blocked' ? DEMO_BLOCKED_SCREEN : '');
     }
 
@@ -382,6 +416,8 @@ export class DemoHost implements HerdrTransport {
     if (argv[1] === 'pane' && argv[2] === 'send-keys') {
       const paneId = argv[3] ?? '';
       const choice = argv[4] ?? '';
+      if (this.panels.has(paneId)) return this.panelKeys(paneId, argv.slice(4));
+      if (this.questions.has(paneId)) return this.questionKey(paneId, choice);
       if (['Escape', 'escape', 'Esc', 'ctrl+c', 'C-c'].includes(choice)) {
         this.pending = this.pending.filter(reply => reply.paneId !== paneId);
         this.statuses.set(paneId, 'idle');
@@ -401,12 +437,120 @@ export class DemoHost implements HerdrTransport {
     if (isPrompt) {
       const paneId = argv[3] ?? '';
       const text = argv[4] ?? '';
+      if (text.trim().startsWith('/')) return this.command(paneId, text);
       this.append(paneId, userLine(text, this.uuid(), this.stamp()));
+      const asked = text.toLowerCase();
+      if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
+      if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
     }
 
+    return silent();
+  }
+
+  // MARK: - Scenarios (see scenarios.ts)
+
+  /**
+   * A slash command. One with a panel opens it and leaves the agent idle, as
+   * Claude does; the command reaches the transcript only when the panel
+   * closes. Anything else prints at once.
+   */
+  private command(paneId: string, text: string): ExecResult {
+    const panel = panelFor(text);
+    if (panel !== null) {
+      this.panels.set(paneId, panel);
+      return silent();
+    }
+    const name = text.trim().split(/\s+/)[0] ?? text;
+    this.writeCommand(paneId, text, `This is the demo host, so ${name} did nothing here.`);
+    return silent();
+  }
+
+  private panelKeys(paneId: string, keys: readonly string[]): ExecResult {
+    for (const key of keys) {
+      const panel = this.panels.get(paneId);
+      if (panel === undefined) break;
+      const next = panelKey(panel, key);
+      if ('panel' in next) {
+        this.panels.set(paneId, next.panel);
+      } else {
+        this.panels.delete(paneId);
+        this.writeCommand(paneId, panel.kind === 'model' ? '/model' : '/effort', next.printed);
+      }
+    }
+    return silent();
+  }
+
+  private writeCommand(paneId: string, command: string, printed: string): void {
+    for (const written of commandLines(command, printed, [this.uuid(), this.uuid()], this.stamp())) {
+      this.append(paneId, written);
+    }
+  }
+
+  /** AskUserQuestion with two questions, then the review screen that submits them. */
+  private askQuestions(paneId: string): ExecResult {
+    const toolId = `toolu_demo_${this.uuid()}`;
+    const input = { questions: DEMO_QUESTIONS.map((q) => ({ question: q.question, options: q.options.map((label) => ({ label })) })) };
+    this.append(paneId, toolUseLine('AskUserQuestion', input, toolId, this.uuid(), this.stamp()));
+    this.questions.set(paneId, { step: 0, answers: [], toolId });
+    this.statuses.set(paneId, 'blocked');
+    return silent();
+  }
+
+  private questionKey(paneId: string, key: string): ExecResult {
+    const state = this.questions.get(paneId);
+    if (state === undefined) return silent();
+    if (['Escape', 'escape', 'Esc'].includes(key)) {
+      this.questions.delete(paneId);
+      this.statuses.set(paneId, 'idle');
+      return silent();
+    }
+    if (state.step < DEMO_QUESTIONS.length) {
+      const answer = questionAnswer(state.step, key);
+      if (answer !== null) this.questions.set(paneId, { ...state, step: state.step + 1, answers: [...state.answers, answer] });
+      return silent();
+    }
+    // The review screen: 1 submits, 2 cancels.
+    if (key !== '1' && key !== '2') return silent();
+    this.questions.delete(paneId);
+    const submitted = key === '1';
+    const summary = submitted ? `You picked ${state.answers.join(' and ')}.` : 'You cancelled the questions.';
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      lines: (next, timestamp) => [
+        toolResultLine(state.toolId, submitted ? state.answers.join(', ') : 'Cancelled', !submitted, next(), timestamp),
+        replyLine(summary, next(), timestamp),
+      ],
+    });
+    return silent();
+  }
+
+  /** A run of tool calls with one failure, then a closing sentence. */
+  private runChecks(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      lines: (next, timestamp) => {
+        const call = (name: string, input: Record<string, unknown>, result: string, failed = false) => {
+          const id = `toolu_demo_${next()}`;
+          return [toolUseLine(name, input, id, next(), timestamp), toolResultLine(id, result, failed, next(), timestamp)];
+        };
+        return [
+          ...call('Bash', { command: 'npm test', description: 'Run the tests' }, 'FAIL src/lib/directories.test.ts\n  1 failed, 41 passed', true),
+          ...call('Read', { file_path: 'src/lib/directories.ts' }, 'export async function listDirectories(…)'),
+          ...call('Edit', { file_path: 'src/lib/directories.ts', old_string: '; true', new_string: '' }, 'The file has been updated.'),
+          ...call('Bash', { command: 'npm test', description: 'Run the tests again' }, '42 passed'),
+          replyLine('One test failed on the first run: an unreadable folder still read as empty. Fixed it in directories.ts, and all 42 tests pass now.', next(), timestamp),
+        ];
+      },
+    });
     return silent();
   }
 }
