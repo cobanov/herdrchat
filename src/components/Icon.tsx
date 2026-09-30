@@ -59,6 +59,8 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   globe: 'language',
   'puzzlepiece.extension': 'extension',
   terminal: 'terminal',
+  'questionmark.bubble': 'contact_support',
+  'keyboard.chevron.compact.down': 'keyboard_hide',
   xmark: 'close',
   'xmark.circle.fill': 'cancel',
 };

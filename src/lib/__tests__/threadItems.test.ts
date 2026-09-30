@@ -111,5 +111,8 @@ describe('tool wording', () => {
     expect(toolCallLine(call('Read', '{file_path: /repo/src/app.ts}'))).toEqual({ verb: 'Read', detail: 'app.ts' });
     expect(toolCallLine(call('mcp__claude_ai_Linear__save_issue', '{}'))).toEqual({ verb: 'MCP', detail: 'Linear save_issue' });
     expect(toolRunSummary([call('mcp__x__y', null), call('WebFetch', null), call('TodoWrite', null)], 0)).toBe('Fetched 1 page · updated todos · called 1 tool');
+    // A question the agent asked is not "called 1 tool".
+    expect(toolRunSummary([call('AskUserQuestion', '{questions: [{question: Pick a color}]}')], 0)).toBe('Asked 1 question');
+    expect(toolCallLine(call('AskUserQuestion', '{questions: [{question: Pick a color, header: Color}]}'))).toEqual({ verb: 'Ask', detail: 'Pick a color' });
   });
 });

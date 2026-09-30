@@ -132,6 +132,7 @@ const GLYPHS: Record<ToolKind, IconName> = {
   search: 'magnifyingglass',
   fetch: 'globe',
   todo: 'checklist',
+  question: 'questionmark.bubble',
   agent: 'cpu',
   tool: 'puzzlepiece.extension',
 };

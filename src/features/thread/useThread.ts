@@ -150,6 +150,8 @@ const OVERLAY_WATCH_MS = 8_000;
 const OVERLAY_FIRST_LOOKS_MS = [400, 1_200] as const;
 /** Between a key into a panel and reading what it did. */
 const OVERLAY_SETTLE_MS = 300;
+/** When to look at a blocked pane again after answering it. */
+const ANSWER_LOOKS_MS = [400, 1_200] as const;
 /** Rows of screen to read: a panel plus the composer under it. */
 const OVERLAY_LINES = 40;
 /**
@@ -906,7 +908,11 @@ export function useThread(
         const primary =
           live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
         const working = live.some((agent) => agent.agentStatus === 'working');
-        keepFast = working;
+        // A question can change under an agent that stays `blocked` (the next
+        // of several, then the review screen), and no status event says so. At
+        // the idle rate the answered question stayed up for half a minute and
+        // the chat had to be reopened to reach the next one.
+        keepFast = working || blocked !== undefined;
 
         // A panel only sits over an idle Claude, and never beside a question.
         const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
@@ -1352,6 +1358,13 @@ export function useThread(
 
       try {
         await client.sendKeys(pane.paneId, keys);
+        // Look again once the terminal has redrawn, rather than at the next
+        // poll: what comes after an answer is often another question.
+        for (const delay of ANSWER_LOOKS_MS) {
+          setTimeout(() => {
+            if (alive.current) kick.current();
+          }, delay);
+        }
       } catch (thrown) {
         // The keys never left the phone; nothing is pending on the host.
         clearBlockedPending();
