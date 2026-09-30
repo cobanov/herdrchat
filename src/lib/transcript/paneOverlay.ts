@@ -14,7 +14,7 @@
  * model?"), which has no hint line: it counts when a menu fills the rest of
  * the screen with no composer under it. Agents print numbered lists all the
  * time; the frame is what separates a panel from prose. Codex draws its
- * panels differently and is not recognised here.
+ * panels differently; see `parseCodexPanel`.
  *
  * Answering is by keys, never by digit. A digit in Claude's model picker
  * commits the row at once AND saves it as the default for new sessions, so a
@@ -67,7 +67,7 @@ export interface PaneOverlay {
 export function parsePaneOverlay(screen: string): PaneOverlay | null {
   const lines = screen.split('\n').map((line) => stripAnsi(line).replace(/\s+$/, ''));
   const ruleIndex = findLastIndex(lines, (line) => line.includes(TOP_RULE));
-  if (ruleIndex < 0) return null;
+  if (ruleIndex < 0) return parseCodexPanel(lines);
   const hintIndex = findLastIndex(lines, (line) => ESC_HINT.test(line));
   // A confirmation ("Switch model?") comes with no hint line at all. Without
   // one the panel runs to the end of the screen, and must hold a menu and no
@@ -171,6 +171,59 @@ export function overlayScaleKeys(overlay: PaneOverlay, level: number): string[] 
   return Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? 'Right' : 'Left'));
 }
 
+// MARK: - Codex
+
+/**
+ * Codex's pickers (`/model`, then its reasoning level; measured on Codex
+ * 0.154): no rule above them, a title paragraph, a numbered menu with `›` on
+ * the cursor row and `(current)` on the one in use, and a fixed foot, "Press
+ * enter to confirm or esc to go back". That foot is what marks a panel; the
+ * menu and title are the paragraphs directly above it.
+ */
+function parseCodexPanel(lines: readonly string[]): PaneOverlay | null {
+  const hintIndex = findLastIndex(lines, (line) => CODEX_HINT.test(line));
+  if (hintIndex < 0) return null;
+  let cursor = hintIndex - 1;
+  while (cursor >= 0 && (lines[cursor] ?? '').trim().length === 0) cursor -= 1;
+  const menuEnd = cursor;
+  while (cursor >= 0 && OPTION.test((lines[cursor] ?? '').trim())) cursor -= 1;
+  const menu = lines.slice(cursor + 1, menuEnd + 1);
+  if (menu.length === 0) return null;
+  while (cursor >= 0 && (lines[cursor] ?? '').trim().length === 0) cursor -= 1;
+  const paragraph: string[] = [];
+  while (cursor >= 0 && (lines[cursor] ?? '').trim().length > 0) {
+    paragraph.unshift(collapse(lines[cursor] ?? ''));
+    cursor -= 1;
+  }
+  const [title, ...notes] = paragraph;
+  if (title === undefined) return null;
+  const options = menu.map((line) => {
+    const match = OPTION.exec(line.trim());
+    const [name = '', ...rest] = (match?.[3] ?? '').split(/\s{2,}/);
+    return {
+      number: Number(match?.[2]),
+      label: name.replace(CODEX_CURRENT, '').trim(),
+      detail: rest.length === 0 ? null : rest.join(' ').trim(),
+      highlighted: match?.[1] !== undefined,
+      current: CODEX_CURRENT.test(name),
+    };
+  });
+  return {
+    title,
+    notes,
+    options,
+    scale: null,
+    adjust: null,
+    actions: [
+      { keys: ['Enter'], key: 'Enter', label: 'Confirm' },
+      { keys: ['Escape'], key: 'Esc', label: 'Back' },
+    ],
+  };
+}
+
+const CODEX_HINT = /Press enter to confirm or esc to go back/i;
+const CODEX_CURRENT = /\s*\(current\)/;
+
 // MARK: - Internals
 
 const TOP_RULE = '▔'.repeat(8);
@@ -178,7 +231,7 @@ const ESC_HINT = /\bEsc to (cancel|close|exit|go back)\b/i;
 /** The composer's frame: a line of nothing but ─. */
 const COMPOSER_RULE = /^\s*─{8,}\s*$/;
 /** A row: the cursor or a scroll arrow (a list longer than the panel), a number, the label. */
-const OPTION = /^(?:(❯)|[↓↑])?\s*(\d{1,2})\.\s+(.+)$/;
+const OPTION = /^(?:([❯›])|[↓↑])?\s*(\d{1,2})\.\s+(.+)$/;
 const TICK = '✔';
 const SCALE_MARKER = '▲';
 const ADJUST_HINT = '←/→ to adjust';

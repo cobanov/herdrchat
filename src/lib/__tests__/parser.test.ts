@@ -9,7 +9,7 @@ import {
   parseTranscriptLine,
   projectDirName,
 } from '../transcript/parser';
-import { contextLabel, modelDisplayName } from '../transcript/sessionMeta';
+import { contextLabel, modelDisplayName, settingsFromNotes } from '../transcript/sessionMeta';
 
 const transcript = readFileSync(join(__dirname, 'fixtures/transcript.jsonl'), 'utf8');
 
@@ -281,5 +281,31 @@ describe('context tokens from usage', () => {
   // such line streamed in.
   it('reports null, not zero, when the line carries no counts', () => {
     expect(meta({ output_tokens: 12 })?.contextTokens).toBeNull();
+  });
+});
+
+describe('settings a slash command just made', () => {
+  const at = (role: 'user' | 'assistant' | 'system', text: string, id: string) => ({
+    id, role, segments: [{ kind: 'text' as const, text }], timestamp: 0, agentLabel: null, isSidechain: false,
+  });
+
+  // Measured wording, Claude Code 2.1.285.
+  it('reads the model and effort out of the notes, newest first', () => {
+    expect(settingsFromNotes([
+      at('assistant', 'hello', 'a1'),
+      at('system', 'Set model to Opus 5.5 (default) and saved as your default for new sessions', 'n1'),
+      at('system', 'Set effort level to xhigh (this session only): Deeper reasoning than high', 'n2'),
+      at('system', 'Set model to Sonnet 5.5 for this session only', 'n3'),
+    ])).toEqual({ model: 'Sonnet 5.5', effort: 'xhigh' });
+    expect(settingsFromNotes([at('system', 'Kept model as Opus 5.5 (default)', 'n')])).toEqual({ model: 'Opus 5.5', effort: null });
+  });
+
+  it('stops counting once the agent has answered, whose turn says the model itself', () => {
+    expect(settingsFromNotes([
+      at('system', 'Set model to Sonnet 5.5 for this session only', 'n1'),
+      at('assistant', 'done', 'a1'),
+      at('user', 'next', 'u1'),
+    ])).toEqual({ model: null, effort: null });
+    expect(settingsFromNotes([at('system', 'Cancelled', 'n')])).toEqual({ model: null, effort: null });
   });
 });

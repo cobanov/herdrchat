@@ -103,6 +103,8 @@ appId: dev.herdr.HerdrChat
     timeout: 10000
 - assertNotVisible:
     id: command-panel
+# The header follows the command at once, not at the next reply.
+- assertVisible: .*Sonnet 5 · high effort.*
 
 # /effort: the slider jumps to a level.
 - tapOn:
@@ -122,5 +124,6 @@ appId: dev.herdr.HerdrChat
 - extendedWaitUntil:
     visible: Set effort level to xhigh (this session only)
     timeout: 10000
+- assertVisible: .*Sonnet 5 · xhigh effort.*
 - tapOn:
     id: thread-back

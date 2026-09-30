@@ -91,12 +91,18 @@ function responseMessage(
         kind: 'toolUse',
         name: typeof payload.name === 'string' ? payload.name : 'tool',
         input: preview(payload.arguments ?? payload.input),
+        ...(typeof payload.call_id === 'string' ? { id: payload.call_id } : {}),
       }] };
     case 'function_call_output':
-    case 'custom_tool_call_output':
+    case 'custom_tool_call_output': {
+      const text = outputText(payload.output);
       return { role: 'user', segments: [{
-        kind: 'toolResult', text: outputText(payload.output),
+        kind: 'toolResult',
+        text,
+        ...(typeof payload.call_id === 'string' ? { toolUseId: payload.call_id } : {}),
+        ...(codexFailed(text) ? { isError: true } : {}),
       }] };
+    }
     case 'reasoning': {
       // Only the explicitly provided summary is displayable. Never attempt to
       // reconstruct encrypted reasoning or treat its opaque bytes as text.
@@ -141,6 +147,20 @@ function preview(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS)}…` : text;
+}
+
+/**
+ * Whether a Codex tool result reports a failure. Codex has no error flag on
+ * the result; it says so in the text (measured on 0.154): "Script failed" or
+ * a spawn error at the top, or the command's own `exit_code` in the JSON it
+ * returns, and older builds wrote "Process exited with code N". The first
+ * exit code is the command's; any later one is output it printed.
+ */
+export function codexFailed(text: string): boolean {
+  const head = text.trimStart();
+  if (/^(Script failed|failed to spawn|aborted by user)/.test(head)) return true;
+  const code = /(?:"exit_code"\s*:\s*|Process exited with code |Exit code:?\s*)(\d+)/.exec(text);
+  return code !== null && code[1] !== '0';
 }
 
 function outputText(value: unknown): string {

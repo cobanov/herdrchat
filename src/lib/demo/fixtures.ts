@@ -124,7 +124,7 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
       content: [
         {
           type: 'text',
-          text: 'Before I write to `client.ts` — this changes what every caller of `listDirectories` sees on failure. Want me to go ahead?',
+          text: 'Before I write to `client.ts`: this changes what every caller of `listDirectories` sees on failure. Want me to go ahead?',
         },
       ],
     }),
@@ -187,14 +187,14 @@ export function replyFor(prompt: string): string {
   const quoted = text.slice(0, 80);
   const pictures = paths.length === 0 ? '' : paths.length === 1 ? 'a picture' : `${paths.length} pictures`;
   const said = quoted && pictures ? `You said “${quoted}” and sent ${pictures}.` : quoted ? `You said “${quoted}”.` : `You sent ${pictures}.`;
-  return `${said}\n\nThis is the demo host, so nothing actually ran — but everything above this line is the real app: the transcript reader, the live tail and the byte cursor all did their normal work to put this on your screen.`;
+  return `${said}\n\nThis is the demo host, so nothing actually ran, but everything above this line is the real app: the transcript reader, the live tail and the byte cursor all did their normal work to put this on your screen.`;
 }
 
 /** What the demo agent says once a menu choice has been tapped. */
 export function answeredReply(choice: string): string {
   return choice === '1'
     ? 'Going ahead. Split the error state from the empty one and gave the error a Retry, so a failed read stops looking like an empty folder.'
-    : 'Holding off. The change would alter what every caller of listDirectories sees on failure — say the word when you want it.';
+    : 'Holding off. The change would alter what every caller of listDirectories sees on failure. Say the word when you want it.';
 }
 
 /**
@@ -210,7 +210,7 @@ export const DEMO_BLOCKED_SCREEN = [
   '',
   'src/lib/herdr/client.ts',
   '',
-  'Before I write to client.ts — this changes what every caller of',
+  'Before I write to client.ts: this changes what every caller of',
   'listDirectories sees on failure. Want me to go ahead?',
   '',
   '❯ 1. Yes, go ahead',

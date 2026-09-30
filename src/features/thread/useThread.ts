@@ -916,7 +916,8 @@ export function useThread(
 
         // A panel only sits over an idle Claude, and never beside a question.
         const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
-        if ((watching || lookForPanel) && blocked === undefined && !working && primary?.agent === 'claude') {
+        const panelAgent = primary?.agent === 'claude' || primary?.agent === 'codex';
+        if ((watching || lookForPanel) && blocked === undefined && !working && primary !== undefined && panelAgent) {
           lookForPanel = false;
           if (watching) keepFast = true;
           await readOverlay(primary.paneId);
@@ -1157,12 +1158,16 @@ export function useThread(
       try {
         const pane = await currentPane(polled);
 
-        if (pane.agent === 'claude' && isSlashCommand(text)) {
+        if ((pane.agent === 'claude' || pane.agent === 'codex') && isSlashCommand(text)) {
           // Never `sendPrompt` and never a second Enter: see `sendCommand`.
           const sentAt = Date.now();
           await client.sendCommand(pane.paneId, text);
           if (!current()) return;
           watchOverlay(pane.paneId);
+          // Codex writes nothing to its transcript for a command, so there is
+          // no receipt to wait for and silence proves nothing; its panels
+          // still show when they open.
+          if (pane.agent === 'codex') return;
           const ran = () => confirmed() || overlaySeenAt.current >= sentAt;
           while (current() && !ran() && Date.now() - sentAt < COMMAND_CONFIRM_MS) {
             await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));

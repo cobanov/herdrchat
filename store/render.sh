@@ -23,5 +23,5 @@ render() {
 }
 
 if [ $# -eq 2 ]; then render "$1" "$2"; exit; fi
-for n in 1 2 3 4 5 6; do render iphone "$n"; done
+for n in 1 2 3 4 5 6 7 8; do render iphone "$n"; done
 for n in 1 2; do render ipad "$n"; done

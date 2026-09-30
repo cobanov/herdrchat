@@ -1,6 +1,6 @@
 {
   "name": "herdrchat",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "main": "expo-router/entry",
   "private": true,
   "workspaces": [
