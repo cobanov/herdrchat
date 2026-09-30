@@ -71,7 +71,8 @@ it('resolves id-only reports exactly and rejects duplicate ids and mismatched he
   await expect(store.ompTranscriptPath(id, 'id')).rejects.toMatchObject({ code: 'omp_session_ambiguous' });
 });
 
-it.each(['../secret.jsonl', '/tmp/chat.jsonl\n/etc/passwd', '/tmp/chat\0.jsonl', ''])('rejects unsafe path %p', async value => {
+it.each(['../secret.jsonl', '/tmp/../secret.jsonl', '/../secret.jsonl', '/tmp//../secret.jsonl',
+  '/tmp/chat.jsonl\n/etc/passwd', '/tmp/chat\0.jsonl', ''])('rejects unsafe path %p', async value => {
   expect(await store.ompTranscriptPath(value, 'path')).toBeNull();
 });
 

@@ -222,7 +222,8 @@ export class TranscriptStore {
    */
   async ompTranscriptPath(value: string, kind: string | null): Promise<string | null> {
     if (kind === 'path') {
-      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) ? value : null;
+      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
+        !value.split('/').includes('..') ? value : null;
     }
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
     let paths = ompPathsByTransport.get(this.transport);
@@ -260,7 +261,7 @@ export class TranscriptStore {
         'More than one OMP transcript has this session id. Nothing was opened. Resume the session with the OMP integration so it reports the exact path.');
     }
     const path = paths[0]!;
-    if (!path.startsWith('/') || !path.endsWith('.jsonl') || /[\0\r\n]/.test(path)) {
+    if (!path.startsWith('/') || !path.endsWith('.jsonl') || /[\0\r\n]/.test(path) || path.split('/').includes('..')) {
       throw new HerdrError('omp_session_invalid', 'The host returned an invalid OMP transcript path.');
     }
     return path;

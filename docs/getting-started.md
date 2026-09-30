@@ -75,8 +75,8 @@ OMP history shows saved journal records in chronological order, including
 thinking and tool activity. Branch summaries and context resets appear as
 journal boundaries; this is not OMP's active-branch tree view. Replies appear
 when OMP persists them, not token by token. The existing SSH transcript reader
-requires a POSIX host shell and absolute POSIX paths; Windows-native paths
-are not translated.
+requires a POSIX host shell and absolute POSIX paths without `..` segments;
+Windows-native paths are not translated.
 
 ## Connect the phone
 
