@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -72,8 +72,13 @@ export const ChatRow = memo(function ChatRow({
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
         padding: spacing.md, borderRadius: radius.sm, borderWidth: 1,
         borderColor: attention ? colors.attentionBorder : selected ? colors.tint : 'transparent',
-        backgroundColor: selected ? colors.tintMuted : pressed ? colors.fillSubtle : colors.chatCard,
+        backgroundColor: pressed ? colors.chatCardPressed : colors.chatCard,
       })}>
+      {/* The selection tint laid over an opaque card rather than replacing it:
+          alone it is translucent, and the swipe actions behind showed through. */}
+      {selected && (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius.sm, backgroundColor: colors.tintMuted }]} />
+      )}
       <View
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"

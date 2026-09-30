@@ -426,6 +426,14 @@ export interface Palette {
   fillSubtle: string;
   separator: string;
   chatCard: string;
+  /**
+   * A chat card under a finger. Opaque on purpose: a row is the lid over its
+   * swipe actions, and the translucent `fillSubtle` it used to take let the
+   * Rename and Close buttons show through the moment a swipe began.
+   */
+  chatCardPressed: string;
+  /** A swipe action that is neither the tint nor destructive (Rename, Mute). Opaque, as above. */
+  swipeNeutral: string;
   attentionBorder: string;
   /**
    * The track of an OFF switch.
@@ -499,6 +507,8 @@ export const lightPalette: Palette = {
   fillSubtle: 'rgba(84, 89, 212, 0.10)',
   separator: '#CDD1E2',
   chatCard: '#EBEDF7',
+  chatCardPressed: '#DFE2F1',
+  swipeNeutral: '#D5D9EA',
   attentionBorder: '#A05C08',
   // Apple's own off-track is #E9E9EA, which works because it sits on a white
   // card. Ours sits on a card that is already a shade off white, so the same
@@ -533,6 +543,8 @@ export const darkPalette: Palette = {
   fillSubtle: 'rgba(118, 118, 128, 0.24)',
   separator: 'rgba(84, 84, 88, 0.65)',
   chatCard: '#161824',
+  chatCardPressed: '#20233A',
+  swipeNeutral: '#2C2F42',
   attentionBorder: 'rgba(255, 159, 10, 0.55)',
   controlTrack: '#3A3A41', // the system's dark off-track, lifted off our card
 

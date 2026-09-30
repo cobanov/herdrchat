@@ -1,6 +1,7 @@
 import { useRecyclingState } from '@shopify/flash-list';
-import { memo, useCallback, useRef } from 'react';
-import { Pressable, View } from 'react-native';
+import { memo, useCallback, useRef, type ReactNode } from 'react';
+import { Pressable } from 'react-native';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -89,8 +90,8 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   });
 
   const renderRightActions = useCallback(
-    (_progress: unknown, _translation: unknown, methods: SwipeableMethods) => (
-      <View style={{ flexDirection: 'row' }}>
+    (_progress: unknown, translation: SharedValue<number>, methods: SwipeableMethods) => (
+      <ActionPanel side="right" count={2} translation={translation}>
         <SwipeAction
           label="Rename"
           symbol="pencil"
@@ -111,14 +112,15 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
             onClose();
           }}
         />
-      </View>
+      </ActionPanel>
     ),
     [onRename, onClose]
   );
 
+  const leadingCount = (onTogglePin !== undefined ? 1 : 0) + (onToggleMute !== undefined ? 1 : 0);
   const renderLeftActions = useCallback(
-    (_progress: unknown, _translation: unknown, methods: SwipeableMethods) => (
-      <View style={{ flexDirection: 'row' }}>
+    (_progress: unknown, translation: SharedValue<number>, methods: SwipeableMethods) => (
+      <ActionPanel side="left" count={leadingCount} translation={translation}>
         {onTogglePin !== undefined && (
           <SwipeAction
             label={pinned ? 'Unpin' : 'Pin'}
@@ -141,11 +143,11 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
             }}
           />
         )}
-      </View>
+      </ActionPanel>
     ),
-    [pinned, muted, onTogglePin, onToggleMute]
+    [pinned, muted, onTogglePin, onToggleMute, leadingCount]
   );
-  const leading = onTogglePin !== undefined || onToggleMute !== undefined;
+  const leading = leadingCount > 0;
   const rowActions = [
     ...(onTogglePin !== undefined ? [{ name: 'pin', label: pinned ? 'Unpin' : 'Pin', run: onTogglePin }] : []),
     ...(onToggleMute !== undefined ? [{ name: 'mute', label: muted ? 'Unmute notifications' : 'Mute notifications', run: onToggleMute }] : []),
@@ -189,6 +191,39 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   );
 });
 
+/**
+ * The actions, riding on the row's edge rather than lying under the row.
+ *
+ * The swipeable's own panel sits still while the row slides off it, so it
+ * had to be drawn the whole time: it showed as a red sliver past the row's
+ * rounded corner as the row settled, and through the row whenever the row
+ * was translucent. Moved with the drag instead, the panel is off the edge
+ * whenever the row is closed and enters exactly as far as the row leaves,
+ * the way Mail's do.
+ */
+function ActionPanel({
+  side,
+  count,
+  translation,
+  children,
+}: {
+  side: 'left' | 'right';
+  count: number;
+  translation: SharedValue<number>;
+  children: ReactNode;
+}) {
+  const width = count * ACTION_WIDTH;
+  const style = useAnimatedStyle(() => {
+    const offset = translation.get();
+    return {
+      transform: [
+        { translateX: side === 'right' ? Math.max(0, width + offset) : Math.min(0, offset - width) },
+      ],
+    };
+  });
+  return <Animated.View style={[{ flexDirection: 'row', width }, style]}>{children}</Animated.View>;
+}
+
 function SwipeAction({
   label,
   symbol,
@@ -201,7 +236,7 @@ function SwipeAction({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
-  const background = tone === 'destructive' ? colors.destructive : tone === 'tint' ? colors.tint : colors.fillSubtle;
+  const background = tone === 'destructive' ? colors.destructive : tone === 'tint' ? colors.tint : colors.swipeNeutral;
   const foreground = tone === 'neutral' ? colors.label : colors.onTint;
 
   return (
