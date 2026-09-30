@@ -4,7 +4,8 @@
 
 `npm run e2e` runs `scripts/e2e.sh`: the flows under `regression/` plus the
 Demo flows below, each in dark and light, against the built-in Demo host. The
-E2E workflow runs the same script on every pull request with a Release build.
+E2E workflow runs the same script on demand with a Release build
+(`gh workflow run e2e.yml --ref <branch>`); it is slow, so the local run is the gate.
 Every fix and feature adds a flow here (or a jest test), so a phone is not
 where regressions are found.
 
