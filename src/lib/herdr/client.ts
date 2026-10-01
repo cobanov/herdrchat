@@ -57,6 +57,19 @@ const AGENT_BLOCKED_MESSAGE =
   'The agent is waiting on a question. Answer it first, then send your message.';
 
 /**
+ * herdr refusing a prompt because the agent has a question open, as words a
+ * person can act on. Upstream `agent_blocked`, or `agent_input_pending` for a
+ * menu it sees while the agent is still idle: Claude's folder-trust question,
+ * whose raw message ("pending unknown input prompt") a chat showed as is.
+ * Nothing was sent either way. Null for any other error.
+ */
+function askingError(thrown: unknown): HerdrError | null {
+  if (!(thrown instanceof HerdrError)) return null;
+  if (thrown.code !== 'agent_blocked' && thrown.code !== 'agent_input_pending') return null;
+  return new HerdrError(thrown.code, AGENT_BLOCKED_MESSAGE);
+}
+
+/**
  * How long to wait for a freshly spawned server to answer.
  *
  * Measured: about five seconds on a warm machine. Ten attempts a second apart
@@ -478,7 +491,7 @@ export class HerdrClient {
       if (thrown instanceof HerdrError && thrown.code === 'agent_prompt_stalled') {
         return 'stalled';
       }
-      throw thrown;
+      throw askingError(thrown) ?? thrown;
     }
   }
 
@@ -500,11 +513,16 @@ export class HerdrClient {
         return;
       } catch (thrown) {
         if (!(thrown instanceof HerdrError)) throw thrown;
-        if (thrown.code === 'agent_blocked') throw new HerdrError('agent_blocked', AGENT_BLOCKED_MESSAGE);
+        const asking = askingError(thrown);
+        if (asking !== null) throw asking;
         if (!isUnknownMethod(thrown)) throw thrown;
       }
     } else if (await this.supportsAgentPrompt()) {
-      checkEnvelope(await this.shell(shellCommand([this.herdr, 'agent', 'prompt', paneId, text]), SEND_TIMEOUT_MS));
+      try {
+        checkEnvelope(await this.shell(shellCommand([this.herdr, 'agent', 'prompt', paneId, text]), SEND_TIMEOUT_MS));
+      } catch (thrown) {
+        throw askingError(thrown) ?? thrown;
+      }
       return;
     }
     await this.sendMessage(paneId, text);
@@ -552,7 +570,8 @@ export class HerdrClient {
         if ((thrown.code === 'timeout' && !thrown.transport) || thrown.code === 'agent_prompt_stalled') {
           return 'stalled';
         }
-        if (thrown.code === 'agent_blocked') throw new HerdrError('agent_blocked', AGENT_BLOCKED_MESSAGE);
+        const asking = askingError(thrown);
+        if (asking !== null) throw asking;
         if (isUnknownMethod(thrown)) {
           await this.sendMessage(paneId, text);
           return 'unverified';

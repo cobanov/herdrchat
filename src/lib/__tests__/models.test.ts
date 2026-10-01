@@ -74,6 +74,18 @@ describe('snapshot decoding', () => {
     expect([old?.stateChangeSeq, old?.completionSeq]).toEqual([null, null]);
   });
 
+  // Claude's folder-trust question: herdr says idle, and pending input.
+  it('reads whether a menu is waiting for keys', () => {
+    const [asking, plain] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent_status: 'idle', input_pending: true, input_prompt_kind: 'unknown' },
+        { pane_id: 'p2', agent_status: 'idle' },
+      ],
+    }).agents;
+    expect([asking?.agentStatus, asking?.inputPending]).toEqual(['idle', true]);
+    expect(plain?.inputPending).toBe(false);
+  });
+
   // herdr #4400 keeps a pane whose restore failed and says why (#119).
   it('collects the panes herdr could not restore', () => {
     const snapshot = decodeSnapshot({
@@ -182,6 +194,7 @@ describe('session signature', () => {
     agentSession: { agent: 'claude', kind: 'id', source: 'hook', value: 'sess-a' },
     stateChangeSeq: null,
     completionSeq: null,
+    inputPending: false,
     ...overrides,
   });
 

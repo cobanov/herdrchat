@@ -100,6 +100,23 @@ describe('HerdrClient over the socket', () => {
       expect(commands).toHaveLength(1);
     });
 
+    // A new chat in a new folder: Claude's trust question is open, and the
+    // raw "pending unknown input prompt" reached the screen as is.
+    it('explains an agent_input_pending refusal the same way', async () => {
+      const { client, commands } = socketHost({
+        'agent.prompt':
+          '{"id":"x","error":{"code":"agent_input_pending","message":"agent wDS:p1 has a pending unknown input prompt; chat prompt was not written"}}',
+      });
+      await expect(client.sendPrompt('w1:p1', 'hi')).rejects.toMatchObject({
+        code: 'agent_input_pending',
+        message: expect.stringContaining('waiting on a question'),
+      });
+      await expect(client.sendCommand('w1:p1', '/model')).rejects.toMatchObject({
+        message: expect.stringContaining('waiting on a question'),
+      });
+      expect(commands).toHaveLength(2);
+    });
+
     it('leaves written_to_pty for the caller to verify', async () => {
       const { client } = socketHost({ 'agent.prompt': prompted('written_to_pty') });
       await expect(client.sendPrompt('w1:p1', 'hi')).resolves.toBe('unverified');

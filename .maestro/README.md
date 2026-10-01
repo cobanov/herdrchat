@@ -16,12 +16,13 @@ where regressions are found.
 | `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
 | `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+| `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
-`/model`, `/effort`, "ask me two questions", "run the checks".
+`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder".
 
 
 Run against a booted simulator with the app installed and Metro running:

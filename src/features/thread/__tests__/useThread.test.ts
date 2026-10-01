@@ -93,6 +93,7 @@ const agent: AgentInfo = {
   agentSession: { kind: 'id', value: 'session', agent: 'claude', source: null },
   stateChangeSeq: null,
   completionSeq: null,
+  inputPending: false,
 };
 const snapshot = (agents: AgentInfo[]): Snapshot => ({
   agents,
@@ -1029,4 +1030,50 @@ it('shows the next question soon after an answer, with the event stream live', a
   expect(result.current.blockedPending).toBeNull();
   expect(read).toHaveBeenCalled();
   await unmount();
+});
+
+describe("Claude's folder-trust question", () => {
+  const trust = readFileSync(join(__dirname, '../../../lib/__tests__/fixtures/screens/trust.txt'), 'utf8');
+  const picker = readFileSync(join(__dirname, '../../../lib/__tests__/fixtures/screens/claude-model-picker.txt'), 'utf8');
+  // A first start in a new folder: idle, input pending, and no session yet.
+  const asking: AgentInfo = { ...agent, agentSession: null, inputPending: true };
+
+  it('asks it on the phone, answers with the arrows, and never calls the chat unidentified', async () => {
+    const snap = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([asking]));
+    jest.spyOn(client, 'paneVisible').mockResolvedValue(trust);
+    const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(500); });
+    expect(result.current.isBlocked).toBe(true);
+    expect(result.current.status).toBe('blocked');
+    const prompt = result.current.blockedPrompt;
+    expect(prompt?.question).toContain('/home/me/work/askq');
+    const yes = prompt?.options.find((option) => option.label === 'Yes, I trust this folder');
+    expect(yes?.keys).toEqual(['Down', 'Enter']);
+
+    // Left unanswered past the grace period, it is still a question, not a
+    // missing integration.
+    await act(async () => { await jest.advanceTimersByTimeAsync(90_000); });
+    expect(result.current.sessionState).toBe('waiting');
+
+    await act(async () => { await result.current.sendKeys(yes?.keys ?? []); });
+    expect(keys).toHaveBeenCalledWith(asking.paneId, ['Down', 'Enter']);
+    snap.mockResolvedValue(snapshot([agent]));
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_000); });
+    expect(result.current.isBlocked).toBe(false);
+    expect(result.current.blockedPending).toBeNull();
+    await unmount();
+  });
+
+  // herdr reports a slash command's panel the same way; it stays a panel.
+  it('leaves a panel with input pending to the panel', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, inputPending: true }]));
+    jest.spyOn(client, 'paneVisible').mockResolvedValue(picker);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(500); });
+    expect(result.current.isBlocked).toBe(false);
+    expect(result.current.blockedPrompt).toBeNull();
+    expect(result.current.overlay?.title).toBe('Select model');
+    await unmount();
+  });
 });

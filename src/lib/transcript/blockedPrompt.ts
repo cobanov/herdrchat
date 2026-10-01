@@ -20,6 +20,12 @@ export interface BlockedOption {
   label: string;
   /** A multi-select row: whether it is ticked. Absent on an ordinary option. */
   checked?: boolean;
+  /**
+   * The exact keys that pick it, for a menu with no numbers to type: arrows
+   * that walk the cursor onto the row, then Enter. Absent where the number is
+   * the answer.
+   */
+  keys?: readonly string[];
 }
 
 export interface BlockedPrompt {
@@ -43,6 +49,11 @@ export interface BlockedPrompt {
    * digit.
    */
   submitWithEnter?: boolean;
+  /**
+   * The terminal shows no numbers (Claude's folder-trust question), so the
+   * phone shows none either: a "1" here would name a key that does nothing.
+   */
+  unnumbered?: boolean;
 }
 
 /**
@@ -88,6 +99,7 @@ export function optionKeys(
   option: BlockedOption,
   prompt?: Pick<BlockedPrompt, 'multiSelect' | 'submitWithEnter'>
 ): string[] | null {
+  if (option.keys !== undefined) return [...option.keys];
   if (!Number.isInteger(option.number) || option.number < 1 || option.number > 9) return null;
   const digit = String(option.number);
   if (prompt?.multiSelect === true || prompt?.submitWithEnter === false) return [digit];
@@ -144,7 +156,7 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   }
 
   if (options.length === 0 || firstOptionLine === null) {
-    return { question: null, options: [] };
+    return parseTrustPrompt(raw) ?? { question: null, options: [] };
   }
 
   // Question: the contiguous non-empty text lines immediately above the first
@@ -166,6 +178,67 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
     options,
     ...(multiSelect ? { multiSelect } : {}),
   };
+}
+
+/**
+ * Claude's folder-trust question, asked the first time it starts in a folder
+ * (Claude Code 2.1.286):
+ *
+ *     Accessing workspace:
+ *
+ *     /Users/me/Workspace/youtube
+ *     …
+ *     ❯ No, exit
+ *       Yes, I trust this folder
+ *
+ *     Enter to confirm · Esc to cancel
+ *
+ * Until it is answered Claude takes no prompt, and herdr refuses one with
+ * `agent_input_pending` while still calling the agent idle, so a new chat in
+ * a new folder could not be started from the phone at all.
+ *
+ * The menu has no numbers. The cursor starts on "No, exit", and Enter takes
+ * whatever row it is on, so a bare Enter (the generic Confirm) closes Claude.
+ * Each option therefore carries its own keys: the arrows from the cursor's
+ * row to its row, then Enter. Recognised by the heading and the answer
+ * together, never by an unnumbered list alone.
+ */
+export function parseTrustPrompt(raw: string): BlockedPrompt | null {
+  const lines = raw.split('\n').map(clean);
+  const heading = lines.lastIndexOf(TRUST_HEADING);
+  if (heading < 0) return null;
+  const rest = lines.slice(heading + 1);
+  const answer = rest.findIndex((line) => withoutCursor(line) === TRUST_ANSWER);
+  if (answer < 0) return null;
+
+  // The menu is the run of rows around the answer, one of them under the cursor.
+  let start = answer;
+  while (start > 0 && (rest[start - 1] ?? '').length > 0) start -= 1;
+  let end = answer;
+  while (end + 1 < rest.length && (rest[end + 1] ?? '').length > 0) end += 1;
+  const rows = rest.slice(start, end + 1);
+  const cursor = rows.findIndex((line) => line.startsWith(TRUST_CURSOR));
+  if (cursor < 0) return null;
+
+  const options = rows.map((line, index): BlockedOption => {
+    const steps = index - cursor;
+    const arrows = Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? 'Down' : 'Up'));
+    return { number: index + 1, label: withoutCursor(line), keys: [...arrows, 'Enter'] };
+  });
+  // The folder is the first line under the heading, when it reads as a path.
+  const folder = rest.find((line) => line.length > 0) ?? '';
+  const question = /^[/~]/.test(folder)
+    ? `Trust ${folder}? Claude Code will be able to read, edit and run files there.`
+    : 'Trust this folder? Claude Code will be able to read, edit and run files here.';
+  return { question, options, unnumbered: true };
+}
+
+const TRUST_HEADING = 'Accessing workspace:';
+const TRUST_ANSWER = 'Yes, I trust this folder';
+const TRUST_CURSOR = '❯';
+
+function withoutCursor(line: string): string {
+  return line.startsWith(TRUST_CURSOR) ? line.slice(TRUST_CURSOR.length).trim() : line;
 }
 
 export function isBlockedPromptEmpty(prompt: BlockedPrompt | null): boolean {

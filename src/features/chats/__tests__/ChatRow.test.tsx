@@ -26,6 +26,7 @@ const summary = (agent: string | null): ChatSummary => ({
     agentSession: null,
     stateChangeSeq: null,
     completionSeq: null,
+    inputPending: false,
   }],
   preview: null,
   sessionSig: null,

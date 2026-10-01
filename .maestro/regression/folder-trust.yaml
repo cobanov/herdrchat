@@ -1,0 +1,30 @@
+# Claude's folder-trust question, asked on a first start in a new folder. herdr
+# calls the agent idle and refuses every prompt until it is answered, and the
+# menu has no numbers, so the phone shows the question itself and answers it
+# with the arrows (the Demo asks it on "open a new folder").
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w3
+- tapOn:
+    id: composer-input
+- inputText: open a new folder
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: blocked-bar
+    timeout: 15000
+- assertVisible: .*Trust /home/demo/youtube.*
+- assertVisible: No, exit
+- takeScreenshot: folder-trust-${APPEARANCE}
+- tapOn:
+    text: Yes, I trust this folder
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: .*I can work in this folder now.*
+    timeout: 15000
+- assertNotVisible:
+    id: blocked-bar
+- tapOn:
+    id: thread-back

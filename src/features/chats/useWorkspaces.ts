@@ -282,7 +282,12 @@ export function buildSummaries(
         workspaceId: workspace.workspaceId,
         title: workspace.label,
         number: workspace.number,
-        status: workspace.agentStatus,
+        // herdr calls an agent idle while a menu waits for its keys (Claude's
+        // folder-trust question on a first start), so the row would never
+        // say the chat needs you.
+        status: workspace.agentStatus !== 'working' && group.some((agent) => agent.inputPending)
+          ? 'blocked'
+          : workspace.agentStatus,
         agents: group,
         preview: cached !== undefined && sessionSig !== null && cached.sessionSig === sessionSig
           ? cached.preview

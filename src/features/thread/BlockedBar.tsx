@@ -91,7 +91,9 @@ export function BlockedBar({
                 accessibilityLabel={
                   untypable
                     ? `Option ${option.number}: ${option.label}. Not available from this app.`
-                    : `Option ${option.number}: ${option.label}`
+                    : prompt.unnumbered === true
+                      ? option.label
+                      : `Option ${option.number}: ${option.label}`
                 }
                 accessibilityState={{ disabled: dim, busy: tapped, checked: option.checked }}
                 testID={`blocked-option-${option.number}`}
@@ -107,7 +109,7 @@ export function BlockedBar({
                 })}>
                 {tapped ? (
                   <ActivityIndicator size="small" color={colors.attention} style={{ minWidth: size.optionNumber }} />
-                ) : (
+                ) : prompt.unnumbered === true ? null : (
                   <Text
                     variant="footnote"
                     color={dim ? 'secondary' : 'attention'}
