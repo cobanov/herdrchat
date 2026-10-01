@@ -273,7 +273,6 @@ export const welcome = {
   badge: 34,
   badgeGlyph: 17,
   /** The little terminal on the first page, tilted like the one in the store's. */
-  terminalLine: 18,
   terminalTilt: '-2deg',
 } as const;
 
