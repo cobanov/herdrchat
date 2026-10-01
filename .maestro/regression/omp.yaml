@@ -1,0 +1,35 @@
+# An OMP chat (PR #133) on the Demo: its journal read by path, a folded tool
+# run, a message sent and answered, and a mute that holds.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w4
+    direction: DOWN
+- assertVisible: .*OMP.*
+- longPressOn:
+    id: chat-row-w4
+- tapOn: Mute notifications
+- longPressOn:
+    id: chat-row-w4
+- assertVisible: Unmute notifications
+- tapOn: Unmute notifications
+- tapOn:
+    id: chat-row-w4
+- extendedWaitUntil:
+    visible: .*last day is never counted.*
+    timeout: 15000
+- assertVisible: Read 1 file
+# The provider prefix ("anthropic/") stays out of the header.
+- assertVisible: .*Sonnet 5.*
+- tapOn:
+    id: composer-input
+- inputText: and february?
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .and february\?.*
+    timeout: 15000
+- takeScreenshot: omp-thread-${APPEARANCE}
+- tapOn:
+    id: thread-back

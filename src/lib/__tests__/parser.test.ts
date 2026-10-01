@@ -129,6 +129,9 @@ describe('model naming', () => {
     expect(modelDisplayName('claude-opus-4-8')).toBe('Opus 4.8');
     expect(modelDisplayName('claude-fable-5')).toBe('Fable 5');
     expect(modelDisplayName('claude-opus-5[1m]')).toBe('Opus 5');
+    // OMP prefixes the provider.
+    expect(modelDisplayName('anthropic/claude-sonnet-5')).toBe('Sonnet 5');
+    expect(modelDisplayName('openai/gpt-5.6')).toBe('gpt-5.6');
   });
 
   // Date suffixes are part of the id, not the name.

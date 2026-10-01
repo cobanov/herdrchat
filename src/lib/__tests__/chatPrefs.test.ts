@@ -20,4 +20,11 @@ describe('chat prefs', () => {
       pref('a', { muted: true }),
     ])).toEqual(['a', 'b', 'c']);
   });
+
+  // OMP reports a path, signed as omp:<kind>:<encoded value>; the watcher sees the path.
+  it('hands the watcher an OMP session as the path herdr reported', () => {
+    const path = '/home/dev/.omp/agent/sessions/--repo--/2026-09-28T12-00-00_abc.jsonl';
+    expect(mutedSessionIds([pref(`omp:path:${encodeURIComponent(path)},claude-id`, { muted: true })])).toEqual([path, 'claude-id']);
+    expect(mutedSessionIds([pref('omp:id:abc-123', { muted: true })])).toEqual(['abc-123']);
+  });
 });

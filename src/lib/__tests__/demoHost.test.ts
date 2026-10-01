@@ -31,7 +31,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger']);
   });
 
   it('reports one workspace as blocked, because that is the state worth seeing', async () => {
@@ -120,7 +120,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {
@@ -305,5 +305,28 @@ describe('DemoHost scenarios', () => {
     const run = items.find((placed) => placed.item.kind === 'tools')!.item;
     expect(run.kind === 'tools' && toolRunSummary(run.calls, run.thoughts.length)).toBe('Ran 2 commands · edited 1 file · read 1 file · 1 failed');
     expect(items.at(-1)!.item.kind).toBe('agent');
+  });
+});
+
+// OMP reports its journal's path, and the real OMP reader and header check read it.
+describe('DemoHost as an OMP host', () => {
+  it('reports the journal path, which the store verifies and reads as OMP', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    const agent = (await client.agents()).find((a) => a.agent === 'omp')!;
+    expect(agent.agentSession).toMatchObject({ kind: 'path' });
+    const store = new TranscriptStore(host);
+    const path = (await store.ompTranscriptPath(agent.agentSession!.value!, 'path'))!;
+    await expect(store.verifyOmpTranscript(path, null)).resolves.toBeUndefined();
+    const before = (await store.recent(path, 'omp', 262_144)).messages;
+    const items = threadItems(before, { showSidechain: false });
+    expect(items.map((placed) => placed.item.kind)).toEqual(['user', 'tools', 'agent']);
+
+    await client.sendPrompt(agent.paneId, 'and february?');
+    now += 10_000;
+    const after = (await store.recent(path, 'omp', 262_144)).messages;
+    expect(after.slice(-2).map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(displayText(after.at(-2)!)).toBe('and february?');
   });
 });

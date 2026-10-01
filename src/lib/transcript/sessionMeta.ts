@@ -18,7 +18,10 @@ export interface SessionMeta {
  */
 export function modelDisplayName(model: string | null): string | null {
   if (model === null || model.length === 0) return null;
-  const base = model.split('[')[0] ?? model; // drop a "[1m]" context-window suffix
+  // Drop a "[1m]" context-window suffix, and a provider prefix: OMP names
+  // models "anthropic/claude-sonnet-5", "openai/gpt-5.6".
+  const unbracketed = model.split('[')[0] ?? model;
+  const base = unbracketed.slice(unbracketed.lastIndexOf('/') + 1);
   // Non-Claude model ids are already meaningful, including decimal versions.
   if (!base.startsWith('claude-')) return base;
   const noPrefix = base.startsWith('claude-') ? base.slice('claude-'.length) : base;

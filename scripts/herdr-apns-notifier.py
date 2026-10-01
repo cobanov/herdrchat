@@ -57,7 +57,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 4
+WATCHER_VERSION = 5
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -497,7 +497,8 @@ def main():
                 if seeded and news:
                     label = labels.get(a.get("workspace_id"), a.get("workspace_id", "agent"))
                     session = a.get("agent_session") or {}
-                    session_id = session.get("value") if session.get("kind") == "id" else None
+                    # An id for Claude and Codex, the journal's path for OMP.
+                    session_id = session.get("value") if session.get("kind") in ("id", "path") else None
                     title, body = notification_text(
                         a.get("agent"), status, label, a.get("terminal_title_stripped"), session_id
                     )

@@ -16,6 +16,8 @@ export interface DemoWorkspace {
   paneId: string;
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
+  /** Claude unless named; OMP reports its journal's path rather than an id. */
+  agent?: 'claude' | 'omp';
 }
 
 export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
@@ -43,7 +45,21 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     cwd: '/home/demo/scratch',
     agentStatus: 'done',
   },
+  {
+    workspaceId: 'w4',
+    label: 'ledger',
+    number: 4,
+    paneId: 'w4:p1',
+    cwd: '/home/demo/ledger',
+    agentStatus: 'idle',
+    agent: 'omp',
+  },
 ];
+
+/** Where the OMP demo agent keeps its journal, which herdr reports as its session. */
+export const DEMO_OMP_PATHS: Readonly<Record<string, string>> = {
+  'w4:p1': '/home/demo/.omp/agent/sessions/--home-demo-ledger--/2026-09-28T09-00-00_44444444-4444-4444-8444-444444444444.jsonl',
+};
 
 /** The Claude session id each demo workspace reports, and therefore its transcript filename. */
 export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
@@ -159,8 +175,41 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
+// MARK: - OMP
+//
+// OMP's own journal (oh-my-pi), as the OMP parser reads it: a session header,
+// then one record per message, tool results naming their call.
+
+const OMP_MODEL = 'anthropic/claude-sonnet-5';
+
+function ompRecord(id: string, timestamp: string, message: Record<string, unknown>): string {
+  return JSON.stringify({ type: 'message', id, parentId: null, timestamp, message: { timestamp: Date.parse(timestamp), ...message } });
+}
+
+const OMP_SEED: readonly string[] = [
+  JSON.stringify({ type: 'session', version: 3, id: '44444444-4444-4444-8444-444444444444', timestamp: '2026-08-19T08:00:00.000Z', cwd: '/home/demo/ledger' }),
+  ompRecord('o-1', '2026-08-19T08:01:00.000Z', { role: 'user', content: 'why does the monthly total skip the last day?' }),
+  ompRecord('o-2', '2026-08-19T08:01:10.000Z', {
+    role: 'assistant', model: OMP_MODEL,
+    content: [{ type: 'toolCall', id: 'o-call-1', name: 'read', arguments: { path: 'src/totals.ts' } }],
+  }),
+  ompRecord('o-3', '2026-08-19T08:01:11.000Z', { role: 'toolResult', toolCallId: 'o-call-1', toolName: 'read', content: [{ type: 'text', text: 'export function monthTotal(…)' }] }),
+  ompRecord('o-4', '2026-08-19T08:01:20.000Z', {
+    role: 'assistant', model: OMP_MODEL,
+    content: [{ type: 'text', text: 'The range ends with `<` on the first of the month, so the last day is never counted. Changing it to `<=` on the last day fixes it.' }],
+  }),
+];
+
+/** One more OMP user or assistant record, for when the demo is used. */
+export function ompLine(role: 'user' | 'assistant', text: string, id: string, timestamp: string): string {
+  return ompRecord(id, timestamp, role === 'user'
+    ? { role, content: text }
+    : { role, model: OMP_MODEL, content: [{ type: 'text', text }] });
+}
+
 /** The transcript a demo pane starts with, as the file's contents. */
 export function transcriptFor(paneId: string): string {
+  if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
   const lines = SEEDS[paneId] ?? [];
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
