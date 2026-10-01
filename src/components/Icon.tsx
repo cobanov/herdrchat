@@ -67,6 +67,11 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   'bell.slash.fill': 'notifications_off',
   'bell.slash': 'notifications_off',
   bell: 'notifications',
+  'star.fill': 'star',
+  'desktopcomputer': 'computer',
+  'network': 'lan',
+  'sparkles': 'auto_awesome',
+  'chevron.right.2': 'keyboard_double_arrow_right',
   xmark: 'close',
   'xmark.circle.fill': 'cancel',
 };

@@ -6,6 +6,7 @@ appId: dev.herdr.HerdrChat
 - stopApp
 - setOrientation: PORTRAIT
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - tapOn:
     id: server-switcher
 - tapOn:

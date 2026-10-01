@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 DEVICE=${E2E_DEVICE:-$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; d=[x for r in json.load(sys.stdin)["devices"].values() for x in r if x["state"]=="Booted"]; print(d[0]["udid"] if d else "")')}
 if [ -z "$DEVICE" ]; then echo "No booted simulator. Boot one, or set E2E_DEVICE." >&2; exit 2; fi
 OUT=${E2E_OUT:-${TMPDIR:-/tmp}/herdrchat-e2e/$(date +%Y%m%d-%H%M%S)}
-FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/omp smoke new-chat tool-activity thread-header"}
+FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/omp regression/welcome smoke new-chat tool-activity thread-header"}
 APPEARANCES=${E2E_APPEARANCES:-"Dark Light"}
 mkdir -p "$OUT"
 

@@ -255,6 +255,28 @@ export const glass = {
   edgeScrim: 0.85,
 } as const;
 
+/**
+ * The first-launch welcome, drawn in the App Store pictures' manner: a faint
+ * grid, a soft glow of the page's accent, a mono eyebrow over a big headline.
+ * The glow is `glowRings` concentric circles of falling opacity, a stepped
+ * radial gradient, so no gradient module is needed.
+ */
+export const welcome = {
+  gridStep: 44,
+  gridOpacity: 0.35,
+  glowSize: 560,
+  glowRings: 40,
+  glowOpacity: 0.012,
+  dot: 7,
+  dotActive: 22,
+  /** The numbered circle beside a step, and the icon tile beside a requirement. */
+  badge: 34,
+  badgeGlyph: 17,
+  /** The little terminal on the first page, tilted like the one in the store's. */
+  terminalLine: 18,
+  terminalTilt: '-2deg',
+} as const;
+
 /** The working indicator's dot grid: 3 × 3 dots, and one breath of the wave in ms. */
 export const activity = {
   gridDot: 4,

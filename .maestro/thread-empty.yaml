@@ -4,6 +4,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
 - tapOn:
     id: 'chat-row-${EMPTY_WORKSPACE_ID}'

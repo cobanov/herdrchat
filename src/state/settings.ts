@@ -42,6 +42,12 @@ export interface Settings {
    * would mean a second hydration path for one bit.
    */
   seenSwipeHint: boolean;
+  /** The first-launch welcome has been seen (or skipped). */
+  welcomeSeen: boolean;
+  /** The one-time request for a GitHub star was answered either way. */
+  starAsked: boolean;
+  /** Days the app was opened on a real host, as `encodeActiveDays` writes it. */
+  activeDays: string;
 }
 
 /**
@@ -73,6 +79,9 @@ export const SETTINGS_DEFAULTS: Settings = {
   notifications: false,
   pollScale: 1,
   seenSwipeHint: false,
+  welcomeSeen: false,
+  starAsked: false,
+  activeDays: '',
 };
 
 interface SettingsState extends Settings {
@@ -100,6 +109,9 @@ export function settingsSnapshot(): Settings {
     notifications: state.notifications,
     pollScale: state.pollScale,
     seenSwipeHint: state.seenSwipeHint,
+    welcomeSeen: state.welcomeSeen,
+    starAsked: state.starAsked,
+    activeDays: state.activeDays,
   };
 }
 

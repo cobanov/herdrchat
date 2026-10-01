@@ -5,6 +5,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 # The Demo host is the one a fresh install opens on.
 - assertVisible:
     id: server-switcher
