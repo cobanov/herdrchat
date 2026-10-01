@@ -1,0 +1,13 @@
+# A fresh install with no host opens on the welcome. Flows that are about
+# something else close it; regression/welcome.yaml is the one that reads it.
+appId: dev.herdr.HerdrChat
+---
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        id: welcome
+    commands:
+      - tapOn:
+          id: welcome-skip
+      - waitForAnimationToEnd

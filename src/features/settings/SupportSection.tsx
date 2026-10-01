@@ -2,14 +2,18 @@ import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 
 import { useGlassAvailable } from '@/components/Glass';
 import { ActionRow, Divider, Section } from '@/components/SettingsList';
 import { haptics } from '@/lib/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
+import { REPO_URL } from '@/lib/welcome';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { useHostVersion } from '@/state/hostVersion';
+import { saveSetting } from '@/state/saveSetting';
 import { explainTarget, formatDiagnostics, summarizeAgentExplain } from './diagnostics';
 
 /** Where a bug report goes. The same tracker the site already links to. */
@@ -40,6 +44,8 @@ const EXPLAIN_BUDGET_MS = 3000;
  * begin, and nobody assembles that list unprompted from a phone.
  */
 export function SupportSection() {
+  const router = useRouter();
+  const db = useSQLiteContext();
   const hostCount = useConnections((state) => state.connections.length);
   const selected = useSelectedConnection();
   const glassAvailable = useGlassAvailable();
@@ -121,6 +127,25 @@ export function SupportSection() {
         accessory="external"
         onPress={() => void Linking.openURL(README_URL)}
         testID="support-docs"
+      />
+      <Divider />
+      <ActionRow
+        label="Show the welcome again"
+        detail="What you need on your computer, and how it works."
+        accessory="chevron"
+        onPress={() => router.push('/welcome')}
+        testID="support-welcome"
+      />
+      <Divider />
+      <ActionRow
+        label="Star HerdrChat on GitHub"
+        detail="Free and open source. A star helps other people find it."
+        accessory="external"
+        onPress={() => {
+          saveSetting(db, 'starAsked', true);
+          void Linking.openURL(REPO_URL);
+        }}
+        testID="support-star"
       />
       <Divider />
       <ActionRow

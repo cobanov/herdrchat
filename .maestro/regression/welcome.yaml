@@ -1,0 +1,56 @@
+# The welcome: four pages (what it is, what you need, how it works, ready),
+# paged by Next and by a swipe, closed by the Demo button, and the two ways
+# back to it in Settings (show again, star on GitHub). The first-launch gate
+# itself is pinned by src/lib/__tests__/welcome.test.ts.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: support-welcome
+    direction: DOWN
+- assertVisible:
+    id: support-star
+- tapOn:
+    id: support-welcome
+- extendedWaitUntil:
+    visible: .*Less terminal.*
+    timeout: 10000
+- assertVisible: .*More conversation.*
+- takeScreenshot: welcome-1-${APPEARANCE}
+- swipe:
+    direction: LEFT
+- extendedWaitUntil:
+    visible: .*What you need.*
+    timeout: 5000
+- assertVisible: herdr, running
+- assertVisible: Tailscale, recommended
+- assertVisible: Read the setup guide
+- takeScreenshot: welcome-2-${APPEARANCE}
+- tapOn:
+    id: welcome-next
+- extendedWaitUntil:
+    visible: .*Three steps.*
+    timeout: 5000
+- assertVisible: Your workspaces become chats
+- takeScreenshot: welcome-3-${APPEARANCE}
+- tapOn:
+    id: welcome-next
+- extendedWaitUntil:
+    visible: Explore the Demo first
+    timeout: 5000
+- assertVisible:
+    id: welcome-star
+- assertVisible:
+    id: star-on-github
+- takeScreenshot: welcome-4-${APPEARANCE}
+- tapOn:
+    id: welcome-demo
+- extendedWaitUntil:
+    notVisible:
+      id: welcome
+    timeout: 5000
+- assertVisible:
+    id: support-welcome
+- tapOn: Chats

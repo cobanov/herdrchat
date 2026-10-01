@@ -1,6 +1,7 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Platform } from 'react-native';
 
+import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
 import { useBadge } from '@/state/badge';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -27,6 +28,7 @@ export default function TabsLayout() {
    * carries it while you are on another tab.
    */
   const attention = useBadge((state) => state.count);
+  useWelcomeGate();
 
   return (
     <NativeTabs

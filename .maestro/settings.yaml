@@ -13,6 +13,7 @@ appId: dev.herdr.HerdrChat
 # app deep in a thread and every assertion here would be about the wrong screen.
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
 - assertVisible: "Chats"
 - tapOn: "Settings"

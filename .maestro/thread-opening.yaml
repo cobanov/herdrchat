@@ -3,6 +3,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - extendedWaitUntil:
     visible:
       id: server-switcher

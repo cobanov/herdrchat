@@ -3,7 +3,7 @@
     "name": "HerdrChat",
     "slug": "herdrchat",
     "scheme": "herdrchat",
-    "version": "0.10.1",
+    "version": "0.11.0",
     "primaryColor": "#5459D4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +18,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "78",
+      "buildNumber": "79",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -31,7 +31,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "versionCode": 67,
+      "versionCode": 68,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"

@@ -4,6 +4,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- runFlow: _skip-welcome.yaml
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:

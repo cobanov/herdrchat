@@ -13,7 +13,12 @@ where regressions are found.
 |------|--------|
 | `regression/chat-list` | pin and mute (swipe right, long press), the Pinned group appearing on screen, the trailing swipe opening and closing |
 | `regression/new-chat` | Start reachable with the keyboard up, Cancel |
+| `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
+| `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
 | `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+
+A fresh install with no host opens on the welcome, so every flow runs
+`regression/_skip-welcome.yaml` right after launching.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
 `/model`, `/effort`, "ask me two questions", "run the checks".

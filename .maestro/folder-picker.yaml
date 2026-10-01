@@ -10,6 +10,7 @@ appId: dev.herdr.HerdrChat
 ---
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
 - assertVisible: "Chats"
 

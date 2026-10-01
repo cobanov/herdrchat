@@ -17,6 +17,7 @@ import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
 import { SwipeHint } from '@/features/chats/SwipeHint';
+import { StarCard } from '@/features/welcome/StarCard';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
 import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
 import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegrations';
@@ -27,15 +28,18 @@ import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
+import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
 import {
   clientFor,
+  isDemo,
   loadHostKeyPin,
   newConnection,
   useSelectedConnection,
 } from '@/state/connections';
 import { loadThreadReads, setSetting } from '@/state/db';
+import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
@@ -151,6 +155,17 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     useSettings.getState().set('seenSwipeHint', true);
     void setSetting(db, 'seenSwipeHint', encodeBool(true));
   }, [db]);
+
+  /**
+   * The one-time star request, below the chats where it never covers one.
+   * Either answer (star or "Not now") puts it away for good.
+   */
+  const starAsked = useSettings((state) => state.starAsked);
+  const activeDays = useSettings((state) => state.activeDays);
+  const askForStar =
+    rows.length > 0 &&
+    shouldAskForStar({ days: decodeActiveDays(activeDays), starAsked, onRealHost: connection !== null && !isDemo(connection.id) });
+  const answerStar = useCallback(() => saveSetting(db, 'starAsked', true), [db]);
 
   /**
    * The two things that can be fixed from here, and they are different sizes.
@@ -349,6 +364,11 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 />
               )}
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
+              {askForStar && (
+                <View style={{ marginTop: spacing.lg }}>
+                  <StarCard testID="star-card" onStar={answerStar} onDismiss={answerStar} />
+                </View>
+              )}
             </>
           }
           ListEmptyComponent={<EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />}

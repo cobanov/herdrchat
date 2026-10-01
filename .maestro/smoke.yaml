@@ -8,6 +8,7 @@ appId: dev.herdr.HerdrChat
 # (clearState would restart cleanly but also wipes the dev client's bundler URL.)
 - stopApp
 - launchApp
+- runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
 - assertVisible: "Chats"
 

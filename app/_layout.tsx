@@ -129,6 +129,9 @@ function RootStack() {
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />
+        {/* Full screen and no swipe down: it ends with a choice (the Demo or
+            your own computer), and Skip is one tap away. */}
+        <Stack.Screen name="welcome" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         {/* A form sheet rather than a full modal: it is one field, and a sheet
             that only takes the height it needs keeps the list it renamed
             visible behind it.
