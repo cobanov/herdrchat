@@ -97,6 +97,37 @@ class RoutingPayloadTests(unittest.TestCase):
             ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}, "sandbox"),
         ])
 
+    def test_an_omp_chat_is_muted_by_the_path_it_reports(self):
+        notifier = load_notifier()
+        path = "/home/dev/.omp/agent/sessions/--repo--/2026-09-28T12-00-00_abc.jsonl"
+        seen = []
+        agents = [
+            [{"pane_id": "w1:p1", "workspace_id": "w1", "agent": "omp", "agent_status": "working",
+              "agent_session": {"kind": "path", "value": path}}],
+            [{"pane_id": "w1:p1", "workspace_id": "w1", "agent": "omp", "agent_status": "blocked",
+              "agent_session": {"kind": "path", "value": path}}],
+        ]
+
+        def snapshots():
+            if not agents:
+                raise KeyboardInterrupt
+            return agents.pop(0)
+
+        with patch.multiple(notifier, KEY_ID="k", TEAM_ID="t", KEY_PATH=__file__), \
+                patch("os.path.isfile", return_value=True), patch("os.access", return_value=True), \
+                patch.object(notifier.os, "makedirs"), \
+                patch.object(notifier, "snapshot_agents", side_effect=snapshots), \
+                patch.object(notifier, "workspace_labels", return_value={"w1": "ledger"}), \
+                patch.object(notifier, "device_tokens", return_value=[("tok-a", "c", "production", frozenset({path})),
+                                                                       ("tok-b", "c", "production", frozenset())]), \
+                patch.object(notifier, "send_push",
+                             side_effect=lambda tok, t, b, extra=None, env="production": seen.append((tok, extra)) or (200, None)), \
+                patch.object(notifier.time, "sleep"):
+            with self.assertRaises(KeyboardInterrupt):
+                notifier.main()
+        self.assertEqual([tok for tok, _ in seen], ["tok-b"])
+        self.assertEqual(seen[0][1]["session"], path)
+
     def test_a_chat_muted_on_one_phone_still_reaches_the_other(self):
         notifier = load_notifier()
         seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset({"sess-1"})),

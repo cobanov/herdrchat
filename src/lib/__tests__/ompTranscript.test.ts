@@ -43,6 +43,17 @@ describe('OMP journal transcript', () => {
     expect(isToolOnly(messages[2]!)).toBe(true);
   });
 
+  it('pairs a result with its call and keeps its failure', () => {
+    const call = parseTranscriptLine(journal('message', { id: 'a', message: {
+      role: 'assistant', content: [{ type: 'toolCall', id: 'call-7', name: 'bash', arguments: { command: 'npm test' } }],
+    } }));
+    const result = parseTranscriptLine(journal('message', { id: 'r', message: {
+      role: 'toolResult', toolCallId: 'call-7', toolName: 'bash', isError: true, content: [{ type: 'text', text: '1 failed' }],
+    } }));
+    expect(call?.segments[0]).toMatchObject({ kind: 'toolUse', name: 'bash', id: 'call-7' });
+    expect(result?.segments).toEqual([{ kind: 'toolResult', text: '1 failed', toolUseId: 'call-7', isError: true }]);
+  });
+
   it('uses entry ids across replays and falls back to the journal timestamp', () => {
     const line = journal('message', { id: 'stable-id', message: {
       role: 'assistant', content: [{ type: 'text', text: 'Done' }],

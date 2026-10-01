@@ -203,24 +203,27 @@ export function toolCallLine(call: ToolCall): { verb: string; detail: string } {
 }
 
 export function toolKind(name: string): ToolKind {
-  if (COMMAND_TOOLS.has(name)) return 'command';
-  if (EDIT_TOOLS.has(name)) return 'edit';
-  if (name === 'Read') return 'read';
-  if (SEARCH_TOOLS.has(name)) return 'search';
-  if (name === 'WebFetch') return 'fetch';
-  if (TODO_TOOLS.has(name)) return 'todo';
-  if (name === 'AskUserQuestion') return 'question';
-  if (name === 'Agent' || name === 'Task') return 'agent';
+  // Claude names its tools in PascalCase, Codex and OMP in lower case.
+  const key = name.toLowerCase();
+  if (COMMAND_TOOLS.has(key)) return 'command';
+  if (EDIT_TOOLS.has(key)) return 'edit';
+  if (key === 'read') return 'read';
+  if (SEARCH_TOOLS.has(key)) return 'search';
+  if (FETCH_TOOLS.has(key)) return 'fetch';
+  if (TODO_TOOLS.has(key)) return 'todo';
+  if (key === 'askuserquestion') return 'question';
+  if (key === 'agent' || key === 'task') return 'agent';
   return 'tool';
 }
 
 // MARK: - Internals
 
-/** Claude's Bash, and Codex's shell tools. */
-const COMMAND_TOOLS = new Set(['Bash', 'BashOutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin']);
-const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
-const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'WebSearch', 'ToolSearch', 'web_search']);
-const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'update_plan']);
+/** Tool names, lower-cased: Claude's, Codex's and OMP's. */
+const COMMAND_TOOLS = new Set(['bash', 'bashoutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin']);
+const EDIT_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch']);
+const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search']);
+const FETCH_TOOLS = new Set(['webfetch', 'fetch', 'web_fetch']);
+const TODO_TOOLS = new Set(['todowrite', 'taskcreate', 'taskupdate', 'update_plan', 'todo']);
 
 /** A turn with something a person would read: text or a picture. */
 function isReadable(message: ChatMessage): boolean {

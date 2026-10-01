@@ -30,6 +30,8 @@ import {
   answeredReply,
   commandLines,
   DEMO_BLOCKED_SCREEN,
+  DEMO_OMP_PATHS,
+  ompLine,
   DEMO_HOME,
   DEMO_SESSION_IDS,
   DEMO_WORKSPACES,
@@ -208,6 +210,8 @@ export class DemoHost implements HerdrTransport {
     for (const workspace of DEMO_WORKSPACES) {
       this.statuses.set(workspace.paneId, workspace.agentStatus);
       this.transcripts.set(workspace.paneId, transcriptFor(workspace.paneId));
+      const ompPath = DEMO_OMP_PATHS[workspace.paneId];
+      if (ompPath !== undefined) this.paths.set(ompPath, workspace.paneId);
       const session = DEMO_SESSION_IDS[workspace.paneId];
       if (session !== undefined) {
         const dir = projectDirName(workspace.cwd);
@@ -232,7 +236,9 @@ export class DemoHost implements HerdrTransport {
         for (const written of due.lines(() => this.uuid(), this.stamp())) this.append(due.paneId, written);
       } else {
         const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
-        this.append(due.paneId, replyLine(text, this.uuid(), this.stamp()));
+        this.append(due.paneId, this.isOmp(due.paneId)
+          ? ompLine('assistant', text, this.uuid(), this.stamp())
+          : replyLine(text, this.uuid(), this.stamp()));
       }
       this.statuses.set(due.paneId,
         this.pending.some(reply => reply.paneId === due.paneId) ? 'working' : 'idle');
@@ -327,6 +333,13 @@ export class DemoHost implements HerdrTransport {
         : rest.slice(0, rest.length - sliceFromByte(rest, Number(from[3])).length));
     }
 
+    // The OMP header check reads the first two records.
+    const head = /^head -n (\d+) '(.+?)'$/.exec(body);
+    if (head !== null) {
+      const contents = this.read(head[2]!);
+      return contents === null ? exit(1) : out(`${contents.split('\n').slice(0, Number(head[1])).join('\n')}\n`);
+    }
+
     const last = /^tail -c (\d+) '(.+?)' 2>\/dev\/null$/.exec(body);
     if (last !== null) {
       const contents = this.read(last[2]!);
@@ -334,6 +347,10 @@ export class DemoHost implements HerdrTransport {
     }
 
     return null;
+  }
+
+  private isOmp(paneId: string): boolean {
+    return DEMO_OMP_PATHS[paneId] !== undefined;
   }
 
   private statusOf(paneId: string): string {
@@ -355,7 +372,7 @@ export class DemoHost implements HerdrTransport {
 
   private agentRows(): unknown[] {
     return DEMO_WORKSPACES.map((w) => ({
-      agent: 'claude',
+      agent: w.agent ?? 'claude',
       agent_status: this.statusOf(w.paneId),
       cwd: w.cwd,
       foreground_cwd: w.cwd,
@@ -364,12 +381,9 @@ export class DemoHost implements HerdrTransport {
       tab_id: `${w.workspaceId}:t1`,
       terminal_id: `term_${w.workspaceId}`,
       workspace_id: w.workspaceId,
-      agent_session: {
-        agent: 'claude',
-        kind: 'id',
-        source: 'herdr:claude',
-        value: DEMO_SESSION_IDS[w.paneId] ?? null,
-      },
+      agent_session: w.agent === 'omp'
+        ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[w.paneId] ?? null }
+        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: DEMO_SESSION_IDS[w.paneId] ?? null },
     }));
   }
 
@@ -437,8 +451,8 @@ export class DemoHost implements HerdrTransport {
     if (isPrompt) {
       const paneId = argv[3] ?? '';
       const text = argv[4] ?? '';
-      if (text.trim().startsWith('/')) return this.command(paneId, text);
-      this.append(paneId, userLine(text, this.uuid(), this.stamp()));
+      if (text.trim().startsWith('/') && !this.isOmp(paneId)) return this.command(paneId, text);
+      this.append(paneId, this.isOmp(paneId) ? ompLine('user', text, this.uuid(), this.stamp()) : userLine(text, this.uuid(), this.stamp()));
       const asked = text.toLowerCase();
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);

@@ -112,6 +112,10 @@ describe('tool wording', () => {
     expect(toolCallLine(call('mcp__claude_ai_Linear__save_issue', '{}'))).toEqual({ verb: 'MCP', detail: 'Linear save_issue' });
     expect(toolRunSummary([call('mcp__x__y', null), call('WebFetch', null), call('TodoWrite', null)], 0)).toBe('Fetched 1 page · updated todos · called 1 tool');
     // A question the agent asked is not "called 1 tool".
+    // OMP and Codex name their tools in lower case.
+    expect(toolRunSummary([call('bash', '{command: ls}'), call('read', '{path: a.ts}'), call('edit', '{path: a.ts}'), call('grep', null)], 0))
+      .toBe('Ran 1 command · edited 1 file · read 1 file · searched 1 time');
+    expect(toolCallLine(call('read', '{path: src/a.ts}'))).toEqual({ verb: 'Read', detail: 'a.ts' });
     expect(toolRunSummary([call('AskUserQuestion', '{questions: [{question: Pick a color}]}')], 0)).toBe('Asked 1 question');
     expect(toolCallLine(call('AskUserQuestion', '{questions: [{question: Pick a color, header: Color}]}'))).toEqual({ verb: 'Ask', detail: 'Pick a color' });
   });

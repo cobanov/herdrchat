@@ -81,7 +81,13 @@ function messageFrom(message: Record<string, unknown>): Pick<ChatMessage, 'role'
       return segments.length === 0 ? null : { role: 'assistant', segments };
     }
     case 'toolResult':
-      return { role: 'user', segments: [{ kind: 'toolResult', text: toolResultText(message.content) }] };
+      // OMP's result names its call and says outright whether it failed.
+      return { role: 'user', segments: [{
+        kind: 'toolResult',
+        text: toolResultText(message.content),
+        ...(typeof message.toolCallId === 'string' ? { toolUseId: message.toolCallId } : {}),
+        ...(message.isError === true ? { isError: true } : {}),
+      }] };
     default:
       return null;
   }
@@ -127,6 +133,7 @@ function assistantSegments(content: unknown): MessageSegment[] {
           kind: 'toolUse',
           name: typeof value.name === 'string' ? value.name : 'tool',
           input: preview(value.arguments),
+          ...(typeof value.id === 'string' ? { id: value.id } : {}),
         });
         break;
       case 'image':
