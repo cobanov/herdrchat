@@ -188,7 +188,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   };
 
   /**
-   * Installing herdr's Claude integration from here.
+   * Installing herdr's missing chat-agent integration from here.
    *
    * The thread already works out that this is what is wrong, an agent that
    * reports no session id for eighty seconds is almost always a host missing
@@ -200,7 +200,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const integrationKind = thread.agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
     ?? thread.agents.find(agent => agent.agentSession === null)
     ?? thread.agents[0];
-  const agentKind = integrationKind?.agent === 'codex' ? 'codex' : 'claude';
+  const agentKind: 'claude' | 'codex' | 'omp' = integrationKind?.agent === 'codex'
+    ? 'codex'
+    : integrationKind?.agent === 'omp' ? 'omp' : 'claude';
   const installIntegration = useCallback(() => {
     if (client === null || installing) return;
     setInstalling(true);

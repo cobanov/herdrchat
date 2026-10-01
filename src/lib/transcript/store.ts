@@ -51,6 +51,7 @@ const claudeDirByTransport = new WeakMap<HerdrTransport, Promise<string>>();
 const CLAUDE_DIR_COMMAND = 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"';
 const CLAUDE_DIR_SHELL = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
 const codexPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
+const ompPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
 
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
@@ -212,6 +213,86 @@ export class TranscriptStore {
         'This Codex file does not confirm the expected session id. Nothing was opened. Retry after the agent has finished starting.');
     }
     return path;
+  }
+
+  /**
+   * Herdr's OMP extension normally reports the exact file, including custom
+   * session directories and profiles. An id-only report searches for that
+   * exact id, never for a cwd's newest journal.
+   */
+  async ompTranscriptPath(value: string, kind: string | null): Promise<string | null> {
+    if (kind === 'path') {
+      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
+        !value.split('/').includes('..') ? value : null;
+    }
+    if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
+    let paths = ompPathsByTransport.get(this.transport);
+    if (paths === undefined) {
+      paths = new Map();
+      ompPathsByTransport.set(this.transport, paths);
+    }
+    const cached = paths.get(value);
+    if (cached !== undefined) return cached;
+    const pending = this.findOmpTranscript(value);
+    paths.set(value, pending);
+    const forget = () => { if (paths.get(value) === pending) paths.delete(value); };
+    void pending.then(path => { if (path === null) forget(); }, forget);
+    return pending;
+  }
+
+  forgetOmpTranscript(sessionId: string): void {
+    ompPathsByTransport.get(this.transport)?.delete(sessionId);
+  }
+
+  private async findOmpTranscript(value: string): Promise<string | null> {
+    const output = await this.shell(
+      'omp_config="$HOME/${PI_CONFIG_DIR:-.omp}"; ' +
+      'for omp_dir in "${PI_CODING_AGENT_DIR:-$omp_config/agent}/sessions" ' +
+      '"$omp_config/agent/sessions" "$omp_config/profiles" ' +
+      '${XDG_DATA_HOME:+"$XDG_DATA_HOME/omp"}; do ' +
+      'if [ -d "$omp_dir" ]; then ' +
+      `find "$omp_dir" -type f \\( -name ${shellQuote(`*_${value}.jsonl`)} -o -name ${shellQuote(`${value}.jsonl`)} \\) || exit $?; ` +
+      'fi; done'
+    );
+    const paths = [...new Set(output.split('\n').filter(path => path.length > 0))];
+    if (paths.length === 0) return null;
+    if (paths.length !== 1) {
+      throw new HerdrError('omp_session_ambiguous',
+        'More than one OMP transcript has this session id. Nothing was opened. Resume the session with the OMP integration so it reports the exact path.');
+    }
+    const path = paths[0]!;
+    if (!path.startsWith('/') || !path.endsWith('.jsonl') || /[\0\r\n]/.test(path) || path.split('/').includes('..')) {
+      throw new HerdrError('omp_session_invalid', 'The host returned an invalid OMP transcript path.');
+    }
+    return path;
+  }
+
+  /** Do not display another format (or a mismatched id) as OMP history. */
+  async verifyOmpTranscript(path: string, sessionId: string | null): Promise<void> {
+    const header = await this.shell(`head -n 2 ${shellQuote(path)}`);
+    if (!this.isOmpHeader(header, sessionId)) {
+      if (sessionId !== null) this.forgetOmpTranscript(sessionId);
+      throw new HerdrError('omp_session_mismatch',
+        'This file does not confirm the expected OMP session. Nothing was opened. Resume the session on the host, then reload.');
+    }
+  }
+
+  private isOmpHeader(header: string, sessionId: string | null): boolean {
+    try {
+      const [first, second] = header.split('\n', 2);
+      let raw: unknown = JSON.parse(first ?? '');
+      // Current OMP journals prepend a fixed-width title slot. Legacy files
+      // start directly with the session header; neither format needs a scan.
+      if (typeof raw === 'object' && raw !== null && 'type' in raw && raw.type === 'title') {
+        raw = JSON.parse(second ?? '');
+      }
+      return typeof raw === 'object' && raw !== null &&
+        'type' in raw && raw.type === 'session' &&
+        'id' in raw && typeof raw.id === 'string' && raw.id.length > 0 &&
+        (sessionId === null || raw.id === sessionId);
+    } catch {
+      return false; // A partially written header can be retried next refresh.
+    }
   }
 
   // There is deliberately no `newestTranscriptPath` here. Picking the newest
@@ -527,6 +608,7 @@ export class TranscriptStore {
     let model: string | null = null;
     let effort: string | null = null;
     let contextTokens: number | null = null;
+    let ompEffortFound = false;
 
     const lines = text.split('\n');
     for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -534,10 +616,14 @@ export class TranscriptStore {
       if (meta === null) continue;
       if (model === null && meta.model !== null) {
         model = meta.model;
-        effort = meta.effort ?? null;
+        if (agent !== 'omp') effort = meta.effort ?? null;
+      }
+      if (agent === 'omp' && !ompEffortFound && meta.effort !== undefined) {
+        effort = meta.effort;
+        ompEffortFound = true;
       }
       if (contextTokens === null) contextTokens = meta.contextTokens;
-      if (model !== null && contextTokens !== null) break;
+      if (model !== null && contextTokens !== null && (agent !== 'omp' || ompEffortFound)) break;
     }
 
     if (model === null && agent === 'codex') {
@@ -551,7 +637,24 @@ export class TranscriptStore {
       model = meta?.model ?? null;
       effort = meta?.effort ?? null;
     }
-    if (model === null && contextTokens === null) return null;
+    if (agent === 'omp' && (!ompEffortFound || model === null)) {
+      // These settings are separate journal records and may predate the window.
+      const settings = await this.shell(
+        `awk '/"type"[[:space:]]*:[[:space:]]*"model_change"/ { model = $0 } ` +
+        `/"type"[[:space:]]*:[[:space:]]*"thinking_level_change"/ { effort = $0 } ` +
+        `END { print model; print effort }' ${shellQuote(path)}`
+      );
+      for (const line of settings.split('\n')) {
+        const meta = assistantMeta(line);
+        if (meta === null) continue;
+        if (model === null) model = meta.model;
+        if (!ompEffortFound && meta.effort !== undefined) {
+          effort = meta.effort;
+          ompEffortFound = true;
+        }
+      }
+    }
+    if (model === null && contextTokens === null && !ompEffortFound) return null;
     return { model, effort, contextTokens };
   }
 
@@ -571,6 +674,7 @@ export class TranscriptStore {
     // block in two and file the tail of one workspace's history under a
     // workspace id read out of the transcript's own text.
     const marker = randomMarker();
+    const ompSessions = new Map<string, string | null>();
     let script = '';
     for (const request of requests) {
       // Ids are interpolated into the script and the marker line, so refuse
@@ -583,8 +687,14 @@ export class TranscriptStore {
       // dir, so the guess is wrong exactly when it looks most plausible. A
       // request without a usable session id is dropped rather than guessed; the
       // row keeps its live status line until the id arrives.
-      if (request.sessionId === null || !/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
-      if (request.agent === 'codex') {
+      if (request.sessionId === null) continue;
+      if (request.agent === 'omp') {
+        const path = await this.ompTranscriptPath(request.sessionId, request.sessionKind ?? 'id').catch(() => null);
+        if (path === null) continue;
+        script += `f=${shellQuote(path)}; `;
+        ompSessions.set(request.workspaceId, request.sessionKind === 'path' ? null : request.sessionId);
+      } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
+      else if (request.agent === 'codex') {
         // One broken Codex session must not suppress every other row's preview.
         const path = await this.codexTranscriptPath(request.sessionId).catch(() => null);
         if (path === null) continue;
@@ -598,6 +708,8 @@ export class TranscriptStore {
         script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
       } else continue;
       script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
+      // Validate headers in the preview batch, not one SSH call per OMP row.
+      if (request.agent === 'omp') script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
     }
     if (script.length === 0) return new Map();
@@ -610,7 +722,17 @@ export class TranscriptStore {
       const headerEnd = block.indexOf('\n');
       if (headerEnd < 0) continue;
       const workspaceId = block.slice(0, headerEnd).trim();
-      const messages = parseTranscript(block.slice(headerEnd + 1));
+      let body = block.slice(headerEnd + 1);
+      const ompId = ompSessions.get(workspaceId);
+      if (ompId !== undefined) {
+        const secondNewline = body.indexOf('\n', body.indexOf('\n') + 1);
+        if (secondNewline < 0 || !this.isOmpHeader(body.slice(0, secondNewline), ompId)) {
+          if (ompId !== null) this.forgetOmpTranscript(ompId);
+          continue;
+        }
+        body = body.slice(secondNewline + 1);
+      }
+      const messages = parseTranscript(body);
       const last = findLast(
         messages,
         // A command's note ("Cancelled") is neither news nor the conversation.
@@ -647,6 +769,8 @@ export interface PreviewRequest {
   cwd: string;
   /** null when the agent hasn't reported a session id yet. */
   sessionId: string | null;
+  /** OMP reports a path; legacy providers and callers report ids. */
+  sessionKind?: string | null;
   /** Legacy callers omit this for Claude. Other providers must opt in. */
   agent?: string;
 }

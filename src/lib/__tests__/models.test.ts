@@ -4,7 +4,7 @@ import workspaceListFixture from './fixtures/workspace-list.json';
 import {
   decodeSnapshot,
   decodeWorkspace,
-  hasSessionId,
+  hasSessionReference,
   needsAttention,
   sessionSignature,
   toAgentStatus,
@@ -222,10 +222,20 @@ describe('session signature', () => {
   });
 
   it('reports whether a transcript can be targeted exactly', () => {
-    expect(hasSessionId(agent({}))).toBe(true);
-    expect(hasSessionId(agent({ agentSession: null }))).toBe(false);
+    expect(hasSessionReference(agent({}))).toBe(true);
+    expect(hasSessionReference(agent({ agentSession: null }))).toBe(false);
     expect(
-      hasSessionId(agent({ agentSession: { agent: 'c', kind: 'id', source: 'x', value: null } }))
+      hasSessionReference(agent({ agentSession: { agent: 'c', kind: 'id', source: 'x', value: null } }))
     ).toBe(false);
+  });
+
+  it('binds OMP paths without colliding with ids or comma-separated sibling identities', () => {
+    const omp = (value: string, kind = 'path') => agent({
+      agent: 'omp', agentSession: { agent: 'omp', kind, source: 'herdr:omp', value },
+    });
+    expect(hasSessionReference(omp('/sessions/chat.jsonl'))).toBe(true);
+    expect(sessionSignature([omp('sess-a', 'id')])).not.toBe(sessionSignature([agent({})]));
+    expect(sessionSignature([omp('/a,b.jsonl')])).not.toBe(sessionSignature([omp('/a'), omp('b.jsonl')]));
+    expect(sessionSignature([omp('/old.jsonl')])).not.toBe(sessionSignature([omp('/new.jsonl')]));
   });
 });

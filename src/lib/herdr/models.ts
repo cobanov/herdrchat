@@ -65,17 +65,17 @@ export interface AgentInfo {
 }
 
 /**
- * True when the integration reports a concrete native session id. Only then can
- * a transcript be targeted exactly — without it the newest-`.jsonl` guess may
- * hit a previous session's file.
+ * True when the integration reports an exact native id, or OMP's session path.
+ * A path is authoritative only for OMP; other agents still require their id.
  */
-export function hasSessionId(agent: AgentInfo): boolean {
-  return agent.agentSession?.kind === 'id' && (agent.agentSession?.value ?? '') !== '';
+export function hasSessionReference(agent: AgentInfo): boolean {
+  const session = agent.agentSession;
+  return (session?.value ?? '') !== '' &&
+    (session?.kind === 'id' || (agent.agent === 'omp' && session?.kind === 'path'));
 }
 
 /**
- * Stable identity of the conversation(s) these agents host: the sorted, joined
- * Claude session ids.
+ * Stable identity of the conversation(s) these agents host.
  *
  * A chat's identity is its SESSION, not its workspace slot — this is what
  * distinguishes a new chat from the one that used the workspace before it.
@@ -83,10 +83,12 @@ export function hasSessionId(agent: AgentInfo): boolean {
  */
 export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
-    .filter((agent) => agent.agent !== null && hasSessionId(agent))
-    .map((agent) => agent.agent === 'codex'
-      ? `codex:${agent.agentSession?.value ?? ''}`
-      : agent.agentSession?.value ?? '')
+    .filter((agent) => agent.agent !== null && hasSessionReference(agent))
+    .map((agent) => agent.agent === 'omp'
+      ? `omp:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
+      : agent.agent === 'codex'
+        ? `codex:${agent.agentSession?.value ?? ''}`
+        : agent.agentSession?.value ?? '')
     .filter((value) => value !== '');
   if (ids.length === 0) return null;
   return [...new Set(ids)].sort().join(',');

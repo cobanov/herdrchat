@@ -26,11 +26,12 @@ import { useRemembered, useStartChat, type NewChatAgent } from './useNewChat';
 const AGENTS: readonly { value: NewChatAgent; label: string }[] = [
   { value: 'claude', label: 'Claude Code' },
   { value: 'codex', label: 'Codex' },
+  { value: 'omp', label: 'OMP' },
 ];
 
 /**
  * Start a new conversation: create a workspace on the host at a chosen working
- * directory and launch Claude Code or Codex in it.
+ * directory and launch Claude Code, Codex, or OMP in it.
  */
 export default function NewChatScreen() {
   const router = useRouter();
@@ -125,9 +126,8 @@ export default function NewChatScreen() {
           testID="field-label"
         />
 
-        {/* #114: Codex chats were fully supported once running, but could only
-            be started on the host. Two choices with nothing to explain fit one
-            line; the permission modes below keep their descriptions. */}
+        {/* Agent selection shares one line; Claude permission modes below keep
+            their descriptions. */}
         <SegmentedField label="Agent" options={AGENTS} value={agent} onChange={setEditedAgent} />
 
         {agent === 'claude' && (

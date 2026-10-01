@@ -2,16 +2,17 @@ import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
 import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine } from './harness';
 import { splitImages } from './images';
+import { ompEntry } from './omp';
 import type { SessionMeta } from './sessionMeta';
 
 /**
- * Turns Claude Code transcript JSONL (one JSON object per line) into chat
- * bubbles. This is what gives the chat view clean messages instead of the raw
- * TUI buffer: Claude writes every turn to
- * `~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl`.
+ * Turns agent transcript JSONL (one JSON object per line) into chat bubbles.
+ * Claude Code writes turns to
+ * `~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl`; OMP writes an
+ * append-only journal whose entries are read in chronological file order.
  *
- * Behaviour ported from the original SwiftUI implementation (see git
- * history before the Expo rewrite).
+ * Behaviour ported from the original SwiftUI implementation (see git history
+ * before the Expo rewrite).
  */
 
 /** Parse a whole transcript file's contents. */
@@ -51,6 +52,7 @@ export function parseTranscriptEntry(
   const raw = parseJson(line);
   if (raw === null) return EMPTY_ENTRY;
   if (isCodex(raw)) return codexEntry(raw, fallbackId(line), agentLabel);
+  if (isOmp(raw)) return ompEntry(raw, fallbackId(line), agentLabel);
   return { message: messageFrom(raw, line, agentLabel), meta: metaFrom(raw) };
 }
 
@@ -78,11 +80,20 @@ export function parseTranscriptLine(
 export function assistantMeta(line: string): SessionMeta | null {
   const raw = parseJson(line);
   if (raw === null) return null;
-  return isCodex(raw) ? codexEntry(raw, '', null).meta : metaFrom(raw);
+  if (isCodex(raw)) return codexEntry(raw, '', null).meta;
+  return isOmp(raw) ? ompEntry(raw, '', null).meta : metaFrom(raw);
 }
 
 function isCodex(raw: Record<string, unknown>): boolean {
   return raw.type === 'response_item' || raw.type === 'event_msg' || raw.type === 'turn_context';
+}
+
+function isOmp(raw: Record<string, unknown>): boolean {
+  return raw.type === 'message' ||
+    raw.type === 'model_change' ||
+    raw.type === 'thinking_level_change' ||
+    raw.type === 'branch_summary' ||
+    raw.type === 'reset_boundary';
 }
 
 /**

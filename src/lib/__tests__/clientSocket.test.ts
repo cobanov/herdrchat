@@ -158,20 +158,21 @@ describe('HerdrClient over the socket', () => {
   });
 
   describe('outdatedIntegrations (#93)', () => {
-    // The shape herdr 0.9.1 answers, trimmed.
-    const list = (claude: string, codex: string) =>
+    // The shape herdr answers, trimmed.
+    const list = (claude: string, codex: string, omp: string) =>
       `{"id":"x","result":{"type":"integration_list","integrations":[` +
       `{"target":"pi","label":"pi","command":"pi","available":false,"state":"not_installed"},` +
       `{"target":"claude","label":"claude","command":"claude","available":true,"state":"${claude}"},` +
-      `{"target":"codex","label":"codex","command":"codex","available":true,"state":"${codex}"}]}}`;
+      `{"target":"codex","label":"codex","command":"codex","available":true,"state":"${codex}"},` +
+      `{"target":"omp","label":"omp","command":"omp","available":true,"state":"${omp}"}]}}`;
 
     it('names the integrations the host reports as outdated', async () => {
-      const { client } = socketHost({ 'integration.list': list('outdated', 'current') });
-      await expect(client.outdatedIntegrations()).resolves.toEqual(['claude']);
+      const { client } = socketHost({ 'integration.list': list('outdated', 'current', 'outdated') });
+      await expect(client.outdatedIntegrations()).resolves.toEqual(['claude', 'omp']);
     });
 
     it('reports none when everything is current', async () => {
-      const { client } = socketHost({ 'integration.list': list('current', 'current') });
+      const { client } = socketHost({ 'integration.list': list('current', 'current', 'current') });
       await expect(client.outdatedIntegrations()).resolves.toEqual([]);
     });
 

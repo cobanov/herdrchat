@@ -10,7 +10,7 @@ import type * as SQLite from 'expo-sqlite';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
-  hasSessionId,
+  hasSessionReference,
   sessionSignature,
   type AgentInfo,
   type AgentStatus,
@@ -386,7 +386,9 @@ export function useThread(
       [key]: {
         model: next.model ?? prev[key]?.model ?? null,
         // Model and effort belong to one turn, never to a sibling agent.
-        effort: next.model !== null ? next.effort ?? null : prev[key]?.effort ?? null,
+        effort: key.startsWith('omp:')
+          ? next.effort !== undefined ? next.effort : prev[key]?.effort
+          : next.model !== null ? next.effort ?? null : prev[key]?.effort ?? null,
         contextTokens: next.contextTokens ?? prev[key]?.contextTokens ?? null,
       },
     }));
@@ -532,7 +534,7 @@ export function useThread(
 
   const startTails = useCallback(async (live: readonly AgentInfo[]) => {
     if (client === null || boundSig.current === null) return;
-    const identified = live.filter(hasSessionId);
+    const identified = live.filter(hasSessionReference);
     if (identified.length === 0) return;
     /*
       An agent whose transcript file does not exist yet has no tail, and a
@@ -578,14 +580,18 @@ export function useThread(
           const id = agent.agentSession!.value!;
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
-          let path = agent.agent === 'codex'
-            ? await store.codexTranscriptPath(id)
-            : await store.claudeTranscriptPath(agent.cwd, id);
-          if (path === null) throw new Error(agent.agent === 'codex'
-            ? 'The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.'
-            : 'The agent reported an invalid session id. Resume the session on the host, then reload.');
+          let path = agent.agent === 'omp'
+            ? await store.ompTranscriptPath(id, agent.agentSession!.kind)
+            : agent.agent === 'codex'
+              ? await store.codexTranscriptPath(id)
+              : await store.claudeTranscriptPath(agent.cwd, id);
+          if (path === null) throw new Error(agent.agent === 'omp'
+            ? 'The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.'
+            : agent.agent === 'codex'
+              ? 'The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.'
+              : 'The agent reported an invalid session id. Resume the session on the host, then reload.');
           let probe = await store.fileProbe(path);
-          if (probe.kind === 'absent' && agent.agent !== 'codex') {
+          if (probe.kind === 'absent' && agent.agent === 'claude') {
             // Not under the folder the pane's cwd names. The same session id may
             // be filed under a worktree's folder instead (#89).
             const found = await store.findClaudeTranscript(id);
@@ -596,6 +602,7 @@ export function useThread(
           }
           if (probe.kind === 'absent') {
             if (agent.agent === 'codex') store.forgetCodexTranscript(id);
+            if (agent.agent === 'omp' && agent.agentSession!.kind === 'id') store.forgetOmpTranscript(id);
             const previous = absentRetry.current.get(key);
             const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
             absentRetry.current.set(key, { at: Date.now() + delay, delay });
@@ -603,6 +610,7 @@ export function useThread(
             return null; // A new agent can receive its first prompt before writing a file.
           }
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+          if (agent.agent === 'omp') await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
           absentRetry.current.delete(key);
           const cached = await tailCursor(db, connectionId, workspaceId, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
@@ -660,7 +668,9 @@ export function useThread(
               ...prev,
               [source.key]: {
                 model: prev[source.key]?.model ?? seeded.model,
-                effort: prev[source.key]?.model != null ? prev[source.key]?.effort : seeded.effort,
+                effort: source.agent === 'omp'
+                  ? prev[source.key]?.effort !== undefined ? prev[source.key]?.effort : seeded.effort
+                  : prev[source.key]?.model != null ? prev[source.key]?.effort : seeded.effort,
                 contextTokens: prev[source.key]?.contextTokens ?? seeded.contextTokens,
               },
             }));
@@ -794,7 +804,7 @@ export function useThread(
         const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
         if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
-        const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex');
+        const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex' || agent.agent === 'omp');
         const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
         const sig = sessionSignature(conversational);
         const panes = conversational.map((agent) => agent.paneId).sort().join(',');
