@@ -293,7 +293,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         />
       ) : summaries.length === 0 ? (
         loading ? (
-          <SkeletonRows />
+          <SkeletonRows key={connection.id} host={connection} />
         ) : (
           // Scrollable only so it can be pulled to refresh; an empty list used to
           // offer no way to ask again at all.

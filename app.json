@@ -18,7 +18,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "79",
+      "buildNumber": "80",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -31,7 +31,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "versionCode": 68,
+      "versionCode": 69,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -43,11 +43,11 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "imageWidth": 180,
+          "imageWidth": 120,
           "resizeMode": "contain",
-          "backgroundColor": "#1F1D2A",
+          "backgroundColor": "#F6F7FC",
           "dark": {
-            "backgroundColor": "#1F1D2A"
+            "backgroundColor": "#000000"
           }
         }
       ],
