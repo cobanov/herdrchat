@@ -283,6 +283,17 @@ export const activity = {
   gridCycle: 750,
 } as const;
 
+/**
+ * The chat list's skeleton while a host is reached: each row breathes between
+ * full and `skeletonDim` over `skeletonCycle` ms, the next one `skeletonStagger`
+ * ms later, so the list reads as waiting rather than frozen.
+ */
+export const connecting = {
+  skeletonCycle: 1100,
+  skeletonStagger: 140,
+  skeletonDim: 0.45,
+} as const;
+
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
 
