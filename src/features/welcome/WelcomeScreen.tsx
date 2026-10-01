@@ -194,7 +194,7 @@ function Intro() {
 function Terminal() {
   const { colors } = useTheme();
   const line = (text: string, color: string) => (
-    <Text variant="footnote" mono style={{ color, lineHeight: welcome.terminalLine }}>
+    <Text variant="footnote" mono style={{ color }}>
       {text}
     </Text>
   );
