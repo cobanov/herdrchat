@@ -138,6 +138,25 @@ it('carries herdr\'s restore error onto the chat it belongs to (#119)', async ()
   await unmount();
 });
 
+// herdr calls an agent at Claude's folder-trust question idle; the row has to
+// say the chat needs you, or nobody opens it to answer.
+it('marks a chat whose agent waits on a menu as needing you', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(decodeSnapshot({
+    version: '0.9.0',
+    workspaces: [
+      { workspace_id: 'chat', label: 'New', number: 1, agent_status: 'idle' },
+      { workspace_id: 'busy', label: 'Busy', number: 2, agent_status: 'working' },
+    ],
+    agents: [
+      { workspace_id: 'chat', pane_id: 'p1', agent: 'claude', agent_status: 'idle', cwd: '/new', input_pending: true },
+      { workspace_id: 'busy', pane_id: 'p2', agent: 'claude', agent_status: 'working', cwd: '/b', input_pending: true },
+    ],
+  }));
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(result.current.summaries.map((chat) => chat.status)).toEqual(['blocked', 'working']);
+  await unmount();
+});
+
 // The chat list shows its changed-key banner from this code; it used to match
 // the native message, and silently stopped when that wording changed.
 it('reports a changed host key by its code, whatever the message says', async () => {

@@ -62,6 +62,13 @@ export interface AgentInfo {
    * it null (herdr #4457). Null from older herdr, which cannot tell.
    */
   completionSeq: number | null;
+  /**
+   * herdr sees a menu on the pane waiting for keys while the status stays
+   * `idle`: Claude's folder-trust question on a first start, and the panel a
+   * slash command opens. `agent.prompt` refuses the pane until it is answered
+   * (`agent_input_pending`). False from a herdr too old to send it.
+   */
+  inputPending: boolean;
 }
 
 /**
@@ -260,6 +267,7 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     agentSession: decodeAgentSessionRef(value.agent_session),
     stateChangeSeq: optionalNum(value.state_change_seq),
     completionSeq: optionalNum(value.completion_seq),
+    inputPending: value.input_pending === true,
   };
 }
 

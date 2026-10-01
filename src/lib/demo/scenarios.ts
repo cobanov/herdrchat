@@ -3,7 +3,7 @@
  *
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
- * one failure. The UI tests drive the Demo with the phrases below, and anyone
+ * one failure, the folder-trust question a first start asks. The UI tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -13,6 +13,7 @@
 export const DEMO_PHRASES = {
   questions: 'ask me two questions',
   tools: 'run the checks',
+  trust: 'open a new folder',
 } as const;
 
 // MARK: - Slash command panels
@@ -150,4 +151,37 @@ export function questionScreen(step: number, answers: readonly string[]): string
 export function questionAnswer(step: number, key: string): string | null {
   const options: readonly string[] = DEMO_QUESTIONS[step]?.options ?? [];
   return options[Number(key) - 1] ?? null;
+}
+
+// MARK: - Folder trust
+
+/** The folder the trust scenario asks about. */
+export const DEMO_TRUST_FOLDER = '/home/demo/youtube';
+
+/** Rows of Claude's folder-trust menu, top to bottom. The cursor starts on the first. */
+export const TRUST_OPTIONS = ['No, exit', 'Yes, I trust this folder'] as const;
+
+/**
+ * What Claude shows on a first start in a folder it has not been told to
+ * trust (2.1.286): no numbers, a cursor, Enter takes its row. herdr reports
+ * the agent idle with input pending, and refuses prompts until it is answered.
+ */
+export function trustScreen(cursor: number): string {
+  return [
+    '─'.repeat(96),
+    ' Accessing workspace:',
+    '',
+    ` ${DEMO_TRUST_FOLDER}`,
+    '',
+    " Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source",
+    " project, or work from your team). If not, take a moment to review what's in this folder first.",
+    '',
+    " Claude Code'll be able to read, edit, and execute files here.",
+    '',
+    ' Security guide',
+    '',
+    ...TRUST_OPTIONS.map((option, index) => `${index === cursor ? ' ❯ ' : '   '}${option}`),
+    '',
+    ' Enter to confirm · Esc to cancel',
+  ].join('\n');
 }

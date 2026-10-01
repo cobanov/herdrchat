@@ -180,10 +180,32 @@ describe('captured menus', () => {
     expect(labels('codex-trust')).toEqual(['1. Yes, continue', '2. No, quit']);
   });
 
-  // Claude's folder-trust dialog has no numbers at all. Better no options (the
-  // generic chips) than a guess.
-  it('offers nothing for an unnumbered menu', () => {
-    expect(isBlockedPromptEmpty(parseBlockedPrompt(screen('trust')))).toBe(true);
+  // Claude's folder-trust question has no numbers, a digit does nothing, and
+  // the cursor starts on "No, exit": the generic Confirm closed Claude. Each
+  // option carries the arrows to its row and Enter instead.
+  it("answers Claude's folder-trust question with the cursor's own keys", () => {
+    const prompt = parseBlockedPrompt(screen('trust'));
+    expect(prompt.question).toBe(
+      'Trust /home/me/work/askq? Claude Code will be able to read, edit and run files there.'
+    );
+    expect(prompt.unnumbered).toBe(true);
+    expect(prompt.options.map((option) => [option.label, optionKeys(option, prompt)])).toEqual([
+      ['No, exit', ['Enter']],
+      ['Yes, I trust this folder', ['Down', 'Enter']],
+    ]);
+  });
+
+  it('counts the arrows from wherever the cursor is', () => {
+    const moved = screen('trust').replace('❯ No, exit', '  No, exit').replace('  Yes, I trust', '❯ Yes, I trust');
+    const prompt = parseBlockedPrompt(moved);
+    expect(prompt.options.map((option) => optionKeys(option, prompt))).toEqual([['Up', 'Enter'], ['Enter']]);
+  });
+
+  // A heading without the answer, or an unnumbered list without the heading,
+  // is not the trust question, and a guess there sends Enter into something.
+  it('offers nothing for any other unnumbered menu', () => {
+    expect(isBlockedPromptEmpty(parseBlockedPrompt('Pick one\n❯ Apples\n  Pears\n'))).toBe(true);
+    expect(isBlockedPromptEmpty(parseBlockedPrompt(screen('trust').replace('Yes, I trust this folder', 'Yes')))).toBe(true);
   });
 });
 

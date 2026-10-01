@@ -18,6 +18,7 @@ const agent = (overrides: Partial<AgentInfo> = {}): AgentInfo => ({
   agentSession: null,
   stateChangeSeq: null,
   completionSeq: null,
+  inputPending: false,
   ...overrides,
 });
 

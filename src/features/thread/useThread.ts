@@ -253,6 +253,8 @@ export function useThread(
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
   const [workspaceLabel, setWorkspaceLabel] = useState<string | null>(null);
   const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
+  /** The pane with a question open, `blocked` or an idle one with input pending. */
+  const [askingPaneId, setAskingPaneId] = useState<string | null>(null);
   const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
   // Mirrors the state for the poll closure and for the synchronous double-tap
   // guard in sendKeys, a second tap can land before React re-renders.
@@ -850,6 +852,12 @@ export function useThread(
           noSessionSince.current = null;
           setSessionState('replaced');
         } else if (conversational.length > 0 && sig === null) {
+          // A question asked before the session starts, Claude's folder trust,
+          // is not a missing integration: the id arrives once it is answered,
+          // so the grace period only runs while nothing is being asked.
+          if (conversational.some((agent) => agent.inputPending || agent.agentStatus === 'blocked')) {
+            noSessionSince.current = null;
+          }
           const since = (noSessionSince.current ??= Date.now());
           setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
         } else {
@@ -881,9 +889,29 @@ export function useThread(
 
         void startTails(conversational);
 
-        const blocked = live.find((agent) => agent.agentStatus === 'blocked');
+        let blocked = live.find((agent) => agent.agentStatus === 'blocked');
         let parsedPrompt: BlockedPrompt | null = null;
-        if (blocked !== undefined) {
+        // herdr sees a menu waiting for keys while it still calls the agent
+        // idle. A slash command's panel is one (the overlay path below reads
+        // it); anything else that parses as a question is answered like a
+        // blocked agent's. Claude's folder-trust question on a first start is
+        // the case: it refuses every prompt until answered, and nothing else
+        // on the phone could answer it.
+        const pendingInput = blocked === undefined
+          ? live.find((agent) => agent.inputPending && agent.agentStatus !== 'working')
+          : undefined;
+        if (pendingInput !== undefined) {
+          const raw = await client.paneVisible(pendingInput.paneId, 40);
+          if (parsePaneOverlay(raw) !== null) {
+            lookForPanel = true;
+          } else {
+            const parsed = parseBlockedPrompt(raw);
+            if (parsed.options.length > 0) {
+              blocked = pendingInput;
+              parsedPrompt = { ...parsed, submitWithEnter: pendingInput.agent !== 'claude' };
+            }
+          }
+        } else if (blocked !== undefined) {
           const raw = await client.paneVisible(blocked.paneId, 40);
           if (blocked.agent === 'codex' && isMentionPopup(raw)) {
             parsedPrompt = {
@@ -900,6 +928,7 @@ export function useThread(
           }
         }
         setBlockedPrompt(parsedPrompt);
+        setAskingPaneId(blocked?.paneId ?? null);
 
         // A reply in flight is confirmed (or orphaned) by what this poll saw.
         // Only the silent outcomes are handled here: the timeout banner belongs
@@ -1043,7 +1072,11 @@ export function useThread(
     readOverlay,
   ]);
 
-  const status: AgentStatus = agents.some((a) => a.agentStatus === 'blocked')
+  const blockedPane =
+    agents.find((a) => a.agentStatus === 'blocked') ??
+    agents.find((a) => a.paneId === askingPaneId) ??
+    null;
+  const status: AgentStatus = blockedPane !== null
     ? 'blocked'
     : agents.some((a) => a.agentStatus === 'working')
       ? 'working'
@@ -1057,7 +1090,6 @@ export function useThread(
     agents.find((a) => a.focused && a.agent !== null) ??
     agents.find((a) => a.agent !== null) ??
     null;
-  const blockedPane = agents.find((a) => a.agentStatus === 'blocked') ?? null;
   const sessionMeta = primaryPane === null ? null
     : sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
 

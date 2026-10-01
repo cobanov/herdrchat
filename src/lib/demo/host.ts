@@ -18,6 +18,8 @@ import { projectDirName } from '../transcript/parser';
 import {
   DEMO_PHRASES,
   DEMO_QUESTIONS,
+  TRUST_OPTIONS,
+  trustScreen,
   effortPanelScreen,
   modelPanelScreen,
   panelFor,
@@ -204,6 +206,8 @@ export class DemoHost implements HerdrTransport {
   /** A slash command's panel open over a pane's composer. */
   private readonly panels = new Map<string, DemoPanel>();
   private readonly questions = new Map<string, Questions>();
+  /** Panes at the folder-trust question, with the row under its cursor. */
+  private readonly trusting = new Map<string, number>();
   private counter = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {
@@ -381,6 +385,7 @@ export class DemoHost implements HerdrTransport {
       tab_id: `${w.workspaceId}:t1`,
       terminal_id: `term_${w.workspaceId}`,
       workspace_id: w.workspaceId,
+      ...(this.trusting.has(w.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
       agent_session: w.agent === 'omp'
         ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[w.paneId] ?? null }
         : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: DEMO_SESSION_IDS[w.paneId] ?? null },
@@ -423,6 +428,8 @@ export class DemoHost implements HerdrTransport {
       if (panel !== undefined) return out(panel.kind === 'model' ? modelPanelScreen(panel) : effortPanelScreen(panel));
       const questions = this.questions.get(paneId);
       if (questions !== undefined) return out(questionScreen(questions.step, questions.answers));
+      const cursor = this.trusting.get(paneId);
+      if (cursor !== undefined) return out(trustScreen(cursor));
       return out(this.statusOf(paneId) === 'blocked' ? DEMO_BLOCKED_SCREEN : '');
     }
 
@@ -432,6 +439,7 @@ export class DemoHost implements HerdrTransport {
       const choice = argv[4] ?? '';
       if (this.panels.has(paneId)) return this.panelKeys(paneId, argv.slice(4));
       if (this.questions.has(paneId)) return this.questionKey(paneId, choice);
+      if (this.trusting.has(paneId)) return this.trustKeys(paneId, argv.slice(4));
       if (['Escape', 'escape', 'Esc', 'ctrl+c', 'C-c'].includes(choice)) {
         this.pending = this.pending.filter(reply => reply.paneId !== paneId);
         this.statuses.set(paneId, 'idle');
@@ -451,11 +459,18 @@ export class DemoHost implements HerdrTransport {
     if (isPrompt) {
       const paneId = argv[3] ?? '';
       const text = argv[4] ?? '';
+      if (this.trusting.has(paneId)) {
+        return out(JSON.stringify({ error: {
+          code: 'agent_input_pending',
+          message: `agent ${paneId} has a pending unknown input prompt; chat prompt was not written`,
+        } }));
+      }
       if (text.trim().startsWith('/') && !this.isOmp(paneId)) return this.command(paneId, text);
       this.append(paneId, this.isOmp(paneId) ? ompLine('user', text, this.uuid(), this.stamp()) : userLine(text, this.uuid(), this.stamp()));
       const asked = text.toLowerCase();
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
+      if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
@@ -541,6 +556,38 @@ export class DemoHost implements HerdrTransport {
         replyLine(summary, next(), timestamp),
       ],
     });
+    return silent();
+  }
+
+  /**
+   * As if the agent had just started in a folder Claude does not trust yet:
+   * the question waits for keys, the agent stays idle, and a prompt is refused
+   * until it is answered, the way a new chat in a new folder starts.
+   */
+  private askTrust(paneId: string): ExecResult {
+    this.trusting.set(paneId, 0);
+    this.statuses.set(paneId, 'idle');
+    return silent();
+  }
+
+  private trustKeys(paneId: string, keys: readonly string[]): ExecResult {
+    for (const key of keys) {
+      const cursor = this.trusting.get(paneId);
+      if (cursor === undefined) break;
+      if (key === 'Up') this.trusting.set(paneId, Math.max(0, cursor - 1));
+      else if (key === 'Down') this.trusting.set(paneId, Math.min(TRUST_OPTIONS.length - 1, cursor + 1));
+      else if (['Enter', 'Escape', 'escape', 'Esc'].includes(key)) {
+        this.trusting.delete(paneId);
+        const trusted = key === 'Enter' && TRUST_OPTIONS[cursor] === 'Yes, I trust this folder';
+        this.append(paneId, replyLine(
+          trusted
+            ? 'Thanks, I can work in this folder now. What should we do first?'
+            : 'You chose not to trust that folder, so Claude would exit here. On the demo host this chat stays open.',
+          this.uuid(),
+          this.stamp()
+        ));
+      }
+    }
     return silent();
   }
 

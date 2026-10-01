@@ -295,6 +295,22 @@ describe('DemoHost scenarios', () => {
     expect(displayText((await messagesOf(host, 1)).at(-1)!)).toBe('You picked Blue and Large.');
   });
 
+  it('asks the folder-trust question, refuses prompts meanwhile, and trusts on Down and Enter', async () => {
+    const host = new DemoHost();
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'open a new folder');
+    const pane = async () => (await client.snapshot()).agents.find((agent) => agent.paneId === 'w2:p1')!;
+    expect([(await pane()).agentStatus, (await pane()).inputPending]).toEqual(['idle', true]);
+    await expect(client.sendPrompt('w2:p1', 'hello?')).rejects.toMatchObject({ code: 'agent_input_pending' });
+
+    const prompt = parseBlockedPrompt(await client.paneVisible('w2:p1', 40));
+    const yes = prompt.options.find((option) => option.label === 'Yes, I trust this folder')!;
+    expect(prompt.question).toContain('/home/demo/youtube');
+    await client.sendKeys('w2:p1', yes.keys!);
+    expect((await pane()).inputPending).toBe(false);
+    expect(displayText((await messagesOf(host, 1)).at(-1)!)).toContain('I can work in this folder now');
+  });
+
   it('runs a set of checks as tool calls with one failure', async () => {
     let now = 1_000;
     const host = new DemoHost(() => now);
