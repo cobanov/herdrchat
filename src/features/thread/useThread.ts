@@ -46,23 +46,14 @@ import {
 import { inTransaction } from '@/state/db';
 
 /**
- * Bytes of a fresh transcript to pull up front.
+ * Transcript lines a thread opens with, about a hundred messages.
  *
- * A chat surface is about recency, so this is deliberately small: a large window
- * means every thread open pays a multi-megabyte SSH read and then lays out
- * thousands of bubbles, which is what makes long sessions open mid-history and
- * stutter. Older history stays on the host. A changed transcript opens with a
- * fresh window, never by replaying everything since the last visit.
+ * Lines rather than bytes: a picture Claude reads is a line of up to a
+ * megabyte, so a byte window opened a screenshot-heavy session on a dozen rows.
+ * The host strips the picture data, so this is a few hundred kilobytes on the
+ * wire. Older history is a scroll away.
  */
-const RECENT_BYTES = 384_000;
-/**
- * Widened window for the pathological case: a transcript whose tail is one
- * enormous line (image tool-results embed base64) yields almost no bubbles from
- * the small window. Tried once, only when the first read came back too thin.
- */
-const RECENT_BYTES_WIDE = 3_000_000;
-const RECENT_MESSAGES = 150;
-const THIN_HISTORY = 10;
+const RECENT_LINES = 300;
 /**
  * On resume, the tail re-reads the line at the stored cursor: a disconnect can
  * leave the cursor mid-line, and re-reading the boundary line in full costs
@@ -74,18 +65,24 @@ const THIN_HISTORY = 10;
  */
 const RESUME_REWIND = 4096;
 /**
- * One page of scroll-up history. Smaller than the opening window: this is a
- * deliberate reach for more, so it should land quickly rather than pull the
- * largest slice it can justify.
+ * One page of scroll-up history, in transcript lines: a screen or two of
+ * conversation once tool calls fold into their summary rows.
  */
-const OLDER_BYTES = 128_000;
+const OLDER_LINES = 200;
 /**
- * How many pages a single pull may consume while every one of them turns out to
- * be entirely deduped. Resuming from cache anchors at the tail cursor, so the
- * first page back is the cached window itself and yields nothing new; without
- * this, that pull would appear to do nothing at all.
+ * How many pages a single pull may read while every one of them turns out to
+ * be entirely deduped. A thread resumed from its cache anchors at the tail
+ * cursor, so the first pages back are the cached window itself and yield
+ * nothing new; stopping at the first of those left the reader at the top with
+ * nothing happening.
  */
-const OLDER_EMPTY_PAGES = 3;
+const OLDER_EMPTY_PAGES = 6;
+/**
+ * How long a failed page waits before the next scroll may ask again. The reader
+ * asks on every scroll event near the top, and without this a host that keeps
+ * failing would be asked a dozen times a second.
+ */
+const OLDER_RETRY_MS = 2_000;
 
 const STATUS_POLL_MS = 2000;
 /**
@@ -373,6 +370,8 @@ export function useThread(
   const metaSeeded = useRef(new Set<string>());
   const alive = useRef(true);
   const paging = useRef(false);
+  /** When a page last failed, for `OLDER_RETRY_MS`. */
+  const olderFailedAt = useRef(0);
   const sending = useRef(false);
 
   /**
@@ -459,6 +458,7 @@ export function useThread(
    */
   const loadOlder = useCallback(async () => {
     if (client === null || paging.current) return;
+    if (Date.now() - olderFailedAt.current < OLDER_RETRY_MS) return;
     const source = olderSource.current;
     if (source === null || source.anchor <= 0) return;
     const sig = boundSig.current;
@@ -471,7 +471,7 @@ export function useThread(
         const current = olderSource.current;
         if (current === null || current.anchor <= 0) break;
 
-        const older = await store.older(current.path, current.label, current.anchor, OLDER_BYTES);
+        const older = await store.older(current.path, current.label, current.anchor, OLDER_LINES);
         if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
         olderSource.current = { ...current, anchor: older.startByte };
 
@@ -491,8 +491,9 @@ export function useThread(
       }
     } catch {
       // A failed reach for more history leaves the thread exactly as it was.
-      // The reader can pull again; surfacing a banner for it would push the
-      // conversation down to report that nothing happened.
+      // The reader's next scroll asks again; surfacing a banner for it would
+      // push the conversation down to report that nothing happened.
+      olderFailedAt.current = Date.now();
     } finally {
       paging.current = false;
       if (alive.current) setLoadingOlder(false);
@@ -1522,11 +1523,8 @@ async function resumePoint(store: TranscriptStore, path: string, cursor: number)
   }
 }
 
-/**
- * The up-front history read: a small recent window, widened once if it came back
- * too thin to be a real conversation.
- */
-async function loadRecent(
+/** The up-front history read, frozen at the size the probe measured. */
+function loadRecent(
   store: TranscriptStore,
   path: string,
   label: string | null,
@@ -1536,11 +1534,5 @@ async function loadRecent(
   consumedBytes: number;
   startByte: number;
 }> {
-  const first = await store.recent(path, label, RECENT_BYTES, RECENT_MESSAGES);
-  if (first.messages.length >= THIN_HISTORY || size <= RECENT_BYTES) return first;
-  try {
-    return await store.recent(path, label, RECENT_BYTES_WIDE, RECENT_MESSAGES);
-  } catch {
-    return first;
-  }
+  return store.recent(path, label, RECENT_LINES, size);
 }

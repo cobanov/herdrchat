@@ -35,7 +35,16 @@ export type ThreadItem =
   | { kind: 'user'; key: string; message: ChatMessage }
   | { kind: 'agent'; key: string; message: ChatMessage }
   | { kind: 'note'; key: string; message: ChatMessage }
-  | { kind: 'tools'; key: string; calls: ToolCall[]; thoughts: string[] }
+  /**
+   * `key` is the list's identity for the row and names the run by its LAST
+   * call or thought, because older history is prepended: a page whose end is
+   * the start of the run at the top of the list adds calls to its front, and a
+   * row whose key changed under the reader is one the list cannot keep in
+   * place, so the conversation jumped by the whole page. `runKey` names it by
+   * its first, which is stable while a live run grows, and keeps the run open
+   * or closed.
+   */
+  | { kind: 'tools'; key: string; runKey: string; calls: ToolCall[]; thoughts: string[] }
   | { kind: 'subagent'; key: string; call: ToolCall };
 
 /** Which of those is the first of its turn, so the list can open a gap above it. */
@@ -59,7 +68,11 @@ export function threadItems(
     if (run !== null && (run.calls.length > 0 || run.thoughts.length > 0)) items.push(run);
     run = null;
   };
-  const runFor = (key: string) => (run ??= { kind: 'tools', key: `tools-${key}`, calls: [], thoughts: [] });
+  const runFor = (key: string) => {
+    run ??= { kind: 'tools', key: '', runKey: `tools-${key}`, calls: [], thoughts: [] };
+    run.key = `tools-${key}`;
+    return run;
+  };
 
   const attach = (segment: Extract<MessageSegment, { kind: 'toolResult' }>) => {
     const call = (segment.toolUseId !== undefined ? open.get(segment.toolUseId) : undefined) ?? unmatched.shift();

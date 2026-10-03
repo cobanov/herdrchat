@@ -1,0 +1,48 @@
+# Reading a long chat back to its start (the Demo's `journal`: 520 transcript
+# lines, a screenshot read every day). Reported: scrolling up sometimes threw
+# the reader back to the end, and older messages could not be reached at all.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w5
+    direction: DOWN
+- tapOn:
+    id: chat-row-w5
+# Opens on the end of the conversation.
+- extendedWaitUntil:
+    visible:
+      id: bubble-h129-a
+    timeout: 15000
+- assertNotVisible: Beginning of conversation
+
+# Scrolling up pages older history in as the reader nears the top, all the way
+# to the first message, without the list ever jumping back to the end.
+- scrollUntilVisible:
+    element:
+      id: bubble-h0-q
+    direction: UP
+    timeout: 240000
+    speed: 90
+    visibilityPercentage: 50
+- assertVisible: Beginning of conversation
+- takeScreenshot: history-start-${APPEARANCE}
+
+# Left alone, the reader stays where they are: polls and the live tail keep a
+# reader in history, they do not pull them to the end.
+- waitForAnimationToEnd:
+    timeout: 6000
+- assertVisible:
+    id: bubble-h0-q
+- assertVisible:
+    id: jump-to-bottom
+
+# The jump button takes them back to the end.
+- tapOn:
+    id: jump-to-bottom
+- extendedWaitUntil:
+    visible:
+      id: bubble-h129-a
+    timeout: 10000
+- takeScreenshot: history-end-${APPEARANCE}

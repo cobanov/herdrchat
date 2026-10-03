@@ -54,6 +54,14 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     agentStatus: 'idle',
     agent: 'omp',
   },
+  {
+    workspaceId: 'w5',
+    label: 'journal',
+    number: 5,
+    paneId: 'w5:p1',
+    cwd: '/home/demo/journal',
+    agentStatus: 'idle',
+  },
 ];
 
 /** Where the OMP demo agent keeps its journal, which herdr reports as its session. */
@@ -66,6 +74,7 @@ export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
   'w1:p1': '11111111-1111-4111-8111-111111111111',
   'w2:p1': '22222222-2222-4222-8222-222222222222',
   'w3:p1': '33333333-3333-4333-8333-333333333333',
+  'w5:p1': '55555555-5555-4555-8555-555555555555',
 };
 
 export const DEMO_HOME = '/home/demo';
@@ -175,6 +184,43 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
+// MARK: - A long history
+//
+// Longer than the window a thread opens with, so reading it to the start takes
+// scrolling back through pages. Every day has the agent look at a screenshot,
+// the way a session checking a simulator does: the picture comes back as
+// base64 inside the transcript, twice, which is what made byte windows open on
+// a dozen rows and page back one picture at a time.
+
+/** Days in the journal; four transcript lines each. */
+export const HISTORY_DAYS = 130;
+const PICTURE = 'iVBORw0KGgoAAAANSUhEUgAA'.repeat(170);
+
+function historyLines(): string[] {
+  const lines: string[] = [];
+  for (let day = 0; day < HISTORY_DAYS; day += 1) {
+    const at = (second: number) => new Date(Date.UTC(2026, 6, 1, 9, 0, second) + day * 86_400_000).toISOString();
+    const call = `toolu_h${day}`;
+    lines.push(
+      line({ type: 'user', uuid: `h${day}-q`, timestamp: at(0), content: day === 0 ? 'the first entry: start a journal' : `day ${day}: what changed on screen?` }),
+      line({
+        type: 'assistant', uuid: `h${day}-t`, timestamp: at(5), model: MODEL,
+        content: [{ type: 'tool_use', id: call, name: 'Read', input: { file_path: `/tmp/day-${day}.png` } }],
+      }),
+      JSON.stringify({
+        type: 'user', uuid: `h${day}-r`, timestamp: at(6),
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PICTURE } }] }] },
+        toolUseResult: { type: 'image', file: { base64: PICTURE, type: 'image/png' } },
+      }),
+      line({
+        type: 'assistant', uuid: `h${day}-a`, timestamp: at(20), model: MODEL,
+        content: [{ type: 'text', text: day === 0 ? 'Journal started. I will note what each screenshot shows.' : `Day ${day}: the list kept its place and the header shows the model.` }],
+      }),
+    );
+  }
+  return lines;
+}
+
 // MARK: - OMP
 //
 // OMP's own journal (oh-my-pi), as the OMP parser reads it: a session header,
@@ -210,7 +256,7 @@ export function ompLine(role: 'user' | 'assistant', text: string, id: string, ti
 /** The transcript a demo pane starts with, as the file's contents. */
 export function transcriptFor(paneId: string): string {
   if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
-  const lines = SEEDS[paneId] ?? [];
+  const lines = paneId === 'w5:p1' ? historyLines() : SEEDS[paneId] ?? [];
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
 

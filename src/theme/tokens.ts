@@ -232,6 +232,12 @@ export function useComposerMinHeight(): number {
 
 export const threadLayout = {
   bottomSlack: 48,
+  /**
+   * How close to the top, in screens, a reader is when older history starts
+   * loading. A page takes up to a second over SSH; a screen of runway lets it
+   * land before the reader runs out of conversation.
+   */
+  olderHistoryReach: 1,
   initialHeaderHeight: 80,
   initialControlsHeight: 96,
 } as const;
