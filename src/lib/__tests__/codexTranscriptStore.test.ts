@@ -22,6 +22,8 @@ class CodexHost implements HerdrTransport {
     if (this.fail) return { ok: false, code: 'connect_failed', message: 'Offline' };
     if (command.includes('find ')) return ok(this.matches);
     if (command.includes('head -n 1')) return ok(this.header);
+    // `windowScript`: the whole file is one window, as "<start> <end>" and its lines.
+    if (command.includes('dd bs=1 skip')) return ok(`0 ${Buffer.byteLength(this.file)}\n${this.file}`);
     if (command.includes('wc -c')) return ok(String(Buffer.byteLength(this.file)));
     const marker = /\\n(__HERDRCHAT_[A-Za-z0-9_]+__|@@HERDRCHAT[^ ]*) %s/.exec(command)?.[1];
     if (marker !== undefined) return ok(`\n${marker} w1\n${this.file}`);
@@ -95,7 +97,7 @@ describe('exact Codex transcript resolution', () => {
   it('uses the same parser and byte accounting for recent history and live updates', async () => {
     const host = new CodexHost();
     const store = new TranscriptStore(host);
-    const recent = await store.recent(path, null, 100_000);
+    const recent = await store.recent(path, null, 300);
     expect(recent.messages.map(displayText)).toEqual(['Hello 👋']);
     expect(recent.consumedBytes).toBe(Buffer.byteLength(host.file));
     for await (const chunk of store.tail(path, null, 0)) {

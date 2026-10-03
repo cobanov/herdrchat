@@ -19,6 +19,43 @@ const result = (value: string, toolUseId?: string, isError = false): MessageSegm
 const kinds = (messages: ChatMessage[]) => threadItems(messages, { showSidechain: false }).map((placed) => placed.item.kind);
 
 describe('thread items', () => {
+  // Older history is prepended. A page that ends inside the run at the top of
+  // the list adds calls to its front, and a row whose key changed is one the
+  // list cannot hold in place: the conversation jumped by the whole page.
+  it('keeps a run at the top under the same list key when older calls join it', () => {
+    const older = [
+      message('user', [text('Check the screens')]),
+      message('assistant', [use('Read', '{file_path: /tmp/a.png}', 'r1')]),
+      message('user', [result('[image]', 'r1')]),
+    ];
+    const shown = [
+      message('assistant', [use('Read', '{file_path: /tmp/b.png}', 'r2')]),
+      message('user', [result('[image]', 'r2')]),
+      message('assistant', [text('Both look right.')]),
+    ];
+    const run = (messages: ChatMessage[]) => {
+      const item = threadItems(messages, { showSidechain: false }).find((placed) => placed.item.kind === 'tools')!.item;
+      if (item.kind !== 'tools') throw new Error('expected a run');
+      return item;
+    };
+    const before = run(shown);
+    const after = run([...older, ...shown]);
+    expect(after.calls).toHaveLength(2);
+    expect(after.key).toBe(before.key);
+  });
+
+  // The other end: a live run grows at its end, and stays open or closed as it does.
+  it('keeps a growing run under the same open-state key', () => {
+    const first = [message('user', [text('Go')]), message('assistant', [use('Bash', '{command: ls}', 'b1')])];
+    const grown = [...first, message('user', [result('ok', 'b1')]), message('assistant', [use('Bash', '{command: pwd}', 'b2')])];
+    const runKey = (messages: ChatMessage[]) => {
+      const item = threadItems(messages, { showSidechain: false }).at(-1)!.item;
+      return item.kind === 'tools' ? item.runKey : null;
+    };
+    expect(runKey(grown)).toBe(runKey(first));
+    expect(runKey(first)).not.toBeNull();
+  });
+
   // Claude writes one tool_use per line and each result as a user line.
   it('folds a run of tools across transcript lines into one row', () => {
     const messages = [

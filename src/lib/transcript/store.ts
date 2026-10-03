@@ -385,151 +385,79 @@ export class TranscriptStore {
   }
 
   /**
-   * Bulk-load only the most recent slice of a transcript in one read, instead of
-   * streaming a possibly multi-megabyte file line by line. Returns the parsed
-   * bubbles plus the byte offset consumed, so the live tail can follow from
-   * exactly there.
+   * The conversation's last `lines` lines, read in one command, and the bytes
+   * they span, so the live tail can follow from exactly the end.
    *
-   * Two independent limits, because bytes are a poor proxy for conversation
-   * length in either direction: one turn can be megabytes (image tool-results
-   * embed base64), and a megabyte can hold thousands of terse turns. `maxBytes`
-   * bounds the transfer; `maxMessages` bounds what the chat surface has to lay
-   * out. Older history stays on disk, untouched.
+   * Counted in lines, not bytes, because bytes are a poor measure of
+   * conversation. Claude embeds every picture it reads as base64, twice, so a
+   * session that checks screenshots has lines of half a megabyte to a megabyte.
+   * A byte window of a few hundred kilobytes opened such a thread on a dozen
+   * rows, and paging back a byte window at a time fetched one picture per pull
+   * and showed nothing for it: the reader could not get back into history.
+   *
+   * `size` is the probe's answer. Reading only up to it keeps an agent writing
+   * right now from turning this into an unbounded catch-up read.
    */
   async recent(
     path: string,
     agentLabel: string | null,
-    maxBytes: number,
-    maxMessages?: number
+    lines: number,
+    size?: number
   ): Promise<{ messages: ChatMessage[]; consumedBytes: number; startByte: number }> {
-    const size = await this.sizeOrThrow(path);
-    const start = size > maxBytes ? size - maxBytes : 0;
-    // Freeze the end at the probe: an active agent must not turn this bounded
-    // snapshot into an unbounded catch-up read while the command runs.
-    const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)} | head -c ${size - start}`);
-    if (byteLength(body) < size - start || body.endsWith('\uFFFD')) {
-      // A truncated file or a final half UTF-8 character cannot provide a
-      // trustworthy byte boundary. Retry the snapshot, never advance past it.
-      throw new HerdrError('transcript_changed', 'The transcript changed during the read. Retrying.');
-    }
-
-    const lastNewline = body.lastIndexOf('\n');
-    // Leave a partially written final line for the live reader to finish.
-    const consumedBytes = lastNewline < 0 ? start : size - byteLength(body.slice(lastNewline + 1));
-    let text = body.slice(0, lastNewline + 1);
-    // A window that starts mid-file almost always starts mid-line. Drop that
-    // fragment explicitly rather than relying on it failing to parse — a
-    // truncated line can still decode into a half-formed bubble.
-    if (start > 0) {
-      const firstNewline = text.indexOf('\n');
-      if (firstNewline >= 0) {
-        text = text.slice(firstNewline + 1);
-      }
-    }
-
-    // Count backwards from the known byte boundary. A lossy UTF-8 fragment at
-    // the beginning cannot move either cursor past the actual host bytes.
-    let startByte = consumedBytes - byteLength(text);
-    const messages: ChatMessage[] = [];
-    const lines = text.length === 0 ? [] : text.slice(0, -1).split('\n');
-    let offset = consumedBytes;
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      const line = lines[index]!;
-      offset -= byteLength(line) + 1;
-      const message = parseTranscriptEntry(line, agentLabel).message;
-      if (message !== null) messages.push(message);
-      if (maxMessages !== undefined && messages.length >= maxMessages) {
-        // Older paging must include the messages omitted by the display cap.
-        startByte = offset;
-        break;
-      }
-    }
-    messages.reverse();
-    return { messages, consumedBytes, startByte };
+    const end = size ?? (await this.sizeOrThrow(path));
+    const window = await this.linesBefore(path, agentLabel, end, lines);
+    return { messages: window.messages, consumedBytes: window.endByte, startByte: window.startByte };
   }
 
   /**
-   * The window of history immediately BEFORE `startByte` — what a reader gets
-   * by pulling down at the top of a thread.
-   *
-   * Bounded by bytes only, deliberately. `recent()` also caps messages because
-   * it decides how much a freshly-opened thread must lay out; here the reader
-   * has explicitly asked for more, and a message cap would force this to report
-   * an anchor somewhere inside the window it read. Getting that offset wrong by
-   * one line either repeats a message or silently drops one, and bytes are the
-   * only thing the host and this file agree on exactly.
+   * The `lines` lines immediately BEFORE `beforeByte`, what a reader gets by
+   * scrolling to the top of a thread. `beforeByte` is always a line start: the
+   * `startByte` of the window or page before, or a tail cursor.
    */
   async older(
     path: string,
     agentLabel: string | null,
     beforeByte: number,
-    maxBytes: number
+    lines: number
   ): Promise<{ messages: ChatMessage[]; startByte: number; reachedStart: boolean }> {
     if (beforeByte <= 0) return { messages: [], startByte: 0, reachedStart: true };
-
-    const start = beforeByte > maxBytes ? beforeByte - maxBytes : 0;
-    const length = beforeByte - start;
-
-    // A byte RANGE, not a suffix, so it takes two commands. The pipeline's exit
-    // status is `head`'s, which makes `tail` dying of SIGPIPE once head has had
-    // its fill invisible — true only while nothing sets `pipefail` in
-    // `withPath()`. If that ever changes, this starts returning 141 and every
-    // older-history read fails; the same inversion once rejected two good
-    // release builds before anyone spotted it.
-    const body = await this.readRange(path, start, length);
-
-    let text = body;
-    let startByte = start;
-    // A window opened mid-file almost always opens mid-line. Drop that fragment
-    // and move the anchor past it, so the next page ends exactly where this one
-    // begins: leaving the anchor at `start` would serve the partial line again,
-    // and advancing it further would lose whatever sits between the two pages.
-    if (start > 0) {
-      const firstNewline = text.indexOf('\n');
-      // The window ends at a line boundary, so its only newline being the last
-      // byte means the whole window sits inside one line. Dropping "the
-      // fragment" would then drop everything and hand back the same anchor, and
-      // paging stopped for good at the first line longer than a page (#81):
-      // image results and tool dumps run to megabytes.
-      if (firstNewline < 0 || firstNewline === text.length - 1) {
-        return this.olderLongLine(path, agentLabel, beforeByte);
-      }
-      text = text.slice(firstNewline + 1);
-      // Counted back from the known end, like `recent()`: a window that opened
-      // inside a multi-byte character decodes that fragment lossily, so
-      // counting forward from `start` would land a few bytes off.
-      startByte = beforeByte - byteLength(text);
-    }
-
-    return {
-      messages: parseTranscript(text, agentLabel),
-      startByte,
-      reachedStart: startByte <= 0,
-    };
+    const window = await this.linesBefore(path, agentLabel, beforeByte, lines);
+    return { messages: window.messages, startByte: window.startByte, reachedStart: window.startByte <= 0 };
   }
 
   /**
-   * The one line that ends at `beforeByte`, when it is longer than a page.
+   * Up to `lines` whole lines ending at or before byte `end`, as `[startByte,
+   * endByte)`. A line still being written at `end` is left out, and `endByte`
+   * stops before it, so the tail reads it whole.
    *
-   * The host finds where it starts (`grep -b` over the prefix prints each line's
-   * byte offset; only the last number comes back, never the content). A line
-   * up to `OLDER_LINE_MAX_BYTES` is then read whole. A longer one is stepped
-   * over: at that size it is base64 or a tool dump, rarely anything a person
-   * would read on a phone, and fetching it would cost more than the reader
-   * asked for. Either way the anchor moves, so paging continues.
+   * The host finds the boundaries (only the numbers come back) and strips
+   * picture data before anything crosses the network: a quoted string of 128
+   * or more base64 characters, or a base64 data URL, becomes "". Neither is text a person reads, and the
+   * parser only counts image blocks, it never decodes them. A line stays one
+   * line, so `[startByte, endByte)` still describes exactly what was parsed.
+   * Measured on a real 30 MB transcript, 200 lines went from 6.2 MB to 196 KB.
+   *
+   * The pattern keeps to what BSD, GNU and busybox `sed -E` all accept: a
+   * repetition count of at most 255 (BSD's RE_DUP_MAX), no `\w`, and `|` as
+   * the delimiter since `/` is in the base64 alphabet.
    */
-  private async olderLongLine(
+  private async linesBefore(
     path: string,
     agentLabel: string | null,
-    beforeByte: number
-  ): Promise<{ messages: ChatMessage[]; startByte: number; reachedStart: boolean }> {
-    const lineStart = await this.lineStartBefore(path, beforeByte);
-    const lineBytes = beforeByte - lineStart;
-    const messages =
-      lineBytes > OLDER_LINE_MAX_BYTES
-        ? []
-        : parseTranscript(await this.readRange(path, lineStart, lineBytes), agentLabel);
-    return { messages, startByte: lineStart, reachedStart: lineStart <= 0 };
+    end: number,
+    lines: number
+  ): Promise<{ messages: ChatMessage[]; startByte: number; endByte: number }> {
+    if (end <= 0) return { messages: [], startByte: 0, endByte: 0 };
+    const output = await this.shell(windowScript(path, end, lines));
+    const newline = output.indexOf('\n');
+    const header = /^(\d+) (\d+)$/.exec(newline < 0 ? output : output.slice(0, newline));
+    const startByte = Number(header?.[1]);
+    const endByte = Number(header?.[2]);
+    if (header === null || startByte > endByte || endByte > end) {
+      throw new HerdrError('transcript_changed', 'The transcript read came back incomplete. Retrying.');
+    }
+    const text = newline < 0 ? '' : output.slice(newline + 1);
+    return { messages: parseTranscript(text, agentLabel), startByte, endByte };
   }
 
   /**
@@ -547,19 +475,6 @@ export class TranscriptStore {
       throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
     }
     return lineStart;
-  }
-
-  /**
-   * Bytes `[start, start + length)` of a file. A shorter answer means the read
-   * was cut off (a dropped channel, a killed command), and a short page would
-   * anchor the next one in the wrong place, so it is refused.
-   */
-  private async readRange(path: string, start: number, length: number): Promise<string> {
-    const body = await this.shell(`tail -c +${start + 1} ${shellQuote(path)} | head -c ${length}`);
-    if (byteLength(body) < length) {
-      throw new HerdrError('transcript_changed', 'The transcript read was cut short. Retrying.');
-    }
-    return body;
   }
 
   /**
@@ -805,10 +720,49 @@ export function previewText(message: ChatMessage): string | null {
 }
 
 /**
- * The longest single line older history will fetch (4 MiB). The largest seen
- * in practice were a 2.3 MB Claude image result and a 3.9 MB Codex compaction.
+ * The host side of `linesBefore`: prints "<startByte> <endByte>", then those
+ * lines with picture data stripped.
+ *
+ * It reads a chunk `[b, e)` before the end rather than the whole prefix, and
+ * gets there by seeking: `dd count=0` moves the shared file offset and `head
+ * -c` reads on from it. Everything else counts with `wc` and `head`, never
+ * `tail` on a pipe: BSD's crawls at about 60 MB/s and `tail -c +N` streams no
+ * faster, which made a 30 MB transcript take two seconds per page on a Mac
+ * host. The chunk grows fourfold until it holds more than `n` lines or reaches
+ * the start of the file, so a first line cut by the chunk is never one of the
+ * `n`.
+ *
+ * `k` newlines in the chunk: the window ends `z` after the last one, leaving a
+ * line still being written to the tail, and starts `s` after the first `k - n`
+ * lines. `head -n 0` is an error on BSD, hence the guards. Only `dd`, `head`,
+ * `wc` and `sed`: busybox's `grep` has no `-b`.
+ *
+ * Run by `sh` rather than the login shell, which may be zsh or fish.
  */
-const OLDER_LINE_MAX_BYTES = 4 * 1024 * 1024;
+export function windowScript(path: string, end: number, lines: number): string {
+  return `sh -c ${shellQuote([
+    `f=${shellQuote(path)}; e=${end}; n=${lines}; w=${WINDOW_CHUNK_BYTES}`,
+    '[ -r "$f" ] || exit 1',
+    'r() { { dd bs=1 skip="$1" count=0 2>/dev/null; head -c $(($2 - $1)); } < "$f"; }',
+    'while :; do',
+    '  if [ "$e" -gt "$w" ]; then b=$((e - w)); else b=0; fi',
+    '  k=$(($(r "$b" "$e" | wc -l)))',
+    '  if [ "$b" -eq 0 ] || [ "$k" -gt "$n" ]; then break; fi',
+    '  w=$((w * 4))',
+    'done',
+    'z=$b; [ "$k" -gt 0 ] && z=$((b + $(r "$b" "$e" | head -n "$k" | wc -c)))',
+    's=$b; [ "$k" -gt "$n" ] && s=$((b + $(r "$b" "$e" | head -n $((k - n)) | wc -c)))',
+    'echo "$s $z"',
+    `r "$s" "$z" | sed -E ${shellQuote(STRIP_PICTURES)}`,
+  ].join('\n'))}`;
+}
+
+/** The first chunk `windowScript` looks at: a few pictures' worth. */
+const WINDOW_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/** See `linesBefore`. */
+const STRIP_PICTURES =
+  's|"[A-Za-z0-9+/=]{128}[A-Za-z0-9+/=]*"|""|g; s|"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=]*"|""|g';
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 

@@ -108,8 +108,8 @@ export function useThreadScroll<T>(listRef: RefObject<FlashListRef<T> | null>, r
     awayFromEnd,
     /** The reader asked for the end: sent a message, tapped the jump button, reloaded. */
     followEnd: (animated: boolean) => dispatch({ kind: 'wantsEnd' }, animated),
-    /** Whether the list is scrolled to its very top. */
-    atTop: () => offset.current <= 0,
+    /** Whether the reader is close enough to the top to need older history. */
+    nearTop: () => offset.current <= viewportHeight.current * threadLayout.olderHistoryReach,
     listProps: {
       onScroll: (event: ScrollEventArgs) => {
         if (readerMoving.current) {

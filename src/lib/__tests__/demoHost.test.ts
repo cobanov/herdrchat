@@ -1,6 +1,6 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
-import { DEMO_SESSION_IDS, DEMO_WORKSPACES, transcriptFor } from '../demo/fixtures';
+import { DEMO_SESSION_IDS, DEMO_WORKSPACES, HISTORY_DAYS, transcriptFor } from '../demo/fixtures';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { displayText } from '../transcript/message';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
@@ -31,7 +31,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal']);
   });
 
   it('reports one workspace as blocked, because that is the state worth seeing', async () => {
@@ -65,6 +65,26 @@ describe('DemoHost as a filesystem', () => {
 
     const probe = await store.fileProbe(path);
     expect(probe).toEqual({ kind: 'size', bytes: Buffer.byteLength(text, 'utf8') });
+  });
+
+  // The journal is longer than a thread's opening window, so the Demo can show
+  // reading a long chat back to its start (regression/history.yaml).
+  it('serves a long history in pages that meet without a gap', async () => {
+    const { store, path } = await transcriptOf(new DemoHost(), DEMO_WORKSPACES.findIndex(w => w.label === 'journal'));
+    const first = await store.recent(path, 'claude', 300);
+    expect(first.startByte).toBeGreaterThan(0);
+    const ids = first.messages.map(message => message.id);
+    let anchor = first.startByte;
+    for (let guard = 0; ; guard += 1) {
+      const page = await store.older(path, 'claude', anchor, 200);
+      ids.unshift(...page.messages.map(message => message.id));
+      if (page.reachedStart) break;
+      anchor = page.startByte;
+      if (guard > 10) throw new Error('never reached the start');
+    }
+    expect(ids).toHaveLength(HISTORY_DAYS * 4);
+    expect(ids[0]).toBe('h0-q');
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('says a missing transcript is absent rather than unreadable', async () => {
@@ -120,7 +140,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

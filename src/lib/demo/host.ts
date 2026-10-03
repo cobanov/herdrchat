@@ -120,6 +120,16 @@ function sliceFromByte(text: string, startByte: number): string {
 }
 
 /** The last `count` bytes, snapped forward to a boundary. */
+/** What `windowScript` prints for `text`: up to `count` whole lines ending at or before byte `end`. */
+function linesBefore(text: string, end: number, count: number): string {
+  const prefix = text.slice(0, text.length - sliceFromByte(text, end).length);
+  const whole = prefix.slice(0, prefix.lastIndexOf('\n') + 1);
+  const taken = whole.length === 0 ? [] : whole.slice(0, -1).split('\n').slice(-count);
+  const body = taken.length === 0 ? '' : `${taken.join('\n')}\n`;
+  const endByte = byteLength(whole);
+  return `${endByte - byteLength(body)} ${endByte}\n${body}`;
+}
+
 function sliceLastBytes(text: string, count: number): string {
   const total = byteLength(text);
   return total <= count ? text : sliceFromByte(text, total - count);
@@ -335,6 +345,15 @@ export class DemoHost implements HerdrTransport {
       const rest = sliceFromByte(contents, Number(from[1]) - 1);
       return out(from[3] === undefined ? rest
         : rest.slice(0, rest.length - sliceFromByte(rest, Number(from[3])).length));
+    }
+
+    // `windowScript`: the whole lines before a byte, as "<start> <end>" and then
+    // the lines. The demo has no pictures to strip.
+    const script = /^sh -c '([\s\S]*)'$/.exec(body);
+    const window = script === null ? null : /^f='(.+?)'; e=(\d+); n=(\d+);/.exec(script[1]!.replaceAll(`'\\''`, `'`));
+    if (window !== null) {
+      const contents = this.read(window[1]!);
+      return contents === null ? exit(1) : out(linesBefore(contents, Number(window[2]), Number(window[3])));
     }
 
     // The OMP header check reads the first two records.

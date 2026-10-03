@@ -740,7 +740,7 @@ it.each(['claude', 'codex'])('opens a stale %s cache with one recent window, not
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(result.current.loading).toBe(true);
   expect(mockTailStarts).toEqual([]);
-  expect(mockRecent).toHaveBeenCalledWith(expect.any(String), null, 384_000, 150);
+  expect(mockRecent).toHaveBeenCalledWith(expect.any(String), null, 300, 8_000_000);
   await act(async () => {
     finish?.({ messages: newest, consumedBytes: 8_000_000, startByte: 7_900_000 });
   });
@@ -753,7 +753,7 @@ it.each(['claude', 'codex'])('opens a stale %s cache with one recent window, not
   // Previously cached records must still be eligible for scroll-up paging.
   mockOlder.mockResolvedValue({ messages: [turn('last-visit')], startByte: 0, reachedStart: true });
   await act(async () => { await result.current.loadOlder(); });
-  expect(mockOlder).toHaveBeenCalledWith(expect.any(String), null, 7_900_000, 128_000);
+  expect(mockOlder).toHaveBeenCalledWith(expect.any(String), null, 7_900_000, 200);
   expect(result.current.messages[0]?.id).toBe('last-visit');
   await unmount();
 });
@@ -901,6 +901,52 @@ it('continues the window on a tail restart, keeping older history and the list',
   expect(mockTailStarts.length).toBeGreaterThan(starts);
   expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a', 'b', 'c', 'd']);
   expect(result.current.historyVersion).toBe(1);
+  await unmount();
+});
+
+// Reported: older messages could not be read back. A thread resumed from its
+// cache pages back from the tail cursor, so the first pages are the cached
+// window again; giving up after three of those left the reader at the top with
+// nothing happening.
+it('pages past a cached window that the first pages only repeat', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  jest.mocked(seedMessages).mockResolvedValue([turn('c1', 10), turn('c2', 11)]);
+  jest.mocked(tailCursor).mockResolvedValue(50_000);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['c1', 'c2']);
+
+  let anchor = 50_000;
+  mockOlder.mockImplementation(async () => {
+    anchor -= 1_000;
+    return anchor > 45_000
+      ? { messages: [turn('c1', 10)], startByte: anchor, reachedStart: false }
+      : { messages: [turn('older', 1), turn('c1', 10)], startByte: anchor, reachedStart: false };
+  });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(mockOlder).toHaveBeenCalledTimes(5);
+  expect(result.current.messages.map((message) => message.id)).toEqual(['older', 'c1', 'c2']);
+  await unmount();
+});
+
+it('waits after a failed page instead of asking on every scroll', async () => {
+  mockLive = false;
+  mockProbe = { kind: 'size', bytes: 50_000 };
+  mockRecent.mockResolvedValue({ messages: [turn('a', 1)], consumedBytes: 50_000, startByte: 40_000 });
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  mockOlder.mockRejectedValue(new Error('Read timed out'));
+  await act(async () => { await result.current.loadOlder(); });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(mockOlder).toHaveBeenCalledTimes(1);
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+  mockOlder.mockResolvedValue({ messages: [turn('z', 0)], startByte: 0, reachedStart: true });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a']);
+  expect(result.current.reachedStart).toBe(true);
   await unmount();
 });
 

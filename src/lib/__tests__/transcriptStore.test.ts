@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from '../herdr/transport';
 import { displayText } from '../transcript/message';
@@ -70,223 +75,152 @@ function transcript(turns: number): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** "turn 42" -> 42, so paging can be asserted as a contiguous run. */
-function turnNumber(text: string): number {
-  return Number(text.replace('turn ', ''));
-}
-
 function store(file: string): { store: TranscriptStore; transport: FakeTransport } {
   const transport = new FakeTransport(file);
   return { store: new TranscriptStore(transport), transport };
 }
 
+/**
+ * A host made of the real `sh`, `head`, `tail`, `grep` and `sed`, reading a
+ * real file. The window reads run a script on the host, and a canned answer
+ * would only test the canned answer: this runs BSD tools on a Mac and GNU ones
+ * on the CI runner, which are exactly the two the script must agree across.
+ */
+class ShellHost implements HerdrTransport {
+  readonly path: string;
+  readonly outputs: string[] = [];
+
+  constructor(contents: string) {
+    this.path = join(mkdtempSync(join(tmpdir(), 'herdrchat-')), 't.jsonl');
+    writeFileSync(this.path, contents);
+  }
+
+  append(text: string): void {
+    appendFileSync(this.path, text);
+  }
+
+  async exec(command: string): Promise<ExecResult> {
+    const run = spawnSync('/bin/sh', ['-c', command], { maxBuffer: 64 * 1024 * 1024 });
+    const stdout = run.stdout.toString('utf8');
+    this.outputs.push(stdout);
+    return { ok: true, stdout, stderr: run.stderr.toString('utf8'), exitCode: run.status ?? 1 };
+  }
+
+  async *streamLines(command: string): AsyncIterable<string> {
+    const from = /tail -c \+(\d+)/.exec(command);
+    const start = from === null ? 0 : Number(from[1]) - 1;
+    for (const line of readFileSync(this.path).subarray(start).toString('utf8').split('\n')) {
+      if (line.length > 0) yield line;
+    }
+  }
+}
+
+function shellStore(contents: string): { store: TranscriptStore; host: ShellHost } {
+  const host = new ShellHost(contents);
+  return { store: new TranscriptStore(host), host };
+}
+
+/** Where line `index` of `file` starts, in bytes. */
+function lineStart(file: string, index: number): number {
+  return Buffer.byteLength(file.split('\n').slice(0, index).map((line) => `${line}\n`).join(''), 'utf8');
+}
+
 describe('recent window', () => {
-  // The whole point of the window: a dense transcript must not hand the chat
-  // surface thousands of bubbles to lay out.
-  it('keeps only the newest turns under the message cap', async () => {
+  it('opens on the newest lines', async () => {
     const file = transcript(500);
-    const result = await store(file).store.recent('/t.jsonl', null, 10_000_000, 20);
+    const { store: subject, host } = shellStore(file);
+    const result = await subject.recent(host.path, null, 20);
 
-    expect(result.messages).toHaveLength(20);
-    // Newest kept, oldest dropped — a chat opens on recency.
-    expect(displayText(result.messages[result.messages.length - 1]!)).toBe('turn 499');
-    expect(displayText(result.messages[0]!)).toBe('turn 480');
-  });
-
-  // Trimming is a display concern and must NOT move the tail cursor: the tail
-  // has to resume at the real end of file, or every trimmed message would be
-  // re-read and re-appended as if it were new.
-  it('reports the whole window as consumed, not the kept slice', async () => {
-    const file = transcript(500);
-    const result = await store(file).store.recent('/t.jsonl', null, 10_000_000, 5);
-
-    expect(result.messages).toHaveLength(5);
+    expect(result.messages.map((message) => displayText(message))).toEqual(
+      Array.from({ length: 20 }, (_, index) => `turn ${480 + index}`)
+    );
     expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
-  });
-
-  it('can page into messages omitted by the cap without a hole in history', async () => {
-    const file = transcript(500);
-    const { store: subject } = store(file);
-    const recent = await subject.recent('/t.jsonl', null, 100_000, 150);
-    const older = await subject.older('/t.jsonl', null, recent.startByte, 100_000);
-    expect([...older.messages, ...recent.messages].map(message => displayText(message)))
-      .toEqual(Array.from({ length: 500 }, (_, index) => `turn ${index}`));
-    expect(older.reachedStart).toBe(true);
+    expect(result.startByte).toBe(lineStart(file, 480));
   });
 
   it('leaves a partial final line for the tail to complete', async () => {
     const complete = transcript(3);
     const partial = '{"type":"user","uuid":"next","message":{"role":"user","content":"';
-    const host = new LossyTailTransport(complete + partial);
-    const subject = new TranscriptStore(host);
-    const recent = await subject.recent('/t.jsonl', null, 100_000, 150);
+    const { store: subject, host } = shellStore(complete + partial);
+    const recent = await subject.recent(host.path, null, 150);
+
+    expect(recent.messages).toHaveLength(3);
     expect(recent.consumedBytes).toBe(Buffer.byteLength(complete));
     host.append('arrived 🎉"}}\n');
     const messages: string[] = [];
-    for await (const chunk of subject.tail('/t.jsonl', null, recent.consumedBytes)) {
+    for await (const chunk of subject.tail(host.path, null, recent.consumedBytes)) {
       if (chunk.message !== null) messages.push(displayText(chunk.message));
     }
     expect(messages).toEqual(['arrived 🎉']);
   });
 
-  it('caps the read at the probed size even if the transcript grows mid-request', async () => {
+  it('stops at the probed size even if the transcript has grown since', async () => {
     const initial = transcript(3);
-    class GrowingHost extends FakeTransport {
-      override async exec(command: string): Promise<ExecResult> {
-        if (command.includes('wc -c')) return ok(String(Buffer.byteLength(initial)));
-        return super.exec(command);
-      }
-    }
-    const host = new GrowingHost(initial + transcript(50));
-    const recent = await new TranscriptStore(host).recent('/t.jsonl', null, 100_000, 150);
+    const { store: subject, host } = shellStore(initial);
+    host.append(transcript(50).replaceAll('"u', '"later-u'));
+    const recent = await subject.recent(host.path, null, 150, Buffer.byteLength(initial));
+
     expect(recent.messages).toHaveLength(3);
     expect(recent.consumedBytes).toBe(Buffer.byteLength(initial));
   });
 
-  it('rejects a short read rather than persisting a cursor beyond a truncated file', async () => {
-    class ShrinkingHost extends FakeTransport {
-      override async exec(command: string): Promise<ExecResult> {
-        if (command.includes('wc -c')) return ok('100000');
-        return super.exec(command);
-      }
-    }
-    await expect(new TranscriptStore(new ShrinkingHost(transcript(3))).recent('/t.jsonl', null, 100_000, 150))
-      .rejects.toMatchObject({ code: 'transcript_changed' });
-  });
-
-  // A byte window that starts mid-file lands mid-line. That fragment must be
-  // dropped rather than parsed into a half-formed bubble.
-  it('drops a partial first line', async () => {
-    const file = transcript(40);
-    const maxBytes = Buffer.byteLength(file, 'utf8') - 30;
-    const result = await store(file).store.recent('/t.jsonl', null, maxBytes);
-
-    expect(result.messages.length).toBeGreaterThan(0);
-    for (const message of result.messages) {
-      expect(displayText(message)).toMatch(/^turn /);
-    }
-    expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
-  });
-
-  // The common case for a young session: nothing to trim, nothing to drop.
   it('reads a short transcript whole', async () => {
     const file = transcript(6);
-    const result = await store(file).store.recent('/t.jsonl', null, 10_000_000, 150);
+    const { store: subject, host } = shellStore(file);
+    const result = await subject.recent(host.path, null, 150);
 
     expect(result.messages).toHaveLength(6);
-    expect(displayText(result.messages[0]!)).toBe('turn 0');
+    expect(result.startByte).toBe(0);
     expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
+  });
+
+  it('reads an empty transcript as nothing', async () => {
+    const { store: subject, host } = shellStore('');
+    const result = await subject.recent(host.path, null, 150);
+
+    expect(result).toEqual({ messages: [], consumedBytes: 0, startByte: 0 });
   });
 
   // Offsets are BYTE offsets on the host. Counting UTF-16 units would drift the
   // tail cursor on any transcript containing an emoji or a non-Latin script,
   // and the drift silently skips messages.
   it('accounts in bytes, not characters', async () => {
-    const file = `{"type":"user","uuid":"u0","message":{"role":"user","content":"herşey 🎉 tamam"}}\n`;
-    const result = await store(file).store.recent('/t.jsonl', null, 10_000_000);
+    const emoji = `{"type":"user","uuid":"e0","message":{"role":"user","content":"herşey 🎉 tamam"}}\n`;
+    const file = emoji + transcript(3);
+    const { store: subject, host } = shellStore(file);
+    const result = await subject.recent(host.path, null, 3);
 
     expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
-    expect(result.consumedBytes).toBeGreaterThan(file.length);
-  });
-});
-
-/**
- * A canned host whose file can grow and whose live tail serves raw bytes from
- * the requested offset. Slicing the Buffer BEFORE decoding is the point: a
- * window that starts inside a code point decodes lossily into U+FFFD, exactly
- * as the native side does — the plain FakeTransport above does the same, but
- * no test there ever starts mid-code-point, which is why the drift bug was
- * unreproducible in this suite.
- */
-class LossyTailTransport implements HerdrTransport {
-  private file: Buffer;
-
-  constructor(initial: string) {
-    this.file = Buffer.from(initial, 'utf8');
-  }
-
-  append(text: string): void {
-    this.file = Buffer.concat([this.file, Buffer.from(text, 'utf8')]);
-  }
-
-  async exec(command: string): Promise<ExecResult> {
-    if (command.includes('wc -c')) return ok(`${this.file.length}\n`);
-    const window = /tail -c \+(\d+)/.exec(command);
-    if (window !== null) {
-      return ok(this.file.subarray(Number(window[1]) - 1).toString('utf8'));
-    }
-    return ok('');
-  }
-
-  async *streamLines(command: string): AsyncIterable<string> {
-    const from = /tail -c \+(\d+)/.exec(command);
-    const start = from === null ? 0 : Number(from[1]) - 1;
-    for (const line of this.file.subarray(start).toString('utf8').split('\n')) {
-      if (line.length > 0) yield line;
-    }
-  }
-}
-
-describe('recent window starting mid-code-point', () => {
-  /** Emoji on both sides of every turn, so any byte window lands near one. */
-  function emojiTranscript(turns: number): string {
-    const lines = Array.from(
-      { length: turns },
-      (_, index) =>
-        `{"type":"user","uuid":"e${index}","message":{"role":"user","content":"🎉🚀 turn ${index} 🐢"}}`
-    );
-    return `${lines.join('\n')}\n`;
-  }
-
-  /** A window start two bytes inside line 3's leading 🎉 — mid-code-point. */
-  function midEmojiStart(base: string): number {
-    const emojiChar = base.indexOf('🎉', base.indexOf('"uuid":"e3"'));
-    return Buffer.byteLength(base.slice(0, emojiChar), 'utf8') + 2;
-  }
-
-  // `start = size - maxBytes` is an arbitrary byte, not a boundary. Landing
-  // inside a 4-byte 🎉 strands its last two bytes at the head of the window;
-  // the lossy decode turns them into TWO U+FFFD. Each U+FFFD counts 3 bytes
-  // but replaced only 1, so the old arithmetic — consumed = start +
-  // byteLength(decoded window) — came out 4 bytes PAST the real end of file.
-  it('never reports a cursor past the end of file', async () => {
-    const base = emojiTranscript(6);
-    const size = Buffer.byteLength(base, 'utf8');
-    const start = midEmojiStart(base);
-    const subject = new TranscriptStore(new LossyTailTransport(base));
-
-    const result = await subject.recent('/t.jsonl', null, size - start);
-
-    expect(result.consumedBytes).toBe(size);
-    // The damaged fragment was dropped with the usual partial first line; the
-    // full lines after it still parse with their emoji intact.
-    expect(result.messages.map((message) => displayText(message))).toEqual([
-      '🎉🚀 turn 4 🐢',
-      '🎉🚀 turn 5 🐢',
-    ]);
+    expect(result.startByte).toBe(Buffer.byteLength(emoji, 'utf8'));
+    expect(result.startByte).toBeGreaterThan(emoji.length);
   });
 
-  // The invariant behind the clamp: a tail started at consumedBytes must see
-  // every later message. Under the old arithmetic the cursor sat 4 bytes past
-  // EOF, the tail began 4 bytes INSIDE the next appended line, that line's
-  // JSON never parsed, and 'turn 6' was silently lost.
-  it('tailing from consumedBytes yields every subsequent message intact', async () => {
-    const base = emojiTranscript(6);
-    const size = Buffer.byteLength(base, 'utf8');
-    const transport = new LossyTailTransport(base);
-    const subject = new TranscriptStore(transport);
+  // The reported bug: Claude embeds every picture it reads as base64, twice, so
+  // a byte window over a screenshot-heavy session held a picture or two and
+  // almost no conversation. The host strips the data before it is sent.
+  it('leaves picture data on the host and keeps the picture', async () => {
+    const data = 'iVBORw0KGgo'.repeat(40_000);
+    const picture = JSON.stringify({
+      type: 'user',
+      uuid: 'pic',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data } },
+          { type: 'text', text: 'look at this' },
+        ],
+      },
+    });
+    const codex = JSON.stringify({ type: 'note', image_url: `data:image/png;base64,${data}` });
+    const file = `${transcript(2)}${picture}\n${codex}\n`;
+    const { store: subject, host } = shellStore(file);
+    const result = await subject.recent(host.path, null, 150);
 
-    const result = await subject.recent('/t.jsonl', null, size - midEmojiStart(base));
-    transport.append(
-      `{"type":"user","uuid":"e6","message":{"role":"user","content":"🎁 turn 6"}}\n` +
-        `{"type":"user","uuid":"e7","message":{"role":"user","content":"turn 7 🏁"}}\n`
-    );
-
-    const streamed: string[] = [];
-    for await (const chunk of subject.tail('/t.jsonl', null, result.consumedBytes)) {
-      if (chunk.message !== null) streamed.push(displayText(chunk.message));
-    }
-    expect(streamed).toEqual(['🎁 turn 6', 'turn 7 🏁']);
+    expect(host.outputs.at(-1)!.length).toBeLessThan(2_000);
+    const sent = result.messages.find((message) => message.id === 'pic')!;
+    expect(displayText(sent)).toBe('look at this');
+    expect(sent.segments.filter((segment) => segment.kind === 'image')).toHaveLength(1);
+    expect(result.consumedBytes).toBe(Buffer.byteLength(file, 'utf8'));
   });
 });
 
@@ -336,126 +270,101 @@ describe('list previews', () => {
 });
 
 describe('older history', () => {
-  it('returns the page immediately before the anchor', async () => {
+  it('returns the lines immediately before the anchor', async () => {
     const file = transcript(200);
-    const { store: subject } = store(file);
+    const { store: subject, host } = shellStore(file);
 
-    const first = await subject.recent('/t.jsonl', null, 2_000);
-    const page = await subject.older('/t.jsonl', null, first.startByte, 2_000);
+    const first = await subject.recent(host.path, null, 30);
+    const page = await subject.older(host.path, null, first.startByte, 25);
 
-    // The oldest thing on screen and the newest thing in the older page are
-    // adjacent turns — no gap between the two windows.
-    const lastOlder = displayText(page.messages[page.messages.length - 1]!);
-    const firstShown = displayText(first.messages[0]!);
-    expect(turnNumber(firstShown)).toBe(turnNumber(lastOlder) + 1);
+    expect(page.messages.map((message) => displayText(message))).toEqual(
+      Array.from({ length: 25 }, (_, index) => `turn ${145 + index}`)
+    );
+    expect(page.startByte).toBe(lineStart(file, 145));
+    expect(page.reachedStart).toBe(false);
   });
 
   // The invariant that matters: paging to the top must show every turn exactly
   // once. An anchor off by one line either repeats a message or loses one, and
   // both look like a rendering glitch rather than a byte-accounting bug.
   it('pages to the start of the file with no gaps and no repeats', async () => {
-    const file = transcript(200);
-    const { store: subject } = store(file);
+    const file = `{"type":"user","uuid":"e","message":{"role":"user","content":"turn 🙂"}}\n${transcript(200)}`;
+    const { store: subject, host } = shellStore(file);
 
-    const first = await subject.recent('/t.jsonl', null, 2_000);
-    const seen = first.messages.map((message) => turnNumber(displayText(message)));
+    const first = await subject.recent(host.path, null, 30);
+    const seen = first.messages.map((message) => message.id);
 
     let anchor = first.startByte;
-    let guard = 0;
-    for (;;) {
-      const page = await subject.older('/t.jsonl', null, anchor, 700);
-      seen.unshift(...page.messages.map((message) => turnNumber(displayText(message))));
+    for (let guard = 0; ; guard += 1) {
+      const page = await subject.older(host.path, null, anchor, 17);
+      seen.unshift(...page.messages.map((message) => message.id));
       if (page.reachedStart) break;
       expect(page.startByte).toBeLessThan(anchor); // must always make progress
       anchor = page.startByte;
-      if ((guard += 1) > 100) throw new Error('older() never reached the start');
+      if (guard > 100) throw new Error('older() never reached the start');
     }
 
-    expect(seen).toEqual(Array.from({ length: 200 }, (_, index) => index));
+    expect(seen).toEqual(['e', ...Array.from({ length: 200 }, (_, index) => `u${index}`)]);
   });
 
-  // #81: a line longer than a page (image results, tool dumps) used to hand
-  // back the same anchor, and paging stopped there for good.
-  it('pages past a line longer than one page', async () => {
-    const big = `{"type":"user","uuid":"big","message":{"role":"user","content":"${'x'.repeat(300_000)}"}}`;
+  // #81: a line longer than a byte page (image results, tool dumps) once handed
+  // back the same anchor, and paging stopped there for good. Pages are lines
+  // now, so such a line is one line among the rest.
+  it('pages past a line of any length', async () => {
+    const big = `{"type":"user","uuid":"big","message":{"role":"user","content":"${'x y'.repeat(300_000)}"}}`;
     const lines = [
       ...Array.from({ length: 5 }, (_, i) => `{"type":"user","uuid":"a${i}","message":{"role":"user","content":"turn ${i}"}}`),
       big,
       ...Array.from({ length: 5 }, (_, i) => `{"type":"user","uuid":"b${i}","message":{"role":"user","content":"turn ${i + 6}"}}`),
     ];
-    const { store: subject } = store(`${lines.join('\n')}\n`);
+    const { store: subject, host } = shellStore(`${lines.join('\n')}\n`);
 
-    const first = await subject.recent('/t.jsonl', null, 500);
+    const first = await subject.recent(host.path, null, 3);
     const ids = first.messages.map((message) => message.id);
     let anchor = first.startByte;
     for (let guard = 0; ; guard += 1) {
-      const page = await subject.older('/t.jsonl', null, anchor, 128_000);
+      const page = await subject.older(host.path, null, anchor, 2);
       ids.unshift(...page.messages.map((message) => message.id));
       if (page.reachedStart) break;
-      expect(page.startByte).toBeLessThan(anchor);
       anchor = page.startByte;
       if (guard > 20) throw new Error('older() stopped making progress');
     }
     expect(ids).toEqual(['a0', 'a1', 'a2', 'a3', 'a4', 'big', 'b0', 'b1', 'b2', 'b3', 'b4']);
   });
 
-  it('steps over a line too long to fetch, and keeps paging', async () => {
-    const huge = `{"type":"user","uuid":"huge","message":{"role":"user","content":"${'x'.repeat(4_300_000)}"}}`;
-    const lines = [`{"type":"user","uuid":"a0","message":{"role":"user","content":"turn 0"}}`, huge,
-      `{"type":"user","uuid":"b0","message":{"role":"user","content":"turn 2"}}`];
-    const { store: subject } = store(`${lines.join('\n')}\n`);
-
-    const first = await subject.recent('/t.jsonl', null, 200);
-    const skipped = await subject.older('/t.jsonl', null, first.startByte, 128_000);
-    expect(skipped.messages).toEqual([]);
-    expect(skipped.startByte).toBeLessThan(first.startByte);
-    const rest = await subject.older('/t.jsonl', null, skipped.startByte, 128_000);
-    expect(rest.messages.map((message) => message.id)).toEqual(['a0']);
-    expect(rest.reachedStart).toBe(true);
-  });
-
-  it('refuses a page that came back short', async () => {
-    const file = transcript(50);
-    const { store: subject } = store(file);
-    const first = await subject.recent('/t.jsonl', null, 1_000);
-    const shortTransport: HerdrTransport = {
+  it('refuses an answer without its byte range', async () => {
+    const garbled: HerdrTransport = {
       exec: async () => ok('{"type":"user"'),
       streamLines: async function* () {},
     };
-    await expect(new TranscriptStore(shortTransport).older('/t.jsonl', null, first.startByte, 700)).rejects.toMatchObject({
+    await expect(new TranscriptStore(garbled).older('/t.jsonl', null, 500, 20)).rejects.toMatchObject({
       code: 'transcript_changed',
     });
   });
 
-  it('reports reaching the start rather than paging forever', async () => {
-    const { store: subject } = store(transcript(5));
-    const page = await subject.older('/t.jsonl', null, 40, 10_000);
+  it('fails rather than reading a missing transcript as empty history', async () => {
+    const { store: subject, host } = shellStore(transcript(3));
+    await expect(subject.older(`${host.path}.gone`, null, 100, 20)).rejects.toBeDefined();
+  });
 
+  it('reports reaching the start rather than paging forever', async () => {
+    const file = transcript(5);
+    const { store: subject, host } = shellStore(file);
+    const page = await subject.older(host.path, null, lineStart(file, 2), 10);
+
+    expect(page.messages.map((message) => message.id)).toEqual(['u0', 'u1']);
     expect(page.reachedStart).toBe(true);
     expect(page.startByte).toBe(0);
   });
 
   it('does nothing at the start of the file', async () => {
     const { store: subject, transport } = store(transcript(5));
-    const page = await subject.older('/t.jsonl', null, 0, 10_000);
+    const page = await subject.older('/t.jsonl', null, 0, 10);
 
     expect(page.messages).toEqual([]);
     expect(page.reachedStart).toBe(true);
     // Not even a round-trip: there is nothing before byte zero to ask for.
     expect(transport.commands).toHaveLength(0);
-  });
-
-  it('counts the dropped partial line in UTF-8 bytes, not UTF-16 units', async () => {
-    // The host counts bytes. An emoji in the discarded fragment is 4 bytes but
-    // 2 String units, so a String.length anchor would drift and skip a message.
-    const file = `{"type":"user","uuid":"u0","message":{"role":"user","content":"🙂🙂🙂"}}\n${transcript(3)}`;
-    const { store: subject } = store(file);
-
-    const anchor = Buffer.from(file, 'utf8').length;
-    const page = await subject.older('/t.jsonl', null, anchor, anchor - 5);
-
-    const firstLineBytes = Buffer.from(file.slice(0, file.indexOf('\n') + 1), 'utf8').length;
-    expect(page.startByte).toBe(firstLineBytes);
   });
 });
 

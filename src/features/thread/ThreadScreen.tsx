@@ -368,21 +368,26 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                * of the end) raced it and pulled readers that had just left.
                */
               maintainVisibleContentPosition={{ startRenderingFromBottom: true }}
-              // Reaching the top is a request for more history. Safe to fire more
-              // than once: loadOlder walks a single anchor, so a repeat call either
-              // finds the previous one still running or continues from where it
-              // left off, it cannot fetch the same page twice.
-              onStartReached={() => {
-                if (historyInteraction.current === thread.historyVersion) void thread.loadOlder();
-              }}
-              onStartReachedThreshold={0.5}
               {...scroll.listProps}
+              /*
+                Near the top is a request for more history, checked on every
+                scroll rather than by onStartReached. That fires once on entering
+                its threshold and again only after leaving it, and a page that
+                prepends less than the threshold leaves the reader inside it: the
+                reader sat at the top with nothing loading. Calling loadOlder
+                again is safe; it walks a single anchor and ignores a call while
+                one is running. Only after the reader has scrolled: a short first
+                window starts at the top, and paging it in unasked moved the
+                thread as it opened.
+              */
+              onScroll={(event) => {
+                scroll.listProps.onScroll(event);
+                if (historyInteraction.current === thread.historyVersion && scroll.nearTop()) void thread.loadOlder();
+              }}
               onScrollBeginDrag={() => {
                 scroll.listProps.onScrollBeginDrag();
                 historyInteraction.current = thread.historyVersion;
-                // A short first window may already be at the top before the
-                // reader drags, so onStartReached will not fire a second time.
-                if (scroll.atTop()) void thread.loadOlder();
+                if (scroll.nearTop()) void thread.loadOlder();
               }}
               // A measured spacer keeps the first message clear of the overlay.
               ListHeaderComponent={<View />}
@@ -403,7 +408,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                       </Text>
                     )}
                     {item.kind === 'tools' ? (
-                      <ToolRun runKey={item.key} calls={item.calls} thoughts={item.thoughts.length} />
+                      <ToolRun runKey={item.runKey} calls={item.calls} thoughts={item.thoughts.length} />
                     ) : item.kind === 'subagent' ? (
                       <SubagentCard call={item.call} />
                     ) : item.kind === 'note' ? (
