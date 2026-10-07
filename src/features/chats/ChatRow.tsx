@@ -17,6 +17,7 @@ export const AVATAR_SIZE = size.chatBadge;
 const AGENT_NAMES: Readonly<Record<string, string>> = {
   claude: 'Claude',
   codex: 'Codex',
+  pi: 'Pi',
   omp: 'OMP',
   letta: 'Letta',
 };

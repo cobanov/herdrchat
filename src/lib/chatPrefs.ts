@@ -30,8 +30,8 @@ export function activePref(
  * The agent session ids the host's watcher should stay quiet about.
  *
  * The watcher sees raw session values (`agent_session.value`), while a
- * signature joins every agent's and marks Codex ones (`codex:<id>`) and OMP
- * ones (`omp:<kind>:<encoded value>`, often a path), so this undoes all three. Muting by session rather than workspace is what keeps a later chat in
+ * signature joins every agent's and marks Codex ones (`codex:<id>`) and Pi or
+ * OMP ones (`pi:` / `omp:<kind>:<encoded value>`, often a path), so this undoes them. Muting by session rather than workspace is what keeps a later chat in
  * the same slot audible.
  */
 export function mutedSessionIds(prefs: Iterable<ChatPref>): string[] {
@@ -49,10 +49,10 @@ export function mutedSessionIds(prefs: Iterable<ChatPref>): string[] {
 /** One part of a session signature back to herdr's `agent_session.value`. */
 function rawSessionValue(part: string): string {
   if (part.startsWith('codex:')) return part.slice('codex:'.length);
-  const omp = /^omp:[a-z]+:(.*)$/.exec(part);
-  if (omp === null) return part;
+  const journal = /^(?:pi|omp):[a-z]+:(.*)$/.exec(part);
+  if (journal === null) return part;
   try {
-    return decodeURIComponent(omp[1] ?? '');
+    return decodeURIComponent(journal[1] ?? '');
   } catch {
     return '';
   }

@@ -48,6 +48,8 @@ export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts:
   );
 }
 
+const AGENT_NAMES = { claude: 'Claude', codex: 'Codex', pi: 'Pi', omp: 'OMP' } as const;
+
 /**
  * What the thread shows before its first batch of history arrives, and when a
  * workspace genuinely has no messages.
@@ -74,12 +76,12 @@ export function ThreadPlaceholder({
   onBack?: () => void;
   title: string;
   sessionState: SessionState;
-  agentKind?: 'claude' | 'codex' | 'omp';
+  agentKind?: keyof typeof AGENT_NAMES;
   onInstallIntegration?: () => void;
   installing: boolean;
   installError: string | null;
 }) {
-  const agentName = agentKind === 'omp' ? 'OMP' : agentKind === 'codex' ? 'Codex' : 'Claude';
+  const agentName = AGENT_NAMES[agentKind ?? 'claude'];
   return (
     <View
       style={{
@@ -100,7 +102,7 @@ export function ThreadPlaceholder({
         <>
           <Text variant="title3" style={{ textAlign: 'center' }}>Chat history is not supported for this agent</Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            HerdrChat can read Claude Code, Codex, and OMP conversations. Open this agent in the host terminal to read its output.
+            HerdrChat can read Claude Code, Codex, Pi, and OMP conversations. Open this agent in the host terminal to read its output.
           </Text>
         </>
       ) : sessionState === 'missing' ? (

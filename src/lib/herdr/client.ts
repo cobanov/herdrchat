@@ -40,7 +40,7 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 
 /** The built-in integrations HerdrChat can install and update. */
-export type IntegrationName = 'claude' | 'codex' | 'omp';
+export type IntegrationName = 'claude' | 'codex' | 'pi' | 'omp';
 
 /**
  * How long to let herdr watch for the agent to react.
@@ -307,7 +307,7 @@ export class HerdrClient {
       return asArray(field(result, 'integrations')).flatMap((item) => {
         if (typeof item !== 'object' || item === null) return [];
         const { target, state } = item as { target?: unknown; state?: unknown };
-        return (target === 'claude' || target === 'codex' || target === 'omp') && state === 'outdated'
+        return (target === 'claude' || target === 'codex' || target === 'pi' || target === 'omp') && state === 'outdated'
           ? [target]
           : [];
       });

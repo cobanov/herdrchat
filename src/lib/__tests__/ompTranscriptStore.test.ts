@@ -135,3 +135,37 @@ it('batches path-based previews and header validation even with an unreadable si
   ]);
   expect(calls).toBe(1);
 });
+
+// Pi writes the journal OMP forked: no title slot, `provider` + `modelId` on
+// model changes, usage on the reply. Recorded shapes, made-up content.
+it('previews and seeds a Pi journal through the same reader', async () => {
+  const piHeader = JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-09-28T10:00:00Z', cwd: '/work' });
+  const model = JSON.stringify({ type: 'model_change', id: 'm1', parentId: null,
+    timestamp: '2026-09-28T10:00:00Z', provider: 'anthropic', modelId: 'claude-opus-4-5' });
+  const effort = JSON.stringify({ type: 'thinking_level_change', id: 't1', parentId: 'm1',
+    timestamp: '2026-09-28T10:00:00Z', thinkingLevel: 'high' });
+  const piReply = JSON.stringify({ type: 'message', id: 'r1', parentId: 't1', timestamp: '2026-09-28T10:00:01Z',
+    message: { role: 'assistant', api: 'anthropic-messages', provider: 'anthropic', model: 'claude-opus-4-5',
+      content: [{ type: 'thinking', thinking: 'Plan.' }, { type: 'text', text: 'Hej fra Pi' }],
+      usage: { input: 4, output: 9, cacheRead: 100, cacheWrite: 20, totalTokens: 133 }, stopReason: 'stop' } });
+  const path = session(join(home, '.pi/agent/sessions/--work--', `2026-09-28T10-00-00-000Z_${id}.jsonl`),
+    `${piHeader}\n${model}\n${effort}\n${piReply}\n`);
+
+  await expect(store.verifyOmpTranscript(path, null)).resolves.toBeUndefined();
+  const previews = await store.latestMessages([
+    { workspaceId: 'w1', cwd: '/work', agent: 'pi', sessionKind: 'path', sessionId: path },
+  ]);
+  expect(displayText(previews.get('w1')!)).toBe('Hej fra Pi');
+  // Settings older than the tail still reach the header.
+  expect(await store.sessionMeta(path, 'pi', Buffer.byteLength(piReply) + 1)).toEqual({
+    model: 'claude-opus-4-5', effort: 'high', contextTokens: 124,
+  });
+
+  // An aborted turn reports zero usage; the context is the last real reply's.
+  const aborted = JSON.stringify({ type: 'message', id: 'r2', parentId: 'r1', timestamp: '2026-09-28T10:00:02Z',
+    message: { role: 'assistant', model: 'claude-opus-4-5', content: [],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }, stopReason: 'aborted' } });
+  const abortedPath = session(join(home, '.pi/agent/sessions/--work--', `2026-09-28T10-00-02-000Z_${id}.jsonl`),
+    `${piHeader}\n${model}\n${effort}\n${piReply}\n${aborted}\n`);
+  expect((await store.sessionMeta(abortedPath, 'pi'))?.contextTokens).toBe(124);
+});

@@ -34,6 +34,7 @@ import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
+import type { IntegrationName } from '@/lib/herdr/client';
 import { sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
@@ -200,9 +201,10 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const integrationKind = thread.agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
     ?? thread.agents.find(agent => agent.agentSession === null)
     ?? thread.agents[0];
-  const agentKind: 'claude' | 'codex' | 'omp' = integrationKind?.agent === 'codex'
-    ? 'codex'
-    : integrationKind?.agent === 'omp' ? 'omp' : 'claude';
+  const agentKind: IntegrationName = integrationKind?.agent === 'codex' ||
+    integrationKind?.agent === 'pi' || integrationKind?.agent === 'omp'
+    ? integrationKind.agent
+    : 'claude';
   const installIntegration = useCallback(() => {
     if (client === null || installing) return;
     setInstalling(true);
