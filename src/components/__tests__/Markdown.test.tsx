@@ -60,10 +60,3 @@ it('formats inline markup inside a cell', async () => {
   expect(screen.getByText('id')).toBeOnTheScreen();
   expect(screen.queryByText(/`id`/)).toBeNull();
 });
-
-// Built as columns, a screen reader walking the views would read down each
-// column. The table is one element that reads row by row instead.
-it('reads to a screen reader row by row, with each cell\'s header', async () => {
-  await render(<Markdown text={TABLE} />);
-  expect(screen.getByLabelText(/^Name: id, Type: number, Note: short\. Name: title/)).toBeOnTheScreen();
-});

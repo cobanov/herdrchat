@@ -335,6 +335,8 @@ export const motion = {
   enter: { damping: 20, stiffness: 180, mass: 1 },
   fade: 200,
   fadeFast: 120,
+  /** How long a finger rests on a message before its copy sheet opens. */
+  longPress: 400,
   /**
    * The settings section a deep link points at: a glow in, a hold, a slower
    * fade. Reduce Motion gets a plain hold-and-fade with the same meaning.

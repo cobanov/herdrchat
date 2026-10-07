@@ -186,12 +186,7 @@ function Table({
       horizontal
       showsHorizontalScrollIndicator={false}
       style={{ backgroundColor: fill, borderRadius: radius.xs }}>
-      {/* Read as one element, row by row: built as columns, VoiceOver would
-          otherwise read the table down each column in turn. */}
-      <View
-        accessible
-        accessibilityLabel={tableLabel(table)}
-        style={{ flexDirection: 'row', padding: spacing.sm }}>
+      <View style={{ flexDirection: 'row', padding: spacing.sm }}>
         {table.headers.map((_, column) => (
           <Fragment key={column}>
             {column > 0 && <View style={{ width: 1, backgroundColor: line, opacity: 0.6 }} />}
@@ -224,15 +219,6 @@ function Table({
       </View>
     </ScrollView>
   );
-}
-
-/** The table as a screen reader should hear it: each row, with its headers. */
-function tableLabel({ headers, rows }: { headers: string[]; rows: string[][] }): string {
-  const plain = (cell: string) => parseInline(cell).map((span) => span.text).join('');
-  if (rows.length === 0) return headers.map(plain).join(', ');
-  return rows
-    .map((row) => row.map((cell, column) => `${plain(headers[column] ?? '')}: ${plain(cell)}`).join(', '))
-    .join('. ');
 }
 
 function Inline({

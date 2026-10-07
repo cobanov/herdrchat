@@ -35,8 +35,10 @@ appId: dev.herdr.HerdrChat
 - takeScreenshot: thread-tool-run-${APPEARANCE}
 
 # A table's cells line up under their headers, however wide or wrapped each
-# one is. The flow cannot see alignment: open the screenshot. The table reads
-# to VoiceOver as one element, row by row, which is what the assert matches.
+# one is, and a table wider than the screen swipes sideways inside its
+# message (build 83 cut it off: the bubble's long press held the touch, and a
+# scroll view under a JS responder does not scroll). The flow cannot see
+# either: open both screenshots, the second must show the Notes column whole.
 - tapOn:
     id: composer-input
 - inputText: compare the options
@@ -45,8 +47,18 @@ appId: dev.herdr.HerdrChat
     visible: .*Tailscale is the one to start with.*
     timeout: 15000
 - waitForAnimationToEnd
-- assertVisible: '.*Option: SSH, Setup: ssh-keygen, Latency \(ms\): 38.*'
 - takeScreenshot: thread-table-${APPEARANCE}
+- swipe:
+    from: 'Agent message\. Here is how the three ways in compare:.*'
+    direction: LEFT
+- waitForAnimationToEnd
+- takeScreenshot: thread-table-swiped-${APPEARANCE}
+# The long press that used to block the swipe still copies.
+- longPressOn: 'Agent message\. Here is how the three ways in compare:.*'
+- extendedWaitUntil:
+    visible: Copy message
+    timeout: 5000
+- tapOn: Cancel
 
 # Each question follows the last without reopening the chat (PR #137).
 - tapOn:

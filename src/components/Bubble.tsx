@@ -1,6 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
-import { memo, useCallback } from 'react';
-import { Pressable, View } from 'react-native';
+import { memo, useCallback, useMemo } from 'react';
+import { View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { showActionSheet, type SheetAction } from './ActionSheet';
 import { BubbleImage } from './BubbleImage';
@@ -9,7 +10,7 @@ import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
 import { copyOptions } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, size, spacing } from '@/theme/tokens';
+import { motion, radius, size, spacing } from '@/theme/tokens';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
 import { displayText } from '@/lib/transcript/message';
 
@@ -86,7 +87,30 @@ export const Bubble = memo(function Bubble({
     showActionSheet({ title: outgoing ? 'Your message' : 'Agent message', actions });
   }, [message, outgoing]);
 
+  /**
+   * The long press is the native recognizer, not a Pressable.
+   *
+   * A Pressable becomes the JS responder the moment a finger lands, and on iOS
+   * a scroll view will not start scrolling while any view above it is the JS
+   * responder (RCTScrollViewComponentView's touchesShouldCancelInContentView
+   * walks its ancestors). Every table and code block in a reply sits inside
+   * the bubble, so none of them could be swiped sideways: what did not fit was
+   * simply cut off. A native long press claims nothing until it fires, and
+   * fails as soon as the finger moves, which leaves the swipe to the scroll
+   * view.
+   */
+  const longPress = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(motion.longPress)
+        .runOnJS(true)
+        .withTestId(`bubble-long-press-${message.id}`)
+        .onStart(() => copy()),
+    [copy, message.id]
+  );
+
   const a11y = {
+    accessible: true,
     accessibilityRole: 'button' as const,
     accessibilityLabel: `${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${pictures > 0 ? `, ${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : ''}${timeLabel ? `, ${timeLabel}` : ''}`,
     accessibilityHint: 'Long press to copy',
@@ -98,56 +122,58 @@ export const Bubble = memo(function Bubble({
 
   if (!outgoing) {
     return (
-      <Pressable onLongPress={copy} delayLongPress={400} {...a11y} testID={`bubble-${message.id}`} style={{ gap: spacing.sm }}>
-        {visibleSegments.map((segment, index) => (
-          <Segment key={index} segment={segment} onTint={false} />
-        ))}
-      </Pressable>
+      <GestureDetector gesture={longPress}>
+        <View {...a11y} testID={`bubble-${message.id}`} style={{ gap: spacing.sm }}>
+          {visibleSegments.map((segment, index) => (
+            <Segment key={index} segment={segment} onTint={false} />
+          ))}
+        </View>
+      </GestureDetector>
     );
   }
 
   return (
     <View style={{ flexDirection: 'row' }}>
       <Gutter />
-      <Pressable
-        onLongPress={copy}
-        // Never a tap handler. A bubble containing an expandable tool chip has
-        // its own press targets inside it, and a tap on the bubble itself must
-        // stay a tap on whatever it landed on.
-        delayLongPress={400}
-        {...a11y}
-        testID={`bubble-${message.id}`}
-        style={[
-          {
-            flexShrink: 1,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-            backgroundColor: colors.bubbleOutgoing,
-            gap: spacing.xs,
-          },
-          corners,
-        ]}>
-        {visibleSegments.map((segment, index) => (
-          <Segment key={index} segment={segment} onTint />
-        ))}
-        {isLastInGroup && timeLabel !== null && timeLabel !== undefined && (
-          // Trailing-aligned WITHOUT `flex: 1`. A greedy timestamp stretches
-          // every last-in-group bubble to the full width cap, so a two-word
-          // reply renders as a wide, mostly-empty box with the text stranded on
-          // the left. A zero-width spacer keeps the bubble hugging its content.
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-            {/* No opacity on the outgoing side: white at 0.75 over the fill
-                measured 2.94:1 in light and 2.43:1 in dark. The incoming label
-                sits on a near-background surface and can afford the fade. */}
-            <Text
-              variant="caption2"
-              color={outgoing ? 'onTint' : 'secondary'}
-              style={outgoing ? undefined : { opacity: 0.75 }}>
-              {timeLabel}
-            </Text>
-          </View>
-        )}
-      </Pressable>
+      {/* Never a tap handler. A bubble containing an expandable tool chip has
+          its own press targets inside it, and a tap on the bubble itself must
+          stay a tap on whatever it landed on. */}
+      <GestureDetector gesture={longPress}>
+        <View
+          {...a11y}
+          testID={`bubble-${message.id}`}
+          style={[
+            {
+              flexShrink: 1,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              backgroundColor: colors.bubbleOutgoing,
+              gap: spacing.xs,
+            },
+            corners,
+          ]}>
+          {visibleSegments.map((segment, index) => (
+            <Segment key={index} segment={segment} onTint />
+          ))}
+          {isLastInGroup && timeLabel !== null && timeLabel !== undefined && (
+            // Trailing-aligned WITHOUT `flex: 1`. A greedy timestamp stretches
+            // every last-in-group bubble to the full width cap, so a two-word
+            // reply renders as a wide, mostly-empty box with the text stranded on
+            // the left. A zero-width spacer keeps the bubble hugging its content.
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+              {/* No opacity on the outgoing side: white at 0.75 over the fill
+                  measured 2.94:1 in light and 2.43:1 in dark. The incoming label
+                  sits on a near-background surface and can afford the fade. */}
+              <Text
+                variant="caption2"
+                color={outgoing ? 'onTint' : 'secondary'}
+                style={outgoing ? undefined : { opacity: 0.75 }}>
+                {timeLabel}
+              </Text>
+            </View>
+          )}
+        </View>
+      </GestureDetector>
     </View>
   );
 });
