@@ -245,16 +245,16 @@ it('resolves a Codex transcript by native session id and namespaces its cache', 
   await unmount();
 });
 
-it('opens a reported OMP path and keeps independently reported thinking settings across turns', async () => {
-  mockRecentMessages = [{ id: 'omp-reply', role: 'assistant', timestamp: 1, agentLabel: null,
-    isSidechain: false, segments: [{ kind: 'text', text: 'OMP reply' }] }];
+it.each(['pi', 'omp'])('opens a reported %s path and keeps independently reported thinking settings across turns', async (kind) => {
+  mockRecentMessages = [{ id: 'journal-reply', role: 'assistant', timestamp: 1, agentLabel: null,
+    isSidechain: false, segments: [{ kind: 'text', text: 'Journal reply' }] }];
   mockLiveMeta = [
     { model: null, effort: 'high', contextTokens: null },
     { model: 'gpt-5', contextTokens: 200 },
   ];
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{
-    ...agent, agent: 'omp',
-    agentSession: { agent: 'omp', kind: 'path', source: 'herdr:omp', value: '/custom/chat.jsonl' },
+    ...agent, agent: kind,
+    agentSession: { agent: kind, kind: 'path', source: `herdr:${kind}`, value: '/custom/chat.jsonl' },
   }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(result.current.sessionState).toBe('ok');

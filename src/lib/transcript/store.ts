@@ -1,4 +1,5 @@
 import { exitCodeError } from '../herdr/client';
+import { isPiFamily } from '../herdr/models';
 import { HerdrError, transportError } from '../herdr/protocol';
 import { shellQuote, withPath } from '../herdr/shell';
 import { POLL_TIMEOUT_MS, STREAM_START_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS } from '../herdr/timeouts';
@@ -216,7 +217,8 @@ export class TranscriptStore {
   }
 
   /**
-   * Herdr's OMP extension normally reports the exact file, including custom
+   * Pi and OMP share one journal format. Their Herdr extensions normally
+   * report the exact file, including custom
    * session directories and profiles. An id-only report searches for that
    * exact id, never for a cwd's newest journal.
    */
@@ -267,13 +269,13 @@ export class TranscriptStore {
     return path;
   }
 
-  /** Do not display another format (or a mismatched id) as OMP history. */
+  /** Do not display another format (or a mismatched id) as Pi/OMP history. */
   async verifyOmpTranscript(path: string, sessionId: string | null): Promise<void> {
     const header = await this.shell(`head -n 2 ${shellQuote(path)}`);
     if (!this.isOmpHeader(header, sessionId)) {
       if (sessionId !== null) this.forgetOmpTranscript(sessionId);
       throw new HerdrError('omp_session_mismatch',
-        'This file does not confirm the expected OMP session. Nothing was opened. Resume the session on the host, then reload.');
+        'This file does not confirm the expected session. Nothing was opened. Resume the session on the host, then reload.');
     }
   }
 
@@ -531,14 +533,14 @@ export class TranscriptStore {
       if (meta === null) continue;
       if (model === null && meta.model !== null) {
         model = meta.model;
-        if (agent !== 'omp') effort = meta.effort ?? null;
+        if (!isPiFamily(agent)) effort = meta.effort ?? null;
       }
-      if (agent === 'omp' && !ompEffortFound && meta.effort !== undefined) {
+      if (isPiFamily(agent) && !ompEffortFound && meta.effort !== undefined) {
         effort = meta.effort;
         ompEffortFound = true;
       }
       if (contextTokens === null) contextTokens = meta.contextTokens;
-      if (model !== null && contextTokens !== null && (agent !== 'omp' || ompEffortFound)) break;
+      if (model !== null && contextTokens !== null && (!isPiFamily(agent) || ompEffortFound)) break;
     }
 
     if (model === null && agent === 'codex') {
@@ -552,7 +554,7 @@ export class TranscriptStore {
       model = meta?.model ?? null;
       effort = meta?.effort ?? null;
     }
-    if (agent === 'omp' && (!ompEffortFound || model === null)) {
+    if (isPiFamily(agent) && (!ompEffortFound || model === null)) {
       // These settings are separate journal records and may predate the window.
       const settings = await this.shell(
         `awk '/"type"[[:space:]]*:[[:space:]]*"model_change"/ { model = $0 } ` +
@@ -603,7 +605,7 @@ export class TranscriptStore {
       // request without a usable session id is dropped rather than guessed; the
       // row keeps its live status line until the id arrives.
       if (request.sessionId === null) continue;
-      if (request.agent === 'omp') {
+      if (isPiFamily(request.agent)) {
         const path = await this.ompTranscriptPath(request.sessionId, request.sessionKind ?? 'id').catch(() => null);
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
@@ -623,8 +625,8 @@ export class TranscriptStore {
         script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
       } else continue;
       script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
-      // Validate headers in the preview batch, not one SSH call per OMP row.
-      if (request.agent === 'omp') script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
+      // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
+      if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
     }
     if (script.length === 0) return new Map();
@@ -684,7 +686,7 @@ export interface PreviewRequest {
   cwd: string;
   /** null when the agent hasn't reported a session id yet. */
   sessionId: string | null;
-  /** OMP reports a path; legacy providers and callers report ids. */
+  /** Pi and OMP report a path; legacy providers and callers report ids. */
   sessionKind?: string | null;
   /** Legacy callers omit this for Claude. Other providers must opt in. */
   agent?: string;

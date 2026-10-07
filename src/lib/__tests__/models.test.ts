@@ -251,4 +251,14 @@ describe('session signature', () => {
     expect(sessionSignature([omp('/a,b.jsonl')])).not.toBe(sessionSignature([omp('/a'), omp('b.jsonl')]));
     expect(sessionSignature([omp('/old.jsonl')])).not.toBe(sessionSignature([omp('/new.jsonl')]));
   });
+
+  it('binds Pi paths the same way, keeping existing OMP keys unchanged', () => {
+    const journal = (kind: string, value: string) => agent({
+      agent: kind, agentSession: { agent: kind, kind: 'path', source: `herdr:${kind}`, value },
+    });
+    expect(hasSessionReference(journal('pi', '/sessions/chat.jsonl'))).toBe(true);
+    expect(hasSessionReference(journal('codex', '/sessions/chat.jsonl'))).toBe(false);
+    expect(sessionSignature([journal('pi', '/a b.jsonl')])).toBe('pi:path:%2Fa%20b.jsonl');
+    expect(sessionSignature([journal('omp', '/a b.jsonl')])).toBe('omp:path:%2Fa%20b.jsonl');
+  });
 });

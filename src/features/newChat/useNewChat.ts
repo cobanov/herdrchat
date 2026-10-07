@@ -15,10 +15,10 @@ import { HerdrError } from '@/lib/herdr/protocol';
 import { getSetting, setSetting } from '@/state/db';
 
 /** The agents a new chat can start. All have chat support once running. */
-export type NewChatAgent = 'claude' | 'codex' | 'omp';
+export type NewChatAgent = 'claude' | 'codex' | 'pi' | 'omp';
 
 const isAgent = (value: unknown): value is NewChatAgent =>
-  value === 'claude' || value === 'codex' || value === 'omp';
+  value === 'claude' || value === 'codex' || value === 'pi' || value === 'omp';
 
 export interface Remembered {
   cwd: string;

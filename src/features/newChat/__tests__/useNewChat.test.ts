@@ -52,7 +52,7 @@ it('closes the half-made workspace when the retry is for another folder', async 
 });
 
 // Non-Claude agents launch directly, without Claude's permission arguments.
-it.each(['codex', 'omp'] as const)('starts %s without Claude permission arguments', async (agent) => {
+it.each(['codex', 'pi', 'omp'] as const)('starts %s without Claude permission arguments', async (agent) => {
   const client = fakeClient();
   const { result } = await renderHook(() => useStartChat('host'));
   await act(async () => {

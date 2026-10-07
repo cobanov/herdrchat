@@ -8,7 +8,7 @@ import type { SessionMeta } from './sessionMeta';
 /**
  * Turns agent transcript JSONL (one JSON object per line) into chat bubbles.
  * Claude Code writes turns to
- * `~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl`; OMP writes an
+ * `~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl`; Pi and OMP write an
  * append-only journal whose entries are read in chronological file order.
  *
  * Behaviour ported from the original SwiftUI implementation (see git history
@@ -93,6 +93,7 @@ function isOmp(raw: Record<string, unknown>): boolean {
     raw.type === 'model_change' ||
     raw.type === 'thinking_level_change' ||
     raw.type === 'branch_summary' ||
+    raw.type === 'compaction' ||
     raw.type === 'reset_boundary';
 }
 

@@ -72,13 +72,21 @@ export interface AgentInfo {
 }
 
 /**
- * True when the integration reports an exact native id, or OMP's session path.
- * A path is authoritative only for OMP; other agents still require their id.
+ * Pi and OMP (Oh My Pi, a Pi fork) write the same session journal, and both
+ * Herdr integrations report its exact path. One reader serves both.
+ */
+export function isPiFamily(agent: string | null | undefined): boolean {
+  return agent === 'pi' || agent === 'omp';
+}
+
+/**
+ * True when the integration reports an exact native id, or a Pi/OMP session
+ * path. A path is authoritative only for those; other agents require their id.
  */
 export function hasSessionReference(agent: AgentInfo): boolean {
   const session = agent.agentSession;
   return (session?.value ?? '') !== '' &&
-    (session?.kind === 'id' || (agent.agent === 'omp' && session?.kind === 'path'));
+    (session?.kind === 'id' || (isPiFamily(agent.agent) && session?.kind === 'path'));
 }
 
 /**
@@ -91,8 +99,8 @@ export function hasSessionReference(agent: AgentInfo): boolean {
 export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
     .filter((agent) => agent.agent !== null && hasSessionReference(agent))
-    .map((agent) => agent.agent === 'omp'
-      ? `omp:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
+    .map((agent) => isPiFamily(agent.agent)
+      ? `${agent.agent}:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
       : agent.agent === 'codex'
         ? `codex:${agent.agentSession?.value ?? ''}`
         : agent.agentSession?.value ?? '')
