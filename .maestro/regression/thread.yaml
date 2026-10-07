@@ -34,6 +34,20 @@ appId: dev.herdr.HerdrChat
 - assertVisible: Run npm test
 - takeScreenshot: thread-tool-run-${APPEARANCE}
 
+# A table's cells line up under their headers, however wide or wrapped each
+# one is. The flow cannot see alignment: open the screenshot. The table reads
+# to VoiceOver as one element, row by row, which is what the assert matches.
+- tapOn:
+    id: composer-input
+- inputText: compare the options
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*Tailscale is the one to start with.*
+    timeout: 15000
+- waitForAnimationToEnd
+- assertVisible: '.*Option: SSH, Setup: ssh-keygen, Latency \(ms\): 38.*'
+- takeScreenshot: thread-table-${APPEARANCE}
+
 # Each question follows the last without reopening the chat (PR #137).
 - tapOn:
     id: composer-input

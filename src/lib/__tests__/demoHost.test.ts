@@ -3,6 +3,7 @@ import { DemoHost } from '../demo/host';
 import { DEMO_SESSION_IDS, DEMO_WORKSPACES, HISTORY_DAYS, transcriptFor } from '../demo/fixtures';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { displayText } from '../transcript/message';
+import { parseMarkdown } from '../markdown';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
 import { threadItems, toolRunSummary } from '../threadItems';
 import { TranscriptStore } from '../transcript/store';
@@ -329,6 +330,18 @@ describe('DemoHost scenarios', () => {
     await client.sendKeys('w2:p1', yes.keys!);
     expect((await pane()).inputPending).toBe(false);
     expect(displayText((await messagesOf(host, 1)).at(-1)!)).toContain('I can work in this folder now');
+  });
+
+  it('replies with a table whose every row has a cell per column', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', 'compare the options for me');
+    now += 10_000;
+    const reply = displayText((await messagesOf(host, 1)).at(-1)!);
+    const table = parseMarkdown(reply).find((block) => block.kind === 'table');
+    expect(table).toMatchObject({ headers: ['Option', 'Setup', 'Latency (ms)', 'Notes'], align: [null, null, 'right', null] });
+    expect(table?.kind === 'table' && table.rows.at(-1)).toEqual(['Relay', 'none', '140', 'Push only, never chat: `watcher | relay | APNs`.']);
   });
 
   it('runs a set of checks as tool calls with one failure', async () => {

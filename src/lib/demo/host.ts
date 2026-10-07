@@ -18,6 +18,7 @@ import { projectDirName } from '../transcript/parser';
 import {
   DEMO_PHRASES,
   DEMO_QUESTIONS,
+  DEMO_TABLE_REPLY,
   TRUST_OPTIONS,
   trustScreen,
   effortPanelScreen,
@@ -490,6 +491,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
+      if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
@@ -607,6 +609,18 @@ export class DemoHost implements HerdrTransport {
         ));
       }
     }
+    return silent();
+  }
+
+  /** A reply with a table in it. */
+  private compareOptions(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      lines: (next, timestamp) => [replyLine(DEMO_TABLE_REPLY, next(), timestamp)],
+    });
     return silent();
   }
 

@@ -48,7 +48,7 @@ describe('block parsing', () => {
   it('reads a GFM table with its alignment row', () => {
     const blocks = parseMarkdown('| a | b |\n|---|:-:|\n| 1 | 2 |\n| 3 | 4 |');
     expect(blocks).toEqual([
-      { kind: 'table', headers: ['a', 'b'], rows: [['1', '2'], ['3', '4']] },
+      { kind: 'table', headers: ['a', 'b'], align: [null, 'center'], rows: [['1', '2'], ['3', '4']] },
     ]);
   });
 
@@ -152,6 +152,66 @@ describe('fences and link targets (#108)', () => {
       { kind: 'text', text: 'see ' },
       { kind: 'link', text: 'Rust', href: 'https://en.wikipedia.org/wiki/Rust_(programming_language)' },
       { kind: 'text', text: ' here' },
+    ]);
+  });
+});
+
+// A table is drawn as columns, so a cell landing in the wrong column moves the
+// rest of its row: these are the ways a row used to come out skewed.
+describe('table cells', () => {
+  const table = (text: string) => {
+    const block = parseMarkdown(text)[0];
+    if (block?.kind !== 'table') throw new Error(`not a table: ${JSON.stringify(block)}`);
+    return block;
+  };
+
+  it('reads each column\'s alignment', () => {
+    expect(table('| a | b | c | d |\n|:--|:-:|--:|---|\n| 1 | 2 | 3 | 4 |').align).toEqual([
+      'left', 'center', 'right', null,
+    ]);
+  });
+
+  it('gives every row one cell per header', () => {
+    expect(table('| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 |').rows).toEqual([
+      ['1', '', ''],
+      ['1', '2', '3'],
+    ]);
+  });
+
+  // GFM would drop the extra cells. They are nearly always a stray pipe in the
+  // last cell's text, so they go back into it rather than vanishing.
+  it('keeps a long row\'s extra cells in its last column', () => {
+    expect(table('| cmd | does |\n|---|---|\n| ls | lists | then pipes |').rows).toEqual([
+      ['ls', 'lists | then pipes'],
+    ]);
+  });
+
+  it('treats an escaped pipe as text', () => {
+    expect(table('| op | means |\n|---|---|\n| a \\| b | either |').rows).toEqual([
+      ['a | b', 'either'],
+    ]);
+  });
+
+  it('does not split inside a code span', () => {
+    expect(table('| type | note |\n|---|---|\n| `\'a\' | \'b\'` | a union |\n| ``x | `y` | z`` | nested |').rows).toEqual([
+      ["`'a' | 'b'`", 'a union'],
+      ['``x | `y` | z``', 'nested'],
+    ]);
+  });
+
+  it('unescapes a pipe inside a code span, as GFM does', () => {
+    expect(table('| cmd |\n|---|\n| `ls \\| wc` |').rows).toEqual([['`ls | wc`']]);
+  });
+
+  // An unclosed backtick is a character, not the start of a span that eats the
+  // rest of the row.
+  it('splits after an unclosed backtick', () => {
+    expect(table('| a | b |\n|---|---|\n| `open | shut |').rows).toEqual([['`open', 'shut']]);
+  });
+
+  it('keeps markup in a cell for the renderer to format', () => {
+    expect(table('| **Name** | [Docs](https://x.dev) |\n|---|---|').headers).toEqual([
+      '**Name**', '[Docs](https://x.dev)',
     ]);
   });
 });

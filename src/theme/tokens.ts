@@ -129,6 +129,13 @@ export const size = {
   rowBadgeGlyph: 12,
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
+  /**
+   * A Markdown table column's width bounds. The column is as wide as its widest
+   * cell within them; past the maximum a cell wraps, and past the bubble the
+   * table scrolls sideways.
+   */
+  tableColumnMin: 56,
+  tableColumnMax: 220,
 } as const;
 
 /**

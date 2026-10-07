@@ -1,9 +1,16 @@
-import { Alert, Linking, ScrollView, View } from 'react-native';
+import { Fragment, useState } from 'react';
+import { Alert, Linking, ScrollView, View, type LayoutChangeEvent } from 'react-native';
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing, typography } from '@/theme/tokens';
-import { parseInline, parseMarkdown, type InlineSpan, type MarkdownBlock } from '@/lib/markdown';
+import { radius, size, spacing, typography } from '@/theme/tokens';
+import {
+  parseInline,
+  parseMarkdown,
+  type InlineSpan,
+  type MarkdownBlock,
+  type TableAlign,
+} from '@/lib/markdown';
 
 /**
  * Renders the Markdown Claude actually emits, inside a chat bubble.
@@ -94,7 +101,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
       );
 
     case 'table':
-      return <Table headers={block.headers} rows={block.rows} onTint={onTint} fill={fill} />;
+      return <Table table={block} onTint={onTint} fill={fill} />;
 
     case 'rule':
       return (
@@ -134,20 +141,43 @@ function ListRow({
   );
 }
 
+/**
+ * A table, built column by column.
+ *
+ * It used to be built row by row, each cell as wide as its own text, so every
+ * row put its column boundaries somewhere different and the table came out
+ * skewed. React Native has no grid, but a column of cells is as wide as its
+ * widest cell, so a table made of columns lines up across rows in one pass.
+ *
+ * What a column cannot see is its neighbours: a cell that wraps makes its row
+ * taller in its own column only. Each cell therefore reports its natural
+ * height, and every cell in a row is held to the tallest. The height is
+ * measured on a view nothing is forced onto, so holding a row up never feeds
+ * back into the measurement, and a table whose cells do not wrap unevenly
+ * never needs a second pass.
+ */
 function Table({
-  headers,
-  rows,
+  table,
   onTint,
   fill,
 }: {
-  headers: string[];
-  rows: string[][];
+  table: Extract<MarkdownBlock, { kind: 'table' }>;
   onTint: boolean;
   fill: string;
 }) {
   const { colors } = useTheme();
-  const columns = Math.max(headers.length, ...rows.map((row) => row.length), 0);
   const line = onTint ? 'rgba(255,255,255,0.22)' : colors.separator;
+  const grid = [table.headers, ...table.rows];
+
+  // Natural cell heights by `row:column`, the header being row 0.
+  const [heights, setHeights] = useState<Readonly<Record<string, number>>>({});
+  const rowHeights = grid.map((cells, row) =>
+    Math.max(0, ...cells.map((_, column) => heights[`${row}:${column}`] ?? 0))
+  );
+  const measure = (key: string) => (event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    setHeights((current) => (current[key] === height ? current : { ...current, [key]: height }));
+  };
 
   // Wide tables scroll inside their own container rather than squeezing the
   // bubble — the page itself must never scroll horizontally.
@@ -156,58 +186,53 @@ function Table({
       horizontal
       showsHorizontalScrollIndicator={false}
       style={{ backgroundColor: fill, borderRadius: radius.xs }}>
-      <View style={{ padding: spacing.sm }}>
-        <TableRow cells={headers} columns={columns} header onTint={onTint} line={line} />
-        <View style={{ height: 1, backgroundColor: line }} />
-        {rows.map((row, index) => (
-          <View key={index}>
-            <TableRow cells={row} columns={columns} onTint={onTint} line={line} />
-            {index < rows.length - 1 && (
-              <View style={{ height: 1, backgroundColor: line, opacity: 0.5 }} />
-            )}
-          </View>
+      {/* Read as one element, row by row: built as columns, VoiceOver would
+          otherwise read the table down each column in turn. */}
+      <View
+        accessible
+        accessibilityLabel={tableLabel(table)}
+        style={{ flexDirection: 'row', padding: spacing.sm }}>
+        {table.headers.map((_, column) => (
+          <Fragment key={column}>
+            {column > 0 && <View style={{ width: 1, backgroundColor: line, opacity: 0.6 }} />}
+            <View
+              testID={`table-column-${column}`}
+              style={{ minWidth: size.tableColumnMin, maxWidth: size.tableColumnMax }}>
+              {grid.map((cells, row) => (
+                <Fragment key={row}>
+                  {row > 0 && (
+                    <View style={{ height: 1, backgroundColor: line, opacity: row === 1 ? 1 : 0.5 }} />
+                  )}
+                  <View testID={`table-cell-${row}-${column}`} style={{ minHeight: rowHeights[row] }}>
+                    <View
+                      onLayout={measure(`${row}:${column}`)}
+                      style={{ paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
+                      <Inline
+                        text={cells[column] ?? ''}
+                        onTint={onTint}
+                        variant="footnote"
+                        weight={row === 0 ? '600' : undefined}
+                        align={table.align[column] ?? null}
+                      />
+                    </View>
+                  </View>
+                </Fragment>
+              ))}
+            </View>
+          </Fragment>
         ))}
       </View>
     </ScrollView>
   );
 }
 
-function TableRow({
-  cells,
-  columns,
-  header = false,
-  onTint,
-  line,
-}: {
-  cells: string[];
-  columns: number;
-  header?: boolean;
-  onTint: boolean;
-  line: string;
-}) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-      {Array.from({ length: columns }, (_, index) => (
-        <View key={index} style={{ flexDirection: 'row' }}>
-          <View
-            style={{
-              minWidth: 56,
-              maxWidth: 220,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: spacing.xs,
-            }}>
-            <Text
-              variant="footnote"
-              color={onTint ? 'onTint' : 'label'}
-              weight={header ? '600' : '400'}>
-              {cells[index] ?? ''}
-            </Text>
-          </View>
-          {index < columns - 1 && <View style={{ width: 1, backgroundColor: line, opacity: 0.6 }} />}
-        </View>
-      ))}
-    </View>
-  );
+/** The table as a screen reader should hear it: each row, with its headers. */
+function tableLabel({ headers, rows }: { headers: string[]; rows: string[][] }): string {
+  const plain = (cell: string) => parseInline(cell).map((span) => span.text).join('');
+  if (rows.length === 0) return headers.map(plain).join(', ');
+  return rows
+    .map((row) => row.map((cell, column) => `${plain(headers[column] ?? '')}: ${plain(cell)}`).join(', '))
+    .join('. ');
 }
 
 function Inline({
@@ -216,12 +241,14 @@ function Inline({
   variant = 'body',
   weight,
   italic = false,
+  align = null,
 }: {
   text: string;
   onTint: boolean;
   variant?: keyof typeof typography;
   weight?: '400' | '600' | '700';
   italic?: boolean;
+  align?: TableAlign;
 }) {
   const { colors } = useTheme();
   const spans = parseInline(text);
@@ -232,9 +259,9 @@ function Inline({
       color={onTint ? 'onTint' : 'label'}
       weight={weight}
       selectable
-      style={italic ? { fontStyle: 'italic' } : undefined}>
+      style={{ fontStyle: italic ? 'italic' : undefined, textAlign: align ?? undefined }}>
       {spans.map((span, index) => (
-        <Span key={index} span={span} onTint={onTint} colors={colors} variant={variant} />
+        <Span key={index} span={span} onTint={onTint} colors={colors} variant={variant} weight={weight} />
       ))}
     </Text>
   );
@@ -254,17 +281,22 @@ function Inline({
  *
  * And a heading containing bold or code dropped to body size at exactly that
  * span, so `## Some **bold** word` changed size mid-line.
+ *
+ * Weight is the same: `Text` writes the variant's own weight, so a table's
+ * header row, or a `###` heading, set in semibold came out regular.
  */
 function Span({
   span,
   onTint,
   colors,
   variant,
+  weight,
 }: {
   span: InlineSpan;
   onTint: boolean;
   colors: ReturnType<typeof useTheme>['colors'];
   variant: keyof typeof typography;
+  weight: '400' | '600' | '700' | undefined;
 }) {
   const ink = onTint ? 'onTint' : 'label';
   switch (span.kind) {
@@ -276,7 +308,7 @@ function Span({
       );
     case 'italic':
       return (
-        <Text color={ink} variant={variant} style={{ fontStyle: 'italic' }}>
+        <Text color={ink} variant={variant} weight={weight} style={{ fontStyle: 'italic' }}>
           {span.text}
         </Text>
       );
@@ -286,6 +318,7 @@ function Span({
           mono
           color={ink}
           variant={variant}
+          weight={weight}
           style={{ backgroundColor: onTint ? 'rgba(255,255,255,0.22)' : colors.fillSubtle }}>
           {span.text}
         </Text>
@@ -293,6 +326,8 @@ function Span({
     case 'link':
       return (
         <Text
+          variant={variant}
+          weight={weight}
           // On the tint, lavender measured 2.81:1 — a link you have to hunt for
           // inside your own message. White clears 4.60:1 there, and the underline
           // is what carries "this is a link" once the colour no longer can.
@@ -313,7 +348,7 @@ function Span({
       );
     case 'text':
       return (
-        <Text color={ink} variant={variant}>
+        <Text color={ink} variant={variant} weight={weight}>
           {span.text}
         </Text>
       );

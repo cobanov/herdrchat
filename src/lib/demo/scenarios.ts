@@ -3,7 +3,8 @@
  *
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
- * one failure, the folder-trust question a first start asks. The UI tests drive the Demo with the phrases below, and anyone
+ * one failure, the folder-trust question a first start asks, a reply with a
+ * table. The UI tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -14,6 +15,7 @@ export const DEMO_PHRASES = {
   questions: 'ask me two questions',
   tools: 'run the checks',
   trust: 'open a new folder',
+  table: 'compare the options',
 } as const;
 
 // MARK: - Slash command panels
@@ -109,6 +111,26 @@ export function panelFor(command: string): DemoPanel | null {
   if (name === '/effort') return { kind: 'effort', level: 2 };
   return null;
 }
+
+// MARK: - A table
+
+/**
+ * A reply with a table, in the shape agents use to compare things. Each part
+ * is one that used to push a row out of line with its header: columns of very
+ * different widths, a cell long enough to wrap, a right-aligned number column,
+ * bold and code in cells, and a pipe inside a code span.
+ */
+export const DEMO_TABLE_REPLY = [
+  'Here is how the three ways in compare:',
+  '',
+  '| Option | Setup | Latency (ms) | Notes |',
+  '|---|---|--:|---|',
+  '| **SSH** | `ssh-keygen` | 38 | Works wherever the port is open; the host key is pinned on first contact. |',
+  '| Tailscale | one login | 12 | Nothing exposed to the internet. |',
+  '| Relay | none | 140 | Push only, never chat: `watcher | relay | APNs`. |',
+  '',
+  'Tailscale is the one to start with.',
+].join('\n');
 
 // MARK: - A question in two parts
 
