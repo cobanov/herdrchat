@@ -21,8 +21,11 @@ export type MarkdownBlock =
   | { kind: 'numbered'; start: number; items: string[] }
   | { kind: 'quote'; text: string }
   | { kind: 'code'; language: string | null; content: string }
-  | { kind: 'table'; headers: string[]; rows: string[][] }
+  | { kind: 'table'; headers: string[]; align: TableAlign[]; rows: string[][] }
   | { kind: 'rule' };
+
+/** A column's alignment from its `:--`, `:-:` or `--:` separator; null is the default. */
+export type TableAlign = 'left' | 'center' | 'right' | null;
 
 export function parseMarkdown(text: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
@@ -237,6 +240,12 @@ function parseNumberedItem(line: string): string | null {
 /**
  * A GFM table starting at `start`: a header row of `|`-cells followed by a
  * `|---|---|` separator, then body rows.
+ *
+ * Every row comes back with exactly one cell per header, so the renderer can
+ * lay the table out as columns. A short row is padded, as GFM does. A long one
+ * is not cut, as GFM would: the extra cells are almost always an unescaped
+ * `|` in the last cell's text, so they are joined back into it and nothing the
+ * agent wrote disappears.
  */
 function parseTable(
   lines: readonly string[],
@@ -248,24 +257,77 @@ function parseTable(
 
   const headers = tableCells(header);
   if (headers.length === 0) return null;
+  const marks = tableCells(separator);
+  const align = headers.map((_, column) => alignment(marks[column] ?? ''));
 
   const rows: string[][] = [];
   let index = start + 2;
   while (index < lines.length) {
     const line = (lines[index] ?? '').trim();
     if (line.length === 0 || !line.includes('|')) break;
-    rows.push(tableCells(line));
+    rows.push(fitRow(tableCells(line), headers.length));
     index += 1;
   }
-  return { block: { kind: 'table', headers, rows }, next: index };
+  return { block: { kind: 'table', headers, align, rows }, next: index };
 }
 
-/** Split a `| a | b |` row into trimmed cells (outer pipes optional). */
+function fitRow(cells: string[], columns: number): string[] {
+  if (cells.length > columns) {
+    return [...cells.slice(0, columns - 1), cells.slice(columns - 1).join(' | ')];
+  }
+  return [...cells, ...Array<string>(columns - cells.length).fill('')];
+}
+
+/**
+ * Split a `| a | b |` row into trimmed cells (outer pipes optional).
+ *
+ * A pipe is a cell boundary unless it is escaped (`\|`, which GFM defines as a
+ * literal pipe) or inside a code span. GFM itself splits inside code spans, but
+ * agents write `` `a | b` `` for shell pipes and union types far more often
+ * than they escape it, and splitting there pushes the rest of the row one
+ * column to the right.
+ */
 function tableCells(line: string): string[] {
   let text = line.trim();
   if (text.startsWith('|')) text = text.slice(1);
-  if (text.endsWith('|')) text = text.slice(0, -1);
-  return text.split('|').map((cell) => cell.trim());
+  if (text.endsWith('|') && !text.endsWith('\\|')) text = text.slice(0, -1);
+
+  const cells: string[] = [];
+  let cell = '';
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? '';
+    if (char === '\\' && text[index + 1] === '|') {
+      cell += '|';
+      index += 2;
+    } else if (char === '`') {
+      const run = /^`+/.exec(text.slice(index))?.[0] ?? '`';
+      const close = closingRun(text, index + run.length, run.length);
+      const end = close === -1 ? index + run.length : close + run.length;
+      cell += text.slice(index, end).replace(/\\\|/g, '|');
+      index = end;
+    } else if (char === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      index += 1;
+    } else {
+      cell += char;
+      index += 1;
+    }
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
+/** Where a backtick run of exactly `length` starts at or after `from`, or -1. */
+function closingRun(text: string, from: number, length: number): number {
+  const runs = /`+/g;
+  runs.lastIndex = from;
+  for (;;) {
+    const match = runs.exec(text);
+    if (match === null) return -1;
+    if (match[0].length === length) return match.index;
+  }
 }
 
 /** A `|---|:--:|` separator row: every cell is dashes with optional colons. */
@@ -273,4 +335,10 @@ function isTableSeparator(line: string): boolean {
   if (!line.includes('-') || !line.includes('|')) return false;
   const cells = tableCells(line);
   return cells.length > 0 && cells.every((cell) => cell.length > 0 && /^:?-+:?$/.test(cell));
+}
+
+function alignment(mark: string): TableAlign {
+  const left = mark.startsWith(':');
+  const right = mark.endsWith(':');
+  return left && right ? 'center' : right ? 'right' : left ? 'left' : null;
 }

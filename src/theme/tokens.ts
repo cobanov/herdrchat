@@ -129,6 +129,13 @@ export const size = {
   rowBadgeGlyph: 12,
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
+  /**
+   * A Markdown table column's width bounds. The column is as wide as its widest
+   * cell within them; past the maximum a cell wraps, and past the bubble the
+   * table scrolls sideways.
+   */
+  tableColumnMin: 56,
+  tableColumnMax: 220,
 } as const;
 
 /**
@@ -328,6 +335,8 @@ export const motion = {
   enter: { damping: 20, stiffness: 180, mass: 1 },
   fade: 200,
   fadeFast: 120,
+  /** How long a finger rests on a message before its copy sheet opens. */
+  longPress: 400,
   /**
    * The settings section a deep link points at: a glow in, a hold, a slower
    * fade. Reduce Motion gets a plain hold-and-fade with the same meaning.

@@ -34,6 +34,32 @@ appId: dev.herdr.HerdrChat
 - assertVisible: Run npm test
 - takeScreenshot: thread-tool-run-${APPEARANCE}
 
+# A table's cells line up under their headers, however wide or wrapped each
+# one is, and a table wider than the screen swipes sideways inside its
+# message (build 83 cut it off: the bubble's long press held the touch, and a
+# scroll view under a JS responder does not scroll). The flow cannot see
+# either: open both screenshots, the second must show the Notes column whole.
+- tapOn:
+    id: composer-input
+- inputText: compare the options
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*Tailscale is the one to start with.*
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: thread-table-${APPEARANCE}
+- swipe:
+    from: 'Agent message\. Here is how the three ways in compare:.*'
+    direction: LEFT
+- waitForAnimationToEnd
+- takeScreenshot: thread-table-swiped-${APPEARANCE}
+# The long press that used to block the swipe still copies.
+- longPressOn: 'Agent message\. Here is how the three ways in compare:.*'
+- extendedWaitUntil:
+    visible: Copy message
+    timeout: 5000
+- tapOn: Cancel
+
 # Each question follows the last without reopening the chat (PR #137).
 - tapOn:
     id: composer-input
