@@ -67,7 +67,7 @@ export async function bootstrapHostTheme(transport: HerdrTransport): Promise<boo
 }
 
 /**
- * Move theme.json aside as theme.json.bak. A person pressed a button for this
+ * Move theme.json aside to a backup name (see `themeResetCommand`). A person pressed a button for this
  * and is waiting, so it gets a send's deadline rather than a poll's.
  */
 export async function resetHostTheme(transport: HerdrTransport): Promise<boolean> {

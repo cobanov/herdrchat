@@ -415,11 +415,14 @@ export class DemoHost implements HerdrTransport {
       }
       return silent();
     }
-    if (script.includes('mv -f "$f" "$f.bak"')) {
+    if (script.includes('mv "$f" "$b"')) {
       const file = this.herdrchatDir.get(THEME_FILE);
       if (file !== undefined) {
+        // The first free backup name, as the real command picks it.
+        let backup = `${THEME_FILE}.bak`;
+        for (let n = 1; this.herdrchatDir.has(backup); n += 1) backup = `${THEME_FILE}.bak.${n}`;
         this.herdrchatDir.delete(THEME_FILE);
-        this.herdrchatDir.set(`${THEME_FILE}.bak`, file);
+        this.herdrchatDir.set(backup, file);
       }
       return silent();
     }

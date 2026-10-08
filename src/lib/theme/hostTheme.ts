@@ -80,12 +80,20 @@ export function afterFetch(previous: HostThemeFile, result: ThemeFetchResult): H
 }
 
 /**
- * Reset to default: move theme.json aside as theme.json.bak, replacing an
- * older .bak. Renamed rather than deleted because the theme may be an hour of
- * someone's agent's work, and the reset is one tap away.
+ * Reset to default: move theme.json aside to the first free name of
+ * theme.json.bak, theme.json.bak.1, theme.json.bak.2 and so on. Renamed rather
+ * than deleted because the theme may be an hour of someone's agent's work, and
+ * the reset is one tap away; never over an older backup, since that one is
+ * the same kind of work, and a second reset used to destroy it.
  */
 export function themeResetCommand(): string {
-  const script = `f=${THEME_PATH}; if [ -e "$f" ]; then mv -f "$f" "$f.bak"; fi`;
+  const script = [
+    `f=${THEME_PATH}`,
+    'if [ ! -e "$f" ]; then exit 0; fi',
+    'b="$f.bak"; n=1',
+    'while [ -e "$b" ]; do b="$f.bak.$n"; n=$((n + 1)); done',
+    'mv "$f" "$b"',
+  ].join('\n');
   return withPath(`sh -c ${shellQuote(script)}`);
 }
 

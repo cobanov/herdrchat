@@ -85,5 +85,10 @@ describe('the Demo host’s theme', () => {
     advance(2_000);
     const second = await check(host, { kind: 'missing' });
     expect(second.kind === 'present' && first.kind === 'present' && second.mtime > first.mtime).toBe(true);
+
+    // A second reset keeps the first backup.
+    await host.exec(themeResetCommand(), 5_000);
+    expect(host.hostFile('theme.json.bak')).toBe(DEMO_THEME_TEXT);
+    expect(host.hostFile('theme.json.bak.1')).toBe(DEMO_THEME_TEXT);
   });
 });

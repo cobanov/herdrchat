@@ -1,4 +1,6 @@
 import { avatarColor, avatarPalette, darkPalette, lightPalette } from '@/theme/tokens';
+import { contrastRatio, MIN_TEXT_CONTRAST, parseColor } from '../theme/color';
+import { MAX_JSON_DEPTH } from '../theme/json';
 import { parseThemeFile } from '../theme/parse';
 import { accentColors, applyOverrides, resolveHostTheme, type HostThemeFile } from '../theme/resolve';
 
@@ -57,6 +59,15 @@ describe('parseThemeFile', () => {
     expect(parseThemeFile('{"a": "\\q"}').problems[0]).toMatch(/^theme.json: not valid JSON at line 1/);
   });
 
+  // The scanner recurses; a file nested deep enough to overflow the stack
+  // made parsing throw, and the theme check rejected every 10 s.
+  it('reports a file nested too deep instead of throwing', () => {
+    const deep = `${'['.repeat(100_000)}${']'.repeat(100_000)}`;
+    expect(parseThemeFile(deep).problems).toEqual([`theme.json: not valid JSON at line 1, column ${MAX_JSON_DEPTH + 1}`]);
+    const fine = `{"x": ${'['.repeat(MAX_JSON_DEPTH - 1)}${']'.repeat(MAX_JSON_DEPTH - 1)}}`;
+    expect(parseThemeFile(fine).problems).toEqual(['x: not a theme key, ignored']);
+  });
+
   it('accepts what JSON accepts', () => {
     const text = '\uFEFF{ "name": "Caf\\u00e9 \\"x\\"", "x": [true, false, null, -1.5e3, {}], "light": {} }';
     const file = parseThemeFile(text);
@@ -109,6 +120,17 @@ describe('accentColors', () => {
 
   it('measures onTint against the tint a file sets, not the accent', () => {
     expect(accentColors('#5459D4', 'light', { label: lightPalette.label, tint: '#F5D90A' }).onTint).toBe(lightPalette.label);
+  });
+
+  // A dark accent under a light tint the file sets: dark text was chosen for
+  // the tint, so the bubble that carries the same text is the tint, not the
+  // navy accent it would have read at 1.3:1 on.
+  it('puts the bubble on the colour its text was chosen against', () => {
+    const colors = accentColors('#1A1A80', 'light', { label: lightPalette.label, tint: '#FFD60A' });
+    expect(colors.onTint).toBe(lightPalette.label);
+    expect(colors.bubbleOutgoing).toBe('#FFD60A');
+    const ratio = contrastRatio(parseColor(colors.onTint!)!, parseColor(colors.bubbleOutgoing!)!);
+    expect(ratio).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
   });
 });
 

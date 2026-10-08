@@ -57,8 +57,10 @@ export const TINT_MUTED_ALPHA: Record<ColorScheme, number> = { light: 0.12, dark
  *   scheme's `label` takes its place if that reads better.
  * - `bubbleOutgoing` carries `onTint` too, so it follows that choice: under
  *   white text it is the accent darkened until white clears 4.5:1 (the rule
- *   the stock bubble was made by); under dark text it is the accent itself,
- *   since darkening it would take it toward the text.
+ *   the stock bubble was made by); under dark text it is the tint itself, the
+ *   colour that dark text was chosen against. Not the accent: when the file
+ *   sets its own tint, the label picked for a light tint can sit on a dark
+ *   accent at barely 1:1.
  */
 export function accentColors(
   accent: string,
@@ -77,7 +79,7 @@ export function accentColors(
     tint: accent,
     tintMuted: toRgba(parsed, TINT_MUTED_ALPHA[scheme]),
     onTint: whiteText ? toHex(WHITE) : around.label,
-    bubbleOutgoing: whiteText ? darkenForWhiteText(opaque) : toHex(opaque),
+    bubbleOutgoing: whiteText ? darkenForWhiteText(opaque) : toHex(tint),
   };
 }
 

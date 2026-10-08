@@ -123,15 +123,27 @@ describe('the commands in a real shell', () => {
     chmodSync(file(), 0o600);
   });
 
-  it('resets by renaming the file aside, over an older backup', () => {
+  // A second reset used to `mv -f` over the first one's backup, and the
+  // theme the dialog promised was "renamed, not deleted" was gone.
+  it('resets by renaming the file aside, never over an older backup', () => {
     mkdirSync(dir());
-    writeFileSync(`${file()}.bak`, 'old');
-    writeFileSync(file(), '{"name": "new"}');
+    const cat = (path: string) => execFileSync('cat', [path], { encoding: 'utf8' });
+    writeFileSync(file(), '{"name": "A"}');
     run(themeResetCommand());
     expect(existsSync(file())).toBe(false);
-    expect(execFileSync('cat', [`${file()}.bak`], { encoding: 'utf8' })).toBe('{"name": "new"}');
+    expect(cat(`${file()}.bak`)).toBe('{"name": "A"}');
+    writeFileSync(file(), '{"name": "B"}');
+    run(themeResetCommand());
+    writeFileSync(file(), '{"name": "C"}');
+    run(themeResetCommand());
+    expect([cat(`${file()}.bak`), cat(`${file()}.bak.1`), cat(`${file()}.bak.2`)]).toEqual([
+      '{"name": "A"}',
+      '{"name": "B"}',
+      '{"name": "C"}',
+    ]);
     // Nothing there: nothing to do, and no error.
     run(themeResetCommand());
+    expect(existsSync(`${file()}.bak.3`)).toBe(false);
     renameSync(`${file()}.bak`, file());
     expect(fetch(null)).toMatchObject({ kind: 'present' });
   });

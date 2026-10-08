@@ -10,12 +10,20 @@
 
 export type JsonResult = { ok: true; value: unknown } | { ok: false; line: number; column: number };
 
+/**
+ * How deep arrays and objects may nest. A theme is three levels deep; the cap
+ * is there because the scanner recurses, and a file of `[[[[…` tens of
+ * thousands deep would otherwise overflow the stack instead of being reported.
+ */
+export const MAX_JSON_DEPTH = 64;
+
 class Fail {
   constructor(readonly offset: number) {}
 }
 
 function scan(text: string): void {
   let at = 0;
+  let depth = 0;
 
   const fail = (): never => {
     throw new Fail(at);
@@ -61,6 +69,20 @@ function scan(text: string): void {
   const value = (): void => {
     space();
     const char = text[at];
+    if (char === '{' || char === '[') {
+      if (depth >= MAX_JSON_DEPTH) fail();
+      depth += 1;
+      container(char);
+      depth -= 1;
+      return;
+    }
+    if (char === '"') return string();
+    if (char === 't') return literal('true');
+    if (char === 'f') return literal('false');
+    if (char === 'n') return literal('null');
+    return number();
+  };
+  const container = (char: '{' | '['): void => {
     if (char === '{') {
       at += 1;
       space();
@@ -87,32 +109,26 @@ function scan(text: string): void {
         fail();
       }
     }
-    if (char === '[') {
+    // An array.
+    at += 1;
+    space();
+    if (text[at] === ']') {
       at += 1;
+      return;
+    }
+    for (;;) {
+      value();
       space();
+      if (text[at] === ',') {
+        at += 1;
+        continue;
+      }
       if (text[at] === ']') {
         at += 1;
         return;
       }
-      for (;;) {
-        value();
-        space();
-        if (text[at] === ',') {
-          at += 1;
-          continue;
-        }
-        if (text[at] === ']') {
-          at += 1;
-          return;
-        }
-        fail();
-      }
+      fail();
     }
-    if (char === '"') return string();
-    if (char === 't') return literal('true');
-    if (char === 'f') return literal('false');
-    if (char === 'n') return literal('null');
-    return number();
   };
 
   value();
@@ -132,7 +148,10 @@ export function parseJson(text: string): JsonResult {
     scan(text);
   } catch (error) {
     if (error instanceof Fail) return { ok: false, ...position(text, error.offset) };
-    throw error;
+    // Anything else (a stack overflow the depth cap missed, an engine quirk)
+    // still means the file cannot be read, and the check that called this
+    // must not reject over it.
+    return { ok: false, ...position(text, text.length) };
   }
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
