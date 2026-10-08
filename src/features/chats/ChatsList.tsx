@@ -99,8 +99,13 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   }, [keyChanged, connection]);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
   // The selection names the pane too; the prop only says which workspace, and
-  // a pane row and its workspace's row are never selected together.
-  const selectedPaneId = selectedWorkspaceId !== undefined && selection?.workspaceId === selectedWorkspaceId
+  // a pane row and its workspace's row are never selected together. A pane
+  // whose row is gone (its workspace is back to one agent, or it closed) is
+  // the workspace chat to the list: otherwise nothing was highlighted, and the
+  // thread being read lit its own workspace's dot and badge.
+  const selectedSummary = summaries.find((item) => item.workspaceId === selectedWorkspaceId);
+  const selectedPaneId = selectedWorkspaceId !== undefined && selection?.workspaceId === selectedWorkspaceId &&
+    selectedSummary !== undefined && paneChats(selectedSummary).some((pane) => pane.paneId === selection.paneId)
     ? selection.paneId : undefined;
   const openKey = selectedWorkspaceId === undefined ? null : chatKey({ workspaceId: selectedWorkspaceId, paneId: selectedPaneId });
   // Whatever a row draws from outside its item: the selection, and the read
@@ -120,7 +125,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   });
 
   // Renaming from the persistent sidebar must also update the open header.
-  const selectedTitle = summaries.find((item) => item.workspaceId === selectedWorkspaceId)?.title;
+  const selectedTitle = selectedSummary?.title;
   useEffect(() => {
     if (selection !== null && selectedTitle !== undefined && selectedTitle !== selection.title) {
       select({ ...selection, title: selectedTitle });
@@ -159,12 +164,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
 
   // The chat on screen is not news. With one agent of a workspace open, the
   // workspace still counts for its other agents.
-  useAttentionBadge(
-    summaries.filter((item) => item.workspaceId !== selectedWorkspaceId || selectedPaneId !== undefined),
-    reads,
-    connection !== null,
-    openKey
-  );
+  useAttentionBadge(summaries, reads, connection !== null, openKey);
 
   /**
    * The hint stops the first time the gesture is used, so it teaches rather than

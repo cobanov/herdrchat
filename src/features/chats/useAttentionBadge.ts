@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react';
 
 import { type ThreadRead } from '@/lib/unread';
-import { isChatUnread } from './chatUnread';
+import { chatWantsYou } from './chatUnread';
 import { useBadge } from '@/state/badge';
-import { summaryNeedsAttention, type ChatSummary } from './useWorkspaces';
+import type { ChatSummary } from './useWorkspaces';
 
 /**
  * Publish the attention count for the tab bar's badge.
@@ -17,8 +17,8 @@ import { summaryNeedsAttention, type ChatSummary } from './useWorkspaces';
  * that works until concurrent rendering retries one.
  *
  * Counted by workspace: a workspace and the agents listed under it are one
- * thing needing you, not two or three. Its status already rolls its agents up,
- * and it is unread while any of them is.
+ * thing needing you, not two or three. What is open beside the list is left
+ * out by `chatWantsYou`, down to the one agent when only that one is open.
  */
 export function useAttentionBadge(
   summaries: readonly ChatSummary[],
@@ -29,11 +29,7 @@ export function useAttentionBadge(
 ): void {
   const count = useMemo(
     () =>
-      summaries.filter(
-        (summary) =>
-          summaryNeedsAttention(summary) ||
-          isChatUnread(summary, reads, open)
-      ).length,
+      summaries.filter((summary) => chatWantsYou(summary, reads, open)).length,
     [summaries, reads, open]
   );
 
