@@ -28,6 +28,7 @@ const summary = (agent: string | null): ChatSummary => ({
     completionSeq: null,
     inputPending: false,
   }],
+  panes: [],
   preview: null,
   sessionSig: null,
   restoreError: null,

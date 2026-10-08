@@ -81,6 +81,17 @@ export function hasSessionReference(agent: AgentInfo): boolean {
     (session?.kind === 'id' || (agent.agent === 'omp' && session?.kind === 'path'));
 }
 
+/** The agents whose transcripts this app reads and whose panes it talks to. */
+export const CONVERSATIONAL_AGENTS: readonly string[] = ['claude', 'codex', 'omp'];
+
+/**
+ * True for a pane holding an agent the app can hold a conversation with. A
+ * plain shell, or an agent with no transcript reader, has no chat of its own.
+ */
+export function isConversationalAgent(agent: AgentInfo): boolean {
+  return agent.agent !== null && CONVERSATIONAL_AGENTS.includes(agent.agent);
+}
+
 /**
  * Stable identity of the conversation(s) these agents host.
  *

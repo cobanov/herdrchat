@@ -5,6 +5,7 @@ import {
   decodeSnapshot,
   decodeWorkspace,
   hasSessionReference,
+  isConversationalAgent,
   needsAttention,
   sessionSignature,
   toAgentStatus,
@@ -206,6 +207,12 @@ describe('session signature', () => {
     });
     expect(sessionSignature([a, b])).toBe(sessionSignature([b, a]));
     expect(sessionSignature([a, b])).toBe('sess-a,sess-b');
+  });
+
+  it('gives a chat only to the agents the app can talk to', () => {
+    expect(['claude', 'codex', 'omp'].map((name) => isConversationalAgent(agent({ agent: name })))).toEqual([true, true, true]);
+    expect(isConversationalAgent(agent({ agent: null }))).toBe(false);
+    expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
   });
 
   it('deduplicates agents reporting the same session', () => {
