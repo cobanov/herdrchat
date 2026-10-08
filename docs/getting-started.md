@@ -146,6 +146,49 @@ To remove the watcher from a host, run
 `systemctl --user disable --now dev.herdr.herdrchat-notifier` on Linux. A named
 session's service carries the session name as a suffix.
 
+## Theming
+
+Each host can restyle the app through one file, `~/.herdrchat/theme.json`. It
+applies while that host is selected, so two machines can look different, which
+also tells you at a glance which one you are on. The app caches the last theme
+it read, so launch and offline still look right.
+
+Any agent that can edit files on the host can write it. In **Settings →
+Appearance**, open **Host theme** and tap **Copy prompt for an agent**, then
+paste it into a chat and finish the sentence:
+
+> Restyle HerdrChat for me. Edit ~/.herdrchat/theme.json on this machine; the
+> schema is in ~/.herdrchat/theme.schema.json and README.md explains the keys.
+> Keep text contrast at or above 4.5:1. I would like: a warm dusk look
+
+Every key is optional:
+
+```json
+{
+  "name": "Warm dusk",
+  "accent": "#D08A3E",
+  "light": { "tint": "#B06A1E", "systemBackground": "#FBF7F2" },
+  "dark":  { "tint": "#E9A25A" },
+  "avatars": ["#8C4A12", "#2E6B5E"]
+}
+```
+
+- `light` and `dark` override any colour of the app's palette by its name.
+  Colours are `#RGB`, `#RRGGBB`, `#RRGGBBAA`, `rgb(...)` or `rgba(...)`.
+- `accent` sets the tint, its muted wash, the outgoing bubble and the text on
+  it for both schemes, darkening the bubble until white text on it clears
+  4.5:1. A key you set in `light` or `dark` wins over it.
+- `avatars` replaces the chat avatar colours; each chat keeps its slot.
+- `name` is what Settings shows, up to 40 characters.
+
+When it connects, the app writes `theme.schema.json`, `README.md` (every
+key, one line each) and `theme.example.json` next to it when they are missing, and never overwrites
+them. A wrong key or colour is skipped and listed under **Host theme**; the rest
+of the file still applies. The phone checks for changes within about 30 seconds;
+**Reload theme** reads the file at once, **Reset to default** renames it to
+`theme.json.bak`, and **Use host themes** turns every host's theme off without
+touching the files.
+
 ## Known limitations
 
 - Android has been run in an emulator against a real host (connecting,

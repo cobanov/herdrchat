@@ -1,0 +1,81 @@
+# A host restyling the app through ~/.herdrchat/theme.json: Settings says
+# Default, the Demo agent writes a theme when asked ("restyle the app",
+# src/lib/demo/scenarios.ts), Reload theme picks it up and the row names it,
+# and Reset to default moves the file aside so the row says Default again.
+# Open the host-theme-applied screenshot: the tint must be the Demo's warm
+# accent, not the app's periwinkle.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: host-theme-row
+    direction: DOWN
+# Waited for, not asserted: a failed earlier run can leave the Demo's theme
+# cached on the device, and the first check after launch clears it.
+- extendedWaitUntil:
+    visible:
+      id: host-theme-row
+      text: 'Host theme, Default'
+    timeout: 15000
+
+# The agent writes the file.
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- inputText: restyle the app
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*named it "Demo dusk".*
+    timeout: 15000
+- tapOn:
+    id: thread-back
+
+# The phone follows it.
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: host-theme-row
+    direction: DOWN
+- runFlow:
+    when:
+      notVisible:
+        id: host-theme-reload
+    commands:
+      - tapOn:
+          id: host-theme-row
+- scrollUntilVisible:
+    element:
+      id: host-theme-reload
+    direction: DOWN
+- tapOn:
+    id: host-theme-reload
+- extendedWaitUntil:
+    visible:
+      id: host-theme-row
+      text: 'Host theme, Demo dusk.*'
+    timeout: 10000
+- takeScreenshot: host-theme-applied-${APPEARANCE}
+
+# Reset moves it aside, and the app is back on its own colours.
+- scrollUntilVisible:
+    element:
+      id: host-theme-reset
+    direction: DOWN
+- tapOn:
+    id: host-theme-reset
+- tapOn: Use the default theme
+- extendedWaitUntil:
+    visible:
+      id: host-theme-row
+      text: 'Host theme, Default'
+    timeout: 10000
+- takeScreenshot: host-theme-reset-${APPEARANCE}
+- tapOn: Chats

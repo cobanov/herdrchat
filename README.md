@@ -50,6 +50,16 @@ For your own agents:
 Push notifications need extra setup on your host. See
 [setup and limitations](docs/getting-started.md).
 
+## Theming
+
+Each host can restyle the app with a file of its own, `~/.herdrchat/theme.json`,
+so the easiest way to change how HerdrChat looks is to ask an agent on that
+machine. **Settings → Appearance → Copy prompt for an agent** puts the request
+on your clipboard; paste it into a chat and add what you would like ("warmer",
+"green, like my terminal"). The phone picks the change up within about 30
+seconds, and the theme follows whichever host is selected. See
+[the file's shape](docs/getting-started.md#theming).
+
 ## Want to tinker?
 
 Expo + React Native + TypeScript, with a native SSH module. The agents run on

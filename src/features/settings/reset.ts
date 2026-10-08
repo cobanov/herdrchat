@@ -10,6 +10,7 @@ import {
   type ServerConnection,
 } from '@/state/connections';
 import { SELECTED_KEY } from '@/state/Hydrate';
+import { useHostTheme } from '@/state/hostTheme';
 import { clearAttachmentCopies } from '@/state/attachmentFiles';
 import {
   clearCachedMessages,
@@ -84,6 +85,9 @@ export async function resetAppData(
       await clearPrompts(db, connection.id);
       await clearConnectionSettings(db, connection.id);
       await deleteConnection(db, connection.id);
+      // The in-memory theme too, or the erased host's colours stay on screen
+      // until the next launch finds its row gone.
+      useHostTheme.getState().clear(connection.id);
     } catch {
       remaining.push(connection);
     }
