@@ -658,8 +658,14 @@ function hashKey(key: string, seed: number): number {
   return hash;
 }
 
-export function avatarColor(key: string): string {
-  return avatarPalette[hashKey(key, 5381) % avatarPalette.length] ?? avatarPalette[0]!;
+/**
+ * The avatar colour for a key, from `palette` (a host theme's `avatars`, or the
+ * app's own). The hash is the same whichever palette, so a chat keeps its slot
+ * when a theme swaps the colours; an empty palette falls back to the app's.
+ */
+export function avatarColor(key: string, palette: readonly string[] = avatarPalette): string {
+  const colours = palette.length > 0 ? palette : avatarPalette;
+  return colours[hashKey(key, 5381) % colours.length] ?? avatarPalette[0]!;
 }
 
 /**

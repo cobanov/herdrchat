@@ -4,7 +4,7 @@
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
- * table. The UI tests drive the Demo with the phrases below, and anyone
+ * table, an agent restyling the app through the host's theme file. The UI tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -16,6 +16,7 @@ export const DEMO_PHRASES = {
   tools: 'run the checks',
   trust: 'open a new folder',
   table: 'compare the options',
+  theme: 'restyle the app',
 } as const;
 
 // MARK: - Slash command panels
@@ -207,3 +208,25 @@ export function trustScreen(cursor: number): string {
     ' Enter to confirm · Esc to cancel',
   ].join('\n');
 }
+
+// MARK: - A theme written by the agent
+
+/**
+ * What the demo agent writes to ~/.herdrchat/theme.json when asked to restyle
+ * the app: a warm accent far from the periwinkle, so a screenshot shows at a
+ * glance that the theme took, and a name for Settings to show. White text
+ * clears 4.5:1 on it, so the accent rule keeps it as the bubble unchanged.
+ */
+export const DEMO_THEME = {
+  $schema: './theme.schema.json',
+  name: 'Demo dusk',
+  accent: '#B5562F',
+} as const;
+
+export const DEMO_THEME_TEXT = `${JSON.stringify(DEMO_THEME, null, 2)}\n`;
+
+export const DEMO_THEME_REPLY = [
+  `Done. I wrote ~/.herdrchat/theme.json with a warm dusk accent and named it "${DEMO_THEME.name}".`,
+  '',
+  'The app picks it up within about 30 seconds, or right away from Settings > Appearance > Reload theme.',
+].join('\n');
