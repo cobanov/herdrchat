@@ -375,6 +375,8 @@ it('keeps a single-agent workspace exactly as it was: one row, its own line, no 
   const [summary] = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, previews);
   expect(summary).toMatchObject({ status: 'idle', sessionSig: 'session', preview: { text: 'from session' } });
   expect(summary?.panes).toHaveLength(1);
+});
+
 describe('the host theme check, riding on the list poll', () => {
   beforeEach(() => {
     mockLive = false; // a poll every 3 s
