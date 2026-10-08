@@ -85,3 +85,16 @@ it('says why herdr could not restore a chat', async () => {
   );
   expect(screen.getByTestId('chat-row-w1').props.accessibilityLabel).toContain('Saved directory is unavailable.');
 });
+
+// A two-agent workspace used to be named after whichever agent the election
+// picked, so it looked exactly like a one-agent workspace.
+it('names every agent of a workspace that runs several, and the folder they share', async () => {
+  const base = summary('claude');
+  const [first] = base.agents;
+  if (first === undefined) throw new Error('fixture has an agent');
+  const second = { ...first, agent: 'codex', paneId: 'p2', focused: false, cwd: '/home/me/code/parser/web' };
+  const pane = (agent: typeof first) => ({ paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle' as const });
+  const group: ChatSummary = { ...base, agents: [first, second], panes: [pane(first), pane(second)] };
+  const screen = await render(<ChatRow summary={group} unread={false} onPress={jest.fn()} />);
+  expect(screen.getByText('2 agents · Claude, Codex · code/parser')).toBeOnTheScreen();
+});

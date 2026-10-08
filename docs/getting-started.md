@@ -87,6 +87,8 @@ Windows-native paths are not translated.
 3. Open **Chats** and choose a workspace. No session ID means no safe history
    lookup: the app will explain the missing integration instead of guessing
    which conversation belongs to you.
+   A workspace running more than one agent lists each one under it: tap an
+   agent to talk to it alone, or the workspace to read them all together.
 
 ## Build the iOS app
 

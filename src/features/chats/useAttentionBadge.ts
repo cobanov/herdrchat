@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 
-import { isThreadUnread, type ThreadRead } from '@/lib/unread';
+import { type ThreadRead } from '@/lib/unread';
+import { isChatUnread } from './chatUnread';
 import { useBadge } from '@/state/badge';
 import { summaryNeedsAttention, type ChatSummary } from './useWorkspaces';
 
@@ -14,20 +15,26 @@ import { summaryNeedsAttention, type ChatSummary } from './useWorkspaces';
  * The write is an effect, not a render-phase call: publishing to a store outside
  * React's tree is a side effect, and doing it during render is the kind of thing
  * that works until concurrent rendering retries one.
+ *
+ * Counted by workspace: a workspace and the agents listed under it are one
+ * thing needing you, not two or three. Its status already rolls its agents up,
+ * and it is unread while any of them is.
  */
 export function useAttentionBadge(
   summaries: readonly ChatSummary[],
   reads: Map<string, ThreadRead>,
-  active: boolean
+  active: boolean,
+  /** The chat on screen beside the list, by `chatKey`. */
+  open: string | null = null
 ): void {
   const count = useMemo(
     () =>
       summaries.filter(
         (summary) =>
           summaryNeedsAttention(summary) ||
-          isThreadUnread(summary.preview, summary.sessionSig, reads.get(summary.workspaceId))
+          isChatUnread(summary, reads, open)
       ).length,
-    [summaries, reads]
+    [summaries, reads, open]
   );
 
   useEffect(() => {

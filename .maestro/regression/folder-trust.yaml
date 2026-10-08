@@ -5,6 +5,12 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
+# Below the Demo's two-agent workspace and its agent rows, near the tab bar.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w3
+    direction: DOWN
+    centerElement: true
 - tapOn:
     id: chat-row-w3
 - tapOn:
