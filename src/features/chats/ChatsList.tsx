@@ -69,7 +69,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
   const { summaries, loading, error, errorCode, refresh } =
-    useWorkspaces(client);
+    useWorkspaces(client, connection?.id ?? null);
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
   const prefs = useChatPrefs(db, connection, summaries);

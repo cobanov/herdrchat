@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { backoffDelay, needsTheUser } from '@/lib/poll';
 import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
+import { checkHostTheme } from '@/state/hostTheme';
 import { useSettings } from '@/state/settings';
+import { themeCheckDue } from '@/lib/theme/hostThemeClient';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -80,7 +83,7 @@ const EVENT_DEBOUNCE_MS = 250;
  * while the stream is live and back at its old rate when it is not (a host
  * with no socket bridge, or a stream between reconnects).
  */
-export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
+export function useWorkspaces(client: HerdrClient | null, connectionId: string | null = null): WorkspacesState {
   const [summaries, setSummaries] = useState<ChatSummary[]>([]);
   // Starts true and is only ever cleared, never re-armed: switching servers
   // remounts the screen (it is keyed by connection id), which is React's own
@@ -118,6 +121,27 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
   useEffect(() => {
     liveRef.current = live;
   }, [live]);
+
+  /**
+   * When the host theme was last checked; null asks for a check on the next
+   * poll that works. The check rides on this loop rather than a timer of its
+   * own (see `themeCheckDue`): it needs a live connection, and this loop is
+   * already the one that knows when there is one.
+   */
+  const lastThemeCheck = useRef<number | null>(null);
+  const useHostThemes = useSettings((state) => state.useHostThemes);
+  const themeEnabled = useRef(useHostThemes);
+  useEffect(() => {
+    themeEnabled.current = useHostThemes;
+  }, [useHostThemes]);
+  // Back from the background, the theme may have been changed by the agent
+  // the person left to do it. Checked on the first poll after, not 10 s later.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') lastThemeCheck.current = null;
+    });
+    return () => subscription.remove();
+  }, []);
 
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
@@ -158,6 +182,14 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       lastCode.current = null;
       setHerdrMissing(false);
       setServerStopped(false);
+      // After the list is published, and not awaited: the theme is a side
+      // task of this poll, and a slow or failing check must neither delay the
+      // rows nor turn into the list's error. `checkHostTheme` never rejects.
+      const now = Date.now();
+      if (connectionId !== null && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
+        lastThemeCheck.current = now;
+        void checkHostTheme(connectionId, client.transport);
+      }
       return false;
     } catch (thrown) {
       if (!alive.current) return true;
@@ -171,7 +203,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     } finally {
       if (alive.current) setLoading(false);
     }
-  }, [client]);
+  }, [client, connectionId]);
 
   useEffect(() => {
     alive.current = true;
@@ -241,6 +273,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
     refresh: useCallback(async () => {
       failures.current = 0;
       forcePreviews.current = true;
+      lastThemeCheck.current = null;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),

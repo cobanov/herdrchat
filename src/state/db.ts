@@ -388,6 +388,28 @@ export async function clearConnectionSettings(
   );
 }
 
+// MARK: - Host themes
+
+/**
+ * Each host's theme.json is cached in `settings` under `hostTheme.<connection
+ * id>`, so `clearConnectionSettings` deletes it with the host like every other
+ * per-host setting. The value is the file as `serializeThemeFile` writes it.
+ */
+export const HOST_THEME_KEY_PREFIX = 'hostTheme.';
+
+export const hostThemeKey = (connectionId: string) => `${HOST_THEME_KEY_PREFIX}${connectionId}`;
+
+/** Every cached host theme, for the launch. */
+export async function loadHostThemeRows(
+  db: SQLite.SQLiteDatabase
+): Promise<{ key: string; value: string }[]> {
+  return db.getAllAsync<{ key: string; value: string }>(
+    'SELECT key, value FROM settings WHERE substr(key, 1, length(?)) = ?',
+    HOST_THEME_KEY_PREFIX,
+    HOST_THEME_KEY_PREFIX
+  );
+}
+
 // MARK: - Cache maintenance
 
 /** How many cached bubbles are on disk, across every host. */
