@@ -1,3 +1,4 @@
+import { darkPalette, lightPalette } from '@/theme/tokens';
 import {
   COLOUR_PATTERN,
   contrastRatio,
@@ -117,5 +118,17 @@ describe('lightness', () => {
 
   it('writes a wash the way the palette does', () => {
     expect(toRgba(c('#5459D4'), 0.12)).toBe('rgba(84, 89, 212, 0.12)');
+  });
+});
+
+describe('the app’s own palettes', () => {
+  // Settings lists a theme.json's problems in the attention colour on a card;
+  // the light token cleared the canvas but read at 4.46:1 there.
+  it('keeps attention text readable on the canvas and on the cards', () => {
+    for (const palette of [lightPalette, darkPalette]) {
+      for (const surface of [palette.systemBackground, palette.secondarySystemBackground, palette.chatCard]) {
+        expect(contrastRatio(c(palette.attention), c(surface))).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
+      }
+    }
   });
 });

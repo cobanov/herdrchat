@@ -228,5 +228,5 @@ export const DEMO_THEME_TEXT = `${JSON.stringify(DEMO_THEME, null, 2)}\n`;
 export const DEMO_THEME_REPLY = [
   `Done. I wrote ~/.herdrchat/theme.json with a warm dusk accent and named it "${DEMO_THEME.name}".`,
   '',
-  'The app picks it up within about 30 seconds, or right away from Settings > Appearance > Reload theme.',
+  'The app picks it up the next time its chat list is on screen (it checks about every 10 seconds there), or right away from Settings > Appearance > Reload theme.',
 ].join('\n');

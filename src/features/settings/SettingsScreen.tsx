@@ -120,7 +120,7 @@ export default function SettingsScreen() {
             value={settings.themePreference}
             onChange={(next) => update('themePreference', next)}
           />
-          <HostThemeSection /></>}
+          <HostThemeSection key={connection?.id ?? 'none'} /></>}
 
           {show('conversations') && <><HighlightOnLink section="conversations" target={target} onMeasure={onMeasure}>
             <Section title="Conversations">

@@ -10,15 +10,45 @@ appId: dev.herdr.HerdrChat
 - tapOn: Settings
 - scrollUntilVisible:
     element:
+      id: toggle-host-themes
+    direction: DOWN
+# A failed earlier run can leave Use host themes off; this flow needs it on.
+- runFlow:
+    when:
+      visible:
+        id: toggle-host-themes
+        checked: false
+    commands:
+      - tapOn:
+          id: toggle-host-themes
+# Waited for, not asserted: a failed earlier run can also leave the Demo's
+# theme cached on the device, and the first check clears it. That check rides
+# on the chat list's poll, so pass by Chats to let it run.
+- tapOn: Chats
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
       id: host-theme-row
     direction: DOWN
-# Waited for, not asserted: a failed earlier run can leave the Demo's theme
-# cached on the device, and the first check after launch clears it.
 - extendedWaitUntil:
     visible:
       id: host-theme-row
       text: 'Host theme, Default'
     timeout: 15000
+# Off while the agent writes, so the chat list's own check (every 10 s, and
+# at once on the way back from the thread) cannot pick the file up: only
+# Reload theme can, which is what this flow tests.
+- scrollUntilVisible:
+    element:
+      id: toggle-host-themes
+    direction: DOWN
+- tapOn:
+    id: toggle-host-themes
+- scrollUntilVisible:
+    element:
+      id: host-theme-row
+      text: 'Host theme, Off'
+    direction: UP
 
 # The agent writes the file.
 - tapOn: Chats
@@ -38,11 +68,12 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: thread-back
 
-# The phone follows it.
+# Reload reads it, and the switch going back on shows what Reload stored.
 - tapOn: Settings
 - scrollUntilVisible:
     element:
       id: host-theme-row
+      text: 'Host theme, Off'
     direction: DOWN
 - runFlow:
     when:
@@ -58,10 +89,19 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: host-theme-reload
 - extendedWaitUntil:
-    visible:
+    visible: 'Read just now: Demo dusk.'
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: toggle-host-themes
+    direction: DOWN
+- tapOn:
+    id: toggle-host-themes
+- scrollUntilVisible:
+    element:
       id: host-theme-row
       text: 'Host theme, Demo dusk.*'
-    timeout: 10000
+    direction: UP
 - takeScreenshot: host-theme-applied-${APPEARANCE}
 
 # Reset moves it aside, and the app is back on its own colours.

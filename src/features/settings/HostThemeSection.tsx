@@ -13,7 +13,7 @@ import { AGENT_PROMPT } from '@/lib/theme/bootstrap';
 import { THEME_PATH_DISPLAY } from '@/lib/theme/schema';
 import { useSelectedConnection } from '@/state/connections';
 import { useHostTheme } from '@/state/hostTheme';
-import { reloadHostTheme, resetHostThemeToDefault } from '@/state/hostThemeActions';
+import { reloadHostTheme, resetHostThemeToDefault, writeHostThemeReference } from '@/state/hostThemeActions';
 import { saveSetting } from '@/state/saveSetting';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -23,6 +23,9 @@ import { hostThemeSummary } from './hostThemeSummary';
 /**
  * The selected host's theme.json: what it applies, what it got wrong, and the
  * three things a person does about it.
+ *
+ * Keyed by the connection where it is rendered, so a note, the open detail
+ * and "Copied" belong to one host and do not carry over to the next.
  *
  * The row folds the detail away because most people never open it: the value
  * already says which theme is on, and the problems are the only reason to look
@@ -43,6 +46,11 @@ export function HostThemeSection() {
   const hostName = connection === null ? 'the host' : connection.name || connection.host;
   const summary = hostThemeSummary(enabled, theme, hostName);
 
+  /**
+   * Run a host action and say how it went. A success says so in words too:
+   * the haptic is off for some people, and a reload that finds the same file
+   * changes nothing else on screen.
+   */
   const run = async (action: (connectionId: string) => Promise<boolean>) => {
     if (connection === null) return;
     setBusy(true);
@@ -51,6 +59,8 @@ export function HostThemeSection() {
     setBusy(false);
     if (answered) {
       haptics.success();
+      const read = hostThemeSummary(true, useHostTheme.getState().byConnection[connection.id], hostName);
+      setNote(`Read just now: ${read.value}.`);
     } else {
       haptics.error();
       setNote(`${hostName} did not answer. The theme is unchanged; try again when it is reachable.`);
@@ -60,7 +70,7 @@ export function HostThemeSection() {
   const reset = () => {
     confirmDestructive({
       title: 'Use the default theme?',
-      message: `theme.json on ${hostName} is renamed to theme.json.bak, not deleted. Rename it back to restore it.`,
+      message: `theme.json on ${hostName} is renamed to theme.json.bak (or .bak.1 and on, if that is taken), not deleted. Rename it back to restore it.`,
       confirmLabel: 'Use the default theme',
       onConfirm: () => void run(resetHostThemeToDefault),
     });
@@ -68,6 +78,9 @@ export function HostThemeSection() {
 
   const copyPrompt = () => {
     void Clipboard.setStringAsync(AGENT_PROMPT);
+    // The prompt sends the agent to the schema and README; write them now in
+    // case no theme check has (Use host themes off).
+    if (connection !== null) void writeHostThemeReference(connection.id);
     haptics.success();
     setCopied(true);
   };
@@ -153,7 +166,7 @@ export function HostThemeSection() {
         <Divider />
         <ActionRow
           label="Reset to default"
-          detail="Renames theme.json to theme.json.bak on the host."
+          detail="Renames theme.json to theme.json.bak on the host, keeping any older backup."
           tone="destructive"
           accessory="none"
           disabled={busy}

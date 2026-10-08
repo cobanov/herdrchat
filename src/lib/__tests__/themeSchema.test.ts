@@ -60,7 +60,7 @@ describe('the bootstrap files', () => {
     const readme = themeReadmeText();
     for (const key of PALETTE_KEYS) expect(readme).toContain(`\`${key}\``);
     expect(readme).toContain('Settings > Appearance > Reload theme');
-    expect(readme).toContain('about 30 s');
+    expect(readme).toContain('about every 10 s');
     expect(readme).toContain('theme.json.bak');
   });
 
@@ -70,7 +70,7 @@ describe('the bootstrap files', () => {
 
   it('asks the agent for contrast and leaves the wish to the person', () => {
     expect(AGENT_PROMPT).toBe(
-      'Restyle HerdrChat for me. Edit ~/.herdrchat/theme.json on this machine; the schema is in ~/.herdrchat/theme.schema.json and README.md explains the keys. Keep text contrast at or above 4.5:1. I would like: '
+      'Restyle HerdrChat for me. Edit ~/.herdrchat/theme.json on this machine; the schema is in ~/.herdrchat/theme.schema.json and ~/.herdrchat/README.md explains the keys. Keep text contrast at or above 4.5:1. I would like: '
     );
   });
 

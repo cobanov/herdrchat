@@ -9,6 +9,7 @@ import { clientFor, demoConnection, DEMO_CONNECTION_ID, useConnections } from '.
 import { hostThemeKey } from '../db';
 import {
   checkHostTheme,
+  clearHostSettings,
   fileOf,
   loadHostThemes,
   mirrorHostThemes,
@@ -16,7 +17,7 @@ import {
   resolveFile,
   useHostTheme,
 } from '../hostTheme';
-import { reloadHostTheme, resetHostThemeToDefault } from '../hostThemeActions';
+import { reloadHostTheme, resetHostThemeToDefault, writeHostThemeReference } from '../hostThemeActions';
 
 jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
@@ -28,6 +29,10 @@ function fakeDb(initial: Record<string, string> = {}) {
       [...rows].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
     runAsync: async (sql: string, key: string, value?: string) => {
       if (sql.startsWith('INSERT INTO settings')) rows.set(key, value!);
+      // clearConnectionSettings: every key ending in `.<connectionId>`.
+      else if (sql.startsWith('DELETE FROM settings WHERE length(key) > length(?)')) {
+        for (const stored of [...rows.keys()]) if (stored.length > key.length && stored.endsWith(key)) rows.delete(stored);
+      }
       else if (sql.startsWith('DELETE FROM settings WHERE key = ?')) rows.delete(key);
       else throw new Error(`unexpected ${sql}`);
     },
@@ -110,6 +115,23 @@ describe('persistence', () => {
     await Promise.resolve();
     stop();
     expect(rows.size).toBe(0);
+  });
+
+  // Removing a host and erasing the app cleared the rows; the theme in memory
+  // stayed on screen, and a host re-added under the same id opened in it.
+  it('forgets a host’s theme, on screen and in the table, with its other settings', async () => {
+    const { db, rows } = fakeDb({
+      [hostThemeKey('h1')]: '{"kind":"missing"}',
+      [hostThemeKey('h10')]: '{"kind":"missing"}',
+      'notifyMode.h1': 'all',
+    });
+    useHostTheme.getState().set('h1', resolveFile({ kind: 'present', mtime: 2, text: WARM }));
+    useHostTheme.getState().set('h10', resolveFile({ kind: 'missing' }));
+    await clearHostSettings(db, 'h1');
+    expect(Object.keys(useHostTheme.getState().byConnection)).toEqual(['h10']);
+    expect([...rows.keys()]).toEqual([hostThemeKey('h10')]);
+    // The suffix clearConnectionSettings matches on.
+    expect(hostThemeKey('some-id').endsWith('.some-id')).toBe(true);
   });
 
   it('keeps what a check found when the stored themes load after it', async () => {
@@ -202,5 +224,15 @@ describe('Reload and Reset on the Demo host', () => {
     expect(useHostTheme.getState().byConnection[DEMO_CONNECTION_ID]?.status).toBe('missing');
     expect(await reloadHostTheme('nobody')).toBe(false);
     expect(await resetHostThemeToDefault('nobody')).toBe(false);
+  });
+
+  // The copied prompt names the schema and README; with Use host themes off
+  // no check runs to write them, so copying the prompt does.
+  it('writes the reference files without a theme check', async () => {
+    expect(await writeHostThemeReference(DEMO_CONNECTION_ID)).toBe(true);
+    const demo = clientFor(demoConnection()).transport as DemoHost;
+    expect(demo.hostFile(THEME_README_FILE)).toContain('# HerdrChat host theme');
+    expect(useHostTheme.getState().byConnection[DEMO_CONNECTION_ID]).toBeUndefined();
+    expect(await writeHostThemeReference('nobody')).toBe(false);
   });
 });

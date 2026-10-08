@@ -9,6 +9,7 @@ import { HostThemeSection } from '../HostThemeSection';
 
 const mockReload = jest.fn(async (_id: string) => true);
 const mockReset = jest.fn(async (_id: string) => true);
+const mockWriteReference = jest.fn(async (_id: string) => true);
 const mockSetString = jest.fn(async (_text: string) => true);
 const mockSaveSetting = jest.fn();
 let mockEnabled = true;
@@ -33,6 +34,7 @@ jest.mock('@/state/connections', () => ({
 jest.mock('@/state/hostThemeActions', () => ({
   reloadHostTheme: (id: string) => mockReload(id),
   resetHostThemeToDefault: (id: string) => mockReset(id),
+  writeHostThemeReference: (id: string) => mockWriteReference(id),
 }));
 
 const present = (text: string) =>
@@ -61,8 +63,12 @@ it('opens onto the path and the problems verbatim, and its three actions reach t
 
   await fireEvent.press(screen.getByTestId('host-theme-reload'));
   expect(mockReload).toHaveBeenCalledWith('box');
+  // Said in words as well as the haptic, which may be off.
+  expect(screen.getByText('Read just now: Custom.')).toBeOnTheScreen();
   await fireEvent.press(screen.getByTestId('host-theme-copy'));
   expect(mockSetString).toHaveBeenCalledWith(AGENT_PROMPT);
+  // The files the prompt names are written even when no theme check has run.
+  expect(mockWriteReference).toHaveBeenCalledWith('box');
   expect(screen.getByText('Copied')).toBeOnTheScreen();
   await fireEvent.press(screen.getByTestId('host-theme-reset'));
   expect(mockReset).toHaveBeenCalledWith('box');

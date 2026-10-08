@@ -40,7 +40,7 @@ export function themeExampleText(): string {
 /** What `Copy prompt for an agent` puts on the clipboard; the person types their wish after it. */
 export const AGENT_PROMPT =
   `Restyle HerdrChat for me. Edit ~/${THEME_DIR}/${THEME_FILE} on this machine; the schema is in ` +
-  `~/${THEME_DIR}/${THEME_SCHEMA_FILE} and ${THEME_README_FILE} explains the keys. ` +
+  `~/${THEME_DIR}/${THEME_SCHEMA_FILE} and ~/${THEME_DIR}/${THEME_README_FILE} explains the keys. ` +
   `Keep text contrast at or above ${MIN_TEXT_CONTRAST}:1. I would like: `;
 
 const percent = (fraction: number) => `${Math.round(fraction * 100)}%`;
@@ -81,8 +81,8 @@ export function themeReadmeText(): string {
     `- \`tintMuted\` to the accent at ${percent(TINT_MUTED_ALPHA.light)} alpha (light) or ${percent(TINT_MUTED_ALPHA.dark)} (dark);`,
     `- \`onTint\` to white when white text reaches ${MIN_TEXT_CONTRAST}:1 on the tint (the accent, or the`,
     '  mode\'s own `tint` if set), otherwise to `label` when that reads better;',
-    `- \`bubbleOutgoing\` to the accent; when \`onTint\` is white, darkened (same hue) until white text`,
-    `  clears ${MIN_TEXT_CONTRAST}:1 on it.`,
+    `- \`bubbleOutgoing\` to the accent darkened (same hue) until white text clears ${MIN_TEXT_CONTRAST}:1 on it`,
+    '  when `onTint` is white, or to the tint itself when `onTint` is `label`.',
     '',
     `Keep text at ${MIN_TEXT_CONTRAST}:1 or more against what it sits on: \`label\` and \`secondaryLabel\``,
     'on `systemBackground`, `chatCard` and `bubbleIncoming`; `onTint` on `tint` and `bubbleOutgoing`.',
@@ -93,8 +93,10 @@ export function themeReadmeText(): string {
     '',
     '## Seeing a change',
     '',
-    'The phone reloads within about 30 s; Settings > Appearance > Reload theme forces it.',
-    `Reset to default there renames \`${THEME_FILE}\` to \`${THEME_FILE}.bak\` rather than deleting it.`,
+    'The phone checks for a change about every 10 s while its chat list is on screen;',
+    'Settings > Appearance > Reload theme reads it at once.',
+    `Reset to default there renames \`${THEME_FILE}\` to \`${THEME_FILE}.bak\` (\`${THEME_FILE}.bak.1\` and on`,
+    'when that is taken) rather than deleting it.',
     '',
   ].join('\n');
 }

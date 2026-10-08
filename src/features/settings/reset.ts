@@ -10,11 +10,10 @@ import {
   type ServerConnection,
 } from '@/state/connections';
 import { SELECTED_KEY } from '@/state/Hydrate';
-import { useHostTheme } from '@/state/hostTheme';
+import { clearHostSettings } from '@/state/hostTheme';
 import { clearAttachmentCopies } from '@/state/attachmentFiles';
 import {
   clearCachedMessages,
-  clearConnectionSettings,
   clearPrompts,
   deleteConnection,
   deleteSetting,
@@ -83,11 +82,10 @@ export async function resetAppData(
       // mechanism the secrets ordering above avoids. They are the user's own
       // words, which is the reason this is offered at all.
       await clearPrompts(db, connection.id);
-      await clearConnectionSettings(db, connection.id);
+      // The in-memory theme goes with the rows, or the erased host's colours
+      // stay on screen until the next launch finds its row gone.
+      await clearHostSettings(db, connection.id);
       await deleteConnection(db, connection.id);
-      // The in-memory theme too, or the erased host's colours stay on screen
-      // until the next launch finds its row gone.
-      useHostTheme.getState().clear(connection.id);
     } catch {
       remaining.push(connection);
     }

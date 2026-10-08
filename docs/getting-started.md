@@ -158,8 +158,9 @@ Appearance**, open **Host theme** and tap **Copy prompt for an agent**, then
 paste it into a chat and finish the sentence:
 
 > Restyle HerdrChat for me. Edit ~/.herdrchat/theme.json on this machine; the
-> schema is in ~/.herdrchat/theme.schema.json and README.md explains the keys.
-> Keep text contrast at or above 4.5:1. I would like: a warm dusk look
+> schema is in ~/.herdrchat/theme.schema.json and ~/.herdrchat/README.md
+> explains the keys. Keep text contrast at or above 4.5:1. I would like: a
+> warm dusk look
 
 Every key is optional:
 
@@ -177,17 +178,21 @@ Every key is optional:
   Colours are `#RGB`, `#RRGGBB`, `#RRGGBBAA`, `rgb(...)` or `rgba(...)`.
 - `accent` sets the tint, its muted wash, the outgoing bubble and the text on
   it for both schemes, darkening the bubble until white text on it clears
-  4.5:1. A key you set in `light` or `dark` wins over it.
+  4.5:1 (on a tint too light for white text, the text is dark and the bubble
+  is the tint). A key you set in `light` or `dark` wins over it.
 - `avatars` replaces the chat avatar colours; each chat keeps its slot.
 - `name` is what Settings shows, up to 40 characters.
 
-When it connects, the app writes `theme.schema.json`, `README.md` (every
-key, one line each) and `theme.example.json` next to it when they are missing, and never overwrites
-them. A wrong key or colour is skipped and listed under **Host theme**; the rest
-of the file still applies. The phone checks for changes within about 30 seconds;
-**Reload theme** reads the file at once, **Reset to default** renames it to
-`theme.json.bak`, and **Use host themes** turns every host's theme off without
-touching the files.
+The first time it checks a host's theme, and whenever you copy the agent
+prompt, the app writes `theme.schema.json`, `README.md` (every key, one line
+each) and `theme.example.json` next to it when they are missing, and never
+overwrites them. A wrong key or colour is skipped and listed under **Host
+theme**; the rest of the file still applies. The phone checks for changes
+about every 10 seconds while the chat list is on screen; **Reload theme**
+reads the file at once, **Reset to default** renames it to `theme.json.bak`
+(`theme.json.bak.1` and on when that is taken, so an older backup is kept),
+and **Use host themes** turns every host's theme off without touching the
+files.
 
 ## Known limitations
 
