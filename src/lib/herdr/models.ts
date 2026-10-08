@@ -93,6 +93,22 @@ export function isConversationalAgent(agent: AgentInfo): boolean {
 }
 
 /**
+ * How the agents herdr detects are named to a person. Letta Code joined in
+ * herdr 0.9.1 (#120); anything else shows herdr's own id.
+ */
+export const AGENT_NAMES: Readonly<Record<string, string>> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  omp: 'OMP',
+  letta: 'Letta',
+};
+
+/** A pane's agent by name: "Claude", herdr's own id for one not named above, "Terminal" for a shell. */
+export function agentName(kind: string | null): string {
+  return kind === null ? 'Terminal' : AGENT_NAMES[kind] ?? kind;
+}
+
+/**
  * Stable identity of the conversation(s) these agents host.
  *
  * A chat's identity is its SESSION, not its workspace slot — this is what

@@ -6,6 +6,7 @@ import {
   decodeWorkspace,
   hasSessionReference,
   isConversationalAgent,
+  agentName,
   needsAttention,
   sessionSignature,
   toAgentStatus,
@@ -257,5 +258,13 @@ describe('session signature', () => {
     expect(sessionSignature([omp('sess-a', 'id')])).not.toBe(sessionSignature([agent({})]));
     expect(sessionSignature([omp('/a,b.jsonl')])).not.toBe(sessionSignature([omp('/a'), omp('b.jsonl')]));
     expect(sessionSignature([omp('/old.jsonl')])).not.toBe(sessionSignature([omp('/new.jsonl')]));
+  });
+});
+
+describe('agent name', () => {
+  it('names the agents it knows, keeps herdr\'s id for the rest, and calls a shell a terminal', () => {
+    expect(['claude', 'codex', 'omp', 'letta'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta']);
+    expect(agentName('gemini')).toBe('gemini');
+    expect(agentName(null)).toBe('Terminal');
   });
 });

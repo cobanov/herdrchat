@@ -34,7 +34,8 @@ import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
-import { sessionSignature } from '@/lib/herdr/models';
+import { chatKey } from '@/lib/chatKey';
+import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
@@ -48,9 +49,14 @@ import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
 
-/** One workspace conversation. */
-export default function ThreadScreen({ workspaceId, title, onBack }: {
+/**
+ * One conversation: a workspace's, or with `paneId` the one agent in that pane
+ * of a workspace that holds several.
+ */
+export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   workspaceId: string;
+  /** Absent: the workspace chat, every agent in it. */
+  paneId?: string;
   title?: string;
   onBack?: () => void;
 }) {
@@ -82,7 +88,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId);
+  /** Where this chat's read marker and draft are kept; the bare workspace id for the workspace chat. */
+  const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
 
   // The agents array is rebuilt by every status poll, so it cannot go in the
@@ -104,13 +112,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         // the chat that actually lands in this workspace slot.
         const sig = sessionSignature(agentsRef.current);
         if (sig === null) return;
-        void markThreadRead(db, connectionId, workspaceId, sig, Date.now());
+        void markThreadRead(db, connectionId, chat, sig, Date.now());
       };
       stamp();
       // Again on the way out, so a message that arrived while you were reading
       // it counts as seen rather than re-lighting the row you just left.
       return stamp;
-    }, [db, connection, workspaceId])
+    }, [db, connection, chat])
   );
 
   const rows = useMemo(
@@ -131,7 +139,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    */
   const heading = thread.workspaceLabel ?? (title !== undefined && title.length > 0 ? title : 'Chat');
 
-  const key = draftKey(connection?.id ?? '', workspaceId);
+  const key = draftKey(connection?.id ?? '', chat);
   const sessionSig = sessionSignature(thread.agents);
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
@@ -226,7 +234,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
   const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
+  /**
+   * One agent of several shares the workspace's title with its siblings, so
+   * the subtitle says which it is: the provider leads, and the folder below
+   * already follows. Undefined in the workspace chat, whose subtitle is as it
+   * was. Read from the agent the poll bound, so it waits for the first poll
+   * rather than guessing.
+   */
+  const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
   const subtitle = [
+    paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
