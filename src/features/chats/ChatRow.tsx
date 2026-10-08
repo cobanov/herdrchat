@@ -5,59 +5,11 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
-import { agentName, type AgentStatus } from '@/lib/herdr/models';
-import { paneChats } from './chatGroups';
+import { rowContext, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
 /** Shared with the loading skeleton so content does not jump on arrival. */
 export const AVATAR_SIZE = size.chatBadge;
-
-/**
- * How the agents herdr detects are named on a row. Letta Code joined in herdr
- * 0.9.1 (#120); anything else shows herdr's own id. One table, in models.ts,
- * so a thread's header and a row never name the same agent two ways.
- */
-export { AGENT_NAMES } from '@/lib/herdr/models';
-
-/** What a row says about an agent, or a workspace, that has no message to show. */
-export function statusLabel(status: AgentStatus): string {
-  switch (status) {
-    case 'blocked': return 'Waiting for you';
-    case 'working': return 'Working';
-    case 'unknown': return 'Status unknown';
-    case 'done': return 'Done';
-    default: return 'Idle';
-  }
-}
-
-/**
- * The line under a workspace's title: which agent, in which folder.
- *
- * With several agents it names them together and the folder they share,
- * because the rows under it name each one. Naming the one the old election
- * picked made a two-agent workspace look like a one-agent one.
- */
-export function rowContext(summary: ChatSummary): string {
-  const panes = paneChats(summary);
-  if (panes.length === 0) {
-    const agent = summary.agents.find((item) => item.focused && item.agent !== null)
-      ?? summary.agents.find((item) => item.agent !== null);
-    const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
-    return [agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
-  }
-  const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];
-  const shared = sharedFolder(panes.map((pane) => pane.agent.cwd)).split('/').filter(Boolean).slice(-2).join('/');
-  return [`${panes.length} agents`, names.join(', '), shared].filter(Boolean).join(' · ');
-}
-
-/** The deepest folder every path is in: `/a/b` for `/a/b` and `/a/b/c`. */
-function sharedFolder(paths: readonly string[]): string {
-  const split = paths.map((path) => path.split('/').filter(Boolean));
-  const first = split[0] ?? [];
-  let depth = 0;
-  while (depth < first.length && split.every((parts) => parts[depth] === first[depth])) depth += 1;
-  return first.slice(0, depth).join('/');
-}
 
 /** Something a row can do besides open, named for assistive technology. */
 export interface RowAction {

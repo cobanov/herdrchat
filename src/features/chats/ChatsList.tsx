@@ -418,12 +418,12 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             ] : []);
             if (row.kind === 'pane') {
               const { pane } = row;
-              const siblings = paneChats(item);
               return (
                 <PaneRow
                   summary={item}
                   pane={pane}
-                  last={siblings[siblings.length - 1]?.paneId === pane.paneId}
+                  first={row.first}
+                  last={row.last}
                   selected={openKey === chatKey({ workspaceId: item.workspaceId, paneId: pane.paneId })}
                   unread={isPaneUnread(item, pane, reads, openKey)}
                   onPress={() => {

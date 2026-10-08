@@ -80,3 +80,19 @@ it('keeps an agent row under its workspace when the workspace is pinned', () => 
   ]);
   expect(ids(groupChats([api], '', new Map([['api', 1]])))).toEqual(['pinned', 'api', 'pane:api:p1', 'pane:api:p2']);
 });
+
+// A search that lists only some agents still has to end the rail at the last
+// one shown; ending it at the workspace's last agent left it hanging into the
+// next row.
+it('marks the first and last agent row actually listed', () => {
+  const api = withAgents(chat('api', 'idle'), [
+    agentIn('api', 'api:p1', 'claude', '/home/demo/api'),
+    agentIn('api', 'api:p2', 'codex', '/home/demo/api/web'),
+    agentIn('api', 'api:p3', 'claude', '/home/demo/api/docs'),
+  ]);
+  const ends = (rows: ReturnType<typeof groupChats>) => rows.flatMap((row) =>
+    row.kind === 'pane' ? [`${row.pane.paneId}:${row.first ? 'first' : ''}:${row.last ? 'last' : ''}`] : []);
+  expect(ends(groupChats([api], ''))).toEqual(['api:p1:first:', 'api:p2::', 'api:p3::last']);
+  expect(ends(groupChats([api], 'CLAUDE'))).toEqual(['api:p1:first:', 'api:p3::last']);
+  expect(ends(groupChats([api], 'CODEX'))).toEqual(['api:p2:first:last']);
+});

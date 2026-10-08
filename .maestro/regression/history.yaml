@@ -8,6 +8,7 @@ appId: dev.herdr.HerdrChat
     element:
       id: chat-row-w5
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: chat-row-w5
 # Opens on the end of the conversation.

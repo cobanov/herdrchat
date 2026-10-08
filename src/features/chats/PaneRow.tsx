@@ -6,7 +6,8 @@ import { Text } from '@/components/Text';
 import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
-import { formatListTime, statusLabel } from './ChatRow';
+import { formatListTime } from './ChatRow';
+import { statusLabel } from './rowText';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
@@ -22,13 +23,19 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
  * there is no swipe here, and a long press offers the workspace's own sheet.
  */
 export const PaneRow = memo(function PaneRow({
-  summary, pane, unread, selected = false, last = false, onPress, onLongPress,
+  summary, pane, unread, selected = false, first = false, last = false, onPress, onLongPress,
 }: {
   summary: ChatSummary;
   pane: PaneSummary;
   unread: boolean;
   selected?: boolean;
-  /** The last agent under its workspace: the rail stops at this row. */
+  /**
+   * The first agent listed under its workspace: the rail reaches up across
+   * the gap below the workspace's card, which would otherwise leave it
+   * hanging off nothing.
+   */
+  first?: boolean;
+  /** The last agent listed under its workspace: the rail stops at this row. */
   last?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
@@ -46,11 +53,12 @@ export const PaneRow = memo(function PaneRow({
   return (
     <View style={{ flexDirection: 'row', paddingBottom: spacing.sm }}>
       {/* The rail: down from the workspace row, with a branch into this one.
+          The first row's line starts a gap higher, where the card ends.
           Its height is the card's, so the branch meets the card's middle;
           the gap below the card carries the line on to the next agent. */}
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: size.paneIndent }}>
         <View style={{ flex: 1 }}>
-          <View style={{ position: 'absolute', left: size.paneIndent / 2, top: 0, bottom: last ? '50%' : 0, width: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />
+          <View style={{ position: 'absolute', left: size.paneIndent / 2, top: first ? -spacing.sm : 0, bottom: last ? '50%' : 0, width: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />
           <View style={{ position: 'absolute', left: size.paneIndent / 2, right: 0, top: '50%', height: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />
         </View>
         <View style={{ height: spacing.sm }}>

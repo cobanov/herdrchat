@@ -12,7 +12,15 @@ export type ChatListItem =
   | { kind: 'group'; id: ChatGroupId; title: string; count: number }
   | { kind: 'chat'; summary: ChatSummary }
   /** One agent of a workspace that holds several, listed under its workspace's row. */
-  | { kind: 'pane'; summary: ChatSummary; pane: PaneSummary };
+  | {
+    kind: 'pane'; summary: ChatSummary; pane: PaneSummary;
+    /**
+     * Where this row sits among the agents listed under its workspace, which
+     * a search can make fewer than the workspace holds. The row's rail joins
+     * the workspace card above the first and stops at the last.
+     */
+    first: boolean; last: boolean;
+  };
 
 /**
  * The agents of a workspace that get rows of their own. One agent is the
@@ -65,7 +73,9 @@ export function groupChats(
       { kind: 'group', id, title, count: chats.length },
       ...chats.flatMap((summary): ChatListItem[] => [
         { kind: 'chat', summary },
-        ...(panesOf.get(summary.workspaceId) ?? []).map((pane): ChatListItem => ({ kind: 'pane', summary, pane })),
+        ...(panesOf.get(summary.workspaceId) ?? []).map((pane, index, listed): ChatListItem => ({
+          kind: 'pane', summary, pane, first: index === 0, last: index === listed.length - 1,
+        })),
       ]),
     ];
   });
