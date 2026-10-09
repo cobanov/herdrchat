@@ -127,6 +127,16 @@ export const size = {
   toolOutputLines: 12,
   /** The pin and muted marks beside a chat row's title. */
   rowBadgeGlyph: 12,
+  /**
+   * One agent's row under its workspace: how far it is inset (the rail it
+   * hangs off runs down the middle of that inset), and its provider tile,
+   * smaller than the workspace's badge so the row reads as part of it.
+   */
+  paneIndent: 24,
+  paneBadge: 28,
+  paneBadgeGlyph: 15,
+  /** A row's status mark: the unread dot, the attention circle. */
+  rowStatusGlyph: 18,
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
   /**

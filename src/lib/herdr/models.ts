@@ -81,6 +81,33 @@ export function hasSessionReference(agent: AgentInfo): boolean {
     (session?.kind === 'id' || (agent.agent === 'omp' && session?.kind === 'path'));
 }
 
+/** The agents whose transcripts this app reads and whose panes it talks to. */
+export const CONVERSATIONAL_AGENTS: readonly string[] = ['claude', 'codex', 'omp'];
+
+/**
+ * True for a pane holding an agent the app can hold a conversation with. A
+ * plain shell, or an agent with no transcript reader, has no chat of its own.
+ */
+export function isConversationalAgent(agent: AgentInfo): boolean {
+  return agent.agent !== null && CONVERSATIONAL_AGENTS.includes(agent.agent);
+}
+
+/**
+ * How the agents herdr detects are named to a person. Letta Code joined in
+ * herdr 0.9.1 (#120); anything else shows herdr's own id.
+ */
+export const AGENT_NAMES: Readonly<Record<string, string>> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  omp: 'OMP',
+  letta: 'Letta',
+};
+
+/** A pane's agent by name: "Claude", herdr's own id for one not named above, "Terminal" for a shell. */
+export function agentName(kind: string | null): string {
+  return kind === null ? 'Terminal' : AGENT_NAMES[kind] ?? kind;
+}
+
 /**
  * Stable identity of the conversation(s) these agents host.
  *

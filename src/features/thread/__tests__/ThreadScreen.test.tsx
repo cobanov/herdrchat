@@ -37,9 +37,10 @@ jest.mock('@/state/connections', () => ({
 let mockWorkspaceLabel: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
+let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
-    agents: [],
+    agents: mockAgents,
     workspaceLabel: mockWorkspaceLabel,
     offline: mockOffline,
     paused: mockPaused,
@@ -118,4 +119,26 @@ it.each([
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(new RegExp(`· ${word}$`));
   mockOffline = false;
   mockPaused = false;
+});
+
+// A workspace with several agents gives each its own chat. They share the
+// workspace's title, so the header has to say which agent this one is.
+it('names the agent of a pane chat in its header, and keeps its draft apart from the workspace chat', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'api';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: null };
+  mockAgents = [{ agent: 'codex', paneId: 'w6:p2', agentSession: null }];
+  const pane = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" />);
+  expect(pane.getByTestId('thread-title')).toHaveTextContent('api');
+  expect(pane.getByTestId('thread-meta')).toHaveTextContent(/^Codex · /);
+  await fireEvent.changeText(pane.getByTestId('composer-input'), 'only for the second agent');
+  await pane.unmount();
+  const workspace = await render(<ThreadScreen workspaceId="w6" />);
+  expect(workspace.getByTestId('thread-meta')).not.toHaveTextContent(/^Codex/);
+  expect(workspace.getByTestId('composer-input')).toHaveProp('value', '');
+  await workspace.unmount();
+  const again = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" />);
+  expect(again.getByTestId('composer-input')).toHaveProp('value', 'only for the second agent');
+  mockAgents = [];
+  mockWorkspaceLabel = null;
 });

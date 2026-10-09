@@ -20,9 +20,12 @@ export default function ChatsScreen() {
   return (
     <AdaptiveColumns sidebar={<ChatsList selectedWorkspaceId={selected} />}>
       {selected !== undefined ? (
+        // Keyed by pane too, so moving between a workspace and one of its
+        // agents remounts the thread instead of carrying one's state over.
         <ThreadScreen
-          key={`${connection?.id}:${selected}`}
+          key={`${connection?.id}:${selected}:${selection?.paneId ?? ''}`}
           workspaceId={selected}
+          paneId={selection?.paneId}
           title={selection?.title}
           onBack={wide ? undefined : () => select(null)}
         />

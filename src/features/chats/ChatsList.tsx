@@ -12,7 +12,9 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { groupChats } from './chatGroups';
+import { groupChats, paneChats } from './chatGroups';
+import { isChatUnread, isPaneUnread } from './chatUnread';
+import { PaneRow } from './PaneRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
@@ -27,7 +29,8 @@ import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
-import { isThreadUnread, type ThreadRead } from '@/lib/unread';
+import { chatKey } from '@/lib/chatKey';
+import { type ThreadRead } from '@/lib/unread';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
@@ -45,7 +48,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
 
 /**
- * Chats, the primary destination. One row per workspace, with live presence.
+ * Chats, the primary destination. One row per workspace, with live presence,
+ * and under a workspace that runs several agents, one row for each of them.
  *
  * Thin by design: everything it knows comes from `useWorkspaces`, everything it
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
@@ -94,6 +98,20 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     };
   }, [keyChanged, connection]);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
+  // The selection names the pane too; the prop only says which workspace, and
+  // a pane row and its workspace's row are never selected together. A pane
+  // whose row is gone (its workspace is back to one agent, or it closed) is
+  // the workspace chat to the list: otherwise nothing was highlighted, and the
+  // thread being read lit its own workspace's dot and badge.
+  const selectedSummary = summaries.find((item) => item.workspaceId === selectedWorkspaceId);
+  const selectedPaneId = selectedWorkspaceId !== undefined && selection?.workspaceId === selectedWorkspaceId &&
+    selectedSummary !== undefined && paneChats(selectedSummary).some((pane) => pane.paneId === selection.paneId)
+    ? selection.paneId : undefined;
+  const openKey = selectedWorkspaceId === undefined ? null : chatKey({ workspaceId: selectedWorkspaceId, paneId: selectedPaneId });
+  // Whatever a row draws from outside its item: the selection, and the read
+  // markers its unread dot compares against. A pane changes neither the rows
+  // nor the workspace id, so without the key its highlight would not repaint.
+  const listExtra = useMemo(() => ({ openKey, reads }), [openKey, reads]);
   useTabPressHaptic();
 
   const actions = useChatActions({
@@ -107,7 +125,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   });
 
   // Renaming from the persistent sidebar must also update the open header.
-  const selectedTitle = summaries.find((item) => item.workspaceId === selectedWorkspaceId)?.title;
+  const selectedTitle = selectedSummary?.title;
   useEffect(() => {
     if (selection !== null && selectedTitle !== undefined && selectedTitle !== selection.title) {
       select({ ...selection, title: selectedTitle });
@@ -135,14 +153,18 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
 
   // The tablet list stays focused as its detail changes. Refresh read markers
   // after the previous detail has stamped its final read time on unmount.
+  // By chat key, not workspace: moving between two agents of one workspace
+  // closes a thread too.
   useEffect(() => {
-    if (connection === null || selectedWorkspaceId === undefined) return;
+    if (connection === null || openKey === null) return;
     let alive = true;
     void loadThreadReads(db, connection.id).then((next) => { if (alive) setReads(next); });
     return () => { alive = false; };
-  }, [db, connection, selectedWorkspaceId]);
+  }, [db, connection, openKey]);
 
-  useAttentionBadge(summaries.filter((item) => item.workspaceId !== selectedWorkspaceId), reads, connection !== null);
+  // The chat on screen is not news. With one agent of a workspace open, the
+  // workspace still counts for its other agents.
+  useAttentionBadge(summaries, reads, connection !== null, openKey);
 
   /**
    * The hint stops the first time the gesture is used, so it teaches rather than
@@ -333,8 +355,9 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       ) : (
         <FlashList
           data={rows}
-          extraData={selectedWorkspaceId}
-          keyExtractor={(item) => item.kind === 'group' ? `group-${item.id}` : item.summary.workspaceId}
+          extraData={listExtra}
+          keyExtractor={(item) =>
+            item.kind === 'group' ? `group-${item.id}` : item.kind === 'pane' ? `pane-${item.pane.paneId}` : item.summary.workspaceId}
           getItemType={(item) => item.kind}
           // FlashList keeps the first visible row in place by default, so a
           // group that appears at the top (a chat pinned, or one that starts
@@ -389,6 +412,28 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             const muted = prefs.isMuted(item);
             // Both belong to a conversation, so both wait for its session id.
             const personal = item.sessionSig !== null;
+            const manage = () => actions.manageChat(item, personal ? [
+              { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
+              { label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) },
+            ] : []);
+            if (row.kind === 'pane') {
+              const { pane } = row;
+              return (
+                <PaneRow
+                  summary={item}
+                  pane={pane}
+                  first={row.first}
+                  last={row.last}
+                  selected={openKey === chatKey({ workspaceId: item.workspaceId, paneId: pane.paneId })}
+                  unread={isPaneUnread(item, pane, reads, openKey)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    openChat(connection.id, item.workspaceId, item.title, pane.paneId);
+                  }}
+                  onLongPress={manage}
+                />
+              );
+            }
             return (
               <SwipeableChatRow
                 summary={item}
@@ -396,16 +441,13 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 muted={muted}
                 onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
                 onToggleMute={personal ? () => prefs.toggleMute(item) : undefined}
-                selected={item.workspaceId === selectedWorkspaceId}
-                unread={item.workspaceId !== selectedWorkspaceId && isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
+                selected={openKey === item.workspaceId}
+                unread={isChatUnread(item, reads, openKey)}
                 onPress={() => {
                   Keyboard.dismiss();
                   openChat(connection.id, item.workspaceId, item.title);
                 }}
-                onLongPress={() => actions.manageChat(item, personal ? [
-                  { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
-                  { label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) },
-                ] : [])}
+                onLongPress={manage}
                 onSwiped={markHintSeen}
                 onRename={() => actions.renameChat(item)}
                 onClose={() => actions.closeChat(item)}
