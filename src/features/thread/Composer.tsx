@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
 import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
+import { insertNewline, returnAction } from '@/lib/composerKeys';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
+import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
   composerMaxHeight,
@@ -72,7 +74,13 @@ export function Composer({
   const { colors, reduceMotion } = useTheme();
   const minHeight = useComposerMinHeight();
   const [focused, setFocused] = useState(false);
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !disabled;
+  const draftEmpty = draft.trim().length === 0 && attachments.length === 0;
+  const canSend = !draftEmpty && !disabled;
+  const returnSends = useSettings((state) => state.returnSends);
+  const input = useRef<TextInput>(null);
+  // Where the caret is, for Shift-Return to put its newline. Only the native
+  // side knows; it reports every move, and nothing renders from it.
+  const selection = useRef({ start: 0, end: 0 });
 
   const sendScale = useSharedValue(1);
   const sendStyle = useAnimatedStyle(() => ({ transform: [{ scale: sendScale.get() }] }));
@@ -90,10 +98,31 @@ export function Composer({
     });
   };
 
+  const newline = () => {
+    const { start, end } = selection.current;
+    const next = insertNewline(draft, { start, end });
+    selection.current = { start: next.caret, end: next.caret };
+    onDraftChange(next.text);
+    // The field keeps the caret's distance from the end of the text, which is
+    // right after a newline typed at a caret but not after one that replaced a
+    // selection. Then put it where it belongs, once the new text is on screen.
+    if (start !== end) requestAnimationFrame(() => input.current?.setSelection(next.caret, next.caret));
+  };
+
+  // Every way of pressing Return asks the one table in `composerKeys`.
+  const pressReturn = (modifiers: { shift: boolean; command: boolean }) => {
+    const action = returnAction({ returnSends, draftEmpty, disabled: disabled || uploading, ...modifiers });
+    if (action === 'send') send();
+    else if (action === 'newline') newline();
+  };
+
   return (
-    // Command-Return sends from an iPad's hardware keyboard, where Return alone
-    // has to stay a newline (#113).
-    <SubmitShortcutView onSubmitShortcut={send}>
+    // Command-Return sends from an iPad's hardware keyboard whichever way the
+    // setting points (#113). While Return sends, Shift-Return comes through
+    // here too: the text field alone cannot tell it from Return.
+    <SubmitShortcutView
+      onSubmitShortcut={() => pressReturn({ shift: false, command: true })}
+      onNewlineShortcut={returnSends ? () => pressReturn({ shift: true, command: false }) : undefined}>
       <Glass
         variant="regular"
         style={{
@@ -181,6 +210,7 @@ export function Composer({
             </Pressable>
           )}
           <TextInput
+            ref={input}
             testID="composer-input"
             accessibilityLabel="Message"
             placeholder="Message"
@@ -189,7 +219,16 @@ export function Composer({
             onChangeText={onDraftChange}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
+            onSelectionChange={(event) => {
+              selection.current = event.nativeEvent.selection;
+            }}
             multiline
+            // Return sends, from the software keyboard and a hardware one; the
+            // field refuses the "\n" and reports a submit instead. Off, Return
+            // is a newline as #113 made it.
+            submitBehavior={returnSends ? 'submit' : 'newline'}
+            returnKeyType={returnSends ? 'send' : 'default'}
+            onSubmitEditing={() => pressReturn({ shift: false, command: false })}
             style={{
               flex: 1,
               minHeight,
