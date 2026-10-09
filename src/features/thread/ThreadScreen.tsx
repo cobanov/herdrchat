@@ -2,8 +2,13 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Pressable, View } from 'react-native';
-import { KeyboardAvoidingView, useKeyboardHandler, useKeyboardState } from 'react-native-keyboard-controller';
+import { Keyboard, Platform, Pressable, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardHandler,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,6 +40,7 @@ import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
@@ -264,8 +270,14 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * The controls keep their resting inset as layout and are TRANSLATED down by
    * what the keyboard takes of it. Animating their padding instead would
    * re-measure them, and set `controlsHeight`, on every frame of the drag.
+   *
+   * Seeded from the keyboard as it is now, not 0: the thread can open with a
+   * keyboard or an iPad's assistant bar already up (split view, focus left in
+   * another field), and the avoider and the footer read that state at once.
+   * Starting at 0 left the controls an inset higher than both until the next
+   * keyboard event.
    */
-  const keyboardHeight = useSharedValue(0);
+  const keyboardHeight = useSharedValue(KeyboardController.state().height);
   useKeyboardHandler(
     {
       onMove: (event) => {
@@ -287,13 +299,25 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // Floating controls clear the home indicator. Without this the composer sits
   // on the very bottom edge, where it is genuinely hard to hit.
   const restingInset = composerInset(0, safeBottom, spacing.md);
+  /*
+    The keyboard controller measures a keyboard by its frame's height and
+    assumes it rests on the bottom edge, so the avoider lifts the controls by
+    that much. The input-assistant bar an iPad shows with a hardware keyboard
+    can float above the edge, and the composer stayed that gap behind it. The
+    gap comes from the frame's origin and is added to the lift; for any docked
+    keyboard it is 0. Settled, not per frame: a hardware keyboard's bar has no
+    drag to follow.
+  */
+  const floatingGap = useFloatingKeyboardGap();
   const followKeyboard = useAnimatedStyle(() => ({
-    transform: [{ translateY: restingInset - composerInset(keyboardHeight.get(), safeBottom, spacing.md) }],
+    transform: [
+      { translateY: restingInset - composerInset(keyboardHeight.get(), safeBottom, spacing.md) - floatingGap },
+    ],
   }));
   // The list's clearance is layout, so it takes the settled keyboard only: a
   // footer that changed size every frame would move the rows under the reader.
   const settledKeyboard = useKeyboardState((state) => state.height);
-  const keyboardTakes = restingInset - composerInset(settledKeyboard, safeBottom, spacing.md);
+  const keyboardTakes = restingInset - composerInset(settledKeyboard, safeBottom, spacing.md) - floatingGap;
 
   return (
     <Screen presentation="edge-to-edge">
@@ -314,8 +338,14 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         the bottom of the window", and the overlay, the whole reason the glass
         has anything to refract, is preserved.
 
-        Android is left on the default behaviour: `adjustResize` already shrinks
-        the window, and adding padding on top of that would double-count it.
+        Android was once left on the default behaviour, `adjustResize`, which
+        shrank the window, so padding on top of it would have double-counted.
+        Now Android pads too: edge-to-edge stops the window resizing, and the
+        keyboard controller keeps it so. Under edge-to-edge it treats the
+        navigation bar as translucent and reports the IME's whole height, nav
+        bar included, which is exactly what the window loses; `composerInset`
+        then drops the safe-area inset the IME covers, so the composer sits
+        just above the IME with no nav-bar-sized gap.
 
         The avoider is react-native-keyboard-controller's, not React Native's.
         React Native's hears `keyboardWillChangeFrame`, which iOS posts only at
@@ -400,8 +430,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 the finger, the way Messages does; let go past the threshold and
                 it finishes going. The list only shrinks and grows with the
                 avoider: nothing here scrolls it, which stays useThreadScroll's.
+
+                iOS only, on purpose. Android's ScrollView ignores `interactive`,
+                and its `on-drag` would drop the keyboard the moment a reader
+                scrolled back to check something while typing, so Android keeps
+                the keyboard until "Hide keyboard" or a send, as before.
               */
-              keyboardDismissMode="interactive"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
               /**
                * The first frame is already at the end rather than scrolling there
                * after measuring, and rows keep their place as older history lands

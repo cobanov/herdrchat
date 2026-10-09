@@ -21,3 +21,25 @@ export function composerInset(keyboardHeight: number, safeBottom: number, minimu
   const uncovered = Math.max(safeBottom - Math.max(keyboardHeight, 0), 0);
   return Math.max(uncovered, minimum);
 }
+
+/**
+ * How far above the bottom of the screen a keyboard frame's bottom edge sits:
+ * zero for a docked keyboard, which rests on the edge, and the gap under the
+ * frame for one that floats.
+ *
+ * react-native-keyboard-controller reports a keyboard by its frame's HEIGHT
+ * (`keyboardFrameEndUserInfoKey.size.height`) and assumes it rests on the
+ * bottom edge. The input-assistant bar an iPad shows with a hardware keyboard
+ * (Writing Tools, dictation) can float some points above the home indicator,
+ * and lifting the composer by the bar's height alone left it that many points
+ * behind the bar. The thread adds this gap to the lift.
+ *
+ * `screenY` and `height` are the frame iOS posts, in screen coordinates, so
+ * this measures against the screen rather than the window: a docked keyboard
+ * reads zero in a split view or Stage Manager window too. A frame of no height
+ * (a hidden or an undocked keyboard) has nothing under it to clear.
+ */
+export function floatingKeyboardGap(frame: { screenY: number; height: number }, screenHeight: number): number {
+  if (frame.height <= 0) return 0;
+  return Math.max(screenHeight - (frame.screenY + frame.height), 0);
+}
