@@ -9,6 +9,8 @@ jest.mock('expo-router', () => ({
   ThemeProvider: () => null,
 }));
 jest.mock('expo-notifications', () => ({ setNotificationHandler: jest.fn() }));
+// The keyboard provider is native; its own jest mock stands in for it.
+jest.mock('react-native-keyboard-controller', () => jest.requireActual('react-native-keyboard-controller/jest'));
 jest.mock('expo-sqlite', () => ({ SQLiteProvider: () => null }));
 jest.mock('expo-system-ui', () => ({ setBackgroundColorAsync: jest.fn() }));
 jest.mock('@/features/notifications/useNotificationRouting', () => ({
