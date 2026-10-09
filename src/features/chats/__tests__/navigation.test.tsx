@@ -2,7 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { useState } from 'react';
 import * as Native from 'react-native';
 
-import ChatsScreen from '../../../../app/(tabs)/index';
+import ChatsScreen from '../../../../app/index';
 import ThreadRoute from '../../../../app/chat/[workspaceId]';
 import { openChat } from '../navigation';
 import { useChatSelection } from '@/state/chatSelection';
@@ -31,6 +31,7 @@ jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
   useConnections: (selector: (state: { hydrated: boolean }) => unknown) => selector({ hydrated: mockHydrated }),
 }));
+jest.mock('@/features/welcome/useWelcomeGate', () => ({ useWelcomeGate: () => {} }));
 jest.mock('@/features/chats/ChatsList', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('@/components/EmptyState', () => ({ EmptyState: () => null }));
@@ -64,7 +65,7 @@ afterAll(() => {
   if (originalPad) Object.defineProperty(Native.Platform, 'isPad', originalPad);
 });
 
-it('uses the Chats tab for all iPad chat entry points, including narrow windows', () => {
+it('uses the root chats screen for all iPad chat entry points, including narrow windows', () => {
   openChat('host-a', 'w2', 'Notes');
   expect(mockDismissTo).toHaveBeenCalledWith('/');
   expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w2', title: 'Notes' });
