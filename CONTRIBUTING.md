@@ -53,6 +53,10 @@ the interpretation lives in `client.ts` where a test pins it.
 - npm, not pnpm — its symlink layout breaks native module resolution.
 - Changes under `modules/herdr-ssh/` need a native rebuild. Fast Refresh does
   not reload native code.
+- So does adding or upgrading a package with native code
+  (`react-native-keyboard-controller`, for one): rebuild the dev client before
+  testing, and ship it in a new build, since an over-the-air update carries
+  JavaScript only.
 - Android compiles but has never been run, and there is no release path in this
   branch. A Kotlin change cannot be verified here yet; say so in the pull
   request rather than implying it was.
