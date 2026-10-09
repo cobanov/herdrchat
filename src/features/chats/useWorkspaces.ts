@@ -6,8 +6,10 @@ import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
 import { checkHostTheme } from '@/state/hostTheme';
+import { refreshHostMachines } from '@/state/hostMachines';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
+import { machineListDue, splitMachineConnectionId } from '@/lib/herdr/machines';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -185,11 +187,20 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   useEffect(() => {
     themeEnabled.current = useHostThemes;
   }, [useHostThemes]);
+  /**
+   * When the host's machine list was last asked for, the same way: null asks
+   * on the next poll that works (the first after connecting, a pull, coming
+   * back to the app), and otherwise once a minute (`machineListDue`).
+   */
+  const lastMachineCheck = useRef<number | null>(null);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
+  // A machine may have been added at the host meanwhile, too.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') lastThemeCheck.current = null;
+      if (state !== 'active') return;
+      lastThemeCheck.current = null;
+      lastMachineCheck.current = null;
     });
     return () => subscription.remove();
   }, []);
@@ -236,10 +247,22 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // After the list is published, and not awaited: the theme is a side
       // task of this poll, and a slow or failing check must neither delay the
       // rows nor turn into the list's error. `checkHostTheme` never rejects.
+      //
+      // Both are the HOST's. A machine's list (a connection id with a slash)
+      // asks neither: the host's theme applies to its machines, and a
+      // machine's own machines are not federated a second hop.
       const now = Date.now();
-      if (connectionId !== null && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
+      const isHost = connectionId !== null && splitMachineConnectionId(connectionId) === null;
+      if (isHost && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
         lastThemeCheck.current = now;
         void checkHostTheme(connectionId, client.transport);
+      }
+      // The same side task for the machines saved on the host: a failed ask
+      // keeps the last list and never reaches this list's error.
+      // `refreshHostMachines` never rejects.
+      if (isHost && machineListDue(lastMachineCheck.current, now)) {
+        lastMachineCheck.current = now;
+        void refreshHostMachines(connectionId, client);
       }
       return false;
     } catch (thrown) {
@@ -325,6 +348,7 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       failures.current = 0;
       forcePreviews.current = true;
       lastThemeCheck.current = null;
+      lastMachineCheck.current = null;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),

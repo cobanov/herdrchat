@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
+import { loadHostMachines, mirrorHostMachines } from './hostMachines';
 import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import {
   SETTINGS_DEFAULTS,
@@ -29,6 +30,8 @@ export function Hydrate({ children }: { children: ReactNode }) {
 
   // From launch on, every change to a host's theme is written back.
   useEffect(() => mirrorHostThemes(db), [db]);
+  // And to the machines each host lists.
+  useEffect(() => mirrorHostMachines(db), [db]);
 
   useEffect(() => {
     void (async () => {
@@ -66,6 +69,9 @@ export function Hydrate({ children }: { children: ReactNode }) {
           // Before the connections land, so the selected host opens in its
           // own colours rather than flashing the default first.
           loadHostThemes(db).catch(() => undefined),
+          // Likewise, so a host's machine chats are listed from launch rather
+          // than after the first poll that asks for them.
+          loadHostMachines(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,

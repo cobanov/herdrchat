@@ -150,3 +150,20 @@ export function splitMachineConnectionId(id: string): { hostId: string; machineI
 export function isUnderHost(key: string, hostId: string): boolean {
   return key.startsWith(`${hostId}${MACHINE_SEPARATOR}`);
 }
+
+// MARK: - Refresh cadence
+
+/**
+ * How often the chat list's poll also asks the host for its machines.
+ *
+ * A machine is added or disabled at the host's keyboard, rarely, and the list
+ * is cached on the phone, so its rows are there from launch. A minute keeps a
+ * newly saved machine prompt enough without one more round-trip on every 3 s
+ * tick; a pull to refresh or coming back to the app asks at once.
+ */
+export const MACHINE_LIST_INTERVAL_MS = 60_000;
+
+/** Whether the machine list is due, given when it was last asked (null: never, or asked for). */
+export function machineListDue(lastCheck: number | null, now: number): boolean {
+  return lastCheck === null || now - lastCheck >= MACHINE_LIST_INTERVAL_MS;
+}

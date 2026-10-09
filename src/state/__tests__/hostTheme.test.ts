@@ -29,9 +29,13 @@ function fakeDb(initial: Record<string, string> = {}) {
       [...rows].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
     runAsync: async (sql: string, key: string, value?: string) => {
       if (sql.startsWith('INSERT INTO settings')) rows.set(key, value!);
-      // clearConnectionSettings: every key ending in `.<connectionId>`.
-      else if (sql.startsWith('DELETE FROM settings WHERE length(key) > length(?)')) {
-        for (const stored of [...rows.keys()]) if (stored.length > key.length && stored.endsWith(key)) rows.delete(stored);
+      // clearConnectionSettings: every key ending in `.<connectionId>`, and
+      // every key of its machines, `<name>.<connectionId>/<machine>`.
+      else if (sql.startsWith('DELETE FROM settings WHERE (length(key) > length(?)')) {
+        const machines = `${key}/`;
+        for (const stored of [...rows.keys()]) {
+          if ((stored.length > key.length && stored.endsWith(key)) || stored.indexOf(machines) > 0) rows.delete(stored);
+        }
       }
       else if (sql.startsWith('DELETE FROM settings WHERE key = ?')) rows.delete(key);
       else throw new Error(`unexpected ${sql}`);

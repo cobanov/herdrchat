@@ -197,18 +197,25 @@ export async function saveConnection(
   );
 }
 
+/**
+ * Rows filed under a connection: the host's own, and those of every machine
+ * saved on it, which are filed under `${hostId}/<machine>` (see
+ * `machineConnectionId`). By prefix rather than by the machines the host lists
+ * now, for the reason `forgetWorkspace` gives: one removed earlier left rows
+ * too. `substr`, not LIKE, so an `_` in an id is not a wildcard.
+ */
+const UNDER_CONNECTION = "(connection_id = ? OR substr(connection_id, 1, length(?) + 1) = ? || '/')";
+
 export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): Promise<void> {
   await inTransaction(db, async () => {
     await db.runAsync('DELETE FROM connections WHERE id = ?', id);
-    await db.runAsync('DELETE FROM messages WHERE connection_id = ?', id);
-    await db.runAsync('DELETE FROM tail_cursors WHERE connection_id = ?', id);
-    await db.runAsync('DELETE FROM previews WHERE connection_id = ?', id);
-    await db.runAsync('DELETE FROM thread_reads WHERE connection_id = ?', id);
-    await db.runAsync('DELETE FROM chat_prefs WHERE connection_id = ?', id);
-    // The user's own words, typed on a host they just removed. Leaving them
-    // behind also let a re-added host inherit another host's prompt history,
-    // because connection ids are reused from the row that made them.
-    await db.runAsync('DELETE FROM prompts WHERE connection_id = ?', id);
+    // The user's own words among them (prompts), typed on a host they just
+    // removed. Leaving them behind also let a re-added host inherit another
+    // host's prompt history, because connection ids are reused from the row
+    // that made them.
+    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs', 'prompts']) {
+      await db.runAsync(`DELETE FROM ${table} WHERE ${UNDER_CONNECTION}`, id, id, id);
+    }
   });
 }
 
@@ -372,19 +379,23 @@ export async function deleteSetting(db: SQLite.SQLiteDatabase, key: string): Pro
 
 /**
  * Settings remembered per host, keyed `<name>.<connection id>` (the last folder
- * and permission mode a new chat used). They go with the host, or a deleted
- * host's folder would be offered to the next one that happened to reuse its id.
+ * and permission mode a new chat used, the cached theme and machine list).
+ * They go with the host, or a deleted host's folder would be offered to the
+ * next one that happened to reuse its id. So do those of its machines, keyed
+ * `<name>.<host id>/<machine id>`, which no other host's id can produce.
  */
 export async function clearConnectionSettings(
   db: SQLite.SQLiteDatabase,
   connectionId: string
 ): Promise<void> {
   const suffix = `.${connectionId}`;
+  const machines = `.${connectionId}/`;
   await db.runAsync(
-    'DELETE FROM settings WHERE length(key) > length(?) AND substr(key, -length(?)) = ?',
+    'DELETE FROM settings WHERE (length(key) > length(?) AND substr(key, -length(?)) = ?) OR instr(key, ?) > 1',
     suffix,
     suffix,
-    suffix
+    suffix,
+    machines
   );
 }
 
@@ -403,10 +414,36 @@ export const hostThemeKey = (connectionId: string) => `${HOST_THEME_KEY_PREFIX}$
 export async function loadHostThemeRows(
   db: SQLite.SQLiteDatabase
 ): Promise<{ key: string; value: string }[]> {
+  return loadSettingsWithPrefix(db, HOST_THEME_KEY_PREFIX);
+}
+
+// MARK: - Host machines
+
+/**
+ * The machines each host lists (`herdr machine list --json`), cached in
+ * `settings` under `hostMachines.<connection id>` as JSON the list's own
+ * parser reads, so their chats are listed at launch before the first poll.
+ * `clearConnectionSettings` deletes it with the host.
+ */
+export const HOST_MACHINES_KEY_PREFIX = 'hostMachines.';
+
+export const hostMachinesKey = (connectionId: string) => `${HOST_MACHINES_KEY_PREFIX}${connectionId}`;
+
+/** Every cached machine list, for the launch. */
+export async function loadHostMachineRows(
+  db: SQLite.SQLiteDatabase
+): Promise<{ key: string; value: string }[]> {
+  return loadSettingsWithPrefix(db, HOST_MACHINES_KEY_PREFIX);
+}
+
+function loadSettingsWithPrefix(
+  db: SQLite.SQLiteDatabase,
+  prefix: string
+): Promise<{ key: string; value: string }[]> {
   return db.getAllAsync<{ key: string; value: string }>(
     'SELECT key, value FROM settings WHERE substr(key, 1, length(?)) = ?',
-    HOST_THEME_KEY_PREFIX,
-    HOST_THEME_KEY_PREFIX
+    prefix,
+    prefix
   );
 }
 

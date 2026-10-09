@@ -1,8 +1,10 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import { HerdrClient } from '../herdr/client';
 import {
+  MACHINE_LIST_INTERVAL_MS,
   isUnderHost,
   machineConnectionId,
+  machineListDue,
   machineListCommand,
   parseMachineList,
   splitMachineConnectionId,
@@ -120,5 +122,14 @@ describe('HerdrClient.machines', () => {
   it('keeps every other failure a failure', async () => {
     const { transport } = host({ ok: false, code: 'timeout', message: 'slow' });
     await expect(new HerdrClient(transport).machines()).rejects.toMatchObject({ code: 'timeout' });
+  });
+});
+
+describe('machineListDue', () => {
+  it('is due when never asked or asked for, then once a minute', () => {
+    expect(machineListDue(null, 5)).toBe(true);
+    expect(machineListDue(1_000, 1_000 + MACHINE_LIST_INTERVAL_MS - 1)).toBe(false);
+    expect(machineListDue(1_000, 1_000 + MACHINE_LIST_INTERVAL_MS)).toBe(true);
+    expect(MACHINE_LIST_INTERVAL_MS).toBe(60_000);
   });
 });
