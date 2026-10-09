@@ -88,6 +88,19 @@ describe('snapshot decoding', () => {
     expect(plain?.inputPending).toBe(false);
   });
 
+  // Codex's `title` is the first prompt cut off; its thread's name is in the
+  // terminal title, ahead of ` | ` and the folder. The live shape, 2026-10-09.
+  it('titles a Codex agent by its thread, not its first prompt', () => {
+    const [named, untitled] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'codex', name: 'codex-coord', title: 'can i control the codex app from here, can you ask…', terminal_title: '◐ Explain Codex agent controls | kenneth', terminal_title_stripped: 'Explain Codex agent controls | kenneth' },
+        { pane_id: 'p2', agent: 'codex', title: 'fix the build' },
+      ],
+    }).agents;
+    expect(named?.title).toBe('Explain Codex agent controls');
+    expect(untitled?.title).toBe('fix the build');
+  });
+
   // The session's own title names the chat; `terminal_title` keeps a status
   // glyph in front, so only the clean fields are read.
   it('reads the agent name and the session title', () => {

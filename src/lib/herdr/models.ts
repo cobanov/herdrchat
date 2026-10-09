@@ -308,10 +308,26 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     completionSeq: optionalNum(value.completion_seq),
     inputPending: value.input_pending === true,
     name: optionalStr(value.name),
-    // `terminal_title` carries a status glyph in front (`✳ `); the stripped
-    // one is the same text as `title`, sent by herdrs that predate `title`.
-    title: optionalStr(value.title) ?? optionalStr(value.terminal_title_stripped),
+    title: sessionTitle(value),
   };
+}
+
+/**
+ * The session's title out of an agent's snapshot entry.
+ *
+ * For Claude, `title` is it, and `terminal_title_stripped` is the same text
+ * from herdrs that predate `title`; `terminal_title` carries a status glyph in
+ * front (`✳ `) and is never used. Codex is the other way round: herdr's `title`
+ * is the first prompt cut off with an ellipsis ("can i control the codex app
+ * from here, can you ask…"), while the terminal's title is the thread's name
+ * followed by ` | ` and the folder ("Explain Codex agent controls | kenneth").
+ */
+function sessionTitle(value: Record<string, unknown>): string | null {
+  const title = optionalStr(value.title);
+  const stripped = optionalStr(value.terminal_title_stripped);
+  if (value.agent !== 'codex') return title ?? stripped;
+  const named = stripped?.replace(/ \| [^|]*$/, '').trim() ?? '';
+  return named !== '' ? named : title;
 }
 
 export function decodeWorkspace(raw: unknown): Workspace {
