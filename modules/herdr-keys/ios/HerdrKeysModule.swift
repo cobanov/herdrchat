@@ -42,12 +42,21 @@ public class HerdrKeysModule: Module {
 ///
 /// Command-V exists because a plain text view pastes nothing when the
 /// pasteboard holds only a picture. A command on this container is found
-/// before the system's own Paste key equivalent, so it takes every Command-V;
-/// it keeps only the one that is a lone picture (`pasteAction` in
-/// `src/lib/composerKeys.ts` is the same rule, and the one that is tested) and
-/// hands the rest to the first responder's `paste(_:)`, which is the text
-/// view's — RN's override of it marks the text as pasted, so a multi-line paste
-/// is not taken for a Return that sends.
+/// before the system's own Paste key equivalent, so it is offered only while
+/// the pasteboard is a lone picture (`pasteAction` in `src/lib/composerKeys.ts`
+/// is the same rule, and the one that is tested). With text on it, Command-V
+/// never reaches this view and stays the system's own paste, prompt rules and
+/// all. If the pasteboard changes between UIKit asking for `keyCommands` and
+/// the key landing, the action hands anything but a lone picture to the first
+/// responder's `paste(_:)`, which is the text view's — RN's override of it
+/// marks the text as pasted, so a multi-line paste is not taken for a Return
+/// that sends.
+///
+/// Checking the pasteboard here reads only its types (`hasImages`,
+/// `hasStrings`), which raises no paste prompt. Attaching the picture does
+/// not: JS reads it with expo-clipboard's `getImageAsync`, a programmatic read,
+/// so iOS shows "Allow Paste" unless Settings > HerdrChat > Paste from Other
+/// Apps is Allow — the same prompt the attach menu's "Paste Picture" raises.
 final class SubmitShortcutView: ExpoView {
   let onSubmitShortcut = EventDispatcher()
   let onNewlineShortcut = EventDispatcher()
@@ -85,7 +94,7 @@ final class SubmitShortcutView: ExpoView {
   override var keyCommands: [UIKeyCommand]? {
     var commands = [submit]
     if newlineShortcutEnabled { commands.append(newline) }
-    if pasteShortcutEnabled { commands.append(paste) }
+    if pasteShortcutEnabled && Self.pasteboardIsLonePicture { commands.append(paste) }
     return commands
   }
 
@@ -97,9 +106,15 @@ final class SubmitShortcutView: ExpoView {
     onNewlineShortcut([:])
   }
 
+  /// Types only, not contents: asking raises no paste prompt.
+  private static var pasteboardIsLonePicture: Bool {
+    let pasteboard = UIPasteboard.general
+    return pasteboard.hasImages && !pasteboard.hasStrings
+  }
+
   @objc private func pasteShortcut() {
-    // `hasImages` and `hasStrings` read the pasteboard's types, not its
-    // contents, so asking does not raise the paste-permission prompt.
+    // Types only, as above. The attach that follows reads the picture itself
+    // in JS, and that read may raise the system's "Allow Paste" prompt.
     let pasteboard = UIPasteboard.general
     let hasImage = pasteboard.hasImages
     let hasText = pasteboard.hasStrings

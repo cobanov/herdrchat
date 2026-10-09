@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
 import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
-import { insertNewline, pasteAction, returnAction } from '@/lib/composerKeys';
+import { followCaret, insertNewline, pasteAction, returnAction } from '@/lib/composerKeys';
+import { MAX_ATTACHMENTS } from './attachments';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -65,7 +66,7 @@ export function Composer({
   uploading?: boolean;
   /**
    * Attach the picture on the pasteboard, for Command-V on a hardware
-   * keyboard. Leave it out when there is no room for another picture: then
+   * keyboard. At `MAX_ATTACHMENTS` the composer stops offering it, and
    * Command-V is the text field's own paste and nothing else.
    */
   onPasteImage?: () => void;
@@ -88,6 +89,16 @@ export function Composer({
   // Where the caret is, for Shift-Return to put its newline. Only the native
   // side knows; it reports every move, and nothing renders from it.
   const selection = useRef({ start: 0, end: 0 });
+  // The text the field last showed, so a draft replaced from JS (a picked `/`
+  // command, a send, a refused send) can move the caret the way the field does
+  // without reporting it; see `followCaret`.
+  const shown = useRef(draft);
+  useEffect(() => {
+    if (draft === shown.current) return;
+    selection.current = followCaret(shown.current, selection.current, draft);
+    shown.current = draft;
+  }, [draft]);
+  const room = attachments.length < MAX_ATTACHMENTS;
 
   const sendScale = useSharedValue(1);
   const sendStyle = useAnimatedStyle(() => ({ transform: [{ scale: sendScale.get() }] }));
@@ -109,6 +120,7 @@ export function Composer({
     const { start, end } = selection.current;
     const next = insertNewline(draft, { start, end });
     selection.current = { start: next.caret, end: next.caret };
+    shown.current = next.text;
     onDraftChange(next.text);
     // The field keeps the caret's distance from the end of the text, which is
     // right after a newline typed at a caret but not after one that replaced a
@@ -131,11 +143,12 @@ export function Composer({
       onSubmitShortcut={() => pressReturn({ shift: false, command: true })}
       onNewlineShortcut={returnSends ? () => pressReturn({ shift: true, command: false }) : undefined}
       // Command-V with a lone picture attaches it; text still pastes as text.
-      // Not while a send or upload is in flight, the same as the picture button.
+      // Not while a send or upload is in flight, the same as the picture button,
+      // and not at MAX_ATTACHMENTS: then Command-V is the text field's alone.
       onPasteShortcut={
-        onPasteImage !== undefined && !disabled && !uploading
+        onPasteImage !== undefined && !disabled && !uploading && room
           ? (pasteboard) => {
-              if (pasteAction({ ...pasteboard, room: true }) === 'image') onPasteImage();
+              if (pasteAction({ ...pasteboard, room }) === 'image') onPasteImage();
             }
           : undefined
       }>
@@ -232,7 +245,10 @@ export function Composer({
             placeholder="Message"
             placeholderTextColor={colors.tertiaryLabel}
             value={draft}
-            onChangeText={onDraftChange}
+            onChangeText={(text) => {
+              shown.current = text;
+              onDraftChange(text);
+            }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onSelectionChange={(event) => {

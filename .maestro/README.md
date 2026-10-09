@@ -20,10 +20,29 @@ where regressions are found.
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 
 Maestro cannot press hardware-keyboard key commands, so these are checked by
-hand on an iPad with a keyboard, after a native build: Shift-Return starts a
-new line (also over a selection), Command-Return sends, Command-V with a
-copied picture attaches it, Command-V with copied text pastes the text, and at
-four pictures Command-V does nothing new.
+hand on an iPad with a keyboard, after a native build:
+
+- Shift-Return starts a new line, also over a selection, and right after
+  picking a `/` command from the suggestions (the newline goes at the end, not
+  where the caret was before the pick) and after a send.
+- Command-Return sends, with "Return sends" on and off.
+- With "Return sends" off, Return and Shift-Return both start a new line.
+- Return on an empty draft, or while a send is in flight, does nothing and
+  keeps the draft.
+- Return that commits a Chinese or Japanese candidate commits it and does not
+  send.
+- Command-V with a copied picture attaches it. Expect the system "Allow Paste"
+  prompt unless Settings > HerdrChat > Paste from Other Apps is Allow; the
+  attach menu's "Paste Picture" asks the same.
+- Command-V with copied text pastes the text with no "Allow Paste" prompt.
+- Command-V with a picture and text both on the pasteboard (a copied web page)
+  pastes the text.
+- At four pictures, Command-V with a picture does nothing new.
+
+On an iPhone, with no hardware keyboard: the keyboard's Return key reads Send
+with the setting on and return with it off, also after flipping the setting
+while the composer was focused; with it on, Return sends and there is no way to
+type a newline but turning the setting off, as its footnote says.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

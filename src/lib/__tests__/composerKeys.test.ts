@@ -1,4 +1,4 @@
-import { insertNewline, pasteAction, returnAction, type ReturnAction, type ReturnKey } from '../composerKeys';
+import { followCaret, insertNewline, pasteAction, returnAction, type ReturnAction, type ReturnKey } from '../composerKeys';
 
 const flags = [false, true] as const;
 
@@ -77,6 +77,29 @@ describe('insertNewline', () => {
 
   it('clamps a selection left over from a longer draft', () => {
     expect(insertNewline('ab', { start: 9, end: 9 })).toEqual({ text: 'ab\n', caret: 3 });
+  });
+});
+
+describe('followCaret', () => {
+  it('lands at the end when a picked command replaces what was typed', () => {
+    // "/mo" with the caret at 3, then "/model " from the suggestions.
+    expect(followCaret('/mo', { start: 3, end: 3 }, '/model ')).toEqual({ start: 7, end: 7 });
+    expect(insertNewline('/model ', followCaret('/mo', { start: 3, end: 3 }, '/model ')).text).toBe('/model \n');
+  });
+
+  it('lands at the start when a send clears the draft, and at the end when a refusal puts it back', () => {
+    expect(followCaret('hello', { start: 5, end: 5 }, '')).toEqual({ start: 0, end: 0 });
+    expect(followCaret('', { start: 0, end: 0 }, 'hello')).toEqual({ start: 5, end: 5 });
+  });
+
+  it('keeps the distance from the end, as the field does', () => {
+    expect(followCaret('abcd', { start: 1, end: 1 }, 'xxabcd')).toEqual({ start: 3, end: 3 });
+  });
+
+  it('collapses a selection to its start and stays inside the new text', () => {
+    expect(followCaret('abcd', { start: 3, end: 1 }, 'abcdef')).toEqual({ start: 3, end: 3 });
+    expect(followCaret('abcdef', { start: 1, end: 1 }, 'ab')).toEqual({ start: 0, end: 0 });
+    expect(followCaret('ab', { start: 9, end: 9 }, 'abc')).toEqual({ start: 3, end: 3 });
   });
 });
 

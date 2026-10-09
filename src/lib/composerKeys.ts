@@ -46,6 +46,28 @@ export function insertNewline(
   return { text: `${text.slice(0, start)}\n${text.slice(end)}`, caret: start + 1 };
 }
 
+/**
+ * Where the field's caret lands when the draft is replaced from JS — a picked
+ * `/` command, a send clearing the draft, a refused send putting it back.
+ *
+ * The field does not report that move: React Native's Fabric text input
+ * ignores selection changes while it applies text from JS
+ * (`textInputDidChangeSelection` returns early on `_comingFromJS`), and
+ * `_setAttributedString` keeps the caret's distance from the END of the text.
+ * So the composer works it out the same way, or Shift-Return after picking
+ * "/model " from "/mo" put its newline at 3, inside the word, instead of at the
+ * end. A selection collapses to its start, as the field does it.
+ */
+export function followCaret(
+  previous: string,
+  selection: { start: number; end: number },
+  next: string
+): { start: number; end: number } {
+  const start = Math.max(0, Math.min(previous.length, Math.min(selection.start, selection.end)));
+  const caret = Math.max(0, Math.min(next.length, next.length - (previous.length - start)));
+  return { start: caret, end: caret };
+}
+
 export type PasteAction = 'image' | 'system';
 
 /**

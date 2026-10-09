@@ -533,7 +533,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 onAttach={() => void offerAttachment()}
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
-                onPasteImage={attachments.length < MAX_ATTACHMENTS ? () => void addAttachments('paste') : undefined}
+                onPasteImage={() => void addAttachments('paste')}
               />
             </View>
           )}
