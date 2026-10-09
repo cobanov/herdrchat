@@ -8,7 +8,8 @@ import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import { formatListTime } from './ChatRow';
-import { paneTitle, statusLabel } from './rowText';
+import { rowTestKey, type MachineRef } from './listedChat';
+import { paneContext, paneTitle, statusLabel } from './rowText';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
@@ -26,7 +27,8 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
 export const PaneRow = memo(function PaneRow({
   summary, pane, unread, selected = false, first = false, last = false, onPress, onLongPress,
 }: {
-  summary: ChatSummary;
+  /** With `machine`, a workspace on one of the host's machines, whose label leads the row's line. */
+  summary: ChatSummary & { machine?: MachineRef | null };
   pane: PaneSummary;
   unread: boolean;
   selected?: boolean;
@@ -50,6 +52,8 @@ export const PaneRow = memo(function PaneRow({
   const status = statusLabel(pane.status);
   const preview = pane.preview === null ? status : `${pane.preview.fromUser ? 'You: ' : ''}${pane.preview.text}`;
   const workspace = summary.title || summary.workspaceId;
+  const machine = summary.machine?.label;
+  const context = paneContext(summary, pane);
   // Only a title of the agent's own: falling back to the workspace label
   // repeated the card right above, on every untitled sibling alike.
   const title = titledBySession(pane) ? paneTitle(summary, pane) : null;
@@ -75,8 +79,8 @@ export const PaneRow = memo(function PaneRow({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         // The title first, when the agent has one.
-        accessibilityLabel={[title ?? '', `${provider} in ${workspace}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
-        testID={`pane-row-${pane.paneId}`}
+        accessibilityLabel={[title ?? '', `${provider} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
+        testID={`pane-row-${rowTestKey(summary, pane.paneId)}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
           marginLeft: size.paneIndent, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
@@ -97,9 +101,10 @@ export const PaneRow = memo(function PaneRow({
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
           {/* The session's title, as the workspace chat's row has. The card
               above already names the workspace, so neither line here does: an
-              agent with no title of its own leads with its provider. */}
+              agent with no title of its own leads with its provider, after
+              its machine when it is on one. */}
           {title !== null && <Text variant="subhead" weight="600" numberOfLines={2}>{title}</Text>}
-          <Text variant="caption" color="secondary" mono numberOfLines={1}>{[provider, folder].filter(Boolean).join(' · ')}</Text>
+          <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
           <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
             {attention ? 'Waiting for your input' : preview}
           </Text>

@@ -1,4 +1,4 @@
-import { paneTitle, rowContext, rowTitle, sharedFolder, statusLabel } from '../rowText';
+import { paneContext, paneTitle, rowContext, rowTitle, sharedFolder, statusLabel } from '../rowText';
 import type { AgentInfo } from '@/lib/herdr/models';
 import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
@@ -104,4 +104,33 @@ it('says what an agent is doing when it has no line to show', () => {
   expect(statusLabel('blocked')).toBe('Waiting for you');
   expect(statusLabel('working')).toBe('Working');
   expect(statusLabel('idle')).toBe('Idle');
+});
+
+// The list mixes the host's chats with its machines'; the machine is said
+// before anything about the workspace, since the same folder on two
+// computers is two chats.
+describe('rowContext on a machine', () => {
+  const nuku = { id: 'demo-nuku', label: 'nuku' };
+  it('leads with the machine, then the workspace rule, the provider and the folder', () => {
+    const titled = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
+    expect(rowContext(titled)).toBe('nuku · kenneth-bot · Claude · demo/bot');
+    // A workspace named after its folder is still said once, by the folder.
+    const sameFolder = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/kenneth-bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
+    expect(rowContext(sameFolder)).toBe('nuku · Claude · demo/kenneth-bot');
+  });
+  it('leads a workspace of several agents with the machine too', () => {
+    expect(rowContext({ ...workspace([
+      agentIn('w6:p1', 'claude', '/home/demo/api'),
+      agentIn('w6:p2', 'claude', '/home/demo/api/web'),
+    ]), machine: nuku })).toBe('nuku · 2 agents · Claude · demo/api');
+  });
+  it('says nothing extra on the host', () => {
+    expect(rowContext({ ...workspace([agentIn('w6:p1', 'claude', '/home/demo/api')]), machine: null })).toBe('Claude · demo/api');
+  });
+  it('leads an agent row\'s line with its machine', () => {
+    const agent = agentIn('w6:p2', 'codex', '/home/demo/api/web');
+    const pane: PaneSummary = { paneId: 'w6:p2', agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: null, agentName: null };
+    expect(paneContext({ machine: nuku }, pane)).toBe('nuku · Codex · api/web');
+    expect(paneContext({ machine: null }, pane)).toBe('Codex · api/web');
+  });
 });

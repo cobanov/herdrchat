@@ -31,9 +31,17 @@ jest.mock('@/components/Glass', () => ({
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+let mockConnection: unknown = null;
+const mockWantedIds: (string | null)[] = [];
 jest.mock('@/state/connections', () => ({
   useConnections: () => false,
   useSelectedConnection: () => null,
+  useConnectionFor: (id: string | null) => {
+    mockWantedIds.push(id);
+    return id === null || !id.includes('/') ? null : mockConnection;
+  },
+  isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
+  clientFor: () => null,
 }));
 let mockWorkspaceLabel: string | null = null;
 let mockSessionTitle: string | null = null;
@@ -214,6 +222,29 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^api · Claude · .*high effort/);
   await screen.unmount();
   mockSessionTitle = null;
+  mockAgents = [];
+});
+
+// A chat on one of the host's machines is opened for that machine's
+// connection, from the route, and its line says which machine first: the
+// same folder on two computers is two chats.
+it('resolves a machine chat from its route and leads its line with the machine', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'kenneth-bot';
+  mockWorkingDirName = 'kenneth-bot';
+  mockSessionTitle = 'Nightly digest';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: null };
+  mockAgents = [{ agent: 'claude', paneId: 'w1:p1', agentSession: null }];
+  mockConnection = { kind: 'machine', id: 'demo/demo-nuku', name: 'nuku', via: 'demo' };
+  mockWantedIds.length = 0;
+  const screen = await render(<ThreadScreen connectionId="demo/demo-nuku" workspaceId="w1" title="Nightly digest" />);
+  expect(mockWantedIds).toContain('demo/demo-nuku');
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Nightly digest');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^nuku · kenneth-bot · /);
+  await screen.unmount();
+  mockConnection = null;
+  mockSessionTitle = null;
+  mockWorkingDirName = 'project-with-a-long-folder-name';
   mockAgents = [];
 });
 

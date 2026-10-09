@@ -1,6 +1,7 @@
 import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
 import { agentName, type AgentStatus } from '@/lib/herdr/models';
 import { paneChats } from './chatGroups';
+import type { MachineRef } from './listedChat';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
@@ -55,8 +56,14 @@ export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
  * A row titled by its session names its workspace here first, since the
  * title no longer does: `api · Claude · demo/server`. When the workspace is
  * named after its folder, the folder says it: `Claude · side/herdrchat`.
+ *
+ * A chat on one of the host's machines says which machine first, before
+ * anything about the workspace: `klaw · kenneth-bot · Claude · demo/bot`. The
+ * list mixes the host's chats with its machines', and the same folder on two
+ * computers is two different chats.
  */
-export function rowContext(summary: ChatSummary): string {
+export function rowContext(summary: ChatSummary & { machine?: MachineRef | null }): string {
+  const machine = summary.machine?.label ?? '';
   const panes = paneChats(summary);
   if (panes.length === 0) {
     const agent = summary.agents.find((item) => item.focused && item.agent !== null)
@@ -66,11 +73,21 @@ export function rowContext(summary: ChatSummary): string {
     // A label that is the folder's own name is already on the line, in the
     // folder; said again in front, it pushed the folder off a phone's row.
     const workspace = titledBySession(summary) && !sameName(summary.title, parts.at(-1)) ? summary.title.trim() : '';
-    return [workspace, agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
+    return [machine, workspace, agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];
   const shared = sharedFolder(panes.map((pane) => pane.agent.cwd)).split('/').filter(Boolean).slice(-2).join('/');
-  return [`${panes.length} agents`, names.join(', '), shared].filter(Boolean).join(' · ');
+  return [machine, `${panes.length} agents`, names.join(', '), shared].filter(Boolean).join(' · ');
+}
+
+/**
+ * The line under one agent's title in a workspace that holds several: its
+ * provider and folder, after its machine when it is on one. The workspace's
+ * card above already names the workspace.
+ */
+export function paneContext(summary: { machine?: MachineRef | null }, pane: PaneSummary): string {
+  const folder = pane.agent.cwd.split('/').filter(Boolean).slice(-2).join('/');
+  return [summary.machine?.label ?? '', agentName(pane.agent.agent), folder].filter(Boolean).join(' · ');
 }
 
 /** The deepest folder every path is in, without its leading slash: `a/b` for `/a/b` and `/a/b/c`. */

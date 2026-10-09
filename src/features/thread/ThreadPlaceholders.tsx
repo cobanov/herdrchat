@@ -22,7 +22,15 @@ import type { SessionState } from './useThread';
  * This one is about there being no host to ask, so it offers the two places
  * worth going instead of a message field that cannot send.
  */
-export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts: () => void }) {
+export function MissingHost({ machine = false, onBack, onHosts }: {
+  /**
+   * The chat was on one of a host's machines, which the host no longer lists
+   * as enabled (`herdr machine disable`, or removed). The host is fine.
+   */
+  machine?: boolean;
+  onBack?: () => void;
+  onHosts: () => void;
+}) {
   return (
     <View
       testID="thread-host-missing"
@@ -34,11 +42,12 @@ export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts:
         gap: spacing.sm,
       }}>
       <Text variant="title3" style={{ textAlign: 'center' }}>
-        This chat&apos;s host is gone
+        {machine ? 'This chat\'s machine is gone' : 'This chat\'s host is gone'}
       </Text>
       <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-        The connection this conversation belongs to isn&apos;t on this device any more, so there is
-        nothing to read it from and nothing to send to.
+        {machine
+          ? 'Its host no longer lists the machine this conversation is on, so there is nothing to read it from and nothing to send to.'
+          : 'The connection this conversation belongs to isn\'t on this device any more, so there is nothing to read it from and nothing to send to.'}
       </Text>
       <View style={{ marginTop: spacing.sm, alignSelf: 'stretch', gap: spacing.sm }}>
         <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />

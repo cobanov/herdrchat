@@ -12,6 +12,7 @@ import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/tokens';
 import { ChatRow } from './ChatRow';
+import { rowTestKey, type MachineRef } from './listedChat';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
@@ -45,7 +46,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onToggleMute,
   onSwiped,
 }: {
-  summary: ChatSummary;
+  summary: ChatSummary & { machine?: MachineRef | null };
   unread: boolean;
   selected?: boolean;
   onPress: () => void;
@@ -85,7 +86,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
    * The state value is unused; `onReset` firing on a workspace-id change is the
    * whole point, and it is the hook FlashList ships for exactly this.
    */
-  useRecyclingState(false, [summary.workspaceId], () => {
+  useRecyclingState(false, [rowTestKey(summary)], () => {
     swipeable.current?.reset();
   });
 
@@ -174,7 +175,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
         haptics.selection();
         onSwiped();
       }}
-      testID={`chat-swipe-${summary.workspaceId}`}
+      testID={`chat-swipe-${rowTestKey(summary)}`}
       renderRightActions={renderRightActions}
       renderLeftActions={leading ? renderLeftActions : undefined}>
       <ChatRow

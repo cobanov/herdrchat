@@ -7,7 +7,8 @@ import { forgetWorkspace } from '@/state/threadCache';
 import { useChatActions } from '../useChatActions';
 import type { ChatSummary } from '../useWorkspaces';
 
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/components/ActionSheet', () => ({ confirmDestructive: jest.fn(), showActionSheet: jest.fn() }));
 jest.mock('@/lib/haptics', () => ({ haptics: { medium: jest.fn() } }));
 jest.mock('@/state/threadCache', () => ({ forgetWorkspace: jest.fn().mockResolvedValue(undefined) }));
@@ -45,7 +46,7 @@ it.each([false, true])('leaves the selected detail only after a successful confi
     expect(result.current.error).toBe('Host unavailable');
   } else {
     expect(forgetWorkspace).toHaveBeenCalledWith(db, 'demo', 'w2');
-    expect(onClosed).toHaveBeenCalledWith('w2');
+    expect(onClosed).toHaveBeenCalledWith('w2', 'demo');
     expect(refresh).toHaveBeenCalledTimes(1);
   }
 });
@@ -64,4 +65,36 @@ it('names the chat by its session in the sheet and the close confirmation', asyn
   await act(() => result.current.closeChat(summary));
   expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].title).toBe('Close Notes?');
   expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].message).toMatch(/^Every tab, pane/);
+});
+
+// A chat on one of the host's machines is closed and renamed on that machine,
+// through its own client, and its cache is dropped under its own connection:
+// the host's client would close the host's workspace with the same id.
+it('runs a machine row\'s close and rename on the machine', async () => {
+  const machineClient = new HerdrClient({
+    exec: async () => ({ ok: true, exitCode: 0, stdout: '', stderr: '' }),
+    streamLines: async function* () { yield* []; },
+  });
+  const hostClose = jest.spyOn(client, 'closeWorkspace').mockResolvedValue(undefined);
+  const machineClose = jest.spyOn(machineClient, 'closeWorkspace').mockResolvedValue(undefined);
+  const onClosed = jest.fn();
+  const targetOf = (row: ChatSummary) =>
+    row.workspaceId === 'w2' ? { client: machineClient, connectionId: 'demo/demo-nuku' } : null;
+  const { result } = await renderHook(() => useChatActions({
+    client, connectionId: 'demo', targetOf, db, refresh: jest.fn().mockResolvedValue(undefined), onClosed,
+  }));
+  await act(() => result.current.closeChat(summary));
+  await act(async () => {
+    jest.mocked(confirmDestructive).mock.calls[0]?.[0].onConfirm();
+  });
+  expect(machineClose).toHaveBeenCalledWith('w2');
+  expect(hostClose).not.toHaveBeenCalled();
+  expect(forgetWorkspace).toHaveBeenCalledWith(db, 'demo/demo-nuku', 'w2');
+  expect(onClosed).toHaveBeenCalledWith('w2', 'demo/demo-nuku');
+
+  await act(() => result.current.renameChat(summary));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/rename-chat',
+    params: { workspaceId: 'w2', title: 'Notes', connectionId: 'demo/demo-nuku' },
+  });
 });

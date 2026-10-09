@@ -51,6 +51,17 @@ For your own agents:
 Push notifications need extra setup on your host. See
 [setup and limitations](docs/getting-started.md).
 
+## Machines
+
+If herdr on your host has other computers saved as machines
+(`herdr machine add <ssh-target>`), their chats show up in that host's chat
+list too, each row starting with the machine's name. There is nothing to set
+up on the phone: the app reaches each machine through the host, with the
+host's own `ssh` and its `~/.ssh/config`, so the machine never has to be
+reachable from the phone. Opening, following and sending work as they do for
+the host's own chats. Disabled machines are left out. Push notifications
+cover only the host's own chats for now, and a machine uses its host's theme.
+
 ## Theming
 
 Each host can restyle the app with a file of its own, `~/.herdrchat/theme.json`,

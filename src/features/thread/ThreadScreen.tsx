@@ -51,7 +51,14 @@ import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
 import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
+import {
+  clientFor,
+  isMachineConnection,
+  useConnectionFor,
+  useConnections,
+  useSelectedConnection,
+} from '@/state/connections';
+import { splitMachineConnectionId } from '@/lib/herdr/machines';
 import { markThreadRead } from '@/state/db';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
@@ -63,7 +70,13 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayo
  * One conversation: a workspace's, or with `paneId` the one agent in that pane
  * of a workspace that holds several.
  */
-export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
+export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
+  /**
+   * The connection the chat is on: a host, or one of a host's machines
+   * (`${hostId}/${machineId}`). Absent (a notification, an older link): the
+   * selected host.
+   */
+  connectionId?: string;
   workspaceId: string;
   /** Absent: the workspace chat, every agent in it. */
   paneId?: string;
@@ -74,8 +87,16 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const connection = useSelectedConnection();
+  // From the route, not the selected host: a chat on one of the host's
+  // machines is read, followed and sent to through the machine's client,
+  // whose transport jumps through the host. `useThread` and the transcript
+  // store see only a transport, so nothing below knows the difference.
+  const selected = useSelectedConnection();
+  const wantedId = connectionId !== undefined && connectionId !== '' ? connectionId : selected?.id ?? null;
+  const connection = useConnectionFor(wantedId);
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
+  /** The machine's label, which leads the subtitle, when the chat is on one. */
+  const machineLabel = connection !== null && isMachineConnection(connection) ? connection.name : null;
   const listRef = useRef<FlashListRef<PlacedItem>>(null);
   const historyInteraction = useRef<number | null>(null);
 
@@ -90,6 +111,10 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
    */
   const hydrated = useConnections((state) => state.hydrated);
   const hostGone = hydrated && connection === null;
+  // A machine is gone when its host is still here but no longer lists it as
+  // enabled; the placeholder then says so, rather than that the host is gone.
+  const viaHost = useConnectionFor(wantedId === null ? null : splitMachineConnectionId(wantedId)?.hostId ?? null);
+  const machineGone = hostGone && viaHost !== null;
 
   const showSidechain = useSettings((state) => state.showSidechain);
 
@@ -262,6 +287,8 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
   const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
   const subtitle = [
+    // The machine first: the same folder on two computers is two chats.
+    machineLabel,
     workspaceLine,
     paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
@@ -425,7 +452,7 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
           */}
           {hostGone ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
-              <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+              <MissingHost machine={machineGone} onBack={onBack} onHosts={() => router.navigate('/hosts')} />
             </View>
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>

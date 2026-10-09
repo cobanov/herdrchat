@@ -8,6 +8,7 @@ import ThreadScreen from '@/features/thread/ThreadScreen';
 import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
 import { useSelectedConnection } from '@/state/connections';
 import { useChatSelection } from '@/state/chatSelection';
+import { isUnderHost } from '@/lib/herdr/machines';
 
 /**
  * The app's root: the chats, and on iPad the open conversation beside them.
@@ -24,16 +25,19 @@ export default function ChatsScreen() {
   const selection = useChatSelection((state) => state.selection);
   const select = useChatSelection((state) => state.select);
   // Workspace ids are only unique on their host. Never carry a selection onto
-  // another connection that happens to have the same workspace slot.
-  const selected = Platform.OS === 'ios' && Platform.isPad && selection?.connectionId === connection?.id
-    ? selection?.workspaceId : undefined;
+  // another connection that happens to have the same workspace slot. A chat
+  // on one of this host's machines is in this host's list, so it stays.
+  const onThisHost = connection !== null && selection !== null &&
+    (selection.connectionId === connection.id || isUnderHost(selection.connectionId, connection.id));
+  const selected = Platform.OS === 'ios' && Platform.isPad && onThisHost ? selection?.workspaceId : undefined;
   return (
-    <AdaptiveColumns sidebar={<ChatsList selectedWorkspaceId={selected} />}>
+    <AdaptiveColumns sidebar={<ChatsList selectedWorkspaceId={selected} selectedConnectionId={selection?.connectionId} />}>
       {selected !== undefined ? (
         // Keyed by pane too, so moving between a workspace and one of its
         // agents remounts the thread instead of carrying one's state over.
         <ThreadScreen
-          key={`${connection?.id}:${selected}:${selection?.paneId ?? ''}`}
+          key={`${selection?.connectionId}:${selected}:${selection?.paneId ?? ''}`}
+          connectionId={selection?.connectionId}
           workspaceId={selected}
           paneId={selection?.paneId}
           title={selection?.title}

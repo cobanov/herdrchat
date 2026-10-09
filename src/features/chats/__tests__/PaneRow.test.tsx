@@ -63,3 +63,13 @@ it('falls back to the herdr name, and with neither leads with its provider', asy
   expect(bare.queryByText('api')).toBeNull();
   expect(bare.getByTestId('pane-row-w6:p1').props.accessibilityLabel).toMatch(/^Claude in api, /);
 });
+
+// On one of the host's machines the row says which machine first, and its
+// testID carries the machine's id: the pane id repeats the host's.
+it('leads with its machine and keeps a testID apart from the host\'s pane', async () => {
+  const onNuku = { ...api, machine: { id: 'demo-nuku', label: 'nuku' } };
+  const screen = await render(<PaneRow summary={onNuku} pane={p2} unread={false} onPress={jest.fn()} />);
+  expect(screen.getByText('nuku · Codex · api/web')).toBeOnTheScreen();
+  const row = screen.getByTestId('pane-row-demo-nuku-w6:p2');
+  expect(row.props.accessibilityLabel).toBe('Codex in api on nuku, api/web, Idle, Fixed the toolbar');
+});

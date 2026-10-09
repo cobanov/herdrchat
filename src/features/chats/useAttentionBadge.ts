@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from 'react';
 
-import { type ThreadRead } from '@/lib/unread';
 import { chatWantsYou } from './chatUnread';
+import { openFor, readsOf, type ListedChat, type OpenChat, type ReadsByConnection } from './listedChat';
 import { useBadge } from '@/state/badge';
-import type { ChatSummary } from './useWorkspaces';
 
 /**
  * Publish the attention count (see `src/state/badge.ts`; nothing reads it since
@@ -20,17 +19,19 @@ import type { ChatSummary } from './useWorkspaces';
  * Counted by workspace: a workspace and the agents listed under it are one
  * thing needing you, not two or three. What is open beside the list is left
  * out by `chatWantsYou`, down to the one agent when only that one is open.
+ * A chat on one of the host's machines counts like the host's own, against
+ * its own connection's reads.
  */
 export function useAttentionBadge(
-  summaries: readonly ChatSummary[],
-  reads: Map<string, ThreadRead>,
+  summaries: readonly ListedChat[],
+  reads: ReadsByConnection,
   active: boolean,
-  /** The chat on screen beside the list, by `chatKey`. */
-  open: string | null = null
+  /** The chat on screen beside the list. */
+  open: OpenChat | null = null
 ): void {
   const count = useMemo(
     () =>
-      summaries.filter((summary) => chatWantsYou(summary, reads, open)).length,
+      summaries.filter((summary) => chatWantsYou(summary, readsOf(reads, summary), openFor(open, summary))).length,
     [summaries, reads, open]
   );
 

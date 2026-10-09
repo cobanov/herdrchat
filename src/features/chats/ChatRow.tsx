@@ -5,6 +5,7 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
+import { rowTestKey, type MachineRef } from './listedChat';
 import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -21,7 +22,8 @@ export interface RowAction {
 export const ChatRow = memo(function ChatRow({
   summary, unread, selected = false, pinned = false, muted = false, onPress, onLongPress, actions = [],
 }: {
-  summary: ChatSummary;
+  /** With `machine`, a chat on one of the host's machines: its label leads the line under the title. */
+  summary: ChatSummary & { machine?: MachineRef | null };
   unread: boolean;
   selected?: boolean;
   pinned?: boolean;
@@ -61,7 +63,10 @@ export const ChatRow = memo(function ChatRow({
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
       accessibilityLabel={[title, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
-      testID={`chat-row-${summary.workspaceId}`}
+      // `chat-row-w2` on the host, `chat-row-<machineId>-w1` on a machine
+      // (`rowTestKey`): workspace ids repeat across machines, and a
+      // connection id's slash has no place in a testID.
+      testID={`chat-row-${rowTestKey(summary)}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
         padding: spacing.md, borderRadius: radius.sm, borderWidth: 1,
