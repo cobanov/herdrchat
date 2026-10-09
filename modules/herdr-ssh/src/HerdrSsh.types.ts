@@ -74,7 +74,14 @@ export type SshFailureCode =
    * loops that drive this app re-arm in a `finally`, so "forever" meant the
    * loop stopped and the screen froze with no error at all.
    */
-  | 'timeout';
+  | 'timeout'
+  /**
+   * The host's own ssh, jumping to one of its machines, could not log in to
+   * it without a prompt. Raised in TypeScript (`withMachine`).
+   */
+  | 'machine_auth_failed'
+  /** The host's own ssh does not trust a machine's host key. Raised in TypeScript (`withMachine`). */
+  | 'machine_host_key';
 
 export interface SshFailure {
   ok: false;

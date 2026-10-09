@@ -3,6 +3,7 @@ import { uploadCommands } from '../attachments/upload';
 import { HerdrClient } from '../herdr/client';
 import {
   jumpCommand,
+  jumpFailure,
   jumpStream,
   machineUnreachableMessage,
   sshJump,
@@ -11,6 +12,7 @@ import {
   withMachine,
 } from '../herdr/machine';
 import { withSession } from '../herdr/session';
+import { needsTheUser } from '../poll';
 import { shellQuote, untilChannelCloses, withPath } from '../herdr/shell';
 import { JUMP_CONNECT_TIMEOUT_MS, POLL_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
@@ -174,6 +176,83 @@ describe('withMachine', () => {
     expect(calls).toEqual([
       { command: jumpStream('nuku', 'tail -f x'), timeoutMs: 1_000 + JUMP_CONNECT_TIMEOUT_MS, signal: controller.signal },
     ]);
+  });
+});
+
+// Every 255 used to read "can't reach klaw right now", a refused login and an
+// unknown host key included: both fail the same way on every retry, so the
+// person waited for something that was never going to change.
+describe('jumpFailure', () => {
+  const names = { host: 'Gimel', machine: 'klaw' };
+  it.each([
+    ['klaw@klaw: Permission denied (publickey).', 'machine_auth_failed', "Gimel's ssh can't log in to klaw without a prompt"],
+    ['sign_and_send_pubkey: signing failed for ED25519 "op": agent refused operation', 'machine_auth_failed', "can't log in to klaw"],
+    ['Host key verification failed.', 'machine_host_key', "Gimel doesn't trust klaw's host key yet. On Gimel, run ssh klaw once"],
+    ['No ED25519 host key is known for klaw and you have requested strict checking.\nHost key verification failed.', 'machine_host_key', "doesn't trust klaw's host key"],
+    ['@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@', 'machine_host_key', "klaw's host key has changed"],
+    ['ssh: Could not resolve hostname klaw: nodename nor servname provided', 'connect_failed', "Gimel can't find klaw"],
+    ['ssh: connect to host klaw port 22: Operation timed out', 'connect_failed', "Gimel can't reach klaw right now."],
+    ['', 'connect_failed', "Gimel can't reach klaw right now."],
+  ])('reads %j as %s', (stderr, code, message) => {
+    const failure = jumpFailure(stderr, 'klaw', names);
+    expect(failure.code).toBe(code);
+    expect(failure.message).toContain(message);
+  });
+
+  it('reaches the client with its own code, and the poll pauses on it', async () => {
+    const { transport } = recorder({ ok: true, stdout: '', stderr: 'klaw: Permission denied (publickey).', exitCode: 255 });
+    const client = new HerdrClient(withMachine(transport, 'klaw', names));
+    await expect(client.ping()).rejects.toMatchObject({ code: 'machine_auth_failed', message: expect.stringContaining('IdentityFile') });
+    expect(needsTheUser('machine_auth_failed')).toBe(true);
+    expect(needsTheUser('machine_host_key')).toBe(true);
+    expect(needsTheUser('connect_failed')).toBe(false);
+  });
+});
+
+// A machine's herdr is run by name and nothing on the phone sets its path, so
+// the host's "set this host's herdr path" sent the person to break the host.
+describe('herdr missing on a machine', () => {
+  const names = { host: 'Gimel', machine: 'klaw' };
+  function missingOnKlaw(locate: string) {
+    const transport: HerdrTransport = {
+      // The diagnosis is the only script that prints NONE/EXEC; everything
+      // else is herdr itself, which is not there.
+      exec: async (command) => command.includes('echo NONE')
+        ? { ok: true, stdout: `${locate}\n`, stderr: '', exitCode: 0 }
+        : { ok: true, stdout: '', stderr: 'sh: herdr: command not found', exitCode: 127 },
+      streamLines: async function* () {},
+    };
+    return new HerdrClient(withMachine(transport, 'klaw', names), 'herdr', names);
+  }
+
+  it('says herdr is not on the machine, and never offers the host\'s herdr path', async () => {
+    const thrown = await missingOnKlaw('NONE').ping().catch((error: unknown) => error);
+    expect(thrown).toMatchObject({ code: 'herdr_not_found' });
+    const message = (thrown as Error).message;
+    expect(message).toContain("herdr isn't installed on klaw");
+    expect(message).toContain('the ssh session Gimel opens there');
+    expect(message).not.toMatch(/host's herdr path|on the host/);
+  });
+
+  it('names the machine for a herdr it can see but cannot run', async () => {
+    await expect(missingOnKlaw('NOEXEC /opt/herdr').ping()).rejects.toMatchObject({
+      code: 'herdr_not_executable',
+      message: 'herdr is at /opt/herdr on klaw but isn\'t executable. On klaw, run: chmod +x /opt/herdr',
+    });
+    const found = await missingOnKlaw('EXEC /home/k/.cargo/bin/herdr').ping().catch((error: unknown) => error);
+    expect(found).toMatchObject({ code: 'herdr_not_on_path' });
+    expect((found as Error).message).toContain('on klaw');
+    expect((found as Error).message).not.toContain("host's herdr path");
+  });
+
+  it('keeps the host\'s own sentences for a host', async () => {
+    const transport: HerdrTransport = {
+      exec: async (command) => command.includes('echo NONE')
+        ? { ok: true, stdout: 'NONE\n', stderr: '', exitCode: 0 }
+        : { ok: true, stdout: '', stderr: '', exitCode: 127 },
+      streamLines: async function* () {},
+    };
+    await expect(new HerdrClient(transport).ping()).rejects.toMatchObject({ message: expect.stringContaining("this host's herdr path") });
   });
 });
 

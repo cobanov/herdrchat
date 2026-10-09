@@ -91,12 +91,17 @@ export function openFor(open: OpenChat | null, summary: Pick<ListedChat, 'connec
 /**
  * The one line a machine that failed gets at the end of its host's list.
  *
- * A machine the host cannot reach already says so in a sentence naming both
- * ("Gimel can't reach klaw right now."). Anything else is herdr's own
- * sentence about the machine, which does not say which machine it is, so the
- * label goes first.
+ * The jump's own sentences (`jumpFailure`) and a missing herdr on the
+ * machine (`missingOnMachine`) already name it ("Gimel can't reach klaw right
+ * now."). Anything else is herdr's own sentence about the machine, which does
+ * not say which machine it is, so the label goes first.
  */
 export function machineNotice(label: string, error: string, errorCode: string | null): string {
-  if (errorCode === 'connect_failed' && error.includes(label)) return error;
+  if (errorCode !== null && NAMES_THE_MACHINE.has(errorCode) && error.includes(label)) return error;
   return `${label}: ${error}`;
 }
+
+const NAMES_THE_MACHINE: ReadonlySet<string> = new Set([
+  'connect_failed', 'machine_auth_failed', 'machine_host_key',
+  'herdr_not_found', 'herdr_not_on_path', 'herdr_not_executable',
+]);

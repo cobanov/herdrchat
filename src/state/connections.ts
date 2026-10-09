@@ -408,11 +408,9 @@ function machineClientFor(connection: MachineConnection): HerdrClient {
   clientFor(host);
   const hostEntry = clients.get(host.id);
   if (hostEntry === undefined) throw new Error(`No client for ${host.id}`);
-  const jumped = withMachine(hostEntry.raw, machine.target, {
-    host: host.name || host.host,
-    machine: machine.label,
-  });
-  const client = new HerdrClient(withSession(jumped, machine.session), MACHINE_HERDR_PATH);
+  const names = { host: host.name || host.host, machine: machine.label };
+  const jumped = withMachine(hostEntry.raw, machine.target, names);
+  const client = new HerdrClient(withSession(jumped, machine.session), MACHINE_HERDR_PATH, names);
   clients.set(connection.id, { client, transport: null, raw: jumped, shape });
   return client;
 }

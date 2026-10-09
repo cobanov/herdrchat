@@ -62,6 +62,20 @@ reachable from the phone. Opening, following and sending work as they do for
 the host's own chats. Disabled machines are left out. Push notifications
 cover only the host's own chats for now, and a machine uses its host's theme.
 
+The host's `ssh` runs without a terminal (`BatchMode=yes`), inside the SSH
+session the app opened, so it has to reach the machine on its own: with a key
+file that the host's `~/.ssh/config` names for the machine (`IdentityFile`),
+not an agent that asks for approval on the host's screen or one only its
+desktop login has, and with the machine already in the host's
+`~/.ssh/known_hosts`. An interactive `ssh klaw` on the host can pass where this
+fails, so check it from another computer:
+`ssh <host> 'ssh -o BatchMode=yes klaw true'`. If that fails, add the key to the
+host's config, or run `ssh klaw` once on the host to accept its host key. The
+list says which of the two it is under the chats. herdr must also be where a
+non-interactive SSH session on the machine looks (`~/.local/bin`, `~/bin`,
+`/opt/homebrew/bin` or `/usr/local/bin`); one in `~/.cargo/bin` needs a link
+into `~/.local/bin`.
+
 ## Theming
 
 Each host can restyle the app with a file of its own, `~/.herdrchat/theme.json`,

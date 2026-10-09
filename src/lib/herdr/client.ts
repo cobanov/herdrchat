@@ -11,6 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
+import type { MachineNames } from './machine';
 import { machineListArgv, parseMachineList, type MachineList } from './machines';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellCommand, shellQuote, withPath } from './shell';
@@ -115,9 +116,18 @@ export class HerdrClient {
    */
   readonly socket: HerdrSocket;
 
-  constructor(transport: HerdrTransport, herdrPath = 'herdr') {
+  /**
+   * Set for a machine reached through its host (`withMachine`): who reaches
+   * whom, so a diagnosis names the computer it is about. A machine's herdr is
+   * found by name on the machine, and nothing on the phone sets its path, so
+   * "set this host's herdr path" would send the person to break the host.
+   */
+  private readonly machine: MachineNames | null;
+
+  constructor(transport: HerdrTransport, herdrPath = 'herdr', machine: MachineNames | null = null) {
     this.transport = transport;
     this.herdr = herdrPath;
+    this.machine = machine;
     this.socket = new HerdrSocket(transport, herdrPath);
   }
 
@@ -1039,6 +1049,7 @@ export class HerdrClient {
    */
   private async diagnoseMissingHerdr(): Promise<HerdrError> {
     const location = await this.locateHerdr();
+    if (this.machine !== null) return missingOnMachine(location, this.machine);
     // A path the user typed in full is not a PATH problem: nothing runs there.
     // Saying "installed elsewhere, not on PATH" sent them looking for a PATH
     // setting when the fix was the path they had just typed (#4 acceptance).
@@ -1100,6 +1111,39 @@ export class HerdrClient {
     if (line.startsWith('EXEC ')) return { kind: 'found', path: line.slice(5) };
     if (line.startsWith('NOEXEC ')) return { kind: 'not_executable', path: line.slice(7) };
     return { kind: 'unknown' };
+  }
+}
+
+/**
+ * Why herdr was not found on a machine, in sentences about the machine.
+ *
+ * The host's sentences end in "set this host's herdr path", which on a
+ * machine is the wrong computer: the path is the host's, the machine's herdr
+ * is run by name, and changing the host's path breaks the host. What the
+ * person can change is where herdr sits on the machine, so it is found where
+ * a non-interactive ssh session looks (the places `withPath` adds).
+ */
+export function missingOnMachine(location: HerdrLocation, names: MachineNames): HerdrError {
+  const { host, machine } = names;
+  const looks = `~/.local/bin, ~/bin, /opt/homebrew/bin or /usr/local/bin`;
+  switch (location.kind) {
+    case 'found':
+      return new HerdrError(
+        'herdr_not_on_path',
+        `herdr is at ${location.path} on ${machine}, but the ssh session ${host} opens there can't run it. Link it into ~/.local/bin on ${machine}.`
+      );
+    case 'not_executable':
+      return new HerdrError(
+        'herdr_not_executable',
+        `herdr is at ${location.path} on ${machine} but isn't executable. On ${machine}, run: chmod +x ${location.path}`
+      );
+    case 'missing':
+    // A probe that itself failed: the same sentence, which already says "or".
+    case 'unknown':
+      return new HerdrError(
+        'herdr_not_found',
+        `herdr isn't installed on ${machine}, or isn't where the ssh session ${host} opens there looks (${looks}). Install it on ${machine}, or link it into ~/.local/bin there.`
+      );
   }
 }
 

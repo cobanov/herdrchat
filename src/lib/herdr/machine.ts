@@ -1,4 +1,4 @@
-import type { ExecResult } from '../../../modules/herdr-ssh/src';
+import type { ExecResult, SshFailureCode } from '../../../modules/herdr-ssh/src';
 import { shellQuote, untilChannelCloses, withPath } from './shell';
 import { JUMP_CONNECT_TIMEOUT_MS, JUMP_KEEPALIVE_MS, JUMP_SERVER_ALIVE_MS } from './timeouts';
 import type { HerdrTransport } from './transport';
@@ -137,11 +137,61 @@ export function machineUnreachableMessage(names: MachineNames): string {
 }
 
 /**
+ * The host's ssh reached the machine and could not log in without a prompt.
+ * Not `auth_failed`: that one is about the phone's own login to the host, and
+ * the way out it offers (this host's credentials) is the wrong computer.
+ */
+export const MACHINE_AUTH_FAILED = 'machine_auth_failed' satisfies SshFailureCode;
+/** The host's ssh does not trust the machine's host key: unknown, or changed. */
+export const MACHINE_HOST_KEY = 'machine_host_key' satisfies SshFailureCode;
+
+/**
+ * What an ssh exit 255 says, from the first line of its stderr that names a
+ * cause.
+ *
+ * Only a real connect or timeout failure is "can't reach it right now": a
+ * refused login or an unknown host key fails the same way on every retry, and
+ * "right now" left a person pulling to refresh forever. The jump runs inside
+ * the host's sshd session with `BatchMode=yes`, so it cannot use an agent that
+ * wants an approval on the host's screen, nor one only the desktop login
+ * exports, and it cannot accept a new host key; an interactive `ssh klaw` on
+ * the host can, which is why that check passes while the jump fails.
+ */
+export function jumpFailure(stderr: string, target: string, names: MachineNames): { code: SshFailureCode; message: string } {
+  const { host, machine } = names;
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for .* has changed/i.test(stderr)) {
+    return {
+      code: MACHINE_HOST_KEY,
+      message: `${machine}'s host key has changed since ${host} last connected. If you expect that, update it in ${host}'s ~/.ssh/known_hosts.`,
+    };
+  }
+  if (/Host key verification failed|No .*host key is known/i.test(stderr)) {
+    return {
+      code: MACHINE_HOST_KEY,
+      message: `${host} doesn't trust ${machine}'s host key yet. On ${host}, run ssh ${target} once and accept it.`,
+    };
+  }
+  if (/Permission denied|Too many authentication failures|agent refused|sign_and_send_pubkey/i.test(stderr)) {
+    return {
+      code: MACHINE_AUTH_FAILED,
+      message: `${host}'s ssh can't log in to ${machine} without a prompt. Give ${machine} a key file in ${host}'s ~/.ssh/config (IdentityFile), not an agent that asks for approval.`,
+    };
+  }
+  if (/Could not resolve hostname/i.test(stderr)) {
+    return {
+      code: 'connect_failed',
+      message: `${host} can't find ${machine}: nothing in its ssh config or DNS answers to ${target}.`,
+    };
+  }
+  return { code: 'connect_failed', message: machineUnreachableMessage(names) };
+}
+
+/**
  * Bind a host's transport to one of its machines.
  *
  * `ssh` returns the machine's command's exit status, and 255 for its own
- * failure: the host could not reach the machine, or lost it. That is turned
- * into a `connect_failed` result here rather than in `client.ts`, because the
+ * failure: the host could not reach the machine, lost it, or could not log in
+ * to it (`jumpFailure` tells which). That is turned into a failed result here rather than in `client.ts`, because the
  * transcript store, the socket bridge and the picture upload reach the machine
  * through this transport without passing through the client, and each would
  * otherwise read 255 as a command that failed on the host. A command on the
@@ -166,7 +216,7 @@ export function withMachine(
     exec: async (command, timeoutMs): Promise<ExecResult> => {
       const result = await transport.exec(jumpCommand(target, command), timeoutMs + JUMP_CONNECT_TIMEOUT_MS);
       if (result.ok && result.exitCode === SSH_FAILED_EXIT) {
-        return { ok: false, code: 'connect_failed', message: machineUnreachableMessage(names) };
+        return { ok: false, ...jumpFailure(result.stderr, target, names) };
       }
       return result;
     },
