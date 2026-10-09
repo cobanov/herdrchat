@@ -105,7 +105,7 @@ appId: dev.herdr.HerdrChat
     commands:
       - tapOn:
           id: "save-server"
-      - assertVisible: "Hosts"
-      - tapOn: "Chats"
+      # Saving dismisses every sheet (Hosts and the editor) onto the chats.
+      - assertVisible: "Chats"
       - assertVisible:
           id: "server-switcher"

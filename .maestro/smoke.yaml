@@ -1,4 +1,5 @@
-# Launch, reach every top-level destination, assert a key element on each.
+# Launch, reach every destination off the chats (the host switcher and the
+# menu), assert a key element on each, and come back.
 #
 # Deliberately does NOT need a server: it covers the shape of the app, not its
 # connection. `add-server.yaml` is the one that proves SSH really works.
@@ -12,20 +13,26 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertVisible: "Chats"
 
-# The host switcher sits under the title and is the only way to change hosts from
-# the primary screen. It pushes the Hosts TAB, not a sheet, so there is no close
-# button afterwards and the tab bar is the way back. This flow asserted a
-# "Servers" screen dismissed by `header-close` until the tab redesign, and went
-# on failing quietly because nobody re-ran it.
+# The host switcher sits under the title and is the quickest way to change
+# hosts from the primary screen. It presents Hosts as a sheet over the chats,
+# closed by `header-close`. (Between the tab redesign and the menu, Hosts was a
+# tab and this flow left it by the tab bar.)
 - tapOn:
     id: "server-switcher"
 - assertVisible: "Hosts"
+- assertVisible:
+    id: "server-demo"
+- tapOn:
+    id: "header-close"
+- assertVisible: "Chats"
 
-# Each tap below is unambiguous BECAUSE OF WHERE IT IS MADE: a destination's name
-# is on screen only in the tab bar while you are somewhere else. Tapping
-# "Settings" from Hosts matches one element; tapping it from Settings would also
-# match the large title. Reordering these steps reintroduces that ambiguity.
-- tapOn: "Settings"
+# Everything else is behind the menu, the "…" beside "+". Each destination is
+# asserted by something only it renders, not by its name: the name is also a
+# row of the menu, so it would pass against a sheet that never opened.
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - runFlow:
     when:
       visible:
@@ -33,10 +40,18 @@ appId: dev.herdr.HerdrChat
     commands:
       - tapOn:
           id: settings-section-conversations
-# A row only Settings renders, rather than the word "Settings", the tab bar
-# shows that from anywhere, so it would pass against a screen that never loaded.
 - assertVisible:
     id: "toggle-tool-activity"
+- tapOn:
+    id: "header-close"
+- assertVisible: "Chats"
 
-- tapOn: "Chats"
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Hosts
+- assertVisible:
+    id: "server-demo"
+- tapOn:
+    id: "header-close"
 - assertVisible: "Chats"

@@ -1,0 +1,76 @@
+# The Chats menu. Chats is the app; New chat, Hosts and Settings are rows behind
+# the "…" in its header, each presented as a sheet over the chats and closed by
+# Done, which lands back on the same list. They used to be tabs, and a tab bar
+# put a permanent strip of chrome under every conversation for screens opened
+# a few times a week.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+
+# The menu itself, with the Demo selected. Its title is the host's name, which
+# the subtitle under "Chats" shows too, and "New chat" is also the label of the
+# "+" beside the menu, so neither proves the sheet is up; which rows it lists
+# is pinned by src/lib/__tests__/mainMenu.test.ts. Read the screenshot.
+- tapOn:
+    id: chats-menu
+- extendedWaitUntil:
+    visible: Settings
+    timeout: 5000
+- assertVisible: Hosts
+- takeScreenshot: menu-${APPEARANCE}
+- tapOn: Settings
+- waitForAnimationToEnd
+
+# Settings: a row only Settings renders, not its title, which would also match
+# a stale menu row. On iPad its sections are a sidebar inside the sheet.
+- runFlow:
+    when:
+      visible:
+        id: settings-section-conversations
+    commands:
+      - tapOn:
+          id: settings-section-conversations
+- scrollUntilVisible:
+    element:
+      id: toggle-tool-activity
+    direction: DOWN
+- takeScreenshot: menu-settings-${APPEARANCE}
+- tapOn:
+    id: header-close
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 5000
+- assertNotVisible:
+    id: toggle-tool-activity
+
+# Hosts: the Demo is listed, and Done goes back without changing the host.
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Hosts
+- assertVisible:
+    id: server-demo
+- tapOn:
+    id: header-close
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 5000
+- assertNotVisible:
+    id: server-demo
+
+# New chat: the same sheet "+" opens. (A tap matching the "+" by its label
+# instead of the row would open it too; the screenshot above shows the row.)
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: New chat
+- assertVisible:
+    id: field-cwd
+- tapOn:
+    id: header-close
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 5000

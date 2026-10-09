@@ -1,0 +1,19 @@
+# Open one row of the Chats menu, the "…" beside "+" in the Chats header:
+#   - runFlow:
+#       file: _menu.yaml
+#       env:
+#         ITEM: Settings      # or Hosts, or New chat
+# The menu is the system action sheet (a centred card on iOS 26, a popover on
+# iPad), so its rows have no testIDs and are matched by their text. With the
+# tab bar gone, nothing on the chats screen itself reads "Hosts" or
+# "Settings", so the text is unambiguous while the sheet is up. Every screen it
+# opens is a sheet closed by `header-close`.
+appId: dev.herdr.HerdrChat
+---
+- tapOn:
+    id: chats-menu
+- extendedWaitUntil:
+    visible: ${ITEM}
+    timeout: 5000
+- tapOn: ${ITEM}
+- waitForAnimationToEnd

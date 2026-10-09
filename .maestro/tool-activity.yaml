@@ -11,13 +11,17 @@ appId: dev.herdr.HerdrChat
 # The Demo host is the one a fresh install opens on.
 - assertVisible:
     id: server-switcher
-- tapOn: Settings
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       text: '${APPEARANCE}'
     direction: DOWN
 - tapOn: '${APPEARANCE}'
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - tapOn:
     id: chat-row-w1
 - assertVisible: '.*Found it.*'
