@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Appearance, useColorScheme } from 'react-native';
 
-import { darkPalette, lightPalette, type Palette } from './tokens';
+import { applyOverrides, type HostThemeOverrides } from '@/lib/theme/resolve';
+import { avatarPalette, darkPalette, lightPalette, type Palette } from './tokens';
 
 export type ColorSchemeName = 'light' | 'dark';
 export type ThemePreference = 'system' | ColorSchemeName;
@@ -16,6 +17,26 @@ export interface Theme {
   reduceTransparency: boolean;
   /** The user asked for less movement. Non-essential animation is disabled. */
   reduceMotion: boolean;
+  /** What `avatarColor` picks from: a host theme's `avatars`, or the app's own. */
+  avatarPalette: readonly string[];
+  /** The selected host's theme.json `name`, when one is applied and named. */
+  hostThemeName: string | null;
+}
+
+/**
+ * A scheme's colours with a host theme laid over them. Pure, so the merge the
+ * provider renders is the one a test pins: explicit keys over the palette,
+ * and the avatars only when the theme gives at least one.
+ */
+export function themeColors(
+  scheme: ColorSchemeName,
+  overrides?: HostThemeOverrides
+): { colors: Palette; avatarPalette: readonly string[] } {
+  const avatars = overrides?.avatars;
+  return {
+    colors: applyOverrides(scheme === 'dark' ? darkPalette : lightPalette, overrides?.[scheme]),
+    avatarPalette: avatars !== undefined && avatars.length > 0 ? avatars : avatarPalette,
+  };
 }
 
 const ThemeContext = createContext<Theme | null>(null);
@@ -28,10 +49,18 @@ export function ThemeProvider({
   children,
   preference: controlledPreference,
   onPreferenceChange,
+  overrides,
+  hostThemeName = null,
 }: {
   children: ReactNode;
   preference?: ThemePreference;
   onPreferenceChange?: (next: ThemePreference) => void;
+  /**
+   * The selected host's theme. Kept stable by the caller (it comes out of a
+   * store), since a new object here re-renders everything that reads colours.
+   */
+  overrides?: HostThemeOverrides;
+  hostThemeName?: string | null;
 }) {
   const systemScheme = useColorScheme();
   const [localPreference, setLocalPreference] = useState<ThemePreference>('system');
@@ -95,11 +124,12 @@ export function ThemeProvider({
       preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
     return {
       scheme,
-      colors: scheme === 'dark' ? darkPalette : lightPalette,
+      ...themeColors(scheme, overrides),
       reduceTransparency,
       reduceMotion,
+      hostThemeName,
     };
-  }, [preference, systemScheme, reduceTransparency, reduceMotion]);
+  }, [preference, systemScheme, reduceTransparency, reduceMotion, overrides, hostThemeName]);
 
   const preferenceValue = useMemo(
     () => ({

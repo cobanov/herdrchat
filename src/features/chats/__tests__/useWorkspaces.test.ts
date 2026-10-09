@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import { decodeSnapshot } from '@/lib/herdr/models';
@@ -18,7 +19,15 @@ jest.mock('../../useHostEvents', () => ({
     return mockLive;
   },
 }));
-jest.mock('@/state/settings', () => ({ useSettings: () => 1 }));
+let mockHostThemes = true;
+jest.mock('@/state/settings', () => ({
+  useSettings: (select: (state: { pollScale: number; useHostThemes: boolean }) => unknown) =>
+    select({ pollScale: 1, useHostThemes: mockHostThemes }),
+}));
+const mockCheckTheme = jest.fn(async (_connectionId: string, _transport: unknown) => true);
+jest.mock('@/state/hostTheme', () => ({
+  checkHostTheme: (connectionId: string, transport: unknown) => mockCheckTheme(connectionId, transport),
+}));
 jest.mock('@/lib/transcript/store', () => ({
   previewText: (message: ChatMessage) =>
     message.segments[0]?.kind === 'text' ? message.segments[0].text : null,
@@ -61,6 +70,9 @@ beforeEach(() => {
   mockPolling = true;
   mockLive = true;
   mockPreview = 'Before';
+  mockHostThemes = true;
+  mockCheckTheme.mockReset();
+  mockCheckTheme.mockResolvedValue(true);
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -264,4 +276,68 @@ it('keeps retrying, with backoff, a host that is merely unreachable', async () =
   await act(async () => { await jest.advanceTimersByTimeAsync(300_000); });
   expect(snapshot.mock.calls.length).toBeGreaterThan(3);
   await unmount();
+});
+
+describe('the host theme check, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('checks on the first poll, then at most every 10 s', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockCheckTheme).toHaveBeenCalledTimes(1);
+    expect(mockCheckTheme).toHaveBeenLastCalledWith('host', client.transport);
+    // Polls at 3, 6 and 9 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(9_100); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(1);
+    // The poll at 12 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('checks again on a pull to refresh and on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(3);
+    await unmount();
+  });
+
+  it('never checks after a poll that failed', async () => {
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  it('never checks without a host to file it under, or with host themes off', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    mockHostThemes = false;
+    const off = await renderHook(() => useWorkspaces(client, 'host'));
+    await off.unmount();
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+  });
+
+  // The check is a side task: the list never waits on it or reports it.
+  it('keeps a failed or hanging check out of the list', async () => {
+    mockCheckTheme.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    mockCheckTheme.mockResolvedValue(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(12_100); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
 });

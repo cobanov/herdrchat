@@ -48,6 +48,13 @@ export interface Settings {
   starAsked: boolean;
   /** Days the app was opened on a real host, as `encodeActiveDays` writes it. */
   activeDays: string;
+  /**
+   * Colour the app with the selected host's `~/.herdrchat/theme.json`. On by
+   * default: a host without the file looks the same either way, and a host
+   * with one has it because someone asked for it. Off renders the app's own
+   * colours and leaves the file alone.
+   */
+  useHostThemes: boolean;
 }
 
 /**
@@ -82,6 +89,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   welcomeSeen: false,
   starAsked: false,
   activeDays: '',
+  useHostThemes: true,
 };
 
 interface SettingsState extends Settings {
@@ -112,6 +120,7 @@ export function settingsSnapshot(): Settings {
     welcomeSeen: state.welcomeSeen,
     starAsked: state.starAsked,
     activeDays: state.activeDays,
+    useHostThemes: state.useHostThemes,
   };
 }
 

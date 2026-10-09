@@ -136,6 +136,8 @@ export const size = {
    */
   tableColumnMin: 56,
   tableColumnMax: 220,
+  /** The chevron at the end of a settings row that opens or goes somewhere. */
+  rowChevron: 13,
 } as const;
 
 /**
@@ -535,7 +537,10 @@ export const lightPalette: Palette = {
   tintMuted: 'rgba(84, 89, 212, 0.12)',
   attentionMuted: 'rgba(160, 92, 8, 0.12)',
   lavender: LAVENDER,
-  attention: '#A05C08', // 4.87:1
+  // 4.77:1 on the cards (`secondarySystemBackground`, `chatCard`) as well, where
+  // Settings lists what was wrong with a host's theme.json; #A05C08 cleared the
+  // canvas but read at 4.46:1 there.
+  attention: '#9A5807', // 5.20:1
   destructive: '#C22B2A', // 5.34:1
   positive: '#1B7A4F', // 4.98:1
 
@@ -556,7 +561,7 @@ export const lightPalette: Palette = {
   chatCard: '#EBEDF7',
   chatCardPressed: '#DFE2F1',
   swipeNeutral: '#D5D9EA',
-  attentionBorder: '#A05C08',
+  attentionBorder: '#9A5807',
   // Apple's own off-track is #E9E9EA, which works because it sits on a white
   // card. Ours sits on a card that is already a shade off white, so the same
   // value would leave a white knob on an almost-white capsule. This keeps the
@@ -658,8 +663,14 @@ function hashKey(key: string, seed: number): number {
   return hash;
 }
 
-export function avatarColor(key: string): string {
-  return avatarPalette[hashKey(key, 5381) % avatarPalette.length] ?? avatarPalette[0]!;
+/**
+ * The avatar colour for a key, from `palette` (a host theme's `avatars`, or the
+ * app's own). The hash is the same whichever palette, so a chat keeps its slot
+ * when a theme swaps the colours; an empty palette falls back to the app's.
+ */
+export function avatarColor(key: string, palette: readonly string[] = avatarPalette): string {
+  const colours = palette.length > 0 ? palette : avatarPalette;
+  return colours[hashKey(key, 5381) % colours.length] ?? avatarPalette[0]!;
 }
 
 /**

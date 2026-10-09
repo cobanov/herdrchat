@@ -17,12 +17,14 @@ where regressions are found.
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
 | `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
+| `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
-`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder".
+`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
+"restyle the app".
 
 
 Run against a booted simulator with the app installed and Metro running:

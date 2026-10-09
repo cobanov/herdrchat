@@ -24,7 +24,8 @@ import {
   useConnections,
   type ServerConnection,
 } from '@/state/connections';
-import { clearConnectionSettings, deleteConnection, setSetting } from '@/state/db';
+import { deleteConnection, setSetting } from '@/state/db';
+import { clearHostSettings } from '@/state/hostTheme';
 import { SELECTED_KEY } from '@/state/Hydrate';
 
 /** Manage saved herdr hosts. Selecting one switches the whole app to it. */
@@ -72,7 +73,9 @@ export default function ServersScreen() {
           // What the user actually asked for, and it happens now.
           await clearSecrets(connection.id);
           await deleteConnection(db, connection.id);
-          await clearConnectionSettings(db, connection.id);
+          // Its theme in memory with its settings rows, or a host re-added
+          // under the same id would open in the old colours.
+          await clearHostSettings(db, connection.id);
           remove(connection.id);
           // The store picked a new selection; remember it, or the next launch
           // would restore the deleted host's id (#90).
