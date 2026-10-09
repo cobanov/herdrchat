@@ -6,7 +6,7 @@ import { spacing } from '@/theme/tokens';
 import { isSettingsSection, type SettingsSection } from './HighlightOnLink';
 
 /**
- * Arriving from `/(tabs)/settings?section=…`.
+ * Arriving from `/settings?section=…`.
  *
  * Sections report their own y as they lay out, because the offset depends on
  * Dynamic Type, on whether a note is showing under the notifications switch, and

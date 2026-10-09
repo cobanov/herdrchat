@@ -3,8 +3,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Keyboard, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { confirmDestructive } from '@/components/ActionSheet';
+import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
@@ -24,9 +25,9 @@ import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegration
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useWorkspaces } from '@/features/chats/useWorkspaces';
-import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
+import { mainMenuActions, mainMenuTitle } from '@/lib/mainMenu';
 import { isThreadUnread, type ThreadRead } from '@/lib/unread';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
@@ -42,10 +43,11 @@ import { loadThreadReads, setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
 
 /**
- * Chats, the primary destination. One row per workspace, with live presence.
+ * Chats, the app's root. One row per workspace, with live presence. Hosts and
+ * Settings are behind the menu in its header, not beside it in a tab bar.
  *
  * Thin by design: everything it knows comes from `useWorkspaces`, everything it
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
@@ -94,7 +96,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     };
   }, [keyChanged, connection]);
   const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
-  useTabPressHaptic();
+  const insets = useSafeAreaInsets();
 
   const actions = useChatActions({
     client,
@@ -125,7 +127,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       void loadThreadReads(db, connection.id).then(setReads);
       // A rename happened in the sheet that just closed. Re-fetch rather than
       // wait out the poll, but only then, refreshing on every focus would cost
-      // a round-trip each time you switch tabs.
+      // a round-trip each time a sheet above this list closes.
       if (editsDirty) {
         clearEdits();
         void refresh();
@@ -223,6 +225,18 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
+        menuTestID="chats-menu"
+        onMenu={() =>
+          showActionSheet({
+            title: mainMenuTitle(connection?.name),
+            actions: mainMenuActions({
+              hasConnection: connection !== null,
+              newChat: () => router.push('/new-chat'),
+              hosts: () => router.navigate('/hosts'),
+              settings: () => router.navigate('/settings'),
+            }),
+          })
+        }
       />
 
       {/* Rename and close fail outside the poll's own error path, so they get
@@ -344,11 +358,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           maintainVisibleContentPosition={{ disabled: true }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          // The tab bar floats OVER the list, so the last row has to be able to
-          // scroll clear of it. Without this the final chat sits under the bar
-          // at the end of the list and cannot be read or tapped, however far you
-          // scroll, there is nothing left to scroll.
-          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: size.floatingBarClearance }}
+          // The list runs under the home indicator (the screen's safe area
+          // leaves the bottom edge to it), so the last row has to be able to
+          // scroll clear of it.
+          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + spacing.xl }}
           // Below the rows, not above them: the host answers the integration
           // check after the list has drawn, and a banner arriving on top pushed
           // every row down under a finger that was about to tap one (#4

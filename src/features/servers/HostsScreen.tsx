@@ -1,16 +1,16 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
-import { useTabPressHaptic } from '@/features/useTabPressHaptic';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { isNamedSession } from '@/lib/herdr/session';
 import { deviceFileId, removePushToken } from '@/features/notifications/push';
@@ -27,7 +27,12 @@ import {
 import { clearConnectionSettings, deleteConnection, setSetting } from '@/state/db';
 import { SELECTED_KEY } from '@/state/Hydrate';
 
-/** Manage saved herdr hosts. Selecting one switches the whole app to it. */
+/**
+ * Manage saved herdr hosts. Selecting one switches the whole app to it.
+ *
+ * Presented as a sheet above the chats (from the menu, the host line under the
+ * Chats title, or Settings' host card), so it has a Done control of its own.
+ */
 export default function ServersScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
@@ -36,14 +41,17 @@ export default function ServersScreen() {
   const selectedId = useConnections((state) => state.selectedId);
   const select = useConnections((state) => state.select);
   const remove = useConnections((state) => state.remove);
-  useTabPressHaptic();
+  const insets = useSafeAreaInsets();
 
   const choose = async (connection: ServerConnection) => {
     select(connection.id);
     await setSetting(db, SELECTED_KEY, connection.id);
     // Straight back to the conversations on the host you just picked — choosing
-    // a server is always in service of reading its chats.
-    router.navigate('/');
+    // a server is always in service of reading its chats. `dismissTo`, not
+    // `back`: opened from Settings this is the second sheet of two, and both
+    // go, since the chats are what the pick was for. With the chats not in
+    // history (a cold link straight here) it replaces this sheet with them.
+    router.dismissTo('/');
   };
 
   const confirmDelete = (connection: ServerConnection) => {
@@ -87,9 +95,10 @@ export default function ServersScreen() {
   };
 
   return (
-    <Screen>
+    <Screen presentation="sheet">
       <Header
         title="Hosts"
+        onClose={() => router.back()}
         actionSymbol="plus"
         actionLabel="Add a host"
         onAction={() =>
@@ -112,9 +121,9 @@ export default function ServersScreen() {
           contentContainerStyle={{
             padding: screenPadding,
             gap: spacing.sm,
-            // Same floating tab bar, same clearance: the last host card would
-            // otherwise end underneath it.
-            paddingBottom: size.floatingBarClearance,
+            // A sheet runs to the bottom edge, so the footnote has to clear the
+            // home indicator.
+            paddingBottom: insets.bottom + spacing.xl,
           }}
         >
           {connections.map((connection) => (

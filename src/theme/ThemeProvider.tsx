@@ -43,12 +43,11 @@ export function ThemeProvider({
   /*
     Push the preference down to UIKit, not just into our palette.
 
-    Some surfaces are not ours to colour. The tab bar is a real UIKit tab bar
-    (see app/(tabs)/_layout.tsx — deliberately, so it minimises and blurs the way
-    the system's does), and it reads the window's trait collection rather than
-    anything in this file. So with the app set to light on a phone set to dark it
-    rendered as a dark slab under a light screen, and every other native surface
-    — action sheets, the keyboard, menus — did the same.
+    Some surfaces are not ours to colour. Action sheets, the keyboard, menus and
+    the sheets' own chrome are UIKit's, and they read the window's trait
+    collection rather than anything in this file. So with the app set to light
+    on a phone set to dark they rendered dark against a light screen (the tab
+    bar the app once had was the first to show it, as a dark slab).
 
     `Appearance.setColorScheme` sets overrideUserInterfaceStyle on the app's
     windows, which is the one lever that reaches all of them at once.

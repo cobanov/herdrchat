@@ -11,7 +11,8 @@ import { useSettings } from '@/state/settings';
  * Opens the welcome on a first launch: once the saved state is read, nothing
  * has been set up, and it has not been seen. Also counts the days the app is
  * opened on a real host, which is what the one-time star card waits for.
- * Mounted with the tabs, so it runs with navigation ready.
+ * Called from the root chats screen (`app/index.tsx`), which is always
+ * underneath, so it runs once with navigation ready.
  */
 export function useWelcomeGate(): void {
   const router = useRouter();
