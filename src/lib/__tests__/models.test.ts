@@ -88,6 +88,21 @@ describe('snapshot decoding', () => {
     expect(plain?.inputPending).toBe(false);
   });
 
+  // The session's own title names the chat; `terminal_title` keeps a status
+  // glyph in front, so only the clean fields are read.
+  it('reads the agent name and the session title', () => {
+    const [named, older, plain] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', name: 'feke-pm', title: 'Feke animation smoothness', terminal_title: '✳ Feke animation smoothness', terminal_title_stripped: 'Feke animation smoothness' },
+        { pane_id: 'p2', terminal_title: '◐ Mac app DMG', terminal_title_stripped: 'Mac app DMG' },
+        { pane_id: 'p3', name: '', title: '', terminal_title: '✳ ' },
+      ],
+    }).agents;
+    expect([named?.name, named?.title]).toEqual(['feke-pm', 'Feke animation smoothness']);
+    expect([older?.name, older?.title]).toEqual([null, 'Mac app DMG']);
+    expect([plain?.name, plain?.title]).toEqual([null, null]);
+  });
+
   // herdr #4400 keeps a pane whose restore failed and says why (#119).
   it('collects the panes herdr could not restore', () => {
     const snapshot = decodeSnapshot({
@@ -197,6 +212,8 @@ describe('session signature', () => {
     stateChangeSeq: null,
     completionSeq: null,
     inputPending: false,
+    name: null,
+    title: null,
     ...overrides,
   });
 

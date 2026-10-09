@@ -5,14 +5,14 @@ import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
 const agentIn = (paneId: string): AgentInfo => ({
   agent: 'claude', agentStatus: 'idle', cwd: '/home/demo/api', foregroundCwd: null, focused: false, paneId, tabId: 't1',
-  terminalId: null, workspaceId: 'w6', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false,
+  terminalId: null, workspaceId: 'w6', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false, name: null, title: null,
 });
 const pane = (paneId: string, sessionSig: string, timestamp: number): PaneSummary => ({
-  paneId, agent: agentIn(paneId), sessionSig, status: 'idle', preview: { text: 'done', timestamp, fromUser: false },
+  paneId, agent: agentIn(paneId), sessionSig, status: 'idle', preview: { text: 'done', timestamp, fromUser: false }, sessionTitle: null, agentName: null,
 });
 const workspace = (panes: PaneSummary[]): ChatSummary => ({
   workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: panes.map((item) => item.agent), panes,
-  preview: panes[0]?.preview ?? null, sessionSig: 'group', restoreError: null,
+  preview: panes[0]?.preview ?? null, sessionSig: 'group', restoreError: null, sessionTitle: null, agentName: null,
 });
 const read = (sessionSig: string, openedAt: number): ThreadRead => ({ sessionSig, openedAt });
 

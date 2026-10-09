@@ -94,6 +94,8 @@ const agent: AgentInfo = {
   stateChangeSeq: null,
   completionSeq: null,
   inputPending: false,
+  name: null,
+  title: null,
 };
 const snapshot = (agents: AgentInfo[]): Snapshot => ({
   agents,
@@ -1163,6 +1165,33 @@ describe('one agent of a workspace', () => {
     expect(mockTailStarts.map((start) => start.path).sort()).toEqual(['/test/session.jsonl', '/test/sibling-session.jsonl']);
     expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'session,sibling-session');
     await unmount();
+  });
+
+  // The thread is titled by the session its row is titled by: the pane's
+  // own agent, and none for the workspace chat over several agents, whose
+  // row keeps the workspace's label. Read on every poll, so a retitle shows.
+  it('reads the session title from the agent it is bound to, on every poll', async () => {
+    mockProbe = { kind: 'size', bytes: 10 };
+    const named = { ...agent, title: 'API contract', name: 'api-pm' };
+    const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([named, { ...sibling, title: 'Web build' }]));
+    const pane = await renderHook(() => useThread(db, client, 'host', 'chat', [], 'chat:p2'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect([pane.result.current.sessionTitle, pane.result.current.agentName]).toEqual(['Web build', null]);
+    fetch.mockResolvedValue(snapshot([named, { ...sibling, title: 'Web build, take two' }]));
+    await act(async () => { await jest.advanceTimersByTimeAsync(30_100); });
+    expect(pane.result.current.sessionTitle).toBe('Web build, take two');
+    await pane.unmount();
+
+    const workspace = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect([workspace.result.current.sessionTitle, workspace.result.current.agentName]).toEqual([null, null]);
+    await workspace.unmount();
+
+    fetch.mockResolvedValue(snapshot([named]));
+    const solo = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect([solo.result.current.sessionTitle, solo.result.current.agentName]).toEqual(['API contract', 'api-pm']);
+    await solo.unmount();
   });
 
   it('unbinds and holds sending when its pane goes, even with a sibling still there', async () => {

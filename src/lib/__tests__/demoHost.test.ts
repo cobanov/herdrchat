@@ -46,8 +46,26 @@ describe('DemoHost as a herdr host', () => {
       ['w6:p1', 'claude', '/home/demo/api', 'idle', DEMO_SESSION_IDS['w6:p1']],
       ['w6:p2', 'claude', '/home/demo/api/web', 'working', DEMO_SESSION_IDS['w6:p2']],
     ]);
+    // Each titled by its own session, which titles its row and its thread.
+    expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
     // The other five keep the one pane they always had.
     expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  // Scratch and the OMP ledger have no session title, so the Demo also shows
+  // a chat titled by its workspace's label.
+  it('titles most chats by their session, and leaves two to their workspace', async () => {
+    const client = new HerdrClient(new DemoHost());
+    const { agents } = await client.snapshot();
+    expect(agents.map((a) => [a.paneId, a.title])).toEqual([
+      ['w1:p1', 'Folder picker read errors'],
+      ['w2:p1', 'Release notes summary'],
+      ['w3:p1', null],
+      ['w4:p1', null],
+      ['w5:p1', 'Daily screen journal'],
+      ['w6:p1', 'Archived projects migration'],
+      ['w6:p2', 'Save button wrap'],
+    ]);
   });
 
   it('reports one workspace as blocked, because that is the state worth seeing', async () => {

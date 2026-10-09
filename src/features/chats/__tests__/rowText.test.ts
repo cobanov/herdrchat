@@ -1,18 +1,24 @@
-import { rowContext, sharedFolder, statusLabel } from '../rowText';
+import { paneTitle, rowContext, rowTitle, sharedFolder, statusLabel } from '../rowText';
 import type { AgentInfo } from '@/lib/herdr/models';
 import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
 const agentIn = (paneId: string, agent: string | null, cwd: string, focused = false): AgentInfo => ({
   agent, agentStatus: 'idle', cwd, foregroundCwd: null, focused, paneId, tabId: 't1', terminalId: null,
-  workspaceId: 'w6', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false,
+  workspaceId: 'w6', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false, name: null, title: null,
 });
-const workspace = (agents: AgentInfo[]): ChatSummary => ({
-  workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents,
-  panes: agents.filter((agent) => agent.agent !== null).map((agent): PaneSummary => ({
-    paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle',
-  })),
-  preview: null, sessionSig: null, restoreError: null,
-});
+const workspace = (agents: AgentInfo[]): ChatSummary => {
+  const conversational = agents.filter((agent) => agent.agent !== null);
+  // As `buildSummaries` sets them: from the one conversational agent only.
+  const titled = conversational.length === 1 ? conversational[0] : undefined;
+  return {
+    workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents,
+    panes: conversational.map((agent): PaneSummary => ({
+      paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: agent.title, agentName: agent.name,
+    })),
+    preview: null, sessionSig: null, restoreError: null,
+    sessionTitle: titled?.title ?? null, agentName: titled?.name ?? null,
+  };
+};
 
 describe('sharedFolder', () => {
   it('finds the deepest folder every path is in', () => {
@@ -50,6 +56,39 @@ describe('rowContext', () => {
       agentIn('w6:p1', 'claude', '/srv/api'),
       agentIn('w6:p2', 'codex', '/home/web'),
     ]))).toBe('2 agents · Claude, Codex');
+  });
+});
+
+// A chat is titled by its session; the workspace's label moves to the line
+// under it, ahead of the agent and the folder.
+describe('titles', () => {
+  const titled = (paneId: string, cwd: string, title: string | null, name: string | null = null): AgentInfo =>
+    ({ ...agentIn(paneId, 'claude', cwd), title, name });
+
+  it('titles a one-agent chat by its session, and names the workspace in its line', () => {
+    const chat = workspace([titled('w6:p1', '/home/demo/api', 'API contract')]);
+    expect(rowTitle(chat)).toBe('API contract');
+    expect(rowContext(chat)).toBe('api · Claude · demo/api');
+  });
+  it('titles it by the agent\'s herdr name before the session has a title', () => {
+    const chat = workspace([titled('w6:p1', '/home/demo/api', null, 'api-pm')]);
+    expect(rowTitle(chat)).toBe('api-pm');
+    expect(rowContext(chat)).toBe('api · Claude · demo/api');
+  });
+  it('keeps the workspace label as the title, said once, with neither', () => {
+    const chat = workspace([titled('w6:p1', '/home/demo/api', '  ')]);
+    expect(rowTitle(chat)).toBe('api');
+    expect(rowContext(chat)).toBe('Claude · demo/api');
+    expect(rowTitle({ ...chat, title: '' })).toBe('w6');
+  });
+  it('keeps the label on a workspace of several agents, and titles each agent by its own session', () => {
+    const chat = workspace([
+      titled('w6:p1', '/home/demo/api', 'API contract'),
+      titled('w6:p2', '/home/demo/api/web', null),
+    ]);
+    expect(rowTitle(chat)).toBe('api');
+    expect(rowContext(chat)).toBe('2 agents · Claude · demo/api');
+    expect(chat.panes.map((pane) => paneTitle(chat, pane))).toEqual(['API contract', 'api']);
   });
 });
 

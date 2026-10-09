@@ -3,7 +3,7 @@ import type { AgentInfo } from '@/lib/herdr/models';
 import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
 const chat = (workspaceId: string, status: ChatSummary['status']): ChatSummary => ({
-  workspaceId, title: workspaceId, status, number: 1, agents: [], panes: [], preview: null, sessionSig: null, restoreError: null,
+  workspaceId, title: workspaceId, status, number: 1, agents: [], panes: [], preview: null, sessionSig: null, restoreError: null, sessionTitle: null, agentName: null,
 });
 const chats = [chat('idle-a', 'idle'), chat('busy', 'working'), chat('approval', 'blocked'), chat('idle-b', 'done'), chat('unknown', 'unknown')];
 const ids = (rows: ReturnType<typeof groupChats>) => rows.map((row) =>
@@ -11,9 +11,9 @@ const ids = (rows: ReturnType<typeof groupChats>) => rows.map((row) =>
 
 const agentIn = (workspaceId: string, paneId: string, agent: string | null, cwd: string): AgentInfo => ({
   agent, agentStatus: 'idle', cwd, foregroundCwd: null, focused: false, paneId, tabId: 't1', terminalId: null,
-  workspaceId, agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false,
+  workspaceId, agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false, name: null, title: null,
 });
-const paneOf = (agent: AgentInfo): PaneSummary => ({ paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle' });
+const paneOf = (agent: AgentInfo): PaneSummary => ({ paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: null, agentName: null });
 const withAgents = (summary: ChatSummary, agents: AgentInfo[]): ChatSummary => ({
   ...summary, agents, panes: agents.filter((agent) => agent.agent !== null).map(paneOf),
 });
@@ -34,7 +34,7 @@ it('matches a folder or provider without requiring a transcript or session id', 
   const workspace = chat('Release', 'idle');
   workspace.agents = [{
     agent: 'codex', agentStatus: 'idle', cwd: '/work/Acme/API', foregroundCwd: null,
-    focused: true, paneId: 'p1', tabId: 't1', terminalId: null, workspaceId: 'Release', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false,
+    focused: true, paneId: 'p1', tabId: 't1', terminalId: null, workspaceId: 'Release', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false, name: null, title: null,
   }];
   expect(ids(groupChats([workspace], 'acme/api'))).toEqual(['idle', 'Release']);
   expect(ids(groupChats([workspace], 'CODEX'))).toEqual(['idle', 'Release']);
@@ -95,4 +95,18 @@ it('marks the first and last agent row actually listed', () => {
   expect(ends(groupChats([api], ''))).toEqual(['api:p1:first:', 'api:p2::', 'api:p3::last']);
   expect(ends(groupChats([api], 'CLAUDE'))).toEqual(['api:p1:first:', 'api:p3::last']);
   expect(ends(groupChats([api], 'CODEX'))).toEqual(['api:p2:first:last']);
+});
+
+// A row is titled by its session, so a search for that title finds it, and
+// under a workspace of several agents, only the agent it names.
+it('finds a chat, and an agent row, by its session title', () => {
+  const titled = (agent: AgentInfo, title: string): AgentInfo => ({ ...agent, title });
+  const api = withAgents(chat('api', 'idle'), [
+    titled(agentIn('api', 'api:p1', 'claude', '/home/demo/api'), 'API contract'),
+    titled(agentIn('api', 'api:p2', 'claude', '/home/demo/api/web'), 'Web build'),
+  ]);
+  const panes = api.panes.map((pane) => ({ ...pane, sessionTitle: pane.agent.title }));
+  const solo = withAgents(chat('solo', 'idle'), [titled(agentIn('solo', 'solo:p1', 'claude', '/home/demo/solo'), 'Parser refactor')]);
+  expect(ids(groupChats([{ ...api, panes }, solo], 'web build'))).toEqual(['idle', 'api', 'pane:api:p2']);
+  expect(ids(groupChats([{ ...api, panes }, solo], 'PARSER'))).toEqual(['idle', 'solo']);
 });

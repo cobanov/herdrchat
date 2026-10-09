@@ -418,6 +418,11 @@ export class DemoHost implements HerdrTransport {
       // The first pane keeps the terminal id it always had.
       terminal_id: index === 0 ? `term_${w.workspaceId}` : `term_${pane.paneId.replace(':', '_')}`,
       workspace_id: w.workspaceId,
+      // As herdr sends them: `terminal_title` with Claude's status glyph in
+      // front, `title` and the stripped one without.
+      ...(pane.title === undefined ? {} : {
+        title: pane.title, terminal_title: `✳ ${pane.title}`, terminal_title_stripped: pane.title,
+      }),
       ...(this.trusting.has(pane.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
       agent_session: pane.agent === 'omp'
         ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[pane.paneId] ?? null }

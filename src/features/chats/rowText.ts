@@ -1,6 +1,7 @@
+import { chatTitle, titledBySession } from '@/lib/chatTitle';
 import { agentName, type AgentStatus } from '@/lib/herdr/models';
 import { paneChats } from './chatGroups';
-import type { ChatSummary } from './useWorkspaces';
+import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
  * The words on a chat row, apart from the row. Pure, so the rules for naming
@@ -20,11 +21,39 @@ export function statusLabel(status: AgentStatus): string {
 }
 
 /**
+ * A workspace row's title: its session's, as `chatTitle` ranks them. A
+ * workspace running several agents keeps its label, since its row stands for
+ * all of them and each agent's own row carries that agent's title.
+ */
+export function rowTitle(summary: ChatSummary): string {
+  const multi = paneChats(summary).length > 0;
+  return chatTitle({
+    sessionTitle: multi ? null : summary.sessionTitle,
+    agentName: multi ? null : summary.agentName,
+    workspaceLabel: summary.title,
+    workspaceId: summary.workspaceId,
+  });
+}
+
+/** One agent's row title, and its thread's: that agent's session, as `chatTitle` ranks them. */
+export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
+  return chatTitle({
+    sessionTitle: pane.sessionTitle,
+    agentName: pane.agentName,
+    workspaceLabel: summary.title,
+    workspaceId: summary.workspaceId,
+  });
+}
+
+/**
  * The line under a workspace's title: which agent, in which folder.
  *
  * With several agents it names them together and the folder they share,
  * because the rows under it name each one. Naming the one the old election
  * picked made a two-agent workspace look like a one-agent one.
+ *
+ * A row titled by its session names its workspace here first, since the
+ * title no longer does: `herdrchat · Claude · side/herdrchat`.
  */
 export function rowContext(summary: ChatSummary): string {
   const panes = paneChats(summary);
@@ -32,7 +61,8 @@ export function rowContext(summary: ChatSummary): string {
     const agent = summary.agents.find((item) => item.focused && item.agent !== null)
       ?? summary.agents.find((item) => item.agent !== null);
     const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
-    return [agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
+    const workspace = titledBySession(summary) ? summary.title.trim() : '';
+    return [workspace, agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];
   const shared = sharedFolder(panes.map((pane) => pane.agent.cwd)).split('/').filter(Boolean).slice(-2).join('/');

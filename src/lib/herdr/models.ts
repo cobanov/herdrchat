@@ -69,6 +69,18 @@ export interface AgentInfo {
    * (`agent_input_pending`). False from a herdr too old to send it.
    */
   inputPending: boolean;
+  /**
+   * The name given with `herdr agent rename` (`feke-pm`), null when the agent
+   * was never named.
+   */
+  name: string | null;
+  /**
+   * The session's own title, the one Claude Code and Codex set as the
+   * terminal's title ("Feke animation smoothness"): what a person calls the
+   * conversation. Without its status glyph, unlike herdr's `terminal_title`.
+   * Null for a plain pane, or from a herdr too old to send it.
+   */
+  title: string | null;
 }
 
 /**
@@ -295,6 +307,10 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     stateChangeSeq: optionalNum(value.state_change_seq),
     completionSeq: optionalNum(value.completion_seq),
     inputPending: value.input_pending === true,
+    name: optionalStr(value.name),
+    // `terminal_title` carries a status glyph in front (`✳ `); the stripped
+    // one is the same text as `title`, sent by herdrs that predate `title`.
+    title: optionalStr(value.title) ?? optionalStr(value.terminal_title_stripped),
   };
 }
 
