@@ -32,13 +32,16 @@ jest.mock('@/components/Glass', () => ({
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 let mockConnection: unknown = null;
+let mockHostConnection: unknown = null;
+let mockHydrated = false;
 const mockWantedIds: (string | null)[] = [];
 jest.mock('@/state/connections', () => ({
-  useConnections: () => false,
+  useConnections: (select: (state: { hydrated: boolean }) => unknown) => select({ hydrated: mockHydrated }),
   useSelectedConnection: () => null,
   useConnectionFor: (id: string | null) => {
     mockWantedIds.push(id);
-    return id === null || !id.includes('/') ? null : mockConnection;
+    if (id === null) return null;
+    return id.includes('/') ? mockConnection : mockHostConnection;
   },
   isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
   clientFor: () => null,
@@ -102,7 +105,8 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
   mockSessionMeta = { model: 'gpt-5.6', effort: 'high' };
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name · online');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name');
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
 });
 
 it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {
@@ -130,7 +134,8 @@ it.each([
   mockOffline = state.offline;
   mockPaused = state.paused;
   const screen = await render(<ThreadScreen workspaceId="w1" title="Chat" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent(new RegExp(`· ${word}$`));
+  expect(screen.getByTestId('thread-status')).toHaveTextContent(`· ${word}`);
+  expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/online|offline|reconnecting/);
   mockOffline = false;
   mockPaused = false;
 });
@@ -241,6 +246,12 @@ it('resolves a machine chat from its route and leads its line with the machine',
   expect(mockWantedIds).toContain('demo/demo-nuku');
   expect(screen.getByTestId('thread-title')).toHaveTextContent('Nightly digest');
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^nuku · kenneth-bot · /);
+  // The status is its own text that never shrinks: the machine in front made
+  // the one line long enough that the word at its end was the first cut.
+  expect(screen.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
+  expect(screen.getByTestId('thread-meta')).toHaveStyle({ flexShrink: 1 });
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
+  expect(screen.getByTestId('thread-status')).toHaveStyle({ flexShrink: 0 });
   await screen.unmount();
   mockConnection = null;
   mockSessionTitle = null;
@@ -259,11 +270,31 @@ it('says a workspace named after its folder once in the line', async () => {
   mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
   mockAgents = [{ agent: 'claude', paneId: 'w6:p1', agentSession: null }];
   const screen = await render(<ThreadScreen workspaceId="w6" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort · online$/);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort$/);
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
   expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/HerdrChat/);
   await screen.unmount();
   mockWorkingDirName = 'project-with-a-long-folder-name';
   mockWorkspaceLabel = null;
   mockSessionTitle = null;
   mockAgents = [];
+});
+
+// A machine the host no longer lists: the host is still here, so the screen
+// says the machine is gone, names it from the host's cached list, and leads
+// back to the chats rather than to Hosts, where machines are not.
+it('says a chat\'s machine is gone, by name, when its host is still here', async () => {
+  const { useHostMachines } = jest.requireActual<typeof import('@/state/hostMachines')>('@/state/hostMachines');
+  useHostMachines.setState({ byHost: { gimel: [{ id: 'm-klaw', label: 'klaw', target: 'klaw', session: 'default', enabled: false }] } });
+  mockHydrated = true;
+  mockConnection = null;
+  mockHostConnection = { id: 'gimel', name: 'Gimel' };
+  const screen = await render(<ThreadScreen connectionId="gimel/m-klaw" workspaceId="w1" title="Chat" />);
+  expect(screen.getByText("This chat's machine is gone")).toBeOnTheScreen();
+  expect(screen.getByTestId('thread-machine-enable')).toHaveTextContent(/herdr machine enable klaw on Gimel/);
+  expect(screen.queryByTestId('thread-open-hosts')).toBeNull();
+  await screen.unmount();
+  mockHydrated = false;
+  mockHostConnection = null;
+  useHostMachines.setState({ byHost: {} });
 });

@@ -82,12 +82,14 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null 
 
 /**
  * The line under one agent's title in a workspace that holds several: its
- * provider and folder, after its machine when it is on one. The workspace's
- * card above already names the workspace.
+ * provider and folder. The workspace's card above already names the
+ * workspace, and its machine when it is on one; said again on every agent's
+ * row, the machine pushed the folder, the one thing telling the agents
+ * apart, off a phone's line.
  */
-export function paneContext(summary: { machine?: MachineRef | null }, pane: PaneSummary): string {
+export function paneContext(pane: PaneSummary): string {
   const folder = pane.agent.cwd.split('/').filter(Boolean).slice(-2).join('/');
-  return [summary.machine?.label ?? '', agentName(pane.agent.agent), folder].filter(Boolean).join(' · ');
+  return [agentName(pane.agent.agent), folder].filter(Boolean).join(' · ');
 }
 
 /** The deepest folder every path is in, without its leading slash: `a/b` for `/a/b` and `/a/b/c`. */

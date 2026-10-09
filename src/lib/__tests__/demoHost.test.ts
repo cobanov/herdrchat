@@ -9,6 +9,7 @@ import {
   transcriptFor,
 } from '../demo/fixtures';
 import { withMachine } from '../herdr/machine';
+import { DEMO_PHRASES } from '../demo/scenarios';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { displayText } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
@@ -516,4 +517,29 @@ describe('DemoHost machine nuku', () => {
     const hostPath = hostStore.sessionTranscriptPath(await hostStore.homeDirectory(), DEMO_WORKSPACES[0]!.cwd, DEMO_SESSION_IDS['w1:p1']!)!;
     expect(JSON.stringify((await hostStore.recent(hostPath, 'claude', 262_144)).messages)).not.toContain('hello nuku');
   }, 15_000);
+
+  // The list's line for a machine the host cannot reach had nothing in the
+  // Demo to show it, so no flow could check it was there.
+  it('goes off the network when a host chat asks, and the jump says so', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const machine = new HerdrClient(nuku(host), 'herdr', { host: 'Demo', machine: 'nuku' });
+    await expect(machine.snapshot()).resolves.toBeTruthy();
+    await new HerdrClient(host).sendPrompt('w2:p1', `please ${DEMO_PHRASES.unplug}`);
+    // Not before the reply lands.
+    await expect(new HerdrClient(nuku(host)).ping()).resolves.toBeUndefined();
+    now += 10_000;
+    await new HerdrClient(host).snapshot();
+    await expect(new HerdrClient(nuku(host)).snapshot()).rejects.toMatchObject({
+      code: 'connect_failed',
+      message: "Demo can't reach nuku right now.",
+    });
+    const lines: string[] = [];
+    for await (const line of nuku(host).streamLines('tail -c +1 -f x', 1_000)) lines.push(line);
+    expect(lines).toEqual([]);
+    // The host itself is fine, and its chat has the reply.
+    const store = new TranscriptStore(host);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_WORKSPACES[1]!.cwd, DEMO_SESSION_IDS['w2:p1']!)!;
+    expect(JSON.stringify((await store.recent(path, 'claude', 262_144)).messages)).toContain('nuku is off the network');
+  });
 });

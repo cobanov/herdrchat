@@ -23,10 +23,22 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: chat-row-demo-nuku-w1
     text: 'Nightly digest, nuku · .*'
-# The host's own w1 is still its own row.
-- assertVisible:
-    id: chat-group-idle
 - takeScreenshot: machines-list-${APPEARANCE}
+# The host's own w1 is still its own row, with its own chat: both are w1, and
+# a merge keyed by workspace would have put one in the other's place. It needs
+# you, so it is near the top.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+    centerElement: true
+    timeout: 20000
+- assertVisible:
+    id: chat-row-w1
+    text: 'Folder picker read errors, .*'
+- assertNotVisible:
+    id: chat-row-w1
+    text: '.*(nuku|Nightly digest).*'
 
 - tapOn:
     id: chat-row-demo-nuku-w1
@@ -54,7 +66,7 @@ appId: dev.herdr.HerdrChat
     id: thread-back
 
 # The reply is on the machine's row, read by the visit; the host's w1 row
-# never heard of it.
+# never heard of it. Checked with that row on screen, or the check says nothing.
 - scrollUntilVisible:
     element:
       id: chat-row-demo-nuku-w1
@@ -62,6 +74,49 @@ appId: dev.herdr.HerdrChat
     direction: DOWN
     centerElement: true
     timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+    centerElement: true
+    timeout: 20000
+- assertVisible:
+    id: chat-row-w1
+    text: 'Folder picker read errors, .*'
 - assertNotVisible:
     id: chat-row-w1
     text: .*anything new tonight.*
+
+# A machine the host cannot reach is one line under the chats, never the
+# list's error, and its row stays as last seen. The Demo's scenario
+# (DEMO_PHRASES.unplug, typed into a host chat) takes nuku off the network;
+# every jump to it then fails as ssh does, with exit 255.
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- inputText: unplug the machine
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*nuku is off the network.*
+    timeout: 15000
+- tapOn:
+    id: thread-back
+- scrollUntilVisible:
+    element:
+      id: machine-notice-demo-nuku
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- assertVisible:
+    id: machine-notice-demo-nuku
+    text: "Demo can't reach nuku right now."
+- assertVisible:
+    id: chat-row-demo-nuku-w1
+- assertNotVisible:
+    id: error-banner
+- takeScreenshot: machines-unplugged-${APPEARANCE}

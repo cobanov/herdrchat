@@ -27,7 +27,8 @@ import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
 import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegrations';
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
-import { useHostChats, type MachineNoticeRow } from '@/features/chats/useHostChats';
+import { useHostChats } from '@/features/chats/useHostChats';
+import { MachineNotices } from '@/features/chats/MachineNotices';
 import { MachineFeeds } from '@/features/chats/MachineChats';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { connectionRecovery } from '@/lib/connectionRecovery';
@@ -48,7 +49,7 @@ import { loadThreadReads, setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
 
 /**
  * Chats, the app's root. One row per workspace, with live presence, and under
@@ -539,33 +540,4 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
 async function loadReads(db: Parameters<typeof loadThreadReads>[0], ids: string): Promise<ReadsByConnection> {
   const loaded = await Promise.all(ids.split('\n').map(async (id) => [id, await loadThreadReads(db, id)] as const));
   return new Map(loaded);
-}
-
-/**
- * One line per machine whose last poll failed, below the rows.
- *
- * Never the list's error: the host answered, and its own chats are fine. The
- * machine's rows stay as last seen above, so the line says why they stopped
- * moving rather than taking them away.
- */
-function MachineNotices({ notices }: { notices: readonly MachineNoticeRow[] }) {
-  const { colors } = useTheme();
-  if (notices.length === 0) return null;
-  return (
-    <View style={{ gap: spacing.xs, paddingTop: spacing.sm }}>
-      {notices.map((notice) => (
-        <View
-          key={notice.machineId}
-          testID={`machine-notice-${notice.machineId}`}
-          accessible
-          accessibilityLabel={notice.text}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs }}>
-          <Icon name="exclamationmark.triangle" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />
-          <Text variant="footnote" color="secondary" style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
-            {notice.text}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
 }

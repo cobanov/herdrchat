@@ -27,7 +27,7 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
 export const PaneRow = memo(function PaneRow({
   summary, pane, unread, selected = false, first = false, last = false, onPress, onLongPress,
 }: {
-  /** With `machine`, a workspace on one of the host's machines, whose label leads the row's line. */
+  /** With `machine`, a workspace on one of the host's machines: named to VoiceOver, and on the card above. */
   summary: ChatSummary & { machine?: MachineRef | null };
   pane: PaneSummary;
   unread: boolean;
@@ -53,7 +53,7 @@ export const PaneRow = memo(function PaneRow({
   const preview = pane.preview === null ? status : `${pane.preview.fromUser ? 'You: ' : ''}${pane.preview.text}`;
   const workspace = summary.title || summary.workspaceId;
   const machine = summary.machine?.label;
-  const context = paneContext(summary, pane);
+  const context = paneContext(pane);
   // Only a title of the agent's own: falling back to the workspace label
   // repeated the card right above, on every untitled sibling alike.
   const title = titledBySession(pane) ? paneTitle(summary, pane) : null;
@@ -100,9 +100,9 @@ export const PaneRow = memo(function PaneRow({
 
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
           {/* The session's title, as the workspace chat's row has. The card
-              above already names the workspace, so neither line here does: an
-              agent with no title of its own leads with its provider, after
-              its machine when it is on one. */}
+              above already names the workspace and its machine, so neither
+              line here does: an agent with no title of its own leads with its
+              provider. */}
           {title !== null && <Text variant="subhead" weight="600" numberOfLines={2}>{title}</Text>}
           <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
           <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>

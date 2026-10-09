@@ -21,6 +21,7 @@ import { THEME_FILE } from '../theme/schema';
 import {
   DEMO_PHRASES,
   DEMO_THEME_REPLY,
+  DEMO_UNPLUG_REPLY,
   DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
@@ -254,6 +255,8 @@ export class DemoHost implements HerdrTransport {
    * builder that wrapped it and answered there.
    */
   private readonly machines = new Map<string, DemoHost>();
+  /** Machines the unplug scenario took off the network, by SSH target. */
+  private readonly unplugged = new Set<string>();
 
   constructor(
     private readonly now: () => number = () => Date.now(),
@@ -278,6 +281,10 @@ export class DemoHost implements HerdrTransport {
   async exec(command: string, timeoutMs: number): Promise<ExecResult> {
     for (const [target, machine] of this.machines) {
       const inner = unwrapJump(target, command);
+      if (inner !== null && this.unplugged.has(target)) {
+        // What the host's ssh says for a machine that is off the network.
+        return { ok: true, stdout: '', stderr: `ssh: connect to host ${target} port 22: Connection refused`, exitCode: 255 };
+      }
       if (inner !== null) return machine.exec(inner, timeoutMs);
     }
     this.materialise();
@@ -328,7 +335,8 @@ export class DemoHost implements HerdrTransport {
     for (const [target, machine] of this.machines) {
       const inner = unwrapJumpStream(target, command);
       if (inner !== null) {
-        yield* machine.streamLines(inner, startTimeoutMs, signal);
+        // An unplugged machine's stream ends at once, as a jump that cannot connect does.
+        if (!this.unplugged.has(target)) yield* machine.streamLines(inner, startTimeoutMs, signal);
         return;
       }
     }
@@ -611,6 +619,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
       if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
+      if (asked.includes(DEMO_PHRASES.unplug) && this.machines.size > 0) return this.unplug(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
@@ -764,6 +773,21 @@ export class DemoHost implements HerdrTransport {
           replyLine(DEMO_THEME_REPLY, next(), timestamp),
         ];
       },
+    });
+    return silent();
+  }
+
+  /** Every machine saved here goes off the network, once the reply lands. */
+  private unplug(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      effect: () => {
+        for (const target of this.machines.keys()) this.unplugged.add(target);
+      },
+      lines: (next, timestamp) => [replyLine(DEMO_UNPLUG_REPLY, next(), timestamp)],
     });
     return silent();
   }

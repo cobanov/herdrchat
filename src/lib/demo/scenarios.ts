@@ -4,7 +4,8 @@
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
- * table, an agent restyling the app through the host's theme file. The UI tests drive the Demo with the phrases below, and anyone
+ * table, an agent restyling the app through the host's theme file, a machine
+ * the host can no longer reach. The UI tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -17,6 +18,7 @@ export const DEMO_PHRASES = {
   trust: 'open a new folder',
   table: 'compare the options',
   theme: 'restyle the app',
+  unplug: 'unplug the machine',
 } as const;
 
 // MARK: - Slash command panels
@@ -230,3 +232,13 @@ export const DEMO_THEME_REPLY = [
   '',
   'The app picks it up the next time its chat list is on screen (it checks about every 10 seconds there), or right away from Settings > Appearance > Reload theme.',
 ].join('\n');
+
+// MARK: - A machine the host cannot reach
+
+/**
+ * What the demo agent says when asked to unplug the host's machine. From then
+ * on every command jumped to it fails as `ssh` does when the machine is off
+ * the network (exit 255), so the list keeps its rows and says why below them.
+ */
+export const DEMO_UNPLUG_REPLY =
+  "Done. nuku is off the network now, so the host's ssh can't reach it. Its chat stays in the list as it was, with a line under the chats saying why.";

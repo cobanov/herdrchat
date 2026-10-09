@@ -62,6 +62,7 @@ import { splitMachineConnectionId } from '@/lib/herdr/machines';
 import { markThreadRead } from '@/state/db';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
+import { useHostMachines } from '@/state/hostMachines';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
@@ -113,8 +114,13 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const hostGone = hydrated && connection === null;
   // A machine is gone when its host is still here but no longer lists it as
   // enabled; the placeholder then says so, rather than that the host is gone.
-  const viaHost = useConnectionFor(wantedId === null ? null : splitMachineConnectionId(wantedId)?.hostId ?? null);
+  const machineIds = wantedId === null ? null : splitMachineConnectionId(wantedId);
+  const viaHost = useConnectionFor(machineIds?.hostId ?? null);
   const machineGone = hostGone && viaHost !== null;
+  // A disabled machine stays in its host's cached list, so its label is
+  // usually still known, for the command that brings it back.
+  const goneLabel = useHostMachines((state) =>
+    machineIds === null ? null : state.byHost[machineIds.hostId]?.find((item) => item.id === machineIds.machineId)?.label ?? null);
 
   const showSidechain = useSettings((state) => state.showSidechain);
 
@@ -295,14 +301,19 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
     // The folder, unless it is the workspace's own name already said first:
-    // the line is one line, and the status word at its end is what gets cut.
+    // the line is one line, and the less said the less of it is cut.
     sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
-    // The connection before the agent: "online" under a banner saying the
-    // chat is offline or paused contradicted it (#4 acceptance).
-    thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+  /**
+   * The connection before the agent: "online" under a banner saying the chat
+   * is offline or paused contradicted it (#4 acceptance). Its own text after
+   * the line, which never shrinks: at the end of one truncated line it was the
+   * first word cut, and a machine's label in front made that the usual case,
+   * leaving the dot's colour as the only status on a phone.
+   */
+  const statusText = thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status);
 
   // A command's panel needs the room the keyboard takes, and nothing typed
   // goes to it: its rows and actions are taps.
@@ -452,7 +463,12 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
           */}
           {hostGone ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
-              <MissingHost machine={machineGone} onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+              <MissingHost
+                machine={machineGone ? { label: goneLabel, host: viaHost.name } : null}
+                onBack={onBack}
+                onHosts={() => router.navigate('/hosts')}
+                onChats={() => router.navigate('/')}
+              />
             </View>
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
@@ -719,15 +735,18 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   <Text testID="thread-title" variant="headline" numberOfLines={1}>
                     {heading}
                   </Text>
-                  {subtitle.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                    <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                    {subtitle.length > 0 && (
                       <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
                         {subtitle}
                       </Text>
-                      {thread.status === 'working' && <TypingDots size={3.5} />}
-                    </View>
-                  )}
+                    )}
+                    <Text testID="thread-status" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 0 }} numberOfLines={1}>
+                      {subtitle.length > 0 ? `· ${statusText}` : statusText}
+                    </Text>
+                    {thread.status === 'working' && <TypingDots size={3.5} />}
+                  </View>
                 </View>
                 <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>

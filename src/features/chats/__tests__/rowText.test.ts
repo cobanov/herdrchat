@@ -127,10 +127,11 @@ describe('rowContext on a machine', () => {
   it('says nothing extra on the host', () => {
     expect(rowContext({ ...workspace([agentIn('w6:p1', 'claude', '/home/demo/api')]), machine: null })).toBe('Claude · demo/api');
   });
-  it('leads an agent row\'s line with its machine', () => {
+  // The card above names the machine; each agent's row saying it again
+  // pushed the folder, the thing telling the agents apart, off the line.
+  it('leaves the machine off an agent row\'s line', () => {
     const agent = agentIn('w6:p2', 'codex', '/home/demo/api/web');
     const pane: PaneSummary = { paneId: 'w6:p2', agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: null, agentName: null };
-    expect(paneContext({ machine: nuku }, pane)).toBe('nuku · Codex · api/web');
-    expect(paneContext({ machine: null }, pane)).toBe('Codex · api/web');
+    expect(paneContext(pane)).toBe('Codex · api/web');
   });
 });

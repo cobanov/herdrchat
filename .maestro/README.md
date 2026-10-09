@@ -22,7 +22,7 @@ where regressions are found.
 | `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 | `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
-| `regression/machines` | a machine saved on the host (the Demo's `nuku`) listing its chat in the host's list as `chat-row-demo-nuku-w1`, its line led by the machine, its thread titled by its session with the machine leading the header, a reply sent through the jump landing on its row and not on the host's `w1` (screenshots `machines-list-<appearance>`, `machines-<appearance>`) |
+| `regression/machines` | a machine saved on the host (the Demo's `nuku`) listing its chat in the host's list as `chat-row-demo-nuku-w1`, its line led by the machine, its thread titled by its session with the machine leading the header, a reply sent through the jump landing on its row and not on the host's `w1`, which stays its own row; then the Demo's unplug scenario taking `nuku` off the network, and the list keeping its row and saying so in `machine-notice-demo-nuku` rather than as its error (screenshots `machines-list-<appearance>`, `machines-<appearance>`, `machines-unplugged-<appearance>`) |
 | `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
 
 Maestro cannot press hardware-keyboard key commands, so these are checked by
@@ -63,7 +63,8 @@ title is still in the hierarchy behind a page sheet.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
 `/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
-"restyle the app".
+"restyle the app", "unplug the machine" (typed into a host chat: the Demo's machine
+`nuku` goes off the network).
 
 
 Run against a booted simulator with the app installed and Metro running:
