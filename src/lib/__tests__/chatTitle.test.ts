@@ -1,4 +1,4 @@
-import { chatTitle, titleAgent, titledBySession } from '../chatTitle';
+import { chatTitle, sameName, titleAgent, titledBySession } from '../chatTitle';
 import type { AgentInfo } from '../herdr/models';
 
 const parts = {
@@ -83,5 +83,17 @@ describe('titleAgent', () => {
     expect(titleAgent([agentIn('p1', 'claude'), agentIn('p2', 'codex')])).toBeNull();
     expect(titleAgent([agentIn('p0', null), agentIn('p1', 'letta')])).toBeNull();
     expect(titleAgent([])).toBeNull();
+  });
+});
+
+describe('sameName', () => {
+  it('matches a label and a folder ignoring case and space', () => {
+    expect(sameName('herdrchat', 'HerdrChat')).toBe(true);
+    expect(sameName(' api ', 'api')).toBe(true);
+  });
+  it('tells different names apart, and never matches nothing', () => {
+    expect(sameName('api', 'web')).toBe(false);
+    expect(sameName('', '')).toBe(false);
+    expect(sameName(null, undefined)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { chatTitle, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
 import { agentName, type AgentStatus } from '@/lib/herdr/models';
 import { paneChats } from './chatGroups';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
@@ -53,15 +53,19 @@ export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
  * picked made a two-agent workspace look like a one-agent one.
  *
  * A row titled by its session names its workspace here first, since the
- * title no longer does: `herdrchat · Claude · side/herdrchat`.
+ * title no longer does: `api · Claude · demo/server`. When the workspace is
+ * named after its folder, the folder says it: `Claude · side/herdrchat`.
  */
 export function rowContext(summary: ChatSummary): string {
   const panes = paneChats(summary);
   if (panes.length === 0) {
     const agent = summary.agents.find((item) => item.focused && item.agent !== null)
       ?? summary.agents.find((item) => item.agent !== null);
-    const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
-    const workspace = titledBySession(summary) ? summary.title.trim() : '';
+    const parts = agent?.cwd.split('/').filter(Boolean).slice(-2) ?? [];
+    const folder = parts.join('/');
+    // A label that is the folder's own name is already on the line, in the
+    // folder; said again in front, it pushed the folder off a phone's row.
+    const workspace = titledBySession(summary) && !sameName(summary.title, parts.at(-1)) ? summary.title.trim() : '';
     return [workspace, agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];

@@ -6,6 +6,7 @@ import { confirmDestructive, showActionSheet, type SheetAction } from '@/compone
 import { haptics } from '@/lib/haptics';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { forgetWorkspace } from '@/state/threadCache';
+import { rowTitle } from './rowText';
 import { errorText, type ChatSummary } from './useWorkspaces';
 
 /**
@@ -57,10 +58,14 @@ export function useChatActions({
   const closeChat = useCallback(
     (summary: ChatSummary) => {
       if (client === null || connectionId === null) return;
+      // Named as the row the person pressed is, by its session; the workspace
+      // it closes is named in the message, since that is what stops.
+      const label = summary.title.trim() || summary.workspaceId;
+      const title = rowTitle(summary);
       confirmDestructive({
-        title: `Close ${summary.title}?`,
+        title: `Close ${title}?`,
         message:
-          'Every tab, pane and running process in this workspace stops. The conversation stays on disk, but the agent does not.',
+          `${title === label ? 'Every' : `This closes workspace ${label}: every`} tab, pane and running process in it stops. The conversation stays on disk, but the agent does not.`,
         confirmLabel: 'Close chat',
         onConfirm: () => {
           void client
@@ -90,7 +95,9 @@ export function useChatActions({
       if (client === null) return;
       haptics.medium();
       showActionSheet({
-        title: summary.title,
+        // The row's own title, so the sheet names what was pressed. Rename
+        // still prefills the workspace label, since that is what it renames.
+        title: rowTitle(summary),
         actions: [
           ...extra,
           { label: 'Rename…', onPress: () => renameChat(summary) },

@@ -4,11 +4,12 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-# The row is titled by its Claude session, not the workspace ("notes"), which
-# moves to the front of the line under the title.
+# The row is titled by its Claude session, not the workspace ("notes"). The
+# workspace is named after its folder, so the line under the title says it
+# once, in the folder.
 - assertVisible:
     id: chat-row-w2
-    text: 'Release notes summary, .*notes · Claude · demo/notes.*'
+    text: 'Release notes summary, .*Claude · demo/notes.*'
 - tapOn:
     id: chat-row-w2
 # Send stays off until the thread has loaded; wait for its history first.

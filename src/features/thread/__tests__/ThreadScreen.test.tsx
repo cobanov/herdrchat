@@ -39,6 +39,7 @@ let mockSessionTitle: string | null = null;
 let mockAgentName: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
+let mockWorkingDirName = 'project-with-a-long-folder-name';
 let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
@@ -50,7 +51,7 @@ jest.mock('@/features/thread/useThread', () => ({
     paused: mockPaused,
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,
-    workingDirName: 'project-with-a-long-folder-name', status: 'idle',
+    workingDirName: mockWorkingDirName, status: 'idle',
     isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
@@ -187,6 +188,26 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   expect(screen.getByTestId('thread-title')).toHaveTextContent('Web build');
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^api · Claude · .*high effort/);
   await screen.unmount();
+  mockSessionTitle = null;
+  mockAgents = [];
+});
+
+// herdr names a workspace after its folder, so the label leading the line and
+// the folder near its end are usually one word. Said twice, it pushed the
+// status off a phone's header.
+it('says a workspace named after its folder once in the line', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'herdrchat';
+  mockWorkingDirName = 'HerdrChat';
+  mockSessionTitle = 'Herdrchat repository clone';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p1', agentSession: null }];
+  const screen = await render(<ThreadScreen workspaceId="w6" />);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort · online$/);
+  expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/HerdrChat/);
+  await screen.unmount();
+  mockWorkingDirName = 'project-with-a-long-folder-name';
+  mockWorkspaceLabel = null;
   mockSessionTitle = null;
   mockAgents = [];
 });

@@ -66,14 +66,22 @@ describe('titles', () => {
     ({ ...agentIn(paneId, 'claude', cwd), title, name });
 
   it('titles a one-agent chat by its session, and names the workspace in its line', () => {
-    const chat = workspace([titled('w6:p1', '/home/demo/api', 'API contract')]);
+    const chat = workspace([titled('w6:p1', '/home/demo/server', 'API contract')]);
     expect(rowTitle(chat)).toBe('API contract');
-    expect(rowContext(chat)).toBe('api · Claude · demo/api');
+    expect(rowContext(chat)).toBe('api · Claude · demo/server');
   });
   it('titles it by the agent\'s herdr name before the session has a title', () => {
-    const chat = workspace([titled('w6:p1', '/home/demo/api', null, 'api-pm')]);
+    const chat = workspace([titled('w6:p1', '/home/demo/server', null, 'api-pm')]);
     expect(rowTitle(chat)).toBe('api-pm');
-    expect(rowContext(chat)).toBe('api · Claude · demo/api');
+    expect(rowContext(chat)).toBe('api · Claude · demo/server');
+  });
+  // herdr names a workspace after its folder. Said in front as well, the
+  // label pushed the folder off a phone's one-line caption:
+  // 'klaw-dashboard · Claude · azure/k…'.
+  it('leaves the label to the folder when the folder is named the same', () => {
+    const chat = { ...workspace([titled('w6:p1', '/Users/kenneth/Dropbox/dev/azure/klaw-dashboard', 'Dashboard login flow')]), title: 'Klaw-Dashboard' };
+    expect(rowContext(chat)).toBe('Claude · azure/klaw-dashboard');
+    expect(rowContext(workspace([titled('w6:p1', '/home/demo/api', 'API contract')]))).toBe('Claude · demo/api');
   });
   it('keeps the workspace label as the title, said once, with neither', () => {
     const chat = workspace([titled('w6:p1', '/home/demo/api', '  ')]);

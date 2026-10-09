@@ -35,7 +35,7 @@ import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlacehol
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
-import { chatTitle, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
@@ -258,7 +258,9 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
-    thread.workingDirName,
+    // The folder, unless it is the workspace's own name already said first:
+    // the line is one line, and the status word at its end is what gets cut.
+    sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
     // The connection before the agent: "online" under a banner saying the
     // chat is offline or paused contradicted it (#4 acceptance).
     thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),

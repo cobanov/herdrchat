@@ -40,6 +40,16 @@ export function titledBySession(parts: Pick<TitleParts, 'sessionTitle' | 'agentN
 }
 
 /**
+ * True when a workspace label and a folder name say the same word, ignoring
+ * case and surrounding space. herdr names a workspace after its folder, so
+ * they usually do, and a line that shows both says it twice.
+ */
+export function sameName(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = a?.trim().toLowerCase() ?? '';
+  return left !== '' && left === (b?.trim().toLowerCase() ?? '');
+}
+
+/**
  * The agent whose session names a chat over these agents: the one
  * conversational agent, or none. A workspace running two or more stands for
  * all of them, so it keeps its own label, and each agent's title goes on that

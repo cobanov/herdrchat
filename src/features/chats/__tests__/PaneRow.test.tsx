@@ -52,9 +52,14 @@ it('titles the row by its agent\'s session, and says the title first', async () 
     .toBe('Toolbar polish, Codex in api, api/web, Idle, Fixed the toolbar');
 });
 
-it('falls back to the herdr name, then to the workspace label', async () => {
+// An agent with neither a session title nor a herdr name has no title line:
+// the workspace label would repeat the card right above it, and every
+// untitled sibling would read the same.
+it('falls back to the herdr name, and with neither leads with its provider', async () => {
   const named = await render(<PaneRow summary={api} pane={{ ...p1, agentName: 'api-pm' }} unread={false} onPress={jest.fn()} />);
   expect(named.getByText('api-pm')).toBeOnTheScreen();
+  await named.unmount();
   const bare = await render(<PaneRow summary={api} pane={p1} unread={false} onPress={jest.fn()} />);
-  expect(bare.getByText('api')).toBeOnTheScreen();
+  expect(bare.queryByText('api')).toBeNull();
+  expect(bare.getByTestId('pane-row-w6:p1').props.accessibilityLabel).toMatch(/^Claude in api, /);
 });
