@@ -136,6 +136,8 @@ export const size = {
    */
   tableColumnMin: 56,
   tableColumnMax: 220,
+  /** The chevron at the end of a row that opens or goes somewhere. */
+  rowChevron: 13,
 } as const;
 
 /**

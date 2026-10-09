@@ -22,12 +22,33 @@ export interface ChatMessage {
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+/** What a `<task-notification>` says about the background task a tool call started. */
+export interface TaskNotice {
+  /** The call that started the task. */
+  toolUseId: string;
+  /** `completed`, `failed`, `killed`, as Claude writes it. */
+  status: string;
+  summary: string | null;
+  /** What the task handed back, when the notification carries it. */
+  result: string | null;
+  tokens: number | null;
+  toolUses: number | null;
+  durationMs: number | null;
+}
+
 export type MessageSegment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
   /** `id` pairs a call with its result; absent on Codex and on older cached rows. */
   | { kind: 'toolUse'; name: string; input: string | null; id?: string }
   | { kind: 'toolResult'; text: string; toolUseId?: string; isError?: boolean }
+  /**
+   * A background task's end, which Claude reports as a `<task-notification>`
+   * long after the call's own result: a background subagent's or a workflow's
+   * result is only "launched". Never a bubble; the thread uses it to finish
+   * the card of the call it names.
+   */
+  | { kind: 'taskNotice'; notice: TaskNotice }
   /**
    * A picture sent with the message. `path` is where it lives on the host, or
    * empty when the transcript holds the picture but not where it came from

@@ -1,5 +1,5 @@
-import type { ChatMessage, MessageSegment } from '../transcript/message';
-import { threadItems, toolCallLine, toolKind, toolRunSummary, type ToolCall } from '../threadItems';
+import type { ChatMessage, MessageSegment, TaskNotice } from '../transcript/message';
+import { subagentInput, threadItems, toolCallLine, toolKind, toolRunSummary, type ThreadItem, type ToolCall } from '../threadItems';
 
 let seq = 0;
 const message = (role: ChatMessage['role'], segments: MessageSegment[], extra: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -132,6 +132,98 @@ describe('thread items', () => {
       [true, true],
       [false, true],
     ]);
+  });
+});
+
+describe('subagents and workflows', () => {
+  const notice = (toolUseId: string, status: string, extra: Partial<TaskNotice> = {}): MessageSegment => ({
+    kind: 'taskNotice',
+    notice: { toolUseId, status, summary: null, result: null, tokens: null, toolUses: null, durationMs: null, ...extra },
+  });
+  const cards = (messages: ChatMessage[]) =>
+    threadItems(messages, { showSidechain: false })
+      .map((placed) => placed.item)
+      .filter((item): item is Extract<ThreadItem, { kind: 'subagent' | 'workflow' }> => item.kind === 'subagent' || item.kind === 'workflow');
+  const AGENT_INPUT = '{description: Check the release notes for broken links, subagent_type: general-purpose, model: sonnet, prompt: Read…}';
+  const LAUNCHED = 'Async agent launched successfully. (This tool result is internal metadata …)\nagentId: a53e546bf8054816f (internal ID - do not mention to user.)\nThe agent is working in the background.';
+  const WORKFLOW_INPUT = "{script: export const meta = {\n  name: 'release-review',\n  description: 'Review the release in two passes',\n}\nexport default async () => {}}";
+  const WORKFLOW_LAUNCHED = 'Workflow launched in background. Task ID: w2z9jiho1\nSummary: Review the release in two passes\nRun ID: wf_31a24808-cdf\n';
+
+  it('places each where its call sits, and keeps it out of the run around it', () => {
+    const messages = [
+      message('assistant', [use('Bash', '{command: ls}', 'b1')]),
+      message('user', [result('ok', 'b1')]),
+      message('assistant', [use('Agent', AGENT_INPUT, 'ag1')]),
+      message('assistant', [use('Workflow', WORKFLOW_INPUT, 'wf1')]),
+      message('assistant', [use('Read', '{file_path: /a.ts}', 'r1')]),
+    ];
+    expect(kinds(messages)).toEqual(['tools', 'subagent', 'workflow', 'tools']);
+    expect(subagentInput(cards(messages)[0]!.call)).toEqual({
+      description: 'Check the release notes for broken links', agentType: 'general-purpose', model: 'sonnet',
+    });
+    expect(cards(messages)[1]).toMatchObject({ name: 'release-review', description: 'Review the release in two passes', runId: null });
+  });
+
+  // A foreground agent: running until its result, then done or failed with it.
+  it('runs a foreground agent until its result, and says how long it took', () => {
+    const call = message('assistant', [use('Task', AGENT_INPUT, 'ag1')], { timestamp: 1_000 });
+    expect(cards([call])[0]!.delegation).toMatchObject({ state: 'running', background: false, result: null });
+    const done = cards([call, message('user', [result('No broken links.', 'ag1')], { timestamp: 61_000 })])[0]!.delegation;
+    expect(done).toMatchObject({ state: 'done', result: 'No broken links.', startedAt: 1_000, endedAt: 61_000, durationMs: 60_000 });
+    const failed = cards([call, message('user', [result('Permission denied', 'ag1', true)], { timestamp: 2_000 })])[0]!.delegation;
+    expect(failed.state).toBe('failed');
+  });
+
+  // A background agent's result only says it launched; it ends on the
+  // notification. Reading the launch as the end showed it done at once.
+  it('keeps a background agent running until its notification, then takes the result and usage from it', () => {
+    const launched = [
+      message('assistant', [use('Agent', AGENT_INPUT, 'ag1')], { timestamp: 1_000 }),
+      message('user', [result(LAUNCHED, 'ag1')], { timestamp: 1_100 }),
+    ];
+    expect(cards(launched)[0]!.delegation).toMatchObject({ state: 'running', background: true, agentId: 'a53e546bf8054816f', result: null });
+    const ended = cards([
+      ...launched,
+      message('assistant', [text('Waiting on the agent.')]),
+      message('user', [notice('ag1', 'completed', { summary: 'Agent finished', result: 'Two links were dead.', tokens: 900, toolUses: 7, durationMs: 42_000 })], { timestamp: 50_000 }),
+    ]);
+    expect(ended[0]!.delegation).toMatchObject({
+      state: 'done', result: 'Two links were dead.', durationMs: 42_000, tokens: 900, toolUses: 7, endedAt: 50_000,
+    });
+    const killed = cards([...launched, message('user', [notice('ag1', 'killed', { summary: 'Agent stopped' })], { timestamp: 9_100 })]);
+    expect(killed[0]!.delegation).toMatchObject({ state: 'failed', result: 'Agent stopped', durationMs: 8_100 });
+  });
+
+  it('runs a workflow until its notification, with its run id from the launch', () => {
+    const launched = [
+      message('assistant', [use('Workflow', WORKFLOW_INPUT, 'wf1')]),
+      message('user', [result(WORKFLOW_LAUNCHED, 'wf1')]),
+    ];
+    expect(cards(launched)[0]).toMatchObject({ kind: 'workflow', runId: 'wf_31a24808-cdf', delegation: { state: 'running', background: true } });
+    const done = cards([...launched, message('user', [notice('wf1', 'completed', { result: '{"ok":true}' })])]);
+    expect(done[0]!.delegation).toMatchObject({ state: 'done', result: '{"ok":true}' });
+    // Without a meta block the card is "Workflow".
+    expect(cards([message('assistant', [use('Workflow', '{script: export default async () => {}}', 'wf2')])])[0])
+      .toMatchObject({ name: 'Workflow' });
+  });
+
+  // A notice is no row, and it never pairs with a call it does not name: a
+  // background Bash notifies too, and Codex calls have no ids to match.
+  it('draws nothing for a notice, and pairs it only by id', () => {
+    const messages = [
+      message('assistant', [use('exec_command', '{cmd: ls}')]),
+      message('user', [notice('someone-else', 'completed', { result: 'not yours' })]),
+      message('user', [result('a')]),
+    ];
+    const items = threadItems(messages, { showSidechain: false });
+    expect(items.map((placed) => placed.item.kind)).toEqual(['tools']);
+    const run = items[0]!.item;
+    expect(run.kind === 'tools' && run.calls[0]!.result).toBe('a');
+  });
+
+  it('leaves them out of the run summary, failures included', () => {
+    const call = (name: string, failed = false): ToolCall => ({ key: name, kind: toolKind(name), name, input: null, result: null, failed, id: null });
+    expect(toolRunSummary([call('Bash'), call('Agent', true), call('Workflow', true)], 0)).toBe('Ran 1 command');
   });
 });
 

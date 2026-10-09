@@ -14,6 +14,7 @@
  */
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from '../herdr/transport';
+import { agentMetaPath, agentTranscriptPath } from '../subagents/paths';
 import { projectDirName } from '../transcript/parser';
 import {
   DEMO_PHRASES,
@@ -38,6 +39,7 @@ import {
   DEMO_HOME,
   DEMO_SESSION_IDS,
   DEMO_WORKSPACES,
+  demoSessionDir,
   replyFor,
   replyLine,
   toolResultLine,
@@ -45,6 +47,7 @@ import {
   transcriptFor,
   userLine,
 } from './fixtures';
+import { delegateSteps, demoSubagentFiles } from './subagents';
 
 /** The version the demo claims, so the client picks the agent-aware verbs. */
 const DEMO_HERDR_VERSION = '0.8.0';
@@ -61,6 +64,12 @@ const REPLY_DELAY_MS = 1_500;
 
 /** How often the fake tail looks for newly appended lines. */
 const TAIL_POLL_MS = 200;
+
+/**
+ * The beat between the delegate scenario's steps: the call, the subagent's
+ * work, its result. Long enough that a UI test sees the card running.
+ */
+const DELEGATE_STEP_MS = 2_500;
 
 function ok(result: unknown): ExecResult {
   return { ok: true, stdout: JSON.stringify({ id: 'demo', result }), stderr: '', exitCode: 0 };
@@ -129,6 +138,13 @@ function linesBefore(text: string, end: number, count: number): string {
   const body = taken.length === 0 ? '' : `${taken.join('\n')}\n`;
   const endByte = byteLength(whole);
   return `${endByte - byteLength(body)} ${endByte}\n${body}`;
+}
+
+/** A stand-in for `cksum`'s CRC: any hash that changes when the text does. */
+function checksum(text: string): number {
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) hash = ((hash * 33) ^ text.charCodeAt(index)) >>> 0;
+  return hash;
 }
 
 function sliceLastBytes(text: string, count: number): string {
@@ -220,6 +236,12 @@ export class DemoHost implements HerdrTransport {
   /** Panes at the folder-trust question, with the row under its cursor. */
   private readonly trusting = new Map<string, number>();
   private counter = 0;
+  /**
+   * Files that are no pane's transcript, by absolute path: subagent
+   * transcripts and metas, and workflow run files. Mutable because the
+   * delegate scenario's subagent writes to its own.
+   */
+  private readonly files = new Map<string, string>();
 
   constructor(private readonly now: () => number = () => Date.now()) {
     for (const workspace of DEMO_WORKSPACES) {
@@ -233,6 +255,8 @@ export class DemoHost implements HerdrTransport {
         this.paths.set(`${DEMO_HOME}/.claude/projects/${dir}/${session}.jsonl`, workspace.paneId);
       }
     }
+    const notes = demoSessionDir('w2:p1');
+    if (notes !== null) for (const [path, text] of demoSubagentFiles(notes)) this.files.set(path, text);
   }
 
   async exec(command: string, _timeoutMs: number): Promise<ExecResult> {
@@ -306,8 +330,13 @@ export class DemoHost implements HerdrTransport {
   /** The contents of a demo transcript, or null when nothing lives at that path. */
   private read(path: string): string | null {
     const pane = this.paths.get(path);
-    if (pane === undefined) return null;
+    if (pane === undefined) return this.files.get(path) ?? null;
     return this.transcripts.get(pane) ?? null;
+  }
+
+  /** A demo file's contents, for tests: a subagent's transcript or meta, a workflow run. */
+  file(path: string): string | null {
+    return this.read(path);
   }
 
   /** `sh` reading transcripts. Returns null when the command is not one of these. */
@@ -337,6 +366,30 @@ export class DemoHost implements HerdrTransport {
     if (probe !== null) {
       const contents = this.read(probe[3]!);
       return contents === null ? exit(Number(probe[2])) : out(`${byteLength(contents)}\n`);
+    }
+
+    // Which subagent a call started: the meta that names it, in the session's
+    // subagents folder (not a workflow's, which names no call).
+    const resolve = /^if cd '(.+?)' 2>\/dev\/null; then for m in .*? grep -q -F '"([A-Za-z0-9_-]+)"' /.exec(body);
+    if (resolve !== null) {
+      const folder = `${resolve[1]!}/`;
+      for (const [path, text] of this.files) {
+        const name = path.slice(folder.length);
+        if (path.startsWith(folder) && /^agent-[A-Za-z0-9_-]+\.meta\.json$/.test(name) && text.includes(`"${resolve[2]!}"`)) {
+          return out(`${name}\n${text}\n`);
+        }
+      }
+      return out('');
+    }
+
+    // A file read again only when it changed: a checksum line, then the file.
+    const changed =
+      /^\[ -e '(.+?)' \] \|\| exit (\d+); s=\$\(cksum < '.+?'\); printf '%s\\n' "\$s"; \[ "\$s" = '(.*?)' \] \|\| cat '.+?'$/.exec(body);
+    if (changed !== null) {
+      const contents = this.read(changed[1]!);
+      if (contents === null) return exit(Number(changed[2]));
+      const signature = `${checksum(contents)} ${byteLength(contents)}`;
+      return out(signature === changed[3] ? `${signature}\n` : `${signature}\n${contents}`);
     }
 
     const from = /^tail -c \+(\d+) '(.+?)'(?: \| head -c (\d+))?$/.exec(body);
@@ -492,6 +545,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
+      if (asked.includes(DEMO_PHRASES.delegate) && !this.isOmp(paneId)) return this.delegate(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
@@ -620,6 +674,36 @@ export class DemoHost implements HerdrTransport {
       prompt: '',
       dueAt: this.now() + REPLY_DELAY_MS,
       lines: (next, timestamp) => [replyLine(DEMO_TABLE_REPLY, next(), timestamp)],
+    });
+    return silent();
+  }
+
+  /**
+   * The agent hands the review to a subagent: its call and meta land, its own
+   * transcript grows a beat later, and a beat after that its result lands and
+   * the agent closes. A foreground agent, so its card runs until the result.
+   */
+  private delegate(paneId: string): ExecResult {
+    const dir = demoSessionDir(paneId);
+    if (dir === null) return silent();
+    const toolUseId = `toolu_demo_${this.uuid()}`;
+    const agentId = `ad${String(this.counter).padStart(15, '0')}`;
+    const transcript = agentTranscriptPath(dir, agentId);
+    const meta = agentMetaPath(dir, agentId);
+    this.statuses.set(paneId, 'working');
+    delegateSteps(toolUseId, agentId).forEach((step, index) => {
+      this.pending.push({
+        paneId,
+        prompt: '',
+        dueAt: this.now() + REPLY_DELAY_MS + index * DELEGATE_STEP_MS,
+        lines: (next, timestamp) => {
+          const written = step(next, timestamp);
+          if (written.meta !== null) this.files.set(meta, written.meta);
+          const lines = written.agent.map((line) => `${line}\n`).join('');
+          this.files.set(transcript, `${this.files.get(transcript) ?? ''}${lines}`);
+          return written.main;
+        },
+      });
     });
     return silent();
   }

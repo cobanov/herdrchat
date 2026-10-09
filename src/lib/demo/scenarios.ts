@@ -4,7 +4,8 @@
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
- * table. The UI tests drive the Demo with the phrases below, and anyone
+ * table, a subagent handed the review (its files in subagents.ts). The UI
+ * tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -16,6 +17,7 @@ export const DEMO_PHRASES = {
   tools: 'run the checks',
   trust: 'open a new folder',
   table: 'compare the options',
+  delegate: 'delegate the review',
 } as const;
 
 // MARK: - Slash command panels

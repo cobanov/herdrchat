@@ -8,6 +8,8 @@
  */
 
 import { splitImages } from '../transcript/images';
+import { projectDirName } from '../transcript/parser';
+import { delegationSeed } from './subagents';
 
 export interface DemoWorkspace {
   workspaceId: string;
@@ -64,6 +66,12 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
   },
 ];
 
+/** Every agent pane of a demo workspace: on this branch, its one pane. */
+export function demoPanes(workspace: DemoWorkspace): { paneId: string; cwd: string; agent?: string }[] {
+  const { paneId, cwd, agent } = workspace;
+  return [{ paneId, cwd, ...(agent === undefined ? {} : { agent }) }];
+}
+
 /** Where the OMP demo agent keeps its journal, which herdr reports as its session. */
 export const DEMO_OMP_PATHS: Readonly<Record<string, string>> = {
   'w4:p1': '/home/demo/.omp/agent/sessions/--home-demo-ledger--/2026-09-28T09-00-00_44444444-4444-4444-8444-444444444444.jsonl',
@@ -78,6 +86,18 @@ export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
 };
 
 export const DEMO_HOME = '/home/demo';
+
+/**
+ * A Claude demo pane's session folder, where its subagents and workflow runs
+ * live: the transcript path without `.jsonl`. Null for a pane with no Claude
+ * session (the OMP one).
+ */
+export function demoSessionDir(paneId: string): string | null {
+  const pane = DEMO_WORKSPACES.flatMap(demoPanes).find((candidate) => candidate.paneId === paneId);
+  const session = DEMO_SESSION_IDS[paneId];
+  if (pane === undefined || session === undefined || pane.agent === 'omp') return null;
+  return `${DEMO_HOME}/.claude/projects/${projectDirName(pane.cwd)}/${session}`;
+}
 
 // MARK: - Transcripts
 //
@@ -155,6 +175,9 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
     }),
   ],
   'w2:p1': [
+    // A subagent that finished and a workflow still running, before the summary
+    // the chat has always opened on (src/lib/demo/subagents.ts).
+    ...delegationSeed(demoSessionDir('w2:p1') ?? ''),
     line({
       type: 'user',
       uuid: 'd2-1',
