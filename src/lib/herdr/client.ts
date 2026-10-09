@@ -11,6 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
+import { machineListArgv, parseMachineList, type MachineList } from './machines';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
@@ -174,6 +175,25 @@ export class HerdrClient {
       this.run([this.herdr, 'pane', 'list'], POLL_TIMEOUT_MS)
     );
     return asArray(field(result, 'panes')).map(decodePane);
+  }
+
+  /**
+   * The machines saved on this host (`herdr machine list --json`), whose chats
+   * the list shows beside the host's own (see `machine.ts`).
+   *
+   * A herdr too old to have the verb has no machines rather than an error: the
+   * chats list asks on every refresh, and a host that answers the way it always
+   * has must not grow a failure for a feature it never had.
+   */
+  async machines(): Promise<MachineList> {
+    let output: string;
+    try {
+      output = await this.shell(shellCommand(machineListArgv(this.herdr)), POLL_TIMEOUT_MS);
+    } catch (thrown) {
+      if (isUnknownSubcommand(thrown)) return { machines: [], skipped: [] };
+      throw thrown;
+    }
+    return parseMachineList(output);
   }
 
   /** Confirm the host is reachable and herdr is answering. */
@@ -1107,6 +1127,18 @@ export type HerdrLocation =
  */
 function isUnknownMethod(error: HerdrError): boolean {
   return error.code === 'invalid_request' && error.message.includes('unknown variant');
+}
+
+/**
+ * A herdr that has no such subcommand: clap's "unrecognized subcommand", as an
+ * exit-code error carrying stderr's first line.
+ */
+function isUnknownSubcommand(thrown: unknown): boolean {
+  return (
+    thrown instanceof HerdrError &&
+    thrown.code === 'ssh_command_failed' &&
+    /unrecognized subcommand|unknown (sub)?command|invalid subcommand/i.test(thrown.message)
+  );
 }
 
 function field(result: unknown, key: string): unknown {

@@ -38,19 +38,18 @@ import {
   answeredReply,
   commandLines,
   DEMO_BLOCKED_SCREEN,
-  DEMO_OMP_PATHS,
   ompLine,
   DEMO_HOME,
-  DEMO_SESSION_IDS,
-  DEMO_WORKSPACES,
+  DEMO_HOST,
   demoPanes,
   replyFor,
   replyLine,
   toolResultLine,
   toolUseLine,
-  transcriptFor,
   userLine,
+  type DemoFixtures,
 } from './fixtures';
+import { unwrapJump, unwrapJumpStream } from '../herdr/machine';
 
 /** The version the demo claims, so the client picks the agent-aware verbs. */
 const DEMO_HERDR_VERSION = '0.8.0';
@@ -249,14 +248,26 @@ export class DemoHost implements HerdrTransport {
    */
   private readonly herdrchatDir = new Map<string, HostFile>();
   private lastMtime = 0;
+  /**
+   * The machines saved on this host, by SSH target, each a demo host of its
+   * own. A command jumped to one (`withMachine`) is unwrapped by the same
+   * builder that wrapped it and answered there.
+   */
+  private readonly machines = new Map<string, DemoHost>();
 
-  constructor(private readonly now: () => number = () => Date.now()) {
-    for (const pane of DEMO_WORKSPACES.flatMap(demoPanes)) {
+  constructor(
+    private readonly now: () => number = () => Date.now(),
+    private readonly fixtures: DemoFixtures = DEMO_HOST
+  ) {
+    for (const machine of fixtures.machines) {
+      this.machines.set(machine.target, new DemoHost(now, machine.fixtures));
+    }
+    for (const pane of fixtures.workspaces.flatMap(demoPanes)) {
       this.statuses.set(pane.paneId, pane.agentStatus);
-      this.transcripts.set(pane.paneId, transcriptFor(pane.paneId));
-      const ompPath = DEMO_OMP_PATHS[pane.paneId];
+      this.transcripts.set(pane.paneId, fixtures.transcript(pane.paneId));
+      const ompPath = fixtures.ompPaths[pane.paneId];
       if (ompPath !== undefined) this.paths.set(ompPath, pane.paneId);
-      const session = DEMO_SESSION_IDS[pane.paneId];
+      const session = fixtures.sessionIds[pane.paneId];
       if (session !== undefined) {
         const dir = projectDirName(pane.cwd);
         this.paths.set(`${DEMO_HOME}/.claude/projects/${dir}/${session}.jsonl`, pane.paneId);
@@ -264,7 +275,11 @@ export class DemoHost implements HerdrTransport {
     }
   }
 
-  async exec(command: string, _timeoutMs: number): Promise<ExecResult> {
+  async exec(command: string, timeoutMs: number): Promise<ExecResult> {
+    for (const [target, machine] of this.machines) {
+      const inner = unwrapJump(target, command);
+      if (inner !== null) return machine.exec(inner, timeoutMs);
+    }
     this.materialise();
     const body = withoutPath(command);
     return this.filesystem(body) ?? this.herdr(parseArgv(body));
@@ -309,7 +324,14 @@ export class DemoHost implements HerdrTransport {
    * arrives after it opened. Like the real thing this never ends on its own;
    * the consumer abandons the iterator when the thread goes away.
    */
-  async *streamLines(command: string, _startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
+  async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
+    for (const [target, machine] of this.machines) {
+      const inner = unwrapJumpStream(target, command);
+      if (inner !== null) {
+        yield* machine.streamLines(inner, startTimeoutMs, signal);
+        return;
+      }
+    }
     const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
     if (follow === null) return;
 
@@ -450,7 +472,12 @@ export class DemoHost implements HerdrTransport {
   }
 
   private isOmp(paneId: string): boolean {
-    return DEMO_OMP_PATHS[paneId] !== undefined;
+    return this.fixtures.ompPaths[paneId] !== undefined;
+  }
+
+  private focusedWorkspaceId(): string {
+    return this.fixtures.workspaces.find((w) => demoPanes(w).some((pane) => pane.paneId === this.fixtures.focusedPaneId))
+      ?.workspaceId ?? '';
   }
 
   private statusOf(paneId: string): string {
@@ -458,14 +485,14 @@ export class DemoHost implements HerdrTransport {
   }
 
   private workspaceRows(): unknown[] {
-    return DEMO_WORKSPACES.map((w) => {
+    return this.fixtures.workspaces.map((w) => {
       const panes = demoPanes(w);
       return {
         workspace_id: w.workspaceId,
         label: w.label,
         number: w.number,
         agent_status: workspaceStatus(panes.map((pane) => this.statusOf(pane.paneId))),
-        focused: panes.some((pane) => pane.paneId === 'w1:p1'),
+        focused: panes.some((pane) => pane.paneId === this.fixtures.focusedPaneId),
         active_tab_id: `${w.workspaceId}:t1`,
         pane_count: panes.length,
         tab_count: 1,
@@ -474,12 +501,12 @@ export class DemoHost implements HerdrTransport {
   }
 
   private agentRows(): unknown[] {
-    return DEMO_WORKSPACES.flatMap((w) => demoPanes(w).map((pane, index) => ({
+    return this.fixtures.workspaces.flatMap((w) => demoPanes(w).map((pane, index) => ({
       agent: pane.agent ?? 'claude',
       agent_status: this.statusOf(pane.paneId),
       cwd: pane.cwd,
       foreground_cwd: pane.cwd,
-      focused: pane.paneId === 'w1:p1',
+      focused: pane.paneId === this.fixtures.focusedPaneId,
       pane_id: pane.paneId,
       tab_id: `${w.workspaceId}:t1`,
       // The first pane keeps the terminal id it always had.
@@ -492,8 +519,8 @@ export class DemoHost implements HerdrTransport {
       }),
       ...(this.trusting.has(pane.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
       agent_session: pane.agent === 'omp'
-        ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[pane.paneId] ?? null }
-        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: DEMO_SESSION_IDS[pane.paneId] ?? null },
+        ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: this.fixtures.ompPaths[pane.paneId] ?? null }
+        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
     })));
   }
 
@@ -504,6 +531,12 @@ export class DemoHost implements HerdrTransport {
     if (verb === 'status server') return ok({ running: true });
     if (verb === 'workspace list') return ok({ workspaces: this.workspaceRows() });
     if (verb === 'agent list') return ok({ agents: this.agentRows() });
+    // Bare JSON, not an envelope, as herdr prints it.
+    if (verb === 'machine list --json') {
+      return out(JSON.stringify(this.fixtures.machines.map(({ id, label, target, session, enabled }) => ({
+        id, label, target, session, enabled, selected: false,
+      }))));
+    }
 
     if (argv[1] === 'workspace' && ['create', 'rename', 'close'].includes(argv[2] ?? '')) {
       return out(JSON.stringify({ error: {
@@ -517,9 +550,9 @@ export class DemoHost implements HerdrTransport {
         snapshot: {
           agents: this.agentRows(),
           workspaces: this.workspaceRows(),
-          focused_pane_id: 'w1:p1',
-          focused_tab_id: 'w1:t1',
-          focused_workspace_id: 'w1',
+          focused_pane_id: this.fixtures.focusedPaneId,
+          focused_tab_id: `${this.focusedWorkspaceId()}:t1`,
+          focused_workspace_id: this.focusedWorkspaceId(),
           version: DEMO_HERDR_VERSION,
           protocol: 19,
         },

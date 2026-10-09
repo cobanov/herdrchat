@@ -417,3 +417,102 @@ export function toolResultLine(id: string, text: string, isError: boolean, uuid:
     content: [{ type: 'tool_result', tool_use_id: id, content: text, ...(isError ? { is_error: true } : {}) }],
   });
 }
+
+// MARK: - A machine saved on the demo host
+//
+// The demo host has one machine saved on it, as a real host has after
+// `herdr machine add nuku`. Its commands reach a second `DemoHost` built from
+// the set below, through the same jump a real host's `ssh` would run, so the
+// machine's chat goes through the real wrapper, reader and tail.
+
+/** Everything one demo machine is made of. `DemoHost` takes one of these. */
+export interface DemoFixtures {
+  workspaces: readonly DemoWorkspace[];
+  /** The Claude session id each pane reports, and therefore its transcript filename. */
+  sessionIds: Readonly<Record<string, string>>;
+  /** Where an OMP pane keeps its journal. */
+  ompPaths: Readonly<Record<string, string>>;
+  /** The transcript a pane starts with, as the file's contents. */
+  transcript: (paneId: string) => string;
+  /** The pane herdr reports as focused. */
+  focusedPaneId: string;
+  /** The machines saved on this one, as `herdr machine list --json` lists them. */
+  machines: readonly DemoMachine[];
+}
+
+/** A machine saved on a demo host, and the demo machine behind it. */
+export interface DemoMachine {
+  id: string;
+  label: string;
+  target: string;
+  session: string;
+  enabled: boolean;
+  fixtures: DemoFixtures;
+}
+
+export const DEMO_NUKU_WORKSPACES: readonly DemoWorkspace[] = [
+  {
+    workspaceId: 'w1',
+    label: 'kenneth-bot',
+    number: 1,
+    paneId: 'w1:p1',
+    cwd: '/home/demo/kenneth-bot',
+    agentStatus: 'idle',
+    title: 'Nightly digest',
+  },
+];
+
+export const DEMO_NUKU_SESSION_IDS: Readonly<Record<string, string>> = {
+  'w1:p1': '77777777-7777-4777-8777-777777777777',
+};
+
+const NUKU_SEEDS: Readonly<Record<string, readonly string[]>> = {
+  'w1:p1': [
+    line({
+      type: 'user',
+      uuid: 'n1-1',
+      timestamp: '2026-08-19T06:00:00.000Z',
+      content: 'run the nightly digest and tell me what stood out',
+    }),
+    line({
+      type: 'assistant',
+      uuid: 'n1-2',
+      timestamp: '2026-08-19T06:00:41.000Z',
+      model: MODEL,
+      content: [
+        {
+          type: 'text',
+          text: 'Digest is out. Two things stood out: the backup job ran twice, and three issues were closed without a linked change. Everything else was routine.',
+        },
+      ],
+    }),
+  ],
+};
+
+/** The demo host's machine `nuku`: one workspace, one idle Claude chat. */
+export const DEMO_NUKU: DemoFixtures = {
+  workspaces: DEMO_NUKU_WORKSPACES,
+  sessionIds: DEMO_NUKU_SESSION_IDS,
+  ompPaths: {},
+  transcript: (paneId) => {
+    const lines = NUKU_SEEDS[paneId] ?? [];
+    return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+  },
+  focusedPaneId: 'w1:p1',
+  machines: [],
+};
+
+/** The machines saved on the demo host. */
+export const DEMO_MACHINES: readonly DemoMachine[] = [
+  { id: 'demo-nuku', label: 'nuku', target: 'nuku', session: 'default', enabled: true, fixtures: DEMO_NUKU },
+];
+
+/** The demo host itself. */
+export const DEMO_HOST: DemoFixtures = {
+  workspaces: DEMO_WORKSPACES,
+  sessionIds: DEMO_SESSION_IDS,
+  ompPaths: DEMO_OMP_PATHS,
+  transcript: transcriptFor,
+  focusedPaneId: 'w1:p1',
+  machines: DEMO_MACHINES,
+};

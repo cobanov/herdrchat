@@ -99,3 +99,31 @@ export function withJsDeadline(
     );
   });
 }
+
+/**
+ * Reaching a machine saved on the host (`herdr machine add`), through the
+ * host's own `ssh` (see `machine.ts`).
+ *
+ * The jump's connect deadline. It is passed to `ssh` as `ConnectTimeout` and
+ * added to every jumped command's own deadline, so the time the host spends
+ * reaching the machine is never taken out of the command's budget: a poll that
+ * may take fifteen seconds on the host may take fifteen on the machine, plus
+ * this.
+ */
+export const JUMP_CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * `ServerAliveInterval` on the jump: how often the host's `ssh` asks the
+ * machine whether it is still there. Without it a machine that went to sleep
+ * mid-command would hold the host's `ssh` open until TCP gave up, which is
+ * far longer than any deadline above.
+ */
+export const JUMP_SERVER_ALIVE_MS = 15_000;
+
+/**
+ * How often a jumped stream's stdin hears a newline. The newline is what
+ * keeps the machine's side of a stream alive while the host's channel is, and
+ * what notices, within this long, that the machine's side has ended (see
+ * `jumpStream`).
+ */
+export const JUMP_KEEPALIVE_MS = 5_000;
