@@ -3,7 +3,9 @@
 # workspace and opens a thread of its own: only its transcript, its agent
 # named in the header, a message sent to it alone, and its row the only one
 # that shows the reply. Before, the second agent was invisible except as
-# unattributed lines merged into the first one's thread.
+# unattributed lines merged into the first one's thread. Each agent's row and
+# thread are titled by its own Claude session; the workspace's card keeps the
+# workspace's label, since it stands for both.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -17,13 +19,13 @@ appId: dev.herdr.HerdrChat
     id: chat-group-working
 - assertVisible:
     id: chat-row-w6
-    text: .*2 agents · Claude.*
+    text: 'api, .*2 agents · Claude.*'
 - assertVisible:
     id: pane-row-w6:p1
-    text: Claude in api, demo/api.*
+    text: Archived projects migration, Claude in api, demo/api.*
 - assertVisible:
     id: pane-row-w6:p2
-    text: Claude in api, api/web.*
+    text: Save button wrap, Claude in api, api/web.*
 - takeScreenshot: multi-agent-list-${APPEARANCE}
 
 # The second agent alone: its own lines, none of the first one's.
@@ -35,12 +37,13 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible: .*archived_at.*
 - assertVisible:
     id: thread-title
-    text: api
-# The header names the agent once the first poll has bound it.
+    text: Save button wrap
+# The header names the workspace, then the agent, once the first poll has
+# bound it.
 - extendedWaitUntil:
     visible:
       id: thread-meta
-      text: Claude · .*
+      text: api · Claude · .*
     timeout: 10000
 - tapOn:
     id: composer-input
