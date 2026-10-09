@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import { Header } from '../Header';
 import { haptics } from '@/lib/haptics';
+import { spacing } from '@/theme/tokens';
 
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
@@ -34,5 +35,23 @@ describe('Header trailing controls', () => {
     const screen = await render(<Header title="Hosts" onClose={() => {}} />);
     expect(screen.queryByTestId('header-menu')).toBeNull();
     expect(screen.getByTestId('header-close')).toHaveProp('accessibilityLabel', 'Done');
+  });
+
+  it('keeps Done apart from "+" on a sheet that has both, with Done outermost', async () => {
+    // Hosts: "Done" used to sit flush against "+", and the glyph's hitSlop
+    // reached over the end of the word, so closing the sheet opened "Add a host".
+    const screen = await render(
+      <Header title="Hosts" onClose={() => {}} actionSymbol="plus" actionLabel="Add a host" onAction={() => {}} />
+    );
+    const close = screen.getByTestId('header-close');
+    expect(close).toHaveStyle({ marginLeft: spacing.xl });
+    // Outermost: the last control on the title line.
+    const controls = screen.getAllByRole('button').filter((node) => node.props.testID !== 'server-switcher');
+    expect(controls.map((node) => node.props.testID)).toEqual(['header-action', 'header-close']);
+  });
+
+  it('puts no margin before Done when it is the only control', async () => {
+    const screen = await render(<Header title="New chat" onClose={() => {}} closeLabel="Cancel" />);
+    expect(screen.getByTestId('header-close')).toHaveStyle({ marginLeft: 0 });
   });
 });

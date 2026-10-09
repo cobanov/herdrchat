@@ -109,3 +109,10 @@ appId: dev.herdr.HerdrChat
       - assertVisible: "Chats"
       - assertVisible:
           id: "server-switcher"
+      # "Chats" is still in the hierarchy behind a page sheet; the editor's
+      # own button and the Hosts list's Demo row being gone is what proves both
+      # sheets closed.
+      - assertNotVisible:
+          id: "save-server"
+      - assertNotVisible:
+          id: "server-demo"

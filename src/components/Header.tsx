@@ -9,13 +9,13 @@ import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine 
 /**
  * The screen header: a large title, an optional server line under it, and up to
  * two trailing glyph controls (an action and a menu) plus a dismiss control for
- * a sheet.
+ * a sheet, which goes outermost.
  *
  * The title sits at the SAME y on every screen. That is the whole reason this
  * is one component rather than per-screen markup — the previous version
  * bottom-aligned the row, so a screen with a subtitle (Chats) and one without
- * (Settings, Hosts) put their titles at different heights, and switching tabs
- * made the heading jump. Here the title is pinned to the top of a fixed-height
+ * (Settings, Hosts) put their titles at different heights, and moving between
+ * them made the heading jump. Here the title is pinned to the top of a fixed-height
  * line and the subtitle hangs beneath it, so adding or removing a subtitle
  * changes what is under the title, never where the title is.
  *
@@ -24,7 +24,7 @@ import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine 
  *
  * Two glyphs, not a slot for any number: Chats needs "+" and the menu that
  * replaced the tab bar, and a third control on a phone-width title line starts
- * truncating the title. The menu sits outermost, where the trailing edge of a
+ * truncating the title. The menu sits outermost of the glyphs, where the trailing edge of a
  * system navigation bar puts its "more" control, so the "+" keeps the place it
  * has always had relative to the title.
  */
@@ -68,6 +68,8 @@ export function Header({
 }) {
   const { colors } = useTheme();
   const titleLine = useScaledLine(headerTitleLine);
+  const hasAction = actionSymbol !== undefined && onAction !== undefined;
+  const hasGlyph = hasAction || onMenu !== undefined;
 
   return (
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
@@ -77,6 +79,24 @@ export function Header({
         </Text>
         <View style={{ flex: 1 }} />
 
+        {hasAction && (
+          <GlyphButton symbol={actionSymbol} label={actionLabel ?? 'Action'} testID="header-action" fallback="+" onPress={onAction} />
+        )}
+
+        {/* Twice the glyphs' hitSlop apart, so their 44pt targets meet at the
+            midpoint instead of overlapping: a tap between "+" and the menu
+            goes to whichever glyph it is nearer. */}
+        {onMenu !== undefined && (
+          <View style={{ marginLeft: hasAction ? spacing.xl : 0 }}>
+            <GlyphButton symbol={menuSymbol} label={menuLabel} testID={menuTestID} fallback="…" onPress={onMenu} />
+          </View>
+        )}
+
+        {/* Done goes outermost, where iOS puts a sheet's confirming control,
+            and the glyphs sit inboard of it. Spaced like the glyphs are from
+            each other: "Done" flush against "+" (Hosts has both) let the
+            glyph's hitSlop reach over the end of the word, so a tap meant to
+            close the sheet opened "Add a host". */}
         {onClose !== undefined && (
           <Pressable
             onPress={onClose}
@@ -88,6 +108,7 @@ export function Header({
             testID="header-close"
             hitSlop={spacing.sm}
             style={({ pressed }) => ({
+              marginLeft: hasGlyph ? spacing.xl : 0,
               minWidth: minTouchTarget,
               height: minTouchTarget,
               alignItems: 'flex-end',
@@ -98,19 +119,6 @@ export function Header({
               {closeLabel}
             </Text>
           </Pressable>
-        )}
-
-        {actionSymbol !== undefined && onAction !== undefined && (
-          <GlyphButton symbol={actionSymbol} label={actionLabel ?? 'Action'} testID="header-action" fallback="+" onPress={onAction} />
-        )}
-
-        {/* Twice the glyphs' hitSlop apart, so their 44pt targets meet at the
-            midpoint instead of overlapping: a tap between "+" and the menu
-            goes to whichever glyph it is nearer. */}
-        {onMenu !== undefined && (
-          <View style={{ marginLeft: actionSymbol !== undefined && onAction !== undefined ? spacing.xl : 0 }}>
-            <GlyphButton symbol={menuSymbol} label={menuLabel} testID={menuTestID} fallback="…" onPress={onMenu} />
-          </View>
         )}
       </View>
 

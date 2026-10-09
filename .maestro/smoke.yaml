@@ -25,10 +25,14 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: "header-close"
 - assertVisible: "Chats"
+- assertNotVisible:
+    id: "server-demo"
 
 # Everything else is behind the menu, the "…" beside "+". Each destination is
 # asserted by something only it renders, not by its name: the name is also a
-# row of the menu, so it would pass against a sheet that never opened.
+# row of the menu, so it would pass against a sheet that never opened. Leaving
+# is checked the same way: "Chats" is still in the hierarchy behind a page
+# sheet, so the sheet's own element has to be gone, not just the title there.
 - runFlow:
     file: regression/_menu.yaml
     env:
@@ -45,6 +49,8 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: "header-close"
 - assertVisible: "Chats"
+- assertNotVisible:
+    id: "toggle-tool-activity"
 
 - runFlow:
     file: regression/_menu.yaml
@@ -55,3 +61,5 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: "header-close"
 - assertVisible: "Chats"
+- assertNotVisible:
+    id: "server-demo"

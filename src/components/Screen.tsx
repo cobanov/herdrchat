@@ -8,8 +8,8 @@ import { size } from '@/theme/tokens';
 /**
  * The outermost element of every screen.
  *
- * It exists so that "what a page is made of" is decided once. Before it, tab
- * screens used `SafeAreaView` and presented ones used a bare `View`, which is a
+ * It exists so that "what a page is made of" is decided once. Before it, the
+ * root screens used `SafeAreaView` and presented ones used a bare `View`, which is a
  * real difference — the safe-area inset shifted the header down on some pages
  * and not others — expressed as an accident rather than a decision.
  *
