@@ -131,12 +131,11 @@ export const size = {
   agentTile: 22,
   /**
    * A subagent's or a workflow's card: its state mark (running, done,
-   * failed), the room between its lines, and how much of a result an opened
-   * card shows before it stops. A result is the agent's answer, so it gets
-   * more room than a tool's output does.
+   * failed), and how much of a result an opened card shows before it stops.
+   * A result is the agent's answer, so it gets more room than a tool's
+   * output does.
    */
   delegationGlyph: 16,
-  delegationGap: 6,
   delegationResultLines: 24,
   /** A workflow's agent row on its run screen: its label line and caption together. */
   workflowAgentRow: 52,

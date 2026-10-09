@@ -10,6 +10,7 @@ import { parseAgentMeta, type AgentMeta } from './meta';
  *     <projects>/<project>/<session>/subagents/agent-<id>.meta.json   …its meta
  *     <projects>/<project>/<session>/workflows/<runId>.json           a workflow run
  *     <projects>/<project>/<session>/subagents/workflows/<runId>/agent-<id>.jsonl
+ *     <projects>/<project>/<session>/subagents/workflows/<runId>/journal.jsonl   …while it runs
  *
  * Measured on Claude Code 2.1.294 (2026-10). A subagent's own subagents
  * (`spawnDepth` 2) are filed flat beside it, under the same session, so the
@@ -48,6 +49,16 @@ export function agentsDir(dir: string, runId: string | null = null): string {
 /** A workflow run's progress file, which Claude rewrites as the run goes. */
 export function workflowRunPath(dir: string, runId: string): string {
   return `${dir}/workflows/${runId}.json`;
+}
+
+/**
+ * A workflow run's journal, which Claude appends to as the run goes. The run
+ * file is written only when the run ends (measured on 2.1.294: a run going
+ * for forty minutes had five agents and no run file), so while it runs this
+ * is the only record of its agents.
+ */
+export function workflowJournalPath(dir: string, runId: string): string {
+  return `${agentsDir(dir, runId)}/journal.jsonl`;
 }
 
 /** The agent id a subagent transcript is named by, or null for any other path. */
@@ -128,6 +139,29 @@ export function readChangedCommand(path: string, signature: string | null): stri
   return (
     `[ -e ${quoted} ] || exit ${ABSENT_EXIT}; s=$(cksum < ${quoted}); printf '%s\\n' "$s"; ` +
     `[ "$s" = ${shellQuote(signature ?? '')} ] || cat ${quoted}`
+  );
+}
+
+/**
+ * The command that prints the lines of a transcript naming any of `ids`, as
+ * `readChangedCommand` prints a file: a checksum line, then the lines only
+ * when they changed since `signature`. Exits `ABSENT_EXIT` when the file is
+ * not there. Null when an id is not inert, or there are none.
+ *
+ * How an open subagent screen learns its agent ended, from the transcript of
+ * the agent that started it (the session's, or a subagent's for a nested
+ * one): the call's line, its result, the notification, a hand-back and a
+ * resume all name the call's id or the agent's. The chat underneath reads
+ * none of it while the screen covers it. `grep -F` on fixed ids, so only the
+ * few lines about this agent cross the connection, not the transcript.
+ */
+export function delegationLinesCommand(path: string, ids: readonly string[], signature: string | null): string | null {
+  if (ids.length === 0 || !ids.every(isInertId)) return null;
+  const quoted = shellQuote(path);
+  const grep = `grep -F ${ids.map((id) => `-e ${shellQuote(id)}`).join(' ')} ${quoted}`;
+  return (
+    `[ -e ${quoted} ] || exit ${ABSENT_EXIT}; s=$(${grep} | cksum); printf '%s\\n' "$s"; ` +
+    `[ "$s" = ${shellQuote(signature ?? '')} ] || ${grep}; :`
   );
 }
 

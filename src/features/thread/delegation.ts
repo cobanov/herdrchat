@@ -23,6 +23,12 @@ export interface DelegationScope {
   connectionId: string;
   workspaceId: string;
   sessionDirs: readonly string[];
+  /**
+   * The transcripts the cards are drawn from: the chat's Claude transcripts,
+   * or a subagent's own. An agent's screen reads its end from there, since
+   * the chat stops reading while the screen covers it.
+   */
+  transcripts: readonly string[];
 }
 
 const Scope = createContext<DelegationScope | null>(null);
@@ -79,6 +85,10 @@ export interface SubagentRouteParams {
   subtitle: string;
   followKey: string;
   state: DelegationState;
+  /** The transcripts the call can be in, JSON like `dirs`; empty for a workflow's agent. */
+  parents: string;
+  /** The call that started it, whose end the screen looks for; absent for a workflow's agent. */
+  callId?: string;
   toolUseId?: string;
   agentId?: string;
   runId?: string;
@@ -92,13 +102,16 @@ export interface SubagentRouteParams {
 export function openSubagent(
   scope: DelegationScope,
   target: AgentTarget,
-  details: { title: string; subtitle: string; followKey: string; state: DelegationState }
+  details: { title: string; subtitle: string; followKey: string; state: DelegationState; callId: string | null }
 ) {
+  const { callId, ...rest } = details;
   const params: SubagentRouteParams = {
     connectionId: scope.connectionId,
     workspaceId: scope.workspaceId,
     dirs: encodeDirs(scope.sessionDirs),
-    ...details,
+    parents: encodeDirs(callId === null ? [] : scope.transcripts),
+    ...rest,
+    ...(callId === null ? {} : { callId }),
     ...(target.kind === 'call'
       ? { toolUseId: target.toolUseId }
       : { agentId: target.agentId, ...(target.runId === null ? {} : { runId: target.runId }) }),
@@ -112,16 +125,23 @@ export interface WorkflowRouteParams {
   dirs: string;
   runId: string;
   title: string;
+  /** The card's state when opened, and the key it goes on reporting it under (the call's id). */
+  state: DelegationState;
+  followKey: string;
 }
 
 /** Push a workflow run's screen, the same way as a subagent's. */
-export function openWorkflow(scope: DelegationScope, runId: string, title: string) {
+export function openWorkflow(
+  scope: DelegationScope,
+  runId: string,
+  details: { title: string; state: DelegationState; followKey: string }
+) {
   const params: WorkflowRouteParams = {
     connectionId: scope.connectionId,
     workspaceId: scope.workspaceId,
     dirs: encodeDirs(scope.sessionDirs),
     runId,
-    title,
+    ...details,
   };
   router.push({ pathname: '/chat/workflow', params: { ...params } });
 }

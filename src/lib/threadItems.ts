@@ -13,7 +13,7 @@
  * `tool_group_summary`): "Ran 13 commands · called 6 tools · 3 failed".
  */
 
-import { isFailedStatus } from './subagents/taskNotice';
+import { handbackPointer, isFailedStatus } from './subagents/taskNotice';
 import { scriptMeta, WORKFLOW_FALLBACK_NAME } from './subagents/scriptMeta';
 import { runIdFromResult } from './subagents/workflowRun';
 import type { ChatMessage, MessageSegment, TaskNotice } from './transcript/message';
@@ -114,8 +114,19 @@ export function threadItems(
   /** Calls that are cards, with when they were made and when their result came. */
   const delegated: { item: Extract<ThreadItem, { kind: 'subagent' | 'workflow' }>; at: number | null }[] = [];
   const resultAt = new Map<ToolCall, number | null>();
-  const notices = new Map<string, { notice: TaskNotice; at: number | null }>();
+  const notices = new Map<string, Noticed>();
+  /**
+   * The same, by task: a resumed agent's next notification names the
+   * `SendMessage` that resumed it, not the call that started it; its task id
+   * is still the agent's.
+   */
+  const noticesByTask = new Map<string, Noticed>();
+  /** Background agents' reports, by agent id: the last one each handed back. */
+  const handbacks = new Map<string, { report: string; seq: number }>();
+  /** When each agent was last resumed by `SendMessage`, as a position in the window. */
+  const resumes = new Map<string, number>();
   let at: number | null = null;
+  let seq = 0;
 
   const flush = () => {
     if (run !== null && (run.calls.length > 0 || run.thoughts.length > 0)) items.push(run);
@@ -140,10 +151,20 @@ export function threadItems(
   for (const message of messages) {
     if (message.isSidechain && !options.showSidechain) continue;
     at = message.timestamp;
+    seq += 1;
     // A background task's end: kept by the call it names, never a row. The
     // same task can notify more than once (an agent resumed); the last wins.
+    // Its report and a resume are kept by the agent they name.
     for (const segment of message.segments) {
-      if (segment.kind === 'taskNotice') notices.set(segment.notice.toolUseId, { notice: segment.notice, at });
+      if (segment.kind === 'taskNotice') {
+        notices.set(segment.notice.toolUseId, { notice: segment.notice, at, seq });
+        if (segment.notice.taskId !== null) noticesByTask.set(segment.notice.taskId, { notice: segment.notice, at, seq });
+      }
+      if (segment.kind === 'handback') handbacks.set(segment.agentId, { report: segment.report, seq });
+      if (segment.kind === 'toolResult') {
+        const resumed = resumedAgent(segment.text);
+        if (resumed !== null) resumes.set(resumed, seq);
+      }
     }
 
     if (message.role === 'system') {
@@ -188,6 +209,7 @@ export function threadItems(
           attach(segment);
           return;
         case 'taskNotice':
+        case 'handback':
           return;
         case 'toolUse': {
           emitProse(index);
@@ -225,7 +247,7 @@ export function threadItems(
   // settled once the whole window has been read.
   for (const { item, at: startedAt } of delegated) {
     const notice = item.call.id === null ? undefined : notices.get(item.call.id);
-    item.delegation = delegationOf(item.call, startedAt, resultAt.get(item.call) ?? null, notice);
+    item.delegation = delegationOf(item.call, startedAt, resultAt.get(item.call) ?? null, notice, { handbacks, resumes, noticesByTask });
     if (item.kind === 'workflow') item.runId = runIdFromResult(item.call.result);
   }
 
@@ -340,11 +362,29 @@ const RUNNING: Delegation = {
 /** "Async agent launched successfully…", "Workflow launched in background…". */
 const LAUNCHED = /^\s*(?:Async agent launched|Workflow launched)\b/;
 
+interface Noticed {
+  notice: TaskNotice;
+  at: number | null;
+  /** Where in the window it came, to order it against a resume. */
+  seq: number;
+}
+
+/** The agent a `SendMessage` result says it resumed: `{"resumedAgentId":"ad5da24…"}`. */
+function resumedAgent(text: string): string | null {
+  if (!text.includes('resumedAgentId')) return null;
+  return /"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"/.exec(text)?.[1] ?? null;
+}
+
 function delegationOf(
   call: ToolCall,
   startedAt: number | null,
   resultAt: number | null,
-  noticed: { notice: TaskNotice; at: number | null } | undefined
+  noticed: Noticed | undefined,
+  { handbacks, resumes, noticesByTask }: {
+    handbacks: ReadonlyMap<string, { report: string; seq: number }>;
+    resumes: ReadonlyMap<string, number>;
+    noticesByTask: ReadonlyMap<string, Noticed>;
+  }
 ): Delegation {
   const background = call.result !== null && LAUNCHED.test(call.result);
   const agentId = background ? /\bagentId: ([A-Za-z0-9_-]+)/.exec(call.result ?? '')?.[1] ?? null : null;
@@ -363,12 +403,26 @@ function delegationOf(
       durationMs: elapsed(resultAt),
     };
   }
-  if (noticed === undefined) return base;
-  const { notice, at } = noticed;
+  // The agent's latest notification, whichever call it names.
+  const byTask = agentId === null ? undefined : noticesByTask.get(agentId);
+  const latest = byTask !== undefined && (noticed === undefined || byTask.seq > noticed.seq) ? byTask : noticed;
+  if (latest === undefined) return base;
+  const { notice, at, seq } = latest;
+  // Claude Code 2.1.294 hands the report back as a message of its own and
+  // the notification only points to it.
+  const pointer = handbackPointer(notice.result);
+  const handedBack = handbacks.get(pointer ?? agentId ?? '');
+  // Resumed with `SendMessage` after it last reported: working again until
+  // it reports again: its next notification (by its task id) or hand-back.
+  const resumed = agentId === null ? undefined : resumes.get(agentId);
+  if (resumed !== undefined && resumed > seq && (handedBack === undefined || handedBack.seq < resumed)) return base;
+  // The report: the hand-back the notification points to, or one that came
+  // after it (a resumed agent's); else what the notification itself carries.
+  const report = handedBack !== undefined && (pointer !== null || handedBack.seq > seq) ? handedBack.report : null;
   return {
     ...base,
     state: isFailedStatus(notice.status) ? 'failed' : 'done',
-    result: notice.result ?? notice.summary,
+    result: report ?? (pointer === null ? notice.result : null) ?? notice.summary,
     endedAt: at,
     durationMs: notice.durationMs ?? elapsed(at),
     tokens: notice.tokens,

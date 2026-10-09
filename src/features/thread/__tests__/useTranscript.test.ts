@@ -166,3 +166,22 @@ it('waits for a transcript that is not written yet, and reads it once it is', as
   expect(result.current.messages).toHaveLength(1);
   await unmount();
 });
+
+// An ended agent whose transcript is gone was probed over SSH every couple
+// of seconds for as long as its screen stayed open.
+it('reads a missing transcript once when the agent has ended, and does not ask again', async () => {
+  const { client, dir, host } = await demo();
+  const exec = jest.spyOn(host, 'exec');
+  const { result, unmount } = await renderHook(() =>
+    useTranscript(db, client, 'demo', 'w2', agentTranscriptPath(dir, 'a0000000000000000'), false));
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(10);
+  });
+  expect(result.current.absent).toBe(true);
+  const reads = exec.mock.calls.length;
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(30_000);
+  });
+  expect(exec.mock.calls.length).toBe(reads);
+  await unmount();
+});

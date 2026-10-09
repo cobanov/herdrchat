@@ -70,6 +70,13 @@ export const WORKFLOW_POLL_MS = 3_000;
 export const SUBAGENT_RESOLVE_RETRY_MS = 2_000;
 
 /**
+ * How often an open subagent screen looks in its parent transcript for its
+ * agent's end, while it runs. A grep over the transcript on the host; only
+ * the few lines naming the agent come back, and one line when none changed.
+ */
+export const SUBAGENT_END_POLL_MS = 3_000;
+
+/**
  * The grace period between the native deadline and the JS one.
  *
  * Firing first would report a timeout while the native side is still capable of

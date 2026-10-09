@@ -125,6 +125,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     connectionId: connection?.id ?? '',
     workspaceId,
     sessionDirs: transcriptKey.split('\n').map(sessionDir).filter((dir): dir is string => dir !== null),
+    transcripts: transcriptKey.length === 0 ? [] : transcriptKey.split('\n'),
   }), [client, connection?.id, workspaceId, transcriptKey]);
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 

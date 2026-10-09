@@ -20,6 +20,7 @@ import { ThreadRow } from '@/features/thread/ThreadRow';
 import { useAgentPath } from '@/features/thread/useAgentPath';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { useTranscript } from '@/features/thread/useTranscript';
+import { useDelegationEnd } from '@/features/thread/useDelegationEnd';
 import { sessionDir } from '@/lib/subagents/paths';
 import { threadItems, type DelegationState, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
@@ -36,6 +37,8 @@ export default function SubagentScreen({
   connectionId,
   workspaceId,
   dirs,
+  parents,
+  callId,
   target,
   title,
   subtitle,
@@ -46,6 +49,10 @@ export default function SubagentScreen({
   connectionId: string;
   workspaceId: string;
   dirs: readonly string[];
+  /** The transcripts the call that started it can be in; empty for a workflow's agent. */
+  parents: readonly string[];
+  /** That call's id, whose end this screen looks for there. */
+  callId: string | null;
   target: AgentTarget | null;
   title: string;
   subtitle: string;
@@ -61,10 +68,16 @@ export default function SubagentScreen({
   const historyInteraction = useRef<number | null>(null);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  // The card's state as it is now, not as it was when this opened: the agent
-  // is followed until its card says it ended.
-  const reported = useDelegationStates((store) => store.states[followKey]);
-  const state = reported ?? initialState;
+  // Where the agent stands now, not when this opened. Read here from the
+  // transcript its call was made in: the chat underneath stops reading while
+  // this covers it, so its card would never say the agent ended. The card's
+  // report covers what this cannot read (a workflow's agent, whose run's
+  // screen polls under this one), and the moments before the first read.
+  const reported = useDelegationStates((store) => store.states[followKey]) ?? initialState;
+  // A background agent's id is known from its launch, and names its
+  // hand-back and any resume; a foreground one's end names only the call.
+  const read = useDelegationEnd(client, parents, callId, target?.kind === 'agent' ? target.agentId : null, reported === 'running');
+  const state = read?.state ?? reported;
   const found = useAgentPath(client, dirs, target, state === 'running');
   const transcript = useTranscript(db, client, connectionId, workspaceId, found.path, state === 'running');
   const scroll = useThreadScroll(listRef, transcript.historyVersion);
@@ -75,7 +88,12 @@ export default function SubagentScreen({
   // Its own subagents are filed under the main session's folder, not its own.
   const scope = useMemo<DelegationScope>(() => {
     const dir = found.path === null ? null : sessionDir(found.path);
-    return { client, connectionId, workspaceId, sessionDirs: dir === null ? [] : [dir] };
+    return {
+      client, connectionId, workspaceId,
+      sessionDirs: dir === null ? [] : [dir],
+      // Its own calls are in its own transcript.
+      transcripts: found.path === null ? [] : [found.path],
+    };
   }, [client, connectionId, workspaceId, found.path]);
 
   const metaLine = found.meta === null

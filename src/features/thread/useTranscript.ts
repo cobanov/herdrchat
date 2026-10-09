@@ -77,6 +77,11 @@ export function useTranscript(
   const consumed = useRef(0);
   const anchor = useRef(0);
   const paging = useRef(false);
+  /** Whether the agent still runs, for the retry of a file not there: once it ended, one absent read is final. */
+  const following = useRef(follow);
+  useEffect(() => {
+    following.current = follow;
+  }, [follow]);
 
   const show = useCallback((next: ChatMessage[]) => {
     shown.current = next;
@@ -113,8 +118,9 @@ export function useTranscript(
         if (probe.kind === 'absent') {
           setAbsent(true);
           setLoading(false);
+          if (!following.current) return;
           setTimeout(() => {
-            if (alive) setAttempt((value) => value + 1);
+            if (alive && following.current) setAttempt((value) => value + 1);
           }, SUBAGENT_RESOLVE_RETRY_MS);
           return;
         }

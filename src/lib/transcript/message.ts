@@ -24,8 +24,10 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 
 /** What a `<task-notification>` says about the background task a tool call started. */
 export interface TaskNotice {
-  /** The call that started the task. */
+  /** The call that started the task, or that last resumed it (a `SendMessage`). */
   toolUseId: string;
+  /** The task: for an agent, its agent id. */
+  taskId: string | null;
   /** `completed`, `failed`, `killed`, as Claude writes it. */
   status: string;
   summary: string | null;
@@ -49,6 +51,13 @@ export type MessageSegment =
    * the card of the call it names.
    */
   | { kind: 'taskNotice'; notice: TaskNotice }
+  /**
+   * A background subagent's report, handed back as a message from the agent
+   * (`<agent-message from="<agentId>">[Subagent hand-back] …`). Claude Code
+   * 2.1.294 no longer repeats it in the task notification, whose result only
+   * points here. Never a bubble; the card of the agent it names shows it.
+   */
+  | { kind: 'handback'; agentId: string; report: string }
   /**
    * A picture sent with the message. `path` is where it lives on the host, or
    * empty when the transcript holds the picture but not where it came from

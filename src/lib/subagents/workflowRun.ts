@@ -126,6 +126,66 @@ export function parseWorkflowRun(text: string, previous: WorkflowRun | null = nu
   };
 }
 
+/**
+ * A run still going, from its journal (`subagents/workflows/<runId>/journal.jsonl`),
+ * since Claude writes the run file only when the run ends. One JSON object a
+ * line, as measured (2.1.294):
+ *
+ *     {"type":"launched"}
+ *     {"type":"started","key":"v2:…","agentId":"a1e1…","label":"review:ux","phase":"Review"}
+ *     {"type":"result","key":"v2:…","agentId":"a1e1…","result":{…}}
+ *
+ * Phases are titled by the `phase` the agents started under, in the order
+ * they first appear; an agent with a `result` is done (failed if the entry
+ * carries an `error`, a shape not yet seen). The journal carries no
+ * model, duration or tokens, nor the run's name, status or totals: those
+ * stay null (a null status reads as running, and a card falls back to what
+ * the transcript says), until the run file replaces this. A torn last line
+ * (the read landed mid-append) is skipped. Null when no agent has started.
+ */
+export function parseWorkflowJournal(text: string): WorkflowRun | null {
+  const phases: WorkflowPhase[] = [];
+  const agents = new Map<string, WorkflowAgent>();
+  const ended = new Map<string, boolean>();
+  let index = 0;
+  for (const line of text.split('\n')) {
+    if (line.trim().length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const entry = record(parsed);
+    const agentId = string(entry?.agentId);
+    if (entry === null || agentId === null) continue;
+    if (entry.type === 'result') {
+      ended.set(agentId, entry.error !== undefined && entry.error !== null);
+      continue;
+    }
+    if (entry.type !== 'started' || agents.has(agentId)) continue;
+    const title = string(entry.phase) ?? 'Agents';
+    let phase = phases.find((candidate) => candidate.title === title);
+    if (phase === undefined) {
+      phase = { title, detail: null, agents: [] };
+      phases.push(phase);
+    }
+    index += 1;
+    const agent: WorkflowAgent = {
+      index, label: string(entry.label) ?? 'Agent', agentId, model: null, state: 'running',
+      startedAt: null, durationMs: null, tokens: null, toolCalls: null, lastTool: null, resultPreview: null, error: null,
+    };
+    agents.set(agentId, agent);
+    phase.agents.push(agent);
+  }
+  if (agents.size === 0) return null;
+  for (const [agentId, failed] of ended) {
+    const agent = agents.get(agentId);
+    if (agent !== undefined) agent.state = failed ? 'failed' : 'done';
+  }
+  return { name: null, summary: null, status: null, phases, logs: [], durationMs: null, agentCount: agents.size, totalTokens: null };
+}
+
 /** The run id in a `Workflow` call's result: `Run ID: wf_31a24808-cdf`. */
 export function runIdFromResult(result: string | null): string | null {
   if (result === null) return null;

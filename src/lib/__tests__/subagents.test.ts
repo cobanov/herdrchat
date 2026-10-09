@@ -279,6 +279,7 @@ describe('task notifications', () => {
   it('reads what a background agent finished with', () => {
     expect(parseTaskNotices(AGENT_NOTICE)).toEqual([{
       toolUseId: 'toolu_01YHaw6KgVXRztcfnALFWkii',
+      taskId: 'a53e546bf8054816f',
       status: 'completed',
       summary: 'Agent "Catalog API, auth, streams, signing" finished',
       result: 'The catalog is in the report.',

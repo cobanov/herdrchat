@@ -3,9 +3,10 @@ import { DemoHost } from '../demo/host';
 import { DEMO_SESSION_IDS, DEMO_WORKSPACES } from '../demo/fixtures';
 import { DEMO_PHRASES } from '../demo/scenarios';
 import { DELEGATE_DESCRIPTION, DELEGATE_RESULT, DEMO_LINKS, DEMO_REVIEW } from '../demo/subagents';
-import { agentTranscriptPath, sessionDir, workflowRunPath } from '../subagents/paths';
+import { delegationFromLines } from '../subagents/delegationEnd';
+import { agentTranscriptPath, sessionDir, workflowJournalPath, workflowRunPath } from '../subagents/paths';
 import { SubagentReader } from '../subagents/reader';
-import { parseWorkflowRun } from '../subagents/workflowRun';
+import { parseWorkflowJournal } from '../subagents/workflowRun';
 import { threadItems, type ThreadItem } from '../threadItems';
 import { TranscriptStore } from '../transcript/store';
 
@@ -53,17 +54,18 @@ describe('the Demo notes chat hands work to agents', () => {
     expect(JSON.stringify(messages.at(-1)!.segments)).toContain('🔗');
   });
 
-  it('serves the workflow run with two phases and one agent still working, and only again when it changed', async () => {
+  // As on a real host, a run still going has no run file, only its journal.
+  it('serves the running workflow\'s journal, two phases and one agent still working, and only again when it changed', async () => {
     const { store, dir, reader } = await notes(new DemoHost());
-    const first = await reader.readIfChanged(workflowRunPath(dir, DEMO_REVIEW.runId), null);
-    if (first.kind !== 'text') throw new Error(`expected the run, got ${first.kind}`);
-    const run = parseWorkflowRun(first.text)!;
-    expect(run).toMatchObject({ name: DEMO_REVIEW.name, status: 'running' });
+    await expect(reader.readIfChanged(workflowRunPath(dir, DEMO_REVIEW.runId), null)).resolves.toEqual({ kind: 'absent' });
+    const first = await reader.readIfChanged(workflowJournalPath(dir, DEMO_REVIEW.runId), null);
+    if (first.kind !== 'text') throw new Error(`expected the journal, got ${first.kind}`);
+    const run = parseWorkflowJournal(first.text)!;
     expect(run.phases.map((phase) => [phase.title, phase.agents.map((agent) => [agent.label, agent.state])])).toEqual([
       ['Check', [['check:links', 'done'], ['check:changelog', 'done']]],
       ['Review', [['review:wording', 'running']]],
     ]);
-    await expect(reader.readIfChanged(workflowRunPath(dir, DEMO_REVIEW.runId), first.signature))
+    await expect(reader.readIfChanged(workflowJournalPath(dir, DEMO_REVIEW.runId), first.signature))
       .resolves.toEqual({ kind: 'unchanged', signature: first.signature });
     await expect(reader.readIfChanged(workflowRunPath(dir, 'wf_missing'), null)).resolves.toEqual({ kind: 'absent' });
 
@@ -96,16 +98,23 @@ describe(`"${DEMO_PHRASES.delegate}"`, () => {
     const length = async () => (await store.recent(transcript, 'claude', 400)).messages.length;
     expect(await length()).toBe(1);
 
-    // Its own transcript grows while the card still runs.
+    // Its own transcript grows while the card still runs; so does the
+    // reading of only the lines naming the call, an open agent screen's.
     now += 2_500;
     expect(await length()).toBe(3);
     expect((await cards(store, path)).cards.at(-1)!.delegation.state).toBe('running');
+    const naming = await reader.linesNaming(path, [started.call.id!], null);
+    if (naming.kind !== 'text') throw new Error(`expected the lines, got ${naming.kind}`);
+    expect(delegationFromLines(naming.text, started.call.id!)?.state).toBe('running');
+    await expect(reader.linesNaming(path, [started.call.id!], naming.signature)).resolves.toMatchObject({ kind: 'unchanged' });
 
     // Then its result lands, and the agent closes.
     now += 2_500;
     expect(await length()).toBe(4);
     const { cards: done, placed } = await cards(store, path);
     expect(done.at(-1)!.delegation).toMatchObject({ state: 'done', result: DELEGATE_RESULT });
+    const ended = await reader.linesNaming(path, [started.call.id!], naming.signature);
+    expect(ended.kind === 'text' && delegationFromLines(ended.text, started.call.id!)).toMatchObject({ state: 'done', result: DELEGATE_RESULT });
     expect(placed.at(-1)!.item.kind).toBe('agent');
     expect((await client.workspaces())[1]?.agentStatus).toBe('idle');
   });

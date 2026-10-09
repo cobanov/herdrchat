@@ -5,12 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { openSubagent, useClientFor, workflowAgentKey } from '@/features/thread/delegation';
+import { openSubagent, useClientFor, useDelegationStates, workflowAgentKey } from '@/features/thread/delegation';
 import { runState, useWorkflowRun } from '@/features/thread/useWorkflowRun';
 import { ReadOnlyHeader } from '@/features/thread/ReadOnlyHeader';
 import { WorkflowAgentRow } from '@/features/thread/WorkflowCard';
 import { formatDuration, formatTokens } from '@/lib/subagents/format';
 import type { WorkflowAgent } from '@/lib/subagents/workflowRun';
+import type { DelegationState } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
@@ -27,6 +28,8 @@ export default function WorkflowScreen({
   dirs,
   runId,
   title,
+  followKey,
+  initialState,
   onBack,
 }: {
   connectionId: string;
@@ -34,15 +37,22 @@ export default function WorkflowScreen({
   dirs: readonly string[];
   runId: string;
   title: string;
+  /** The card's key in `useDelegationStates`: the workflow call's id. */
+  followKey: string;
+  /** What the card said when this opened; the store has it since, while the card is fed. */
+  initialState: DelegationState;
   onBack: () => void;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const client = useClientFor(connectionId);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
-  const entry = useWorkflowRun(client, connectionId, dirs, runId, { active: true, awaitFile: true });
+  const reported = useDelegationStates((store) => store.states[followKey]) ?? initialState;
+  // Its files are waited for only while the transcript says it runs: an
+  // ended run with no file was cleaned up, and is read once, not polled.
+  const entry = useWorkflowRun(client, connectionId, dirs, runId, { active: true, awaitFile: reported === 'running' });
   const run = entry?.run ?? null;
-  const state = run === null ? null : runState(run, 'running');
+  const state = run === null ? null : runState(run, reported);
   const subtitle = [
     run?.status ?? null,
     formatDuration(run?.durationMs ?? null),
@@ -55,13 +65,15 @@ export default function WorkflowScreen({
     if (dir === null || agent.agentId === null) return undefined;
     const agentId = agent.agentId;
     return () => openSubagent(
-      { client, connectionId, workspaceId, sessionDirs: [dir] },
+      { client, connectionId, workspaceId, sessionDirs: [dir], transcripts: [] },
       { kind: 'agent', agentId, runId },
       {
         title: agent.label,
         subtitle: [modelDisplayName(agent.model), run?.name ?? title].filter((part): part is string => part !== null).join(' · '),
         followKey: workflowAgentKey(runId, agentId),
         state: agent.state,
+        // Its end is in the run's progress, which this screen reports as it polls.
+        callId: null,
       }
     );
   };
@@ -70,7 +82,9 @@ export default function WorkflowScreen({
     <Screen presentation="edge-to-edge">
       {run === null ? (
         <View style={{ flex: 1, paddingTop: headerHeight, justifyContent: 'center' }}>
-          {entry?.absent === true ? (
+          {entry?.absent === true && reported !== 'running' ? (
+            <EmptyState symbol="square.stack.3d.up" title="Not on this host" body="This run's files aren't where Claude keeps them. They may have been cleaned up." />
+          ) : entry?.absent === true ? (
             <EmptyState symbol="square.stack.3d.up" title="Starting" body="This run hasn't written its progress yet. It shows here as soon as it does." />
           ) : (
             <ActivityIndicator color={colors.secondaryLabel} />

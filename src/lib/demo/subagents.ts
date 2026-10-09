@@ -4,7 +4,8 @@
  *
  * - the notes chat (w2) once handed a link check to a subagent, which
  *   finished, and started a review workflow that is still running: two
- *   phases, three agents, the last of them mid-way;
+ *   phases, three agents, the last of them mid-way, in its journal (no run
+ *   file yet, as on a real host until the run ends);
  * - `delegate the review`, typed into any Demo chat, starts a subagent that
  *   works for a few seconds, its transcript growing, before its result lands,
  *   so a card can be seen going from running to done.
@@ -34,9 +35,9 @@ export const DEMO_REVIEW = {
 
 /** The three agents of the review run: two checks done, the review still going. */
 const REVIEW_AGENTS = [
-  { agentId: 'a2b4c6d8e0f1a3b5c', label: 'check:links', phase: 1, state: 'done', durationMs: 48_200, tokens: 21_450, toolCalls: 6, lastTool: ['WebFetch', 'herdr.dev/docs/keys'], result: 'Every link resolves but one: example.com/old-guide (404).' },
-  { agentId: 'a3c5e7f9b1d3a5c7e', label: 'check:changelog', phase: 1, state: 'done', durationMs: 35_900, tokens: 17_020, toolCalls: 4, lastTool: ['Read', 'CHANGELOG.md'], result: 'The changelog lists every change the notes mention.' },
-  { agentId: 'a4d6f8b0c2e4a6c8f', label: 'review:wording', phase: 2, state: 'progress', durationMs: null, tokens: 9_310, toolCalls: 3, lastTool: ['Read', 'RELEASE_NOTES.md'], result: null },
+  { agentId: 'a2b4c6d8e0f1a3b5c', label: 'check:links', phase: 1, lastTool: ['WebFetch', 'herdr.dev/docs/keys'], result: 'Every link resolves but one: example.com/old-guide (404).' },
+  { agentId: 'a3c5e7f9b1d3a5c7e', label: 'check:changelog', phase: 1, lastTool: ['Read', 'CHANGELOG.md'], result: 'The changelog lists every change the notes mention.' },
+  { agentId: 'a4d6f8b0c2e4a6c8f', label: 'review:wording', phase: 2, lastTool: ['Read', 'RELEASE_NOTES.md'], result: null },
 ] as const;
 
 const REVIEW_PHASES = [
@@ -166,52 +167,21 @@ export function demoSubagentFiles(sessionDir: string): Map<string, string> {
       ]),
     ]));
   }
-  files.set(`${sessionDir}/workflows/${DEMO_REVIEW.runId}.json`, JSON.stringify(reviewRun(sessionDir)));
+  // Still running, so as on a real host there is no run file yet (Claude
+  // writes it when the run ends): only the journal its agents append to.
+  files.set(`${runDir}/journal.jsonl`, reviewJournal());
   return files;
 }
 
-/** The review's run file, as Claude writes it mid-run. */
-function reviewRun(sessionDir: string): Record<string, unknown> {
-  const startTime = Date.parse('2026-08-19T08:31:21.000Z');
-  return {
-    runId: DEMO_REVIEW.runId,
-    timestamp: '2026-08-19T08:31:21.000Z',
-    taskId: DEMO_REVIEW.taskId,
-    script: REVIEW_SCRIPT,
-    scriptPath: `${sessionDir}/workflows/scripts/${DEMO_REVIEW.name}-${DEMO_REVIEW.runId}.js`,
-    agentCount: REVIEW_AGENTS.length,
-    logs: ['2 of 2 checks passed', 'Review started'],
-    summary: DEMO_REVIEW.summary,
-    workflowName: DEMO_REVIEW.name,
-    status: 'running',
-    startTime,
-    phases: REVIEW_PHASES.map((phase) => ({ ...phase, model: 'opus' })),
-    defaultModel: MODEL,
-    workflowProgress: [
-      ...REVIEW_PHASES.map((phase, index) => ({ type: 'workflow_phase', index: index + 1, title: phase.title })),
-      ...REVIEW_AGENTS.map((agent, index) => ({
-        type: 'workflow_agent',
-        index: index + 1,
-        label: agent.label,
-        phaseIndex: agent.phase,
-        phaseTitle: REVIEW_PHASES[agent.phase - 1]?.title,
-        agentId: agent.agentId,
-        model: 'claude-opus-5',
-        state: agent.state,
-        startedAt: startTime + index * 1_000,
-        queuedAt: startTime,
-        attempt: 1,
-        lastToolName: agent.lastTool[0],
-        lastToolSummary: agent.lastTool[1],
-        tokens: agent.tokens,
-        toolCalls: agent.toolCalls,
-        ...(agent.durationMs === null ? {} : { durationMs: agent.durationMs }),
-        ...(agent.result === null ? {} : { resultPreview: agent.result }),
-      })),
-    ],
-    totalTokens: REVIEW_AGENTS.reduce((total, agent) => total + agent.tokens, 0),
-    totalToolCalls: REVIEW_AGENTS.reduce((total, agent) => total + agent.toolCalls, 0),
-  };
+/** The review's journal, as Claude appends it mid-run: each agent started, and the two that finished. */
+function reviewJournal(): string {
+  return lines([
+    JSON.stringify({ type: 'launched' }),
+    ...REVIEW_AGENTS.flatMap((agent, index) => [
+      JSON.stringify({ type: 'started', key: `v2:demo${index}`, agentId: agent.agentId, label: agent.label, phase: REVIEW_PHASES[agent.phase - 1]?.title }),
+      ...(agent.result === null ? [] : [JSON.stringify({ type: 'result', key: `v2:demo${index}`, agentId: agent.agentId, result: agent.result })]),
+    ]),
+  ]);
 }
 
 function lines(written: readonly string[]): string {

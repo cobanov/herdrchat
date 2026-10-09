@@ -1,7 +1,14 @@
 import { withPath } from '../herdr/shell';
 import { POLL_TIMEOUT_MS, SUBAGENT_READ_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
-import { ABSENT_EXIT, parseResolveOutput, readChangedCommand, resolveAgentCommand, type ResolvedAgent } from './paths';
+import {
+  ABSENT_EXIT,
+  delegationLinesCommand,
+  parseResolveOutput,
+  readChangedCommand,
+  resolveAgentCommand,
+  type ResolvedAgent,
+} from './paths';
 
 /**
  * The host side of subagents: which agent a call started, and a workflow
@@ -44,7 +51,23 @@ export class SubagentReader {
    * read returned; pass null the first time.
    */
   async readIfChanged(path: string, signature: string | null): Promise<FileRead> {
-    const result = await this.transport.exec(withPath(readChangedCommand(path, signature)), SUBAGENT_READ_TIMEOUT_MS);
+    return this.readStamped(readChangedCommand(path, signature), signature);
+  }
+
+  /**
+   * The lines of a transcript that name any of `ids`, read again only when
+   * they changed: how a subagent's screen learns its agent ended without
+   * the chat underneath (see `delegationLinesCommand`).
+   */
+  async linesNaming(path: string, ids: readonly string[], signature: string | null): Promise<FileRead> {
+    const command = delegationLinesCommand(path, ids, signature);
+    if (command === null) return { kind: 'unknown', reason: 'not an id this app reads' };
+    return this.readStamped(command, signature);
+  }
+
+  /** Run a command that prints a checksum line and then, if it changed, the text. */
+  private async readStamped(command: string, signature: string | null): Promise<FileRead> {
+    const result = await this.transport.exec(withPath(command), SUBAGENT_READ_TIMEOUT_MS);
     if (!result.ok) return { kind: 'unknown', reason: result.message };
     if (result.exitCode === ABSENT_EXIT) return { kind: 'absent' };
     if (result.exitCode !== 0) {

@@ -4,6 +4,10 @@
 # with its phases and agents. Before, an Agent call was one line in a folded
 # run and a Workflow call a generic tool, and neither could be opened.
 #
+# The open agent screen reads its own end from the transcript the call was
+# made in: the chat underneath stops reading while covered, and its card
+# could not tell it.
+#
 # "delegate the review" (src/lib/demo/scenarios.ts) starts a foreground
 # subagent that works for about five seconds: its call and meta at +1.5 s,
 # its transcript growing at +4 s, its result at +6.5 s.
@@ -30,12 +34,10 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: 'subagent-open-toolu_demo_demo-.*'
 - takeScreenshot: subagent-running-${APPEARANCE}
-# Then its result lands and the card says done.
-- extendedWaitUntil:
-    visible: 'Agent: Review the release notes wording, done.*'
-    timeout: 20000
 
-# Its own transcript: the prompt it was given, the work, the answer it handed back.
+# Open it while it runs: the chat underneath stops reading while covered, so
+# the screen must learn the end itself. Its header goes from running to done
+# and the answer arrives, with no card in view to say so.
 - tapOn:
     id: 'subagent-open-toolu_demo_demo-.*'
 - extendedWaitUntil:
@@ -43,6 +45,10 @@ appId: dev.herdr.HerdrChat
       id: subagent-title
       text: Review the release notes wording
     timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: state-done
+    timeout: 20000
 - extendedWaitUntil:
     visible: .*pinned on first contact.*
     timeout: 15000
@@ -58,6 +64,10 @@ appId: dev.herdr.HerdrChat
     visible:
       id: composer-input
     timeout: 10000
+# Back in the chat, its card says done too.
+- extendedWaitUntil:
+    visible: 'Agent: Review the release notes wording, done.*'
+    timeout: 15000
 
 # The review workflow, above the summary the chat opens on: still running,
 # two phases, the last agent mid-way.

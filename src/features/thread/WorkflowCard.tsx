@@ -9,6 +9,7 @@ import { formatDuration, formatTokens, formatToolCalls } from '@/lib/subagents/f
 import type { WorkflowAgent, WorkflowPhase, WorkflowRun } from '@/lib/subagents/workflowRun';
 import type { Delegation, ToolCall } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
+import { useSettings } from '@/state/settings';
 import { useToolRuns } from '@/state/toolRuns';
 import { useTheme } from '@/theme/ThemeProvider';
 import { size, spacing } from '@/theme/tokens';
@@ -37,7 +38,8 @@ export function WorkflowCard({
   description: string | null;
 }) {
   const scope = useDelegationScope();
-  const opened = useToolRuns((store) => store.open[call.key] ?? false);
+  const expandAll = useSettings((store) => store.showToolActivity);
+  const opened = useToolRuns((store) => store.open[call.key]) ?? expandAll;
   const entry = useWorkflowRun(scope?.client ?? null, scope?.connectionId ?? '', scope?.sessionDirs ?? [], runId, {
     // A running run is followed on the card; a finished one is read only to be opened.
     active: delegation.state === 'running' || opened,
@@ -48,11 +50,11 @@ export function WorkflowCard({
   const title = run?.name ?? name;
   const id = call.id ?? call.key;
 
-  useReportState(call.id, state);
+  useReportState(call.id ?? call.key, state);
 
   const onOpen = scope === null || scope.sessionDirs.length === 0 || runId === null
     ? null
-    : () => openWorkflow(scope, runId, title);
+    : () => openWorkflow(scope, runId, { title, state, followKey: call.id ?? call.key });
 
   return (
     <DelegationCard
@@ -148,18 +150,21 @@ export function WorkflowAgentRow({
       }}>
       <StateGlyph state={agent.state} />
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
-          <Text variant="footnote" weight="600" mono numberOfLines={1} style={{ flexShrink: 1 }}>
+        {/* On the card the caption is short (model · duration) and sits beside
+            the label. On the run's screen it adds tokens and tool calls, so it
+            takes a line of its own: side by side, a phone cut both short. */}
+        <View testID={`workflow-agent-${agent.label}-lines`} style={detailed ? undefined : { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
+          <Text variant="footnote" weight="600" mono numberOfLines={1} style={detailed ? undefined : { flexShrink: 1 }}>
             {agent.label}
           </Text>
           {caption.length > 0 && (
-            <Text variant="caption" color="secondary" numberOfLines={1} style={{ flexShrink: 1 }}>
+            <Text variant="caption" color="secondary" numberOfLines={detailed ? 2 : 1} style={detailed ? undefined : { flexShrink: 1 }}>
               {caption}
             </Text>
           )}
         </View>
         {doing !== null && (
-          <Text variant="caption" color={agent.state === 'failed' ? 'destructive' : 'secondary'} numberOfLines={2}>
+          <Text variant="caption" color={agent.state === 'failed' ? 'attention' : 'secondary'} numberOfLines={2}>
             {doing}
           </Text>
         )}

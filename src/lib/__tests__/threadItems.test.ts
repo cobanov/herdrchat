@@ -138,7 +138,7 @@ describe('thread items', () => {
 describe('subagents and workflows', () => {
   const notice = (toolUseId: string, status: string, extra: Partial<TaskNotice> = {}): MessageSegment => ({
     kind: 'taskNotice',
-    notice: { toolUseId, status, summary: null, result: null, tokens: null, toolUses: null, durationMs: null, ...extra },
+    notice: { toolUseId, taskId: null, status, summary: null, result: null, tokens: null, toolUses: null, durationMs: null, ...extra },
   });
   const cards = (messages: ChatMessage[]) =>
     threadItems(messages, { showSidechain: false })

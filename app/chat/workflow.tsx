@@ -17,6 +17,8 @@ export default function WorkflowRoute() {
       dirs={dirs}
       runId={params.runId ?? ''}
       title={params.title !== undefined && params.title !== '' ? params.title : 'Workflow'}
+      followKey={params.followKey ?? ''}
+      initialState={params.state === 'done' || params.state === 'failed' ? params.state : 'running'}
       onBack={() => router.back()}
     />
   );

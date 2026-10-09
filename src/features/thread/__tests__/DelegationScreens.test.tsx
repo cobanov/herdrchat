@@ -77,6 +77,8 @@ it('shows a subagent\'s own transcript, found by the call that started it, with 
       connectionId="demo"
       workspaceId="w2"
       dirs={[dir]}
+      parents={[`${dir}.jsonl`]}
+      callId={DEMO_LINKS.toolUseId}
       target={{ kind: 'call', toolUseId: DEMO_LINKS.toolUseId }}
       title={DEMO_LINKS.description}
       subtitle="general-purpose · sonnet"
@@ -104,6 +106,8 @@ it('says a running agent is starting until its meta is written', async () => {
       connectionId="demo"
       workspaceId="w2"
       dirs={[dir]}
+      parents={[`${dir}.jsonl`]}
+      callId="toolu_not_yet"
       target={{ kind: 'call', toolUseId: 'toolu_not_yet' }}
       title="Review the wording"
       subtitle=""
@@ -118,18 +122,31 @@ it('says a running agent is starting until its meta is written', async () => {
   await screen.unmount();
 });
 
-it('shows a workflow run\'s phases, agents and log, and opens an agent\'s transcript', async () => {
+// Claude writes the run file only when the run ends; before, the screen
+// said "Starting" for the whole run and no agent could be opened.
+it('shows a running workflow\'s phases and agents from its journal, and opens an agent\'s transcript', async () => {
   const dir = await notesDir();
   const screen = await render(
-    <WorkflowScreen connectionId="demo" workspaceId="w2" dirs={[dir]} runId={DEMO_REVIEW.runId} title={DEMO_REVIEW.name} onBack={jest.fn()} />
+    <WorkflowScreen
+      connectionId="demo"
+      workspaceId="w2"
+      dirs={[dir]}
+      runId={DEMO_REVIEW.runId}
+      title={DEMO_REVIEW.name}
+      followKey={DEMO_REVIEW.toolUseId}
+      initialState="running"
+      onBack={jest.fn()}
+    />
   );
+  await settle();
   await settle();
   expect(screen.getByTestId('workflow-title')).toHaveTextContent(DEMO_REVIEW.name);
   expect(screen.getByTestId('workflow-phase-Check')).toBeOnTheScreen();
   expect(screen.getByTestId('workflow-phase-Review')).toBeOnTheScreen();
   const wording = screen.getByTestId('workflow-agent-review:wording');
   expect(wording.props.accessibilityLabel).toMatch(/^review:wording, running/);
-  expect(within(wording).getByText('Read: RELEASE_NOTES.md')).toBeOnTheScreen();
+  expect(screen.getByTestId('workflow-header')).toBeOnTheScreen();
+  expect(within(screen.getByTestId('workflow-header')).getByLabelText('running')).toBeOnTheScreen();
 
   await fireEvent.press(screen.getByTestId('workflow-agent-check:links'));
   const { pathname, params } = mockPush.mock.calls[0]![0] as { pathname: string; params: Record<string, string> };
@@ -137,4 +154,93 @@ it('shows a workflow run\'s phases, agents and log, and opens an agent\'s transc
   expect(params).toMatchObject({ title: 'check:links', runId: DEMO_REVIEW.runId, state: 'done' });
   expect(params.followKey).toBe(`${DEMO_REVIEW.runId}/${params.agentId}`);
   await screen.unmount();
+});
+
+const advance = (ms: number) => act(async () => {
+  await jest.advanceTimersByTimeAsync(ms);
+});
+
+describe('on the clock', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  // An ended run whose files are gone is said to be gone, and not polled.
+  it('says an ended run that left no files is not on this host', async () => {
+    const dir = await notesDir();
+    const exec = jest.spyOn(mockClient.transport, 'exec');
+    const screen = await render(
+      <WorkflowScreen
+        connectionId="demo"
+        workspaceId="w2"
+        dirs={[dir]}
+        runId="wf_cleaned-up"
+        title="release-review"
+        followKey="toolu_gone"
+        initialState="done"
+        onBack={jest.fn()}
+      />
+    );
+    await advance(10);
+    expect(screen.getByText('Not on this host')).toBeOnTheScreen();
+    const reads = exec.mock.calls.length;
+    await advance(30_000);
+    expect(exec.mock.calls.length).toBe(reads);
+    exec.mockRestore();
+    await screen.unmount();
+  });
+
+  // The chat under an open agent screen stops reading its transcript, so its
+  // card never said the agent ended and the screen followed it for as long as
+  // it was open. Last: it adds the scenario's agent to the Demo's notes chat.
+  it('learns its agent ended with no card in the chat to say so, and stops following', async () => {
+    const dir = await notesDir();
+    const host = mockClient.transport;
+    const streams: (AbortSignal | undefined)[] = [];
+    const stream = host.streamLines.bind(host);
+    jest.spyOn(host, 'streamLines').mockImplementation((command, timeout, signal) => {
+      streams.push(signal);
+      return stream(command, timeout, signal);
+    });
+    const exec = jest.spyOn(host, 'exec');
+    await mockClient.sendPrompt('w2:p1', 'please delegate the review');
+    await advance(1_600);
+    const { messages } = await new TranscriptStore(host).recent(`${dir}.jsonl`, null, 400);
+    const call = messages.flatMap((message) => message.segments).filter((segment) => segment.kind === 'toolUse').at(-1);
+    if (call?.kind !== 'toolUse' || call.id === undefined) throw new Error('the scenario made no call');
+
+    const screen = await render(
+      <SubagentScreen
+        connectionId="demo"
+        workspaceId="w2"
+        dirs={[dir]}
+        parents={[`${dir}.jsonl`]}
+        callId={call.id}
+        target={{ kind: 'call', toolUseId: call.id }}
+        title="Review the release notes wording"
+        subtitle=""
+        followKey={call.id}
+        initialState="running"
+        onBack={jest.fn()}
+      />
+    );
+    await advance(100);
+    const header = () => within(screen.getByTestId('subagent-header'));
+    expect(header().getByLabelText('running')).toBeOnTheScreen();
+    expect(streams).toHaveLength(1);
+    expect(useDelegationStates.getState().states[call.id]).toBeUndefined();
+
+    // The result lands in the main transcript; nothing reports it to the store.
+    for (let step = 0; step < 4; step += 1) await advance(2_000);
+    expect(header().getByLabelText('done')).toBeOnTheScreen();
+    expect(streams[0]?.aborted).toBe(true);
+    expect(within(screen.getByTestId('subagent-messages')).getByText(/pinned on first contact/)).toBeOnTheScreen();
+
+    // Ended: no more reads of the parent, no new stream.
+    const asked = exec.mock.calls.filter(([command]) => command.includes('grep -F')).length;
+    await advance(30_000);
+    expect(exec.mock.calls.filter(([command]) => command.includes('grep -F')).length).toBe(asked);
+    expect(streams).toHaveLength(1);
+    exec.mockRestore();
+    await screen.unmount();
+  });
 });

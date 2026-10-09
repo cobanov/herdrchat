@@ -8,6 +8,7 @@ import { haptics } from '@/lib/haptics';
 import { formatDuration, formatTokens, formatToolCalls } from '@/lib/subagents/format';
 import { subagentInput, type Delegation, type DelegationState, type ToolCall } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';
+import { useSettings } from '@/state/settings';
 import { useToolRuns } from '@/state/toolRuns';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, size, spacing } from '@/theme/tokens';
@@ -37,7 +38,7 @@ export function SubagentCard({ call, delegation }: { call: ToolCall; delegation:
     : call.id !== null ? { kind: 'call' as const, toolUseId: call.id } : null;
   const onOpen = scope === null || scope.sessionDirs.length === 0 || target === null || call.id === null
     ? null
-    : () => openSubagent(scope, target, { title, subtitle, followKey: call.id!, state: delegation.state });
+    : () => openSubagent(scope, target, { title, subtitle, followKey: call.id!, state: delegation.state, callId: call.id });
 
   return (
     <DelegationCard
@@ -111,11 +112,14 @@ export function DelegationCard({
   const { colors } = useTheme();
   // In the store, not in the row: FlashList recycles rows, and state held in
   // one would open whichever card next scrolled into it.
-  const opened = useToolRuns((store) => store.open[foldKey] ?? false);
+  // Closed by default, as a tool run; the header's tool switch opens every one.
+  const expandAll = useSettings((store) => store.showToolActivity);
+  const stored = useToolRuns((store) => store.open[foldKey]);
   const toggle = useToolRuns((store) => store.toggle);
   const shown = result?.trim() ?? '';
   const hasResult = shown.length > 0;
   const foldable = hasResult || body !== null;
+  const opened = foldable && (stored ?? expandAll);
 
   return (
     <View
@@ -145,6 +149,13 @@ export function DelegationCard({
             paddingVertical: spacing.sm,
             paddingLeft: spacing.sm,
           }}>
+          {/* The fold's own mark, turning as a tool run's does, so the card
+              says it opens in place; the chevron at the end opens the work. */}
+          <View
+            testID={`${testID}-fold`}
+            style={{ width: size.toolRail, alignItems: 'center', opacity: foldable ? 1 : 0, transform: [{ rotate: opened ? '90deg' : '0deg' }] }}>
+            <Icon name="chevron.right" size={size.toolGlyph} tintColor={colors.tertiaryLabel} fallback={<Text color="tertiary">›</Text>} />
+          </View>
           <View
             style={{
               width: size.agentTile,
@@ -206,7 +217,7 @@ export function DelegationCard({
             borderRadius: radius.xs,
             backgroundColor: colors.fillSubtle,
           }}>
-          <Text testID={`${testID}-result`} variant="footnote" color={state === 'failed' ? 'destructive' : 'label'} numberOfLines={size.delegationResultLines} selectable>
+          <Text testID={`${testID}-result`} variant="footnote" color={state === 'failed' ? 'attention' : 'label'} numberOfLines={size.delegationResultLines} selectable>
             {shown}
           </Text>
         </View>

@@ -16,6 +16,7 @@ export default function SubagentRoute() {
   const params = useLocalSearchParams<Partial<Record<keyof SubagentRouteParams, string>>>();
   const router = useRouter();
   const dirs = useMemo(() => decodeDirs(params.dirs), [params.dirs]);
+  const parents = useMemo(() => decodeDirs(params.parents), [params.parents]);
   const target = useMemo<AgentTarget | null>(() => {
     if (params.toolUseId !== undefined && params.toolUseId !== '') return { kind: 'call', toolUseId: params.toolUseId };
     if (params.agentId !== undefined && params.agentId !== '') {
@@ -30,6 +31,8 @@ export default function SubagentRoute() {
       connectionId={params.connectionId ?? ''}
       workspaceId={params.workspaceId ?? ''}
       dirs={dirs}
+      parents={parents}
+      callId={params.callId !== undefined && params.callId !== '' ? params.callId : null}
       target={target}
       title={params.title !== undefined && params.title !== '' ? params.title : 'Agent'}
       subtitle={params.subtitle ?? ''}

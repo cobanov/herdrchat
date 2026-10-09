@@ -392,6 +392,20 @@ export class DemoHost implements HerdrTransport {
       return out(signature === changed[3] ? `${signature}\n` : `${signature}\n${contents}`);
     }
 
+    // The lines of a transcript naming a call or an agent, read again only
+    // when they changed: how an open subagent screen learns its agent ended.
+    const naming =
+      /^\[ -e '(.+?)' \] \|\| exit (\d+); s=\$\(grep -F ((?:-e '[A-Za-z0-9_-]+' )+)'.+?' \| cksum\); printf '%s\\n' "\$s"; \[ "\$s" = '(.*?)' \] \|\| grep .*; :$/.exec(body);
+    if (naming !== null) {
+      const contents = this.read(naming[1]!);
+      if (contents === null) return exit(Number(naming[2]));
+      const ids = [...naming[3]!.matchAll(/-e '([A-Za-z0-9_-]+)'/g)].map((match) => match[1]!);
+      const found = contents.split('\n').filter((line) => line.length > 0 && ids.some((id) => line.includes(id)));
+      const text = found.map((line) => `${line}\n`).join('');
+      const signature = `${checksum(text)} ${byteLength(text)}`;
+      return out(signature === naming[4] ? `${signature}\n` : `${signature}\n${text}`);
+    }
+
     const from = /^tail -c \+(\d+) '(.+?)'(?: \| head -c (\d+))?$/.exec(body);
     if (from !== null) {
       const contents = this.read(from[2]!);
