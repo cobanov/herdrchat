@@ -156,7 +156,10 @@ export function useNotificationRouting(): void {
         }
         if (target.session !== undefined && !(await stillThere(connection, target))) {
           // The chat that pushed has ended; its slot may hold another one.
-          router.navigate('/');
+          // `dismissTo`, not `navigate`: with Hosts or Settings open as a
+          // sheet, `navigate('/')` pushed a second chats screen above it
+          // rather than returning to the one underneath.
+          router.dismissTo('/');
           return;
         }
         openChat(connection.id, target.workspace, target.label);

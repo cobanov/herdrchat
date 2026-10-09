@@ -33,7 +33,7 @@ export function HostCard() {
   if (connection === null) {
     return (
       <Pressable
-        onPress={() => router.push('/hosts')}
+        onPress={() => router.navigate('/hosts')}
         accessibilityRole="button"
         accessibilityLabel="No host selected. Add one."
         testID="settings-host-empty"
@@ -61,7 +61,7 @@ export function HostCard() {
 
   return (
     <Pressable
-      onPress={() => router.push('/hosts')}
+      onPress={() => router.navigate('/hosts')}
       accessibilityRole="button"
       accessibilityLabel={`Connected to ${connection.name} as ${connection.username}. Switch hosts.`}
       testID="settings-host"

@@ -60,8 +60,8 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible:
     id: server-demo
 
-# New chat: the same sheet "+" opens. (A tap matching the "+" by its label
-# instead of the row would open it too; the screenshot above shows the row.)
+# New chat: the same sheet "+" opens. The "+" is labelled "New chat" too, so
+# _menu.yaml taps the row below the header line, never the "+".
 - runFlow:
     file: _menu.yaml
     env:
@@ -74,3 +74,26 @@ appId: dev.herdr.HerdrChat
     visible:
       id: chat-row-w2
     timeout: 5000
+- assertNotVisible:
+    id: field-cwd
+
+# A cold deep link into Settings (the HighlightOnLink route) still has the
+# chats under it: Done lands on them instead of having nothing to go back to.
+- stopApp
+- openLink: herdrchat://settings?section=conversations
+- extendedWaitUntil:
+    visible:
+      id: header-close
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: toggle-tool-activity
+    direction: DOWN
+- tapOn:
+    id: header-close
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 10000
+- assertNotVisible:
+    id: toggle-tool-activity

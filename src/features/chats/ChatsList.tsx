@@ -221,7 +221,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       <Header
         title="Chats"
         subtitle={connection?.name ?? null}
-        onSubtitlePress={() => router.push('/hosts')}
+        onSubtitlePress={() => router.navigate('/hosts')}
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
@@ -232,8 +232,8 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             actions: mainMenuActions({
               hasConnection: connection !== null,
               newChat: () => router.push('/new-chat'),
-              hosts: () => router.push('/hosts'),
-              settings: () => router.push('/settings'),
+              hosts: () => router.navigate('/hosts'),
+              settings: () => router.navigate('/settings'),
             }),
           })
         }

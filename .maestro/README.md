@@ -16,7 +16,7 @@ where regressions are found.
 | `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
 | `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
-| `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list (screenshot `menu-<appearance>` with the menu open) |
+| `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 
 A fresh install with no host opens on the welcome, so every flow runs
@@ -26,7 +26,9 @@ The app opens on Chats; Hosts, Settings and New chat sit behind its "…" menu
 (`chats-menu`) and open as sheets closed by Done (`header-close`). Flows reach
 them through `regression/_menu.yaml` with `ITEM` set to the row's text, never
 by tapping a screen's name on its own: the name is also a menu row and a sheet
-title, so assert something only that screen renders.
+title, so assert something only that screen renders. Leaving a sheet is
+proved the same way: assert the sheet's own element is gone, since the chats'
+title is still in the hierarchy behind a page sheet.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
 `/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder".

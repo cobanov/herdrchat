@@ -30,6 +30,15 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * The chats are under every presented screen, even one reached cold by a link.
+ * Without an anchor, `herdrchat://settings?section=…` (or `/hosts`) built a
+ * stack of that sheet alone: Done's `back()` had nowhere to go, there was no
+ * swipe-down on a root screen, and the welcome gate in `index` never ran. With
+ * the tab bar there was always a way out; now the chats have to be put there.
+ */
+export const unstable_settings = { anchor: 'index' };
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
