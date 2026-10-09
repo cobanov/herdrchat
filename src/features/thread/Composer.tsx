@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 import { Glass } from '@/components/Glass';
 import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
-import { insertNewline, returnAction } from '@/lib/composerKeys';
+import { insertNewline, pasteAction, returnAction } from '@/lib/composerKeys';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -51,6 +51,7 @@ export function Composer({
   onAttach,
   onRemoveAttachment,
   uploading = false,
+  onPasteImage,
 }: {
   /** Resolves `false` when the message was not taken, and the draft comes back. */
   onSend: (text: string) => Promise<boolean> | void;
@@ -62,6 +63,12 @@ export function Composer({
   onRemoveAttachment?: (name: string) => void;
   /** Pictures are on their way to the host: the send control shows it. */
   uploading?: boolean;
+  /**
+   * Attach the picture on the pasteboard, for Command-V on a hardware
+   * keyboard. Leave it out when there is no room for another picture: then
+   * Command-V is the text field's own paste and nothing else.
+   */
+  onPasteImage?: () => void;
   /**
    * The draft lives in the parent so a prompt-history chip can fill it. Kept
    * controlled rather than exposing an imperative `setText` handle, because the
@@ -122,7 +129,16 @@ export function Composer({
     // here too: the text field alone cannot tell it from Return.
     <SubmitShortcutView
       onSubmitShortcut={() => pressReturn({ shift: false, command: true })}
-      onNewlineShortcut={returnSends ? () => pressReturn({ shift: true, command: false }) : undefined}>
+      onNewlineShortcut={returnSends ? () => pressReturn({ shift: true, command: false }) : undefined}
+      // Command-V with a lone picture attaches it; text still pastes as text.
+      // Not while a send or upload is in flight, the same as the picture button.
+      onPasteShortcut={
+        onPasteImage !== undefined && !disabled && !uploading
+          ? (pasteboard) => {
+              if (pasteAction({ ...pasteboard, room: true }) === 'image') onPasteImage();
+            }
+          : undefined
+      }>
       <Glass
         variant="regular"
         style={{
