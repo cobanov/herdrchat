@@ -145,6 +145,14 @@ export default function SettingsScreen() {
                 onChange={(next) => update('haptics', next)}
                 testID="toggle-haptics"
               />
+              <Divider />
+              <Toggle
+                label="Return sends"
+                detail="On a keyboard, Shift-Return starts a new line; a phone's keyboard has none, so turn this off to write several lines there. Off, Return starts a new line and Command-Return sends."
+                value={settings.returnSends}
+                onChange={(next) => update('returnSends', next)}
+                testID="toggle-return-sends"
+              />
             </Section>
           </HighlightOnLink>
 
