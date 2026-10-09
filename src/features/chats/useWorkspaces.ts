@@ -12,21 +12,72 @@ import {
   needsAttention,
   sessionSignature,
   hasSessionReference,
+  isConversationalAgent,
   type AgentInfo,
   type AgentStatus,
   type RestoreError,
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
+import { titleAgent } from '@/lib/chatTitle';
+
+/** A row's last message: the Messages-style snippet and its time. */
+export interface ChatPreview {
+  text: string;
+  timestamp: number | null;
+  fromUser: boolean;
+}
+
+/**
+ * One conversational agent in a workspace: what its own chat row needs.
+ *
+ * A workspace with two agents used to be one row that named one of them and
+ * merged both transcripts, so the second agent was invisible except as
+ * unattributed lines in the first one's thread.
+ */
+export interface PaneSummary {
+  paneId: string;
+  agent: AgentInfo;
+  /**
+   * `sessionSignature([agent])`: herdr recycles pane ids too, so this, not the
+   * pane id, says which conversation the pane holds. Null until it reports one.
+   */
+  sessionSig: string | null;
+  preview: ChatPreview | null;
+  /** The agent's own status, `blocked` while a menu waits for its keys. */
+  status: AgentStatus;
+  /** The session's own title, which titles this agent's row and thread (`chatTitle`). */
+  sessionTitle: string | null;
+  /** The agent's herdr name, the title while the session has none. */
+  agentName: string | null;
+}
 
 /** One row in the chat list: a workspace, plus the agents running in it. */
 export interface ChatSummary {
   workspaceId: string;
+  /**
+   * The workspace's label on the host: a folder or a slot name, not what the
+   * row is titled by when the chat has a session title (`rowTitle`).
+   */
   title: string;
+  /**
+   * The title the workspace chat's one conversational agent gave its session.
+   * Null with two or more, whose workspace row stands for all of them and
+   * keeps its label; each of their rows has its own (`PaneSummary`).
+   */
+  sessionTitle: string | null;
+  /** That same agent's herdr name, the title while the session has none. */
+  agentName: string | null;
   number: number;
   status: AgentStatus;
   agents: AgentInfo[];
-  preview: { text: string; timestamp: number | null; fromUser: boolean } | null;
+  /**
+   * The conversational agents (claude, codex, omp), in snapshot order. A
+   * workspace with two or more of them lists each as a chat of its own.
+   */
+  panes: PaneSummary[];
+  /** The newest of the panes' last messages: what the workspace row shows. */
+  preview: ChatPreview | null;
   /**
    * Which conversation currently occupies this workspace slot. Null until an
    * agent reports a session id. The unread dot needs it: a read marker left by
@@ -145,7 +196,7 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
       if (!alive.current) return false;
 
       const store = new TranscriptStore(client.transport);
-      dropStalePreviews(workspaces, snapshot.agents, previews.current);
+      dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
       forcePreviews.current = false;
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
@@ -250,18 +301,21 @@ export function useWorkspaces(client: HerdrClient | null): WorkspacesState {
 // MARK: - Internals
 
 /**
- * A row's last message, with the session it was read from.
+ * A pane's last message, with the session it was read from.
  *
- * A chat's identity is its session, not its workspace slot: herdr reuses
- * workspace ids. Keyed by workspace alone, a preview outlived its chat. A new
- * chat in the same slot showed the old chat's last line until its agent
- * reported a session id (about 48 s), and a slot with no agent kept it until
- * the list remounted (#86). Stored with its session, it is shown only while
- * that session is still the one in the slot.
+ * A chat's identity is its session, not its slot: herdr reuses workspace ids
+ * and pane ids. Keyed by slot alone, a preview outlived its chat. A new chat in
+ * the same slot showed the old chat's last line until its agent reported a
+ * session id (about 48 s), and a slot with no agent kept it until the list
+ * remounted (#86). Stored with its session, it is shown only while that
+ * session is still the one in the pane.
+ *
+ * Filed by pane id. Filed by workspace, two agents in one workspace shared one
+ * entry, so only one of them could ever have a line.
  */
 export interface CachedPreview {
   sessionSig: string;
-  preview: NonNullable<ChatSummary['preview']>;
+  preview: ChatPreview;
 }
 
 export function buildSummaries(
@@ -277,26 +331,80 @@ export function buildSummaries(
     .map((workspace) => {
       const group = byWorkspace.get(workspace.workspaceId) ?? [];
       const sessionSig = sessionSignature(group);
-      const cached = previews.get(workspace.workspaceId);
+      const panes = group.filter(isConversationalAgent).map((agent) => paneSummary(agent, previews));
+      // herdr calls an agent idle while a menu waits for its keys (Claude's
+      // folder-trust question on a first start), so the row would never
+      // say the chat needs you.
+      const herdrStatus = workspace.agentStatus !== 'working' && group.some((agent) => agent.inputPending)
+        ? 'blocked'
+        : workspace.agentStatus;
+      const titled = titleAgent(group);
       return {
         workspaceId: workspace.workspaceId,
         title: workspace.label,
+        sessionTitle: titled?.title ?? null,
+        agentName: titled?.name ?? null,
         number: workspace.number,
-        // herdr calls an agent idle while a menu waits for its keys (Claude's
-        // folder-trust question on a first start), so the row would never
-        // say the chat needs you.
-        status: workspace.agentStatus !== 'working' && group.some((agent) => agent.inputPending)
-          ? 'blocked'
-          : workspace.agentStatus,
+        status: panes.length >= 2 ? groupStatus(panes, herdrStatus) : herdrStatus,
         agents: group,
-        preview: cached !== undefined && sessionSig !== null && cached.sessionSig === sessionSig
-          ? cached.preview
-          : null,
+        panes,
+        preview: sessionSig === null ? null : newestPreview(electionOrder(panes)),
         sessionSig,
         restoreError:
           restoreErrors.find((error) => error.workspaceId === workspace.workspaceId)?.message ?? null,
       };
     });
+}
+
+function paneSummary(agent: AgentInfo, previews: Map<string, CachedPreview>): PaneSummary {
+  const sessionSig = sessionSignature([agent]);
+  const cached = previews.get(agent.paneId);
+  return {
+    paneId: agent.paneId,
+    agent,
+    sessionSig,
+    preview: cached !== undefined && sessionSig !== null && cached.sessionSig === sessionSig ? cached.preview : null,
+    status: agent.agentStatus !== 'working' && agent.inputPending ? 'blocked' : agent.agentStatus,
+    sessionTitle: agent.title,
+    agentName: agent.name,
+  };
+}
+
+/**
+ * A workspace row over several agents says the most urgent thing any of them
+ * is doing: one agent waiting on you is not hidden behind another one working.
+ * herdr's own workspace status already says so when it can; this also covers a
+ * menu herdr reports as idle on one pane while another works.
+ */
+function groupStatus(panes: readonly PaneSummary[], herdrStatus: AgentStatus): AgentStatus {
+  if (herdrStatus === 'blocked' || panes.some((pane) => pane.status === 'blocked')) return 'blocked';
+  if (herdrStatus === 'working' || panes.some((pane) => pane.status === 'working')) return 'working';
+  return herdrStatus;
+}
+
+/** The pane the workspace chat answers from: focused with a session, else the first with one. */
+function electionOrder(panes: readonly PaneSummary[]): PaneSummary[] {
+  return [...panes].sort((a, b) => rank(a) - rank(b));
+}
+
+function rank(pane: PaneSummary): number {
+  if (!hasSessionReference(pane.agent)) return 2;
+  return pane.agent.focused ? 0 : 1;
+}
+
+/**
+ * The workspace row's line. With one agent it is that agent's line, as it
+ * always was; with several it is whichever spoke last, so the row reads like
+ * the group's latest news. A line without a time loses to one with a time, and
+ * ties keep election order (focused first).
+ */
+function newestPreview(panes: readonly PaneSummary[]): ChatPreview | null {
+  let newest: ChatPreview | null = null;
+  for (const pane of panes) {
+    if (pane.preview === null) continue;
+    if (newest === null || (pane.preview.timestamp ?? -Infinity) > (newest.timestamp ?? -Infinity)) newest = pane.preview;
+  }
+  return newest;
 }
 
 function groupByWorkspace(agents: readonly AgentInfo[]): Map<string, AgentInfo[]> {
@@ -310,14 +418,19 @@ function groupByWorkspace(agents: readonly AgentInfo[]): Map<string, AgentInfo[]
 }
 
 /**
- * Refresh the last-message previews in one batched round-trip. Active or
- * preview-less workspaces refresh every poll; everything else joins a full sweep
- * every fifth poll, so steady-state traffic stays small.
+ * Refresh the last-message previews in one batched round-trip, one line per
+ * conversational agent. Active or preview-less panes refresh every poll;
+ * everything else joins a full sweep every fifth poll, so steady-state traffic
+ * stays small.
+ *
+ * One per agent rather than one per workspace: a workspace with two agents
+ * used to fetch only the elected one's line, so the other agent's row had
+ * nothing to show and its unread dot could never light.
  *
  * `seqs` holds each pane's `stateChangeSeq` from the last successful refresh. A
  * turn that starts and ends between two polls looks idle both times, so it
  * used to wait for the sweep, up to five polls, for its reply to show and its
- * dot to light. A moved counter refreshes that chat now (#115).
+ * dot to light. A moved counter refreshes that pane now (#115).
  */
 export async function refreshPreviews(
   store: TranscriptStore,
@@ -330,42 +443,34 @@ export async function refreshPreviews(
   tick.current += 1;
   const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
 
-  const byWorkspace = new Map<string, AgentInfo[]>();
-  for (const agent of agents) {
-    if (agent.agent === null) continue;
-    const list = byWorkspace.get(agent.workspaceId) ?? [];
-    list.push(agent);
-    byWorkspace.set(agent.workspaceId, list);
-  }
-
   const requests: PreviewRequest[] = [];
   /** The session each request was made for; the answer is filed under it. */
   const requestedFor = new Map<string, string>();
-  for (const [workspaceId, group] of byWorkspace) {
-    // A chat's identity is its Claude session, not its workspace slot. Until an
-    // agent reports a concrete session id we cannot tell a new chat's transcript
-    // from the previous one's under the same project dir — so we never fall back
-    // to the newest .jsonl here. The row shows its live status line instead of a
+  for (const agent of agents) {
+    // A chat's identity is its session, not its slot. Until an agent reports a
+    // concrete session id we cannot tell a new chat's transcript from the
+    // previous one's under the same project dir — so we never fall back to the
+    // newest .jsonl here. The row shows its live status line instead of a
     // preview that might belong to a foreign conversation.
-    const agent =
-      group.find((item) => item.focused && hasSessionReference(item)) ?? group.find(hasSessionReference);
-    const sessionId = agent?.agentSession?.value ?? null;
-    if (agent === undefined || sessionId === null) continue;
+    if (!isConversationalAgent(agent) || !hasSessionReference(agent)) continue;
+    const sessionId = agent.agentSession?.value ?? null;
+    const sessionSig = sessionSignature([agent]);
+    if (sessionId === null || sessionSig === null) continue;
 
-    const sessionSig = sessionSignature(group);
-    if (sessionSig === null) continue;
+    const active = agent.agentStatus !== 'idle' && agent.agentStatus !== 'unknown';
+    const last = seqs.get(agent.paneId);
+    const moved = agent.stateChangeSeq !== null && last !== undefined && last !== agent.stateChangeSeq;
+    if (!fullSweep && !active && !moved && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
 
-    const active = group.some(
-      (item) => item.agentStatus !== 'idle' && item.agentStatus !== 'unknown'
-    );
-    const moved = group.some((item) => {
-      const last = seqs.get(item.paneId);
-      return item.stateChangeSeq !== null && last !== undefined && last !== item.stateChangeSeq;
+    requests.push({
+      workspaceId: agent.workspaceId,
+      key: agent.paneId,
+      cwd: agent.cwd,
+      sessionId,
+      sessionKind: agent.agentSession?.kind,
+      agent: agent.agent ?? undefined,
     });
-    if (!fullSweep && !active && !moved && previews.get(workspaceId)?.sessionSig === sessionSig) continue;
-
-    requests.push({ workspaceId, cwd: agent.cwd, sessionId, sessionKind: agent.agentSession?.kind, agent: agent.agent ?? undefined });
-    requestedFor.set(workspaceId, sessionSig);
+    requestedFor.set(agent.paneId, sessionSig);
   }
   // Only after a refresh that worked, so a failed one is retried next poll.
   const remember = () => {
@@ -389,11 +494,11 @@ export async function refreshPreviews(
   }
   remember();
 
-  for (const [workspaceId, message] of latest) {
+  for (const [paneId, message] of latest) {
     const text = previewText(message);
-    const sessionSig = requestedFor.get(workspaceId);
+    const sessionSig = requestedFor.get(paneId);
     if (text === null || sessionSig === undefined) continue;
-    previews.set(workspaceId, {
+    previews.set(paneId, {
       sessionSig,
       preview: { text, timestamp: message.timestamp, fromUser: message.role === 'user' },
     });
@@ -401,21 +506,19 @@ export async function refreshPreviews(
 }
 
 /**
- * Forget cached previews that can no longer be shown: a workspace that left the
+ * Forget cached previews that can no longer be shown: a pane that left the
  * snapshot, or one whose session is gone or different. `buildSummaries` would
  * hide them anyway; dropping them keeps the map from growing and makes the next
  * poll fetch the new chat's line.
  */
-function dropStalePreviews(
-  workspaces: readonly Workspace[],
+export function dropStalePreviews(
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>
 ): void {
-  const present = new Set(workspaces.map((workspace) => workspace.workspaceId));
-  const byWorkspace = groupByWorkspace(agents);
-  for (const [workspaceId, cached] of previews) {
-    const current = sessionSignature(byWorkspace.get(workspaceId) ?? []);
-    if (!present.has(workspaceId) || current !== cached.sessionSig) previews.delete(workspaceId);
+  const byPane = new Map(agents.map((agent) => [agent.paneId, agent]));
+  for (const [paneId, cached] of previews) {
+    const agent = byPane.get(paneId);
+    if (agent === undefined || sessionSignature([agent]) !== cached.sessionSig) previews.delete(paneId);
   }
 }
 

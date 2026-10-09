@@ -34,7 +34,9 @@ import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
-import { sessionSignature } from '@/lib/herdr/models';
+import { chatKey } from '@/lib/chatKey';
+import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { haptics } from '@/lib/haptics';
@@ -48,9 +50,14 @@ import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
 
-/** One workspace conversation. */
-export default function ThreadScreen({ workspaceId, title, onBack }: {
+/**
+ * One conversation: a workspace's, or with `paneId` the one agent in that pane
+ * of a workspace that holds several.
+ */
+export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   workspaceId: string;
+  /** Absent: the workspace chat, every agent in it. */
+  paneId?: string;
   title?: string;
   onBack?: () => void;
 }) {
@@ -82,7 +89,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId);
+  /** Where this chat's read marker and draft are kept; the bare workspace id for the workspace chat. */
+  const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
 
   // The agents array is rebuilt by every status poll, so it cannot go in the
@@ -104,13 +113,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         // the chat that actually lands in this workspace slot.
         const sig = sessionSignature(agentsRef.current);
         if (sig === null) return;
-        void markThreadRead(db, connectionId, workspaceId, sig, Date.now());
+        void markThreadRead(db, connectionId, chat, sig, Date.now());
       };
       stamp();
       // Again on the way out, so a message that arrived while you were reading
       // it counts as seen rather than re-lighting the row you just left.
       return stamp;
-    }, [db, connection, workspaceId])
+    }, [db, connection, chat])
   );
 
   const rows = useMemo(
@@ -125,13 +134,22 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * outlive this screen so leaving a chat doesn't lose half a prompt (#113).
    */
   /**
-   * What the chat is called. The host's current label wins over the one the
-   * link carried, which may be stale after a rename. Without either, 'Chat'
-   * rather than an internal id like 'w7' (#113).
+   * What the chat is called: its session's title, as the row has it
+   * (`chatTitle`). What the host says now wins over what the link carried,
+   * which may be stale after a rename or a retitle; the link's is shown only
+   * until the first poll lands. Without either, 'Chat' rather than an
+   * internal id like 'w7' (#113).
    */
-  const heading = thread.workspaceLabel ?? (title !== undefined && title.length > 0 ? title : 'Chat');
+  const polledTitle = chatTitle({
+    sessionTitle: thread.sessionTitle,
+    agentName: thread.agentName,
+    workspaceLabel: thread.workspaceLabel,
+    workspaceId: null,
+  });
+  const linkTitle = title?.trim() ?? '';
+  const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
 
-  const key = draftKey(connection?.id ?? '', workspaceId);
+  const key = draftKey(connection?.id ?? '', chat);
   const sessionSig = sessionSignature(thread.agents);
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
@@ -226,11 +244,23 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
   const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
+  /**
+   * A chat titled by its session names its workspace here instead, first, as
+   * its row's line does. One agent of several also says which agent it is,
+   * after the workspace. Both read from the agents the poll bound, so they
+   * wait for the first poll rather than guessing.
+   */
+  const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
+  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
   const subtitle = [
+    workspaceLine,
+    paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
-    thread.workingDirName,
+    // The folder, unless it is the workspace's own name already said first:
+    // the line is one line, and the status word at its end is what gets cut.
+    sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
     // The connection before the agent: "online" under a banner saying the
     // chat is offline or paused contradicted it (#4 acceptance).
     thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),

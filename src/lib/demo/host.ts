@@ -38,6 +38,7 @@ import {
   DEMO_HOME,
   DEMO_SESSION_IDS,
   DEMO_WORKSPACES,
+  demoPanes,
   replyFor,
   replyLine,
   toolResultLine,
@@ -187,6 +188,14 @@ function withoutPath(command: string): string {
   return cut === -1 ? command : command.slice(cut + 2);
 }
 
+/**
+ * A workspace's status over its panes, the most urgent first, as herdr reports
+ * it. One pane's workspace simply has that pane's status.
+ */
+function workspaceStatus(statuses: readonly string[]): string {
+  return ['blocked', 'working', 'done', 'idle'].find((status) => statuses.includes(status)) ?? statuses[0] ?? 'idle';
+}
+
 /** A reply the demo owes, once its moment arrives. */
 interface Pending {
   paneId: string;
@@ -222,15 +231,15 @@ export class DemoHost implements HerdrTransport {
   private counter = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {
-    for (const workspace of DEMO_WORKSPACES) {
-      this.statuses.set(workspace.paneId, workspace.agentStatus);
-      this.transcripts.set(workspace.paneId, transcriptFor(workspace.paneId));
-      const ompPath = DEMO_OMP_PATHS[workspace.paneId];
-      if (ompPath !== undefined) this.paths.set(ompPath, workspace.paneId);
-      const session = DEMO_SESSION_IDS[workspace.paneId];
+    for (const pane of DEMO_WORKSPACES.flatMap(demoPanes)) {
+      this.statuses.set(pane.paneId, pane.agentStatus);
+      this.transcripts.set(pane.paneId, transcriptFor(pane.paneId));
+      const ompPath = DEMO_OMP_PATHS[pane.paneId];
+      if (ompPath !== undefined) this.paths.set(ompPath, pane.paneId);
+      const session = DEMO_SESSION_IDS[pane.paneId];
       if (session !== undefined) {
-        const dir = projectDirName(workspace.cwd);
-        this.paths.set(`${DEMO_HOME}/.claude/projects/${dir}/${session}.jsonl`, workspace.paneId);
+        const dir = projectDirName(pane.cwd);
+        this.paths.set(`${DEMO_HOME}/.claude/projects/${dir}/${session}.jsonl`, pane.paneId);
       }
     }
   }
@@ -382,34 +391,43 @@ export class DemoHost implements HerdrTransport {
   }
 
   private workspaceRows(): unknown[] {
-    return DEMO_WORKSPACES.map((w) => ({
-      workspace_id: w.workspaceId,
-      label: w.label,
-      number: w.number,
-      agent_status: this.statusOf(w.paneId),
-      focused: w.paneId === 'w1:p1',
-      active_tab_id: `${w.workspaceId}:t1`,
-      pane_count: 1,
-      tab_count: 1,
-    }));
+    return DEMO_WORKSPACES.map((w) => {
+      const panes = demoPanes(w);
+      return {
+        workspace_id: w.workspaceId,
+        label: w.label,
+        number: w.number,
+        agent_status: workspaceStatus(panes.map((pane) => this.statusOf(pane.paneId))),
+        focused: panes.some((pane) => pane.paneId === 'w1:p1'),
+        active_tab_id: `${w.workspaceId}:t1`,
+        pane_count: panes.length,
+        tab_count: 1,
+      };
+    });
   }
 
   private agentRows(): unknown[] {
-    return DEMO_WORKSPACES.map((w) => ({
-      agent: w.agent ?? 'claude',
-      agent_status: this.statusOf(w.paneId),
-      cwd: w.cwd,
-      foreground_cwd: w.cwd,
-      focused: w.paneId === 'w1:p1',
-      pane_id: w.paneId,
+    return DEMO_WORKSPACES.flatMap((w) => demoPanes(w).map((pane, index) => ({
+      agent: pane.agent ?? 'claude',
+      agent_status: this.statusOf(pane.paneId),
+      cwd: pane.cwd,
+      foreground_cwd: pane.cwd,
+      focused: pane.paneId === 'w1:p1',
+      pane_id: pane.paneId,
       tab_id: `${w.workspaceId}:t1`,
-      terminal_id: `term_${w.workspaceId}`,
+      // The first pane keeps the terminal id it always had.
+      terminal_id: index === 0 ? `term_${w.workspaceId}` : `term_${pane.paneId.replace(':', '_')}`,
       workspace_id: w.workspaceId,
-      ...(this.trusting.has(w.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
-      agent_session: w.agent === 'omp'
-        ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[w.paneId] ?? null }
-        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: DEMO_SESSION_IDS[w.paneId] ?? null },
-    }));
+      // As herdr sends them: `terminal_title` with Claude's status glyph in
+      // front, `title` and the stripped one without.
+      ...(pane.title === undefined ? {} : {
+        title: pane.title, terminal_title: `✳ ${pane.title}`, terminal_title_stripped: pane.title,
+      }),
+      ...(this.trusting.has(pane.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
+      agent_session: pane.agent === 'omp'
+        ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: DEMO_OMP_PATHS[pane.paneId] ?? null }
+        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: DEMO_SESSION_IDS[pane.paneId] ?? null },
+    })));
   }
 
   /** `herdr <verb>`. */
