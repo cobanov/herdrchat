@@ -208,6 +208,13 @@ export interface ThreadState {
    *   now holds the workspace, not yet reporting its own. Sending is held.
    */
   sessionState: SessionState;
+  /**
+   * The Claude transcripts this thread has open, by the paths their session
+   * ids named. A session's subagents and workflow runs are filed beside its
+   * transcript, so this is where the thread's cards find them. Empty until a
+   * transcript opens, and for Codex and OMP chats.
+   */
+  transcriptPaths: string[];
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
   /** The live transcript stream failed and is being restarted. */
@@ -301,6 +308,7 @@ export function useThread(
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState>('ok');
+  const [transcriptPaths, setTranscriptPaths] = useState<string[]>([]);
   /** When the thread first saw an agent without a session id, or null while all have one. */
   const noSessionSince = useRef<number | null>(null);
   const polling = usePollGate();
@@ -624,6 +632,8 @@ export function useThread(
         }
       }))).filter(source => source !== null);
       if (!current()) return;
+      const claudePaths = sources.filter(source => source.agent === 'claude').map(source => source.path);
+      setTranscriptPaths(previous => previous.join('\n') === claudePaths.join('\n') ? previous : claudePaths);
 
       // A cursor is a live-stream checkpoint, not a history-loading strategy.
       // Even a small backlog is read in bulk; an unchanged file can use cache.
@@ -1481,6 +1491,7 @@ export function useThread(
       sessionState !== 'replaced',
     offline,
     paused: tailError !== null,
+    transcriptPaths,
     messages,
     status,
     agents,

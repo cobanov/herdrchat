@@ -6,7 +6,6 @@ import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from 'react
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showActionSheet } from '@/components/ActionSheet';
-import { Bubble } from '@/components/Bubble';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { EdgeFade, Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
@@ -21,7 +20,6 @@ import {
   type Attachment,
 } from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
-import { CommandNote } from '@/features/thread/CommandNote';
 import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
 import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
@@ -30,7 +28,8 @@ import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
-import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
+import { DelegationScopeProvider, type DelegationScope } from '@/features/thread/delegation';
+import { ThreadRow } from '@/features/thread/ThreadRow';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
@@ -42,6 +41,7 @@ import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
 import { markThreadRead } from '@/state/db';
+import { sessionDir } from '@/lib/subagents/paths';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
 import { useSettings } from '@/state/settings';
@@ -117,6 +117,15 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
     () => threadItems(thread.messages, { showSidechain }),
     [thread.messages, showSidechain]
   );
+  // Where this chat's subagents and workflow runs are: beside each Claude
+  // transcript the thread has open, never guessed from the folder.
+  const transcriptKey = thread.transcriptPaths.join('\n');
+  const delegationScope = useMemo<DelegationScope>(() => ({
+    client,
+    connectionId: connection?.id ?? '',
+    workspaceId,
+    sessionDirs: transcriptKey.split('\n').map(sessionDir).filter((dir): dir is string => dir !== null),
+  }), [client, connection?.id, workspaceId, transcriptKey]);
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
 
   /**
@@ -348,6 +357,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
               />
             </View>
           ) : (
+            // The cards in it open what they started on this host, under this
+            // chat's session folders.
+            <DelegationScopeProvider value={delegationScope}>
             <FlashList
               key={thread.historyVersion}
               testID="thread-messages"
@@ -402,24 +414,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     {index === 0 && (
                       <OlderHistory loading={thread.loadingOlder} reachedStart={thread.reachedStart} />
                     )}
-                    {item.kind === 'agent' && placed.startsTurn && item.message.agentLabel !== null && (
-                      <Text variant="caption2" color="secondary" style={{ paddingBottom: spacing.xxs }}>
-                        {item.message.agentLabel}
-                      </Text>
-                    )}
-                    {item.kind === 'tools' ? (
-                      <ToolRun runKey={item.runKey} calls={item.calls} thoughts={item.thoughts.length} />
-                    ) : item.kind === 'subagent' ? (
-                      <SubagentCard call={item.call} />
-                    ) : item.kind === 'note' ? (
-                      <CommandNote message={item.message} />
-                    ) : (
-                      <Bubble
-                        message={item.message}
-                        isLastInGroup={placed.endsGroup}
-                        timeLabel={item.kind === 'user' && placed.endsGroup ? formatTime(item.message.timestamp) : null}
-                      />
-                    )}
+                    <ThreadRow placed={placed} />
                     {(item.kind === 'user' || item.kind === 'agent') && thread.failedIds.has(item.message.id) && (
                       <Pressable
                         onPress={() => void thread.retry(item.message.id)}
@@ -459,6 +454,7 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 </View>
               }
             />
+            </DelegationScopeProvider>
           )}
 
           {/* Sits just above the composer, so it never covers the newest bubble. */}
@@ -647,13 +643,4 @@ function statusColor(status: string, colors: ReturnType<typeof useTheme>['colors
   if (status === 'blocked') return colors.attention;
   if (status === 'working' || status === 'done') return colors.tint;
   return colors.tertiaryLabel;
-}
-
-function formatTime(timestamp: number | null): string | null {
-  if (timestamp === null) return null;
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
 }

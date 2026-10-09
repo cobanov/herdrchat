@@ -245,6 +245,21 @@ it('resolves a Codex transcript by native session id and namespaces its cache', 
   await unmount();
 });
 
+it('says which Claude transcripts it opened, so its cards find their subagents beside them', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.transcriptPaths).toEqual(['/test/session.jsonl']);
+  await unmount();
+});
+
+it('names no Claude transcript for a Codex chat', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.transcriptPaths).toEqual([]);
+  await unmount();
+});
+
 it('opens a reported OMP path and keeps independently reported thinking settings across turns', async () => {
   mockRecentMessages = [{ id: 'omp-reply', role: 'assistant', timestamp: 1, agentLabel: null,
     isSidechain: false, segments: [{ kind: 'text', text: 'OMP reply' }] }];
