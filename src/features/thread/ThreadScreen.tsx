@@ -40,6 +40,7 @@ import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/thread/useSlashCommands';
 import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
@@ -49,7 +50,7 @@ import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
-import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
+import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   clientFor,
@@ -194,10 +195,29 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
-  // Only Claude's built-ins are offered; a Codex chat still sends what is typed.
-  const suggestions = thread.agents.some((agent) => agent.agent === 'claude')
-    ? commandSuggestions(draft, CLAUDE_COMMANDS)
-    : [];
+  /**
+   * The `/` palette: what the agent's own terminal offers for the same `/`,
+   * for the agent the thread sends to (Claude's catalogue as read off this
+   * connection, Codex's fixed list, nothing for OMP). The folder's own
+   * commands are read once the first window is on screen, never before it.
+   */
+  const palette = paletteAgent(thread.agents);
+  const commands = useSlashCommands(connection?.id ?? null, palette?.kind ?? null, palette?.cwd ?? null);
+  useProjectSlashScan(
+    connection?.id ?? null,
+    client?.transport ?? null,
+    palette?.kind ?? null,
+    palette?.cwd ?? null,
+    !thread.loading
+  );
+  const sections = useMemo(() => paletteSections(draft, commands), [draft, commands]);
+  /**
+   * The last command a pick filled in, with its argument hint: the composer
+   * shows the hint after it while the draft is exactly that, as the terminal
+   * does until something is typed.
+   */
+  const [filled, setFilled] = useState<{ text: string; placeholder: string } | null>(null);
+  const composerHint = filled !== null && draft === filled.text ? filled.placeholder : undefined;
 
   // Pictures waiting to go with the next message. They stay until a send is
   // taken, so a failed upload leaves them in place with the draft.
@@ -235,6 +255,26 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
         { label: 'Photo Library', onPress: () => void addAttachments('library') },
         { label: 'Paste Picture', onPress: () => void addAttachments('paste') },
       ],
+    });
+  };
+  /**
+   * A pick in the palette, the terminal's way (`pickSlashCommand`): a command
+   * that takes nothing is sent at once, as Enter on it does; one that takes
+   * an argument is filled in to wait for it. A send the thread refuses puts
+   * back what was typed.
+   */
+  const pickCommand = (command: CatalogueCommand) => {
+    const pick = pickSlashCommand(command);
+    if (pick.action === 'fill') {
+      setFilled({ text: pick.text, placeholder: pick.placeholder });
+      setDraft(pick.text);
+      return;
+    }
+    const typed = draft;
+    setDraft('');
+    scroll.followEnd(false);
+    void thread.send(pick.text).then((accepted) => {
+      if (!accepted) setDraft(typed);
     });
   };
   const sendWithAttachments = async (text: string) => {
@@ -669,8 +709,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   onKeys={(keys) => void thread.sendOverlayKeys(keys)}
                 />
               )}
-              {suggestions.length > 0 && thread.overlay === null && (
-                <CommandSuggestions commands={suggestions} onPick={(command) => setDraft(`/${command.name} `)} />
+              {sections.length > 0 && thread.overlay === null && (
+                <CommandSuggestions sections={sections} onPick={pickCommand} />
               )}
               {thread.isBlocked && (
                 <BlockedBar
@@ -693,6 +733,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
                 onPasteImage={() => void addAttachments('paste')}
+                placeholder={composerHint}
               />
             </Animated.View>
           )}

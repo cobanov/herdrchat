@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, Pressable, Text as RNText, ScrollView, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
@@ -53,6 +53,7 @@ export function Composer({
   onRemoveAttachment,
   uploading = false,
   onPasteImage,
+  placeholder,
 }: {
   /** Resolves `false` when the message was not taken, and the draft comes back. */
   onSend: (text: string) => Promise<boolean> | void;
@@ -70,6 +71,14 @@ export function Composer({
    * Command-V is the text field's own paste and nothing else.
    */
   onPasteImage?: () => void;
+  /**
+   * What the field shows for what is still to be typed. Empty, it is the
+   * placeholder in place of "Message"; after a draft, it follows the draft as
+   * ghost text, the way the terminal shows a filled command's argument hint
+   * (`/review [pr]`) until something is typed. The caller decides when it
+   * applies; absent, the field shows "Message" and nothing after a draft.
+   */
+  placeholder?: string;
   /**
    * The draft lives in the parent so a prompt-history chip can fill it. Kept
    * controlled rather than exposing an imperative `setText` handle, because the
@@ -238,11 +247,12 @@ export function Composer({
               />
             </Pressable>
           )}
+          <View style={{ flex: 1 }}>
           <TextInput
             ref={input}
             testID="composer-input"
             accessibilityLabel="Message"
-            placeholder="Message"
+            placeholder={draft === '' && placeholder !== undefined ? placeholder : 'Message'}
             placeholderTextColor={colors.tertiaryLabel}
             value={draft}
             onChangeText={(text) => {
@@ -261,8 +271,9 @@ export function Composer({
             submitBehavior={returnSends ? 'submit' : 'newline'}
             returnKeyType={returnSends ? 'send' : 'default'}
             onSubmitEditing={() => pressReturn({ shift: false, command: false })}
+            // The wrapper takes the row's room; the field its width, and the
+            // height its lines need.
             style={{
-              flex: 1,
               minHeight,
               // Four lines, then it scrolls — see `composerMaxHeight`.
               maxHeight: composerMaxHeight,
@@ -276,6 +287,33 @@ export function Composer({
               fontSize: typography.body.fontSize,
             }}
           />
+          {/* The hint after a filled command: the draft again, invisible, so
+              the hint starts where the caret is, laid over the field with the
+              field's own padding and size. One line only; past that the
+              draft is not a bare command any more. */}
+          {placeholder !== undefined && draft !== '' && !draft.includes('\n') && (
+            <RNText
+              testID="composer-hint"
+              pointerEvents="none"
+              numberOfLines={1}
+              // Read out as the hint alone: the draft is the field's to say.
+              accessibilityLabel={placeholder}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                paddingLeft: onAttach !== undefined ? spacing.xs : spacing.lg,
+                paddingRight: spacing.sm,
+                paddingTop: spacing.md,
+                fontSize: typography.body.fontSize,
+                color: colors.tertiaryLabel,
+              }}>
+              <RNText style={{ color: 'transparent' }}>{draft}</RNText>
+              {placeholder}
+            </RNText>
+          )}
+          </View>
 
           {/* While typing, the keyboard and a long draft can take the whole
               screen and hide the chat. This puts it away without sending; the

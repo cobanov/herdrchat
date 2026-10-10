@@ -7,6 +7,7 @@ import { deserializeThemeFile, serializeThemeFile } from '@/lib/theme/hostTheme'
 import { resolveHostTheme, type HostThemeFile, type ResolvedHostTheme } from '@/lib/theme/resolve';
 import { darkPalette, lightPalette } from '@/theme/tokens';
 import { useHostMachines } from './hostMachines';
+import { useSlashCatalogues } from './slashCommands';
 import { HOST_THEME_KEY_PREFIX, clearConnectionSettings, deleteSetting, hostThemeKey, loadHostThemeRows, setSetting } from './db';
 
 /**
@@ -118,10 +119,11 @@ export function mirrorHostThemes(db: SQLite.SQLiteDatabase): () => void {
 }
 
 /**
- * Forget a host's settings: its rows in the table (the cached theme and
- * machine list among them, as `hostTheme.<id>` and `hostMachines.<id>`, and
- * those of its machines' chats) and its theme and machines in memory. Removing a host and
- * erasing the app both come through here, because clearing only the rows left
+ * Forget a host's settings: its rows in the table (the cached theme, machine
+ * list and slash commands among them, as `hostTheme.<id>`, `hostMachines.<id>`
+ * and `slashCommands.<id>`, and those of its machines' chats) and its theme,
+ * machines and slash commands in memory. Removing a host and erasing the app
+ * both come through here, because clearing only the rows left
  * the host's colours on screen until the next launch, and a host re-added
  * under the same id opened in them.
  */
@@ -131,6 +133,8 @@ export async function clearHostSettings(db: SQLite.SQLiteDatabase, connectionId:
   // Or the removed host's machine chats stayed listed, and resolvable, until
   // the next launch.
   useHostMachines.getState().clear(connectionId);
+  // And its slash commands, its machines' with them.
+  useSlashCatalogues.getState().clear(connectionId);
 }
 
 // MARK: - Checking the host

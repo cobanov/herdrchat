@@ -33,6 +33,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 - **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
+- **Every slash command, as the terminal has them.** Type `/` for the commands the agent on that machine actually has: Claude Code's built-ins for the version installed there, your own commands and skills, the project's, and your plugins', each with what it does and what it takes. Codex chats get Codex's own menu. A command that takes nothing runs when you tap it; one that takes something fills in and shows what goes after it. The list is read from the machine in the background, every ten minutes at most, and kept on the phone.
 - **Show it, don't describe it.** Add a screenshot or photo to a message; it goes to your machine over SSH and the agent opens it there.
 - **Type like on a Mac.** With an iPad keyboard, Return sends, Shift-Return starts a new line, Command-Return sends either way, and Command-V attaches a copied picture. Settings > Conversations > Return sends turns Return back into a new line.
 - **Keep your machine yours.** Connect over SSH, usually through Tailscale. Credentials stay in the iOS Keychain; host keys are pinned.

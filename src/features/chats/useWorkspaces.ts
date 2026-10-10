@@ -7,6 +7,8 @@ import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
 import { checkHostTheme } from '@/state/hostTheme';
 import { refreshHostMachines } from '@/state/hostMachines';
+import { scanSlashCatalogue } from '@/state/slashCommands';
+import { slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
 import { machineListDue, splitMachineConnectionId } from '@/lib/herdr/machines';
@@ -193,6 +195,14 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
    * back to the app), and otherwise once a minute (`machineListDue`).
    */
   const lastMachineCheck = useRef<number | null>(null);
+  /**
+   * When the slash-command catalogue was last scanned, the same way again:
+   * null scans on the next poll that works (the first after connecting, a
+   * pull), and otherwise every ten minutes (`slashScanDue`). Not on coming
+   * back to the app: a command installed meanwhile can wait for the cadence
+   * or a pull, and the scan is the heaviest of these side tasks.
+   */
+  const lastSlashScan = useRef<number | null>(null);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
   // A machine may have been added at the host meanwhile, too.
@@ -267,6 +277,16 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       if (isHost && machineListDue(lastMachineCheck.current, now)) {
         lastMachineCheck.current = now;
         void refreshHostMachines(connectionId, client);
+      }
+      // The slash commands, a side task the same way: after the rows, not
+      // awaited, never the list's error. Every connection's, a machine's
+      // too: each has its own Claude Code and its own home folder, read
+      // through its own client. `scanSlashCatalogue` never rejects, and never
+      // runs two at once for one connection (b704ec8 was reverted for a scan
+      // that queued in front of everything else).
+      if (connectionId !== null && slashScanDue(lastSlashScan.current, now)) {
+        lastSlashScan.current = now;
+        void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: [] });
       }
       return false;
     } catch (thrown) {
@@ -353,6 +373,7 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       forcePreviews.current = true;
       lastThemeCheck.current = null;
       lastMachineCheck.current = null;
+      lastSlashScan.current = null;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),
