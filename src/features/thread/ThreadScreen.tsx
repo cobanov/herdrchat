@@ -32,6 +32,7 @@ import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
+import { ShellHint } from '@/features/thread/ShellHint';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
@@ -52,6 +53,7 @@ import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
 import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
+import { isShellDraft } from '@/lib/shellMode';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   clientFor,
@@ -718,6 +720,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
               {sections.length > 0 && thread.overlay === null && (
                 <CommandSuggestions sections={sections} onPick={pickCommand} />
               )}
+              {isShellDraft(draft, palette?.kind ?? null) && thread.overlay === null && <ShellHint />}
               {thread.isBlocked && (
                 <BlockedBar
                   prompt={thread.blockedPrompt}

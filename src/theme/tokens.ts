@@ -149,6 +149,12 @@ export const size = {
   toolGlyph: 12,
   /** How much of a call's output an opened row shows before it stops. */
   toolOutputLines: 12,
+  /**
+   * How many lines of a `!` command's output show before "Show all": more
+   * than a tool's, since the person asked to see this, but `seq 1 200` still
+   * folds rather than taking several screens.
+   */
+  shellOutputLines: 16,
   /** The pin and muted marks beside a chat row's title. */
   rowBadgeGlyph: 12,
   /**
@@ -391,6 +397,12 @@ export const connecting = {
   skeletonStagger: 140,
   skeletonDim: 0.45,
 } as const;
+
+/**
+ * The prompt a `!` command's block leads with, as a terminal draws one: it
+ * says "this ran in a shell" before the command is read.
+ */
+export const shellPrompt = '$';
 
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;

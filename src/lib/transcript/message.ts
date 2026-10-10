@@ -1,3 +1,5 @@
+import { shellReceiptText } from '../shellMode';
+
 /**
  * A single WhatsApp-style bubble derived from a Claude Code transcript turn.
  *
@@ -63,7 +65,15 @@ export type MessageSegment =
    * empty when the transcript holds the picture but not where it came from
    * (one pasted straight into the agent's terminal).
    */
-  | { kind: 'image'; path: string };
+  | { kind: 'image'; path: string }
+  /**
+   * A line run in the agent's shell (`! git status`), as Claude records it:
+   * the command without its `!`. Never a bubble; the thread draws it as a
+   * shell block with the output turn that follows it.
+   */
+  | { kind: 'shellInput'; command: string }
+  /** What a shell-mode command printed, the turn after its `shellInput`. */
+  | { kind: 'shellOutput'; stdout: string; stderr: string };
 
 /**
  * The plain text a chat bubble shows (text segments joined). Empty when the turn
@@ -76,9 +86,16 @@ export function displayText(message: ChatMessage): string {
     .join('\n');
 }
 
-/** True when the turn carried nothing to show but machinery: no text, no picture. */
+/** True when the turn carried nothing to show but machinery: no text, no picture, no shell command. */
 export function isToolOnly(message: ChatMessage): boolean {
-  return displayText(message).trim().length === 0 && !message.segments.some((segment) => segment.kind === 'image');
+  return displayText(message).trim().length === 0 &&
+    !message.segments.some((segment) => segment.kind === 'image' || segment.kind === 'shellInput');
+}
+
+/** The shell command a turn ran, as typed (`! git status`), or null when it ran none. */
+export function shellCommandText(message: ChatMessage): string | null {
+  const input = message.segments.find((segment) => segment.kind === 'shellInput');
+  return input === undefined ? null : `! ${input.command}`;
 }
 
 /** The host paths of the pictures a message carries, in order; unknown ones skipped. */
@@ -90,8 +107,12 @@ export function imagePaths(message: ChatMessage): string[] {
  * What a sent message and its transcript line must share to be the same
  * message: the text, and how many pictures came with it. Text alone matched a
  * picture-only message to any other line with no text, a tool result included.
+ *
+ * A shell line (`! pwd`) is recorded as its command alone, with a space Claude
+ * adds whether or not one was typed; both sides go through
+ * `shellReceiptText`, so `!pwd` and `! pwd` confirm alike.
  */
 export function receiptKey(message: ChatMessage): string {
   const pictures = message.segments.filter((segment) => segment.kind === 'image').length;
-  return `${displayText(message).trim()}\u0000${pictures}`;
+  return `${shellReceiptText(shellCommandText(message) ?? displayText(message))}\u0000${pictures}`;
 }

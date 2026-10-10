@@ -104,6 +104,63 @@ export function claudeCommandOutput(text: string): string | null {
 
 const COMMAND_OUTPUT_TAGS = ['local-command-stdout', 'local-command-stderr'] as const;
 
+/**
+ * A shell-mode exchange, as Claude Code records it, or null when the turn is
+ * anything else.
+ *
+ * A line typed with a leading `!` runs in the agent's shell, not the model,
+ * and Claude writes two user turns back to back: `<bash-input> pwd</bash-input>`
+ * (with a leading space, whether `! pwd` or `!pwd` was typed), then
+ * `<bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr>`. Read as text, the
+ * first became a bubble and the second was peeled away as harness, so the
+ * phone showed that a command ran and never what it printed.
+ *
+ * Either half may be absent (`command` null on an output-only turn, `output`
+ * null on an input-only one); a turn holding both is read as both. Anything
+ * else in the turn means it is not shell mode, and it is left to
+ * `claudeUserText`.
+ *
+ * The output is matched greedily: what a command prints can itself contain
+ * `</bash-stdout>` (a `cat` of this file), and Claude does not escape it.
+ */
+export function claudeShell(text: string): ClaudeShell | null {
+  let rest = text.trim();
+  let command: string | null = null;
+  const input = SHELL_INPUT.exec(rest);
+  if (input !== null) {
+    command = (input[1] ?? '').trim();
+    rest = rest.slice(input[0].length).trim();
+  }
+  if (rest.length === 0) return command === null ? null : { command, output: null };
+  const output = SHELL_OUTPUT.exec(rest);
+  if (output === null) return null;
+  return {
+    command,
+    output: { stdout: shellText(output[1] ?? output[3] ?? ''), stderr: shellText(output[2] ?? output[4] ?? '') },
+  };
+}
+
+export interface ClaudeShell {
+  command: string | null;
+  output: { stdout: string; stderr: string } | null;
+}
+
+/** `<bash-input>…</bash-input>` at the start of a turn. A command never holds its own closing tag. */
+const SHELL_INPUT = /^<bash-input>([\s\S]*?)<\/bash-input>/;
+
+/** Both output elements, or either one alone. */
+const SHELL_OUTPUT = /^(?:<bash-stdout>([\s\S]*)<\/bash-stdout>\s*<bash-stderr>([\s\S]*)<\/bash-stderr>|<bash-stdout>([\s\S]*)<\/bash-stdout>|<bash-stderr>([\s\S]*)<\/bash-stderr>)$/;
+
+/** What Claude writes for a command that printed nothing. Shown as nothing, which the block words itself. */
+const NO_OUTPUT = '(Bash completed with no output)';
+
+/** Output as the block shows it: no colour codes, no blank lines around it, nothing for Claude's "no output" note. */
+function shellText(raw: string): string {
+  const text = stripAnsi(raw).replace(/^\n+|\s+$/g, '');
+  return text === NO_OUTPUT ? '' : text;
+}
+
+
 /** A note, not a transcript: the rest stays in the terminal. */
 const COMMAND_OUTPUT_MAX = 600;
 

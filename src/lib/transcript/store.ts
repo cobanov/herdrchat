@@ -4,7 +4,7 @@ import { shellQuote, withPath } from '../herdr/shell';
 import { POLL_TIMEOUT_MS, STREAM_START_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 import type { ChatMessage } from './message';
-import { displayText, isToolOnly } from './message';
+import { displayText, isToolOnly, shellCommandText } from './message';
 import {
   assistantMeta,
   parseTranscript,
@@ -716,7 +716,8 @@ export type FileProbe =
 
 /** Collapse a transcript turn into a single-paragraph snippet for the list. */
 export function previewText(message: ChatMessage): string | null {
-  const collapsed = displayText(message)
+  // A shell command has no text of its own; the list shows it as typed.
+  const collapsed = (shellCommandText(message) ?? displayText(message))
     .replaceAll('**', '')
     .replaceAll('__', '')
     .replaceAll('`', '')

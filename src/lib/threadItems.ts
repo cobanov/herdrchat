@@ -65,7 +65,27 @@ export type ThreadItem =
       /** The script's own name, or "Workflow"; the run file's name wins once it is read. */
       name: string;
       description: string | null;
-    };
+    }
+  | ShellItem;
+
+/**
+ * A line run in the agent's shell (`! git status`) and what it printed: one
+ * block, not a bubble. Claude writes the command and its output as two user
+ * turns back to back; the output is paired with the turn directly before it
+ * and nothing else, so an output whose command fell outside the window shows
+ * alone (`command` null). `key` is the command turn's id, or the output's when
+ * there is no command.
+ */
+export interface ShellItem {
+  kind: 'shell';
+  key: string;
+  command: string | null;
+  stdout: string;
+  stderr: string;
+  /** The command is the last thing in the window and its output has not landed. */
+  running: boolean;
+  timestamp: number | null;
+}
 
 export type DelegationState = 'running' | 'done' | 'failed';
 
@@ -127,6 +147,8 @@ export function threadItems(
   const resumes = new Map<string, number>();
   let at: number | null = null;
   let seq = 0;
+  /** A shell command placed by the turn just read, waiting for its output in the next. */
+  let shellAwaiting: ShellItem | null = null;
 
   const flush = () => {
     if (run !== null && (run.calls.length > 0 || run.thoughts.length > 0)) items.push(run);
@@ -152,6 +174,32 @@ export function threadItems(
     if (message.isSidechain && !options.showSidechain) continue;
     at = message.timestamp;
     seq += 1;
+    // A shell command's output is the very next turn or none at all: anything
+    // else in between means the output is never coming (an interrupt).
+    const awaiting = shellAwaiting;
+    shellAwaiting = null;
+    if (awaiting !== null) awaiting.running = false;
+    const shell = shellParts(message);
+    if (shell !== null) {
+      if (awaiting !== null && shell.command === null && shell.output !== null) {
+        awaiting.stdout = shell.output.stdout;
+        awaiting.stderr = shell.output.stderr;
+        continue;
+      }
+      flush();
+      const item: ShellItem = {
+        kind: 'shell',
+        key: message.id,
+        command: shell.command,
+        stdout: shell.output?.stdout ?? '',
+        stderr: shell.output?.stderr ?? '',
+        running: shell.command !== null && shell.output === null,
+        timestamp: message.timestamp,
+      };
+      items.push(item);
+      if (item.running) shellAwaiting = item;
+      continue;
+    }
     // A background task's end: kept by the call it names, never a row. The
     // same task can notify more than once (an agent resumed); the last wins.
     // Its report and a resume are kept by the agent they name.
@@ -210,6 +258,8 @@ export function threadItems(
           return;
         case 'taskNotice':
         case 'handback':
+        case 'shellInput':
+        case 'shellOutput':
           return;
         case 'toolUse': {
           emitProse(index);
@@ -442,6 +492,17 @@ const EDIT_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply
 const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search']);
 const FETCH_TOOLS = new Set(['webfetch', 'fetch', 'web_fetch']);
 const TODO_TOOLS = new Set(['todowrite', 'taskcreate', 'taskupdate', 'update_plan', 'todo']);
+
+/** A turn's shell command and output, or null when it carries neither. */
+function shellParts(message: ChatMessage): { command: string | null; output: { stdout: string; stderr: string } | null } | null {
+  let command: string | null = null;
+  let output: { stdout: string; stderr: string } | null = null;
+  for (const segment of message.segments) {
+    if (segment.kind === 'shellInput') command = segment.command;
+    if (segment.kind === 'shellOutput') output = { stdout: segment.stdout, stderr: segment.stderr };
+  }
+  return command === null && output === null ? null : { command, output };
+}
 
 /** A turn with something a person would read: text or a picture. */
 function isReadable(message: ChatMessage): boolean {

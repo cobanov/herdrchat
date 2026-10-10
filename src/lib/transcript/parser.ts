@@ -1,6 +1,6 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
-import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine, isClaudeTypedLine } from './harness';
+import { claudeCommandOutput, claudeShell, claudeUserText, isClaudeHarnessLine, isClaudeTypedLine } from './harness';
 import { splitImages } from './images';
 import { parseHandback, parseTaskNotices } from '../subagents/taskNotice';
 import { ompEntry } from './omp';
@@ -188,6 +188,17 @@ function messageFrom(
       isSidechain: raw.isSidechain === true,
     };
   }
+  const shell = role === 'user' ? shellSegments(message?.content) : null;
+  if (shell !== null) {
+    return {
+      id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+      role: 'user',
+      segments: shell,
+      timestamp: parseTimestamp(raw.timestamp),
+      agentLabel,
+      isSidechain: raw.isSidechain === true,
+    };
+  }
   const segments = segmentsFrom(message?.content, role, role === 'user' && isClaudeTypedLine(raw));
   if (segments.length === 0) return null;
 
@@ -203,10 +214,46 @@ function messageFrom(
 
 /** A slash command's printed result, whether the turn is a string or one text block. */
 function commandOutput(content: unknown): string | null {
-  if (typeof content === 'string') return claudeCommandOutput(content);
+  const text = typeof content === 'string' ? content : singleText(content);
+  return text === null ? null : claudeCommandOutput(text);
+}
+
+/**
+ * A shell-mode turn (`<bash-input>`, or the `<bash-stdout>`/`<bash-stderr>`
+ * that follows it) as its own segments, whether the turn is a string or one
+ * text block. Null for any other turn. The thread pairs the two turns.
+ */
+function shellSegments(content: unknown): MessageSegment[] | null {
+  const text = typeof content === 'string' ? content : singleText(content);
+  if (text === null) return null;
+  const shell = claudeShell(text);
+  if (shell === null) return null;
+  return [
+    ...(shell.command === null ? [] : [{ kind: 'shellInput' as const, command: shell.command }]),
+    ...(shell.output === null ? [] : [{
+      kind: 'shellOutput' as const,
+      stdout: cappedShell(shell.output.stdout),
+      stderr: cappedShell(shell.output.stderr),
+    }]),
+  ];
+}
+
+/** The text of a turn that is exactly one text block, or null. */
+function singleText(content: unknown): string | null {
   if (!Array.isArray(content) || content.length !== 1) return null;
   const block = asRecord(content[0]);
-  return block?.type === 'text' && typeof block.text === 'string' ? claudeCommandOutput(block.text) : null;
+  return block?.type === 'text' && typeof block.text === 'string' ? block.text : null;
+}
+
+/**
+ * How much of a shell command's output is kept. More than a tool's result,
+ * since this is what the person asked to see, but a `cat` of a log still
+ * stays on the host rather than in every cached row.
+ */
+const SHELL_OUTPUT_CHARS = 20_000;
+
+function cappedShell(text: string): string {
+  return text.length <= SHELL_OUTPUT_CHARS ? text : `${text.slice(0, SHELL_OUTPUT_CHARS)}…`;
 }
 
 /**
