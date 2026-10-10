@@ -22,6 +22,13 @@ export interface Settings {
   showSidechain: boolean;
   /** Haptic feedback on sends, taps and confirmations. */
   haptics: boolean;
+  /**
+   * Return in the composer sends, and Shift-Return starts a new line, the way
+   * a chat app on a hardware keyboard behaves. On by default. Off restores
+   * #113: Return is a newline and Command-Return sends, for whoever writes
+   * long multi-line prompts on an iPad.
+   */
+  returnSends: boolean;
   /** Push notifications when an agent blocks or finishes. */
   notifications: boolean;
   /**
@@ -83,6 +90,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   showToolActivity: false,
   showSidechain: false,
   haptics: true,
+  returnSends: true,
   notifications: false,
   pollScale: 1,
   seenSwipeHint: false,
@@ -114,6 +122,7 @@ export function settingsSnapshot(): Settings {
     showToolActivity: state.showToolActivity,
     showSidechain: state.showSidechain,
     haptics: state.haptics,
+    returnSends: state.returnSends,
     notifications: state.notifications,
     pollScale: state.pollScale,
     seenSwipeHint: state.seenSwipeHint,

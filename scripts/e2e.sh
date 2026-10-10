@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 DEVICE=${E2E_DEVICE:-$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; d=[x for r in json.load(sys.stdin)["devices"].values() for x in r if x["state"]=="Booted"]; print(d[0]["udid"] if d else "")')}
 if [ -z "$DEVICE" ]; then echo "No booted simulator. Boot one, or set E2E_DEVICE." >&2; exit 2; fi
 OUT=${E2E_OUT:-${TMPDIR:-/tmp}/herdrchat-e2e/$(date +%Y%m%d-%H%M%S)}
-FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/keyboard regression/folder-trust regression/omp regression/history regression/multi-agent regression/welcome regression/host-theme smoke new-chat tool-activity thread-header"}
+FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/history regression/multi-agent regression/welcome regression/host-theme smoke new-chat tool-activity thread-header"}
 APPEARANCES=${E2E_APPEARANCES:-"Dark Light"}
 mkdir -p "$OUT"
 
@@ -33,6 +33,12 @@ reset_tool_setting() {
   [ -f "$DB" ] && sqlite3 "$DB" "delete from settings where key='showToolActivity'" 2>/dev/null
   return 0
 }
+# composer-keys turns "Return sends" off and back on; a run that failed in
+# between must not leave the next one starting with it off.
+reset_return_setting() {
+  [ -f "$DB" ] && sqlite3 "$DB" "delete from settings where key='returnSends'" 2>/dev/null
+  return 0
+}
 
 failed=""
 passed=0
@@ -40,6 +46,7 @@ for appearance in $APPEARANCES; do
   for flow in $FLOWS; do
     name="$(echo "$flow" | tr '/' '-')-$appearance"
     [ "$flow" = "tool-activity" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_tool_setting; }
+    [ "$flow" = "regression/composer-keys" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_return_setting; }
     printf '%-40s ' "$name"
     if maestro --device "$DEVICE" test -e APPEARANCE="$appearance" --test-output-dir "$OUT/$name" ".maestro/$flow.yaml" >"$OUT/$name.log" 2>&1; then
       echo pass

@@ -636,6 +636,7 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                 onAttach={() => void offerAttachment()}
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
+                onPasteImage={() => void addAttachments('paste')}
               />
             </Animated.View>
           )}
