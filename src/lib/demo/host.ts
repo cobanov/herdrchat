@@ -51,6 +51,7 @@ import {
   type DemoFixtures,
 } from './fixtures';
 import { unwrapJump, unwrapJumpStream } from '../herdr/machine';
+import { DEMO_PROMPT_COMMANDS, demoSlashScan } from './slashCommands';
 
 /** The version the demo claims, so the client picks the agent-aware verbs. */
 const DEMO_HERDR_VERSION = '0.8.0';
@@ -417,8 +418,12 @@ export class DemoHost implements HerdrTransport {
       return contents === null ? exit(1) : out(linesBefore(contents, Number(window[2]), Number(window[3])));
     }
     if (script !== null) {
-      const theme = this.themeFiles(script[1]!.replaceAll(`'\\''`, `'`));
+      const unquoted = script[1]!.replaceAll(`'\\''`, `'`);
+      const theme = this.themeFiles(unquoted);
       if (theme !== null) return theme;
+      // The slash-command catalogue (src/lib/slashCommands/discover.ts).
+      const commands = demoSlashScan(unquoted);
+      if (commands !== null) return out(commands);
     }
 
     // The OMP header check reads the first two records.
@@ -642,6 +647,15 @@ export class DemoHost implements HerdrTransport {
       return silent();
     }
     const name = text.trim().split(/\s+/)[0] ?? text;
+    if (DEMO_PROMPT_COMMANDS.has(name.slice(1))) {
+      // A command file or a skill is a prompt: Claude records the command,
+      // then answers it like anything else typed.
+      const [typed] = commandLines(text, '', [this.uuid(), this.uuid()], this.stamp());
+      if (typed !== undefined) this.append(paneId, typed);
+      this.statuses.set(paneId, 'working');
+      this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
+      return silent();
+    }
     this.writeCommand(paneId, text, `This is the demo host, so ${name} did nothing here.`);
     return silent();
   }

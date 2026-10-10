@@ -1,0 +1,26 @@
+{type:"local-jsx",name:"frobnicate",description:"Frobnicate the open buffer",argumentHint:"[level]",immediate:!0,requires:{panel:!0}
+{type:"local",name:"frobnicate",description:"Frobnicate without a panel",supportsNonInteractive:!0,isHidden:!0,load:()=>wq("part-01")
+{type:"local",name:"tidy",description:"Tidy the scratch area so far",isEnabled:()=>!qa(zv.NO_TIDY),argumentHint:"<optional tidy notes>",load:()=>wq("part-02")
+{type:"local-jsx",name:"autotidy",description:"Choose how full the scratch area gets before tidying",immediate:!0,isHidden:!1,argumentHint:"[auto|<lines>]"
+{type:"local",name:"autotidy",description:"Configure the auto-tidy window",get isHidden(){return!qa()},argumentHint:"[auto|<lines>]"
+{type:"local-jsx",name:"palette",get description(){return`Pick the palette for the widget (now ${hue(cur())})`},argumentHint:"[palette]",immediate:!0
+{type:"local-jsx",name:"verbosity",description:"Set how much the widget says",get argumentHint(){return zq("[","]")},immediate:!0
+{name:"gauge",description:"Draw the gauge as a row of blocks",argumentHint:"[all]",isEnabled:()=>!qa(),type:"local-jsx"
+{aliases:["fling"],type:"local-jsx",name:"toss",description:"Toss the current draft to a teammate",argumentHint:"[note]",immediate:!0
+{description:"Show the widget’s counters — every one",type:"local-jsx",name:"counters",immediate:!0
+{type:"local-jsx",name:"account",get description(){return qx()?"Switch widget accounts":"Sign in to your widget account"},immediate:!0
+{type:"local-jsx",name:"sketch",get description(){return`Sketch a plan in a side pane (${qy().eta}) \xB7 See ${zl}`}
+{type:"local-jsx",name:"leave",get description(){return qz()},immediate:!0
+{type:"local-jsx",name:"old-gauge",description:"Renamed to /gauge",isHidden:!0,isEnabled:()=>qa()
+{type:"local-jsx",name:"trial-over",description:"Options",isHidden:!0
+{type:"local-jsx",name:"spools",description:"List, create, and delete spools",immediate:!0,isEnabled:()=>!1
+{type:"prompt",name:"summarize-notes",description:"Summarize the notes in this folder",progressMessage:"summarizing notes",contentLength:0
+{type:"prompt",name:"lint-plan",description:"Check the plan for gaps",argumentHint:"[plan file]"
+{type:"local",name:"quit",description:"Quit the widget",aliases:["bye"],supportsNonInteractive:!0
+{type:"local-jsx",name:"long-hint",description:"A command whose hint is long",argumentHint:"[--id <uuid>] (--mode a=… b=… --dry | --apply <path>)"
+({name:"inspect",menuDescription:"Turn on tracing and look into problems",description:"Enable tracing for the model",argumentHint:"[issue description]",userInvocable:!0,async getPromptForCommand(e,n){return[]}
+({name:"bulk",description:"Run one change across many files in parallel",argumentHint:"<instruction>",userInvocable:!0,async getPromptForCommand(e){return[]}
+({name:"model-only",description:"Something only the model uses",userInvocable:!1,async getPromptForCommand(){return[]}
+({name:"frobnicate",description:"A bundled skill that shares a built-in's name",userInvocable:!0,async getPromptForCommand(){return[]}
+{name:"Shell",description:"Run a shell line",userInvocable:!0,inputSchema:qs
+{type:"text",name:"chunk",getPrompt:qt
