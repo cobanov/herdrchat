@@ -1,6 +1,8 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
+import { agentRows, agentTestKey, type AgentRow } from '../agentRows';
 import { ChatRow } from '../ChatRow';
+import { listChats } from '../listedChat';
 import type { ChatSummary } from '../useWorkspaces';
 
 jest.mock('@/theme/ThemeProvider', () => ({
@@ -133,5 +135,24 @@ it('says which machine a chat is on, first, and is found by a slash-free testID'
   const screen = await render(<ChatRow summary={onNuku} unread={false} onPress={jest.fn()} />);
   expect(screen.getByText('nuku · Claude · code/parser')).toBeOnTheScreen();
   expect(screen.getByTestId('chat-row-demo-nuku-w1').props.accessibilityLabel).toMatch(/^Parser, nuku · Claude · code\/parser/);
+  expect(screen.queryByTestId('chat-row-w1')).toBeNull();
+});
+
+// The Agents view draws each agent of a workspace that runs several as a full
+// row of its own: its session's title, its workspace ahead of its folder, and
+// a testID of its own, since its siblings share its workspace id.
+it('draws an agent of several as a row of its own, found by its pane', async () => {
+  const base = summary('claude');
+  const [first] = base.agents;
+  if (first === undefined) throw new Error('fixture has an agent');
+  const second = { ...first, agent: 'codex', paneId: 'w1:p2', focused: false, cwd: '/home/me/code/parser/web', title: 'Save button wrap' };
+  const pane = { paneId: second.paneId, agent: second, sessionSig: 's2', preview: null, status: 'working' as const, sessionTitle: 'Save button wrap', agentName: null };
+  const [row] = agentRows(listChats([{ ...base, agents: [first, second], panes: [
+    { paneId: first.paneId, agent: first, sessionSig: 's1', preview: null, status: 'idle', sessionTitle: null, agentName: null }, pane,
+  ] }], 'gimel', null)).slice(1) as [AgentRow];
+  const screen = await render(<ChatRow summary={row} testKey={agentTestKey(row)} unread={false} onPress={jest.fn()} />);
+  expect(screen.getByText('Save button wrap')).toBeOnTheScreen();
+  expect(screen.getByText('Parser · Codex · parser/web')).toBeOnTheScreen();
+  expect(screen.getByTestId('chat-row-w1:p2').props.accessibilityLabel).toMatch(/^Save button wrap, Parser · Codex · parser\/web, Working/);
   expect(screen.queryByTestId('chat-row-w1')).toBeNull();
 });

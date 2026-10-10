@@ -65,6 +65,7 @@ const MATERIAL = {
   'magnifyingglass': ['search', 0xe8b6],
   'network': ['lan', 0xeb2f],
   'pencil': ['edit', 0xe3c9],
+  'person.2': ['group', 0xe7ef],
   'photo': ['image', 0xe3f4],
   'photo.on.rectangle': ['photo_library', 0xe413],
   'pin': ['push_pin', 0xf10d],

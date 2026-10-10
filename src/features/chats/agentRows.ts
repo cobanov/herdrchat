@@ -35,6 +35,11 @@ export interface AgentRow extends ListedChat {
   workspace: ListedChat;
 }
 
+/** Whether a listed row is an agent's (the Agents view) rather than a workspace's. */
+export function isAgentRow(summary: ListedChat): summary is AgentRow {
+  return 'chatKey' in summary;
+}
+
 /**
  * Every agent, in the host's order: a workspace's agents in its snapshot
  * order, where its card would have been. A workspace with no conversational

@@ -88,6 +88,8 @@ export const size = {
    * one and the other two follow.
    */
   segmented: { inset: 3, height: 36 },
+  /** The chevron after a header title that opens a menu (Chats: Spaces or Agents). */
+  titleMenuChevron: 16,
   /**
    * Android's switch, drawn to Material 3's measurements because the platform
    * switch React Native renders is the older one, a knob hanging off a thin

@@ -34,6 +34,7 @@ const ACTION_WIDTH = 76;
 
 export const SwipeableChatRow = memo(function SwipeableChatRow({
   summary,
+  testKey,
   unread,
   selected,
   onPress,
@@ -47,6 +48,8 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onSwiped,
 }: {
   summary: ChatSummary & { machine?: MachineRef | null };
+  /** What the row's testIDs are built from, when not its workspace's (`ChatRow`). */
+  testKey?: string;
   unread: boolean;
   selected?: boolean;
   onPress: () => void;
@@ -86,7 +89,8 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
    * The state value is unused; `onReset` firing on a workspace-id change is the
    * whole point, and it is the hook FlashList ships for exactly this.
    */
-  useRecyclingState(false, [rowTestKey(summary)], () => {
+  const key = testKey ?? rowTestKey(summary);
+  useRecyclingState(false, [key], () => {
     swipeable.current?.reset();
   });
 
@@ -175,11 +179,12 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
         haptics.selection();
         onSwiped();
       }}
-      testID={`chat-swipe-${rowTestKey(summary)}`}
+      testID={`chat-swipe-${key}`}
       renderRightActions={renderRightActions}
       renderLeftActions={leading ? renderLeftActions : undefined}>
       <ChatRow
         summary={summary}
+        testKey={key}
         unread={unread}
         selected={selected}
         onPress={onPress}

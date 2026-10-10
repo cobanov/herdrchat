@@ -13,7 +13,8 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { groupChats, paneChats } from './chatGroups';
+import { agentRowKey, agentRows, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
+import { groupChats, paneChats, type ChatListItem } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
 import { paneTitle, rowTitle } from './rowText';
@@ -35,6 +36,13 @@ import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { chatKey } from '@/lib/chatKey';
 import { mainMenuActions, mainMenuTitle } from '@/lib/mainMenu';
+import {
+  LIST_MODE_SHEET_TITLE,
+  listModeAccessibilityLabel,
+  listModeActions,
+  listModeTitle,
+  type ListMode,
+} from '@/lib/listModes';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
@@ -52,9 +60,12 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
 
 /**
- * Chats, the app's root. One row per workspace, with live presence, and under
- * a workspace that runs several agents, one row for each of them. Hosts and
- * Settings are behind the menu in its header, not beside it in a tab bar.
+ * Chats, the app's root, in one of two views picked from its title
+ * (`listModes`). Spaces: one row per workspace, with live presence, and under
+ * a workspace that runs several agents, one row for each of them. Agents: one
+ * row per agent, flat (`agentRows`), grouped, pinned and read by the same
+ * rules. Hosts and Settings are behind the menu in its header, not beside it
+ * in a tab bar.
  *
  * Thin by design: everything it knows comes from `useHostChats` (the host's
  * `useWorkspaces`, and one for each machine saved on the host), everything it
@@ -98,7 +109,15 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
   const prefs = useChatPrefs(db, connection, summaries, connectionIds);
-  const rows = useMemo(() => groupChats(summaries, query, prefs.pinnedAt, rowKey), [summaries, query, prefs.pinnedAt]);
+  const listMode = useSettings((state) => state.listMode);
+  const chooseListMode = useCallback((mode: ListMode) => saveSetting(db, 'listMode', mode), [db]);
+  // Both views are grouped by the one function, so pins, search and the
+  // attention order cannot drift apart between them.
+  const rows = useMemo((): ChatListItem<ListedChat>[] =>
+    listMode === 'agents'
+      ? groupChats(agentRows(summaries), query, prefs.pinnedAt, agentRowKey)
+      : groupChats(summaries, query, prefs.pinnedAt, rowKey),
+  [listMode, summaries, query, prefs.pinnedAt]);
   // Whose reads to load, as a string so a rebuilt list of the same ids does
   // not reload them.
   const readIds = connectionIds.join('\n');
@@ -278,7 +297,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
       {/* One poll per machine saved on the host, feeding `useHostChats`. */}
       {connection !== null && <MachineFeeds host={connection} />}
       <Header
-        title="Chats"
+        title={listModeTitle(listMode)}
+        titleMenu={{
+          label: listModeAccessibilityLabel(listMode),
+          testID: 'chats-view',
+          onPress: () => showActionSheet({ title: LIST_MODE_SHEET_TITLE, actions: listModeActions(listMode, chooseListMode) }),
+        }}
         subtitle={connection?.name ?? null}
         onSubtitlePress={() => router.navigate('/hosts')}
         actionSymbol="square.and.pencil"
@@ -416,7 +440,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
           extraData={listExtra}
           keyExtractor={(item) =>
             item.kind === 'group' ? `group-${item.id}`
-              : item.kind === 'pane' ? `pane-${rowKey(item.summary)}-${item.pane.paneId}` : rowKey(item.summary)}
+              : item.kind === 'pane' ? `pane-${rowKey(item.summary)}-${item.pane.paneId}`
+                : isAgentRow(item.summary) ? `agent-${agentRowKey(item.summary)}` : rowKey(item.summary)}
           getItemType={(item) => item.kind}
           // FlashList keeps the first visible row in place by default, so a
           // group that appears at the top (a chat pinned, or one that starts
@@ -453,7 +478,19 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
               )}
             </>
           }
-          ListEmptyComponent={<EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />}
+          ListEmptyComponent={listMode === 'agents' && query.trim() === '' ? (
+            // Every workspace is a shell: a list of agents with none in it
+            // is not a failed search.
+            <EmptyState
+              symbol="person.2"
+              title="No agents"
+              body={`No workspace on ${connection.name} is running an agent. Spaces lists them all.`}
+              actionLabel="Show Spaces"
+              onAction={() => chooseListMode('spaces')}
+            />
+          ) : (
+            <EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />
+          )}
           renderItem={({ item: row }) => {
             if (row.kind === 'group') return (
               <View
@@ -467,6 +504,10 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
               </View>
             );
             const item = row.summary;
+            // An agent's row in the Agents view: its pin, its read and its
+            // thread are its agent's (`chatKey`). Rename and Close still act
+            // on its workspace, as they do from an agent's row in Spaces.
+            const agent = isAgentRow(item) ? item : null;
             const pinned = prefs.isPinned(item);
             const muted = prefs.isMuted(item);
             // Both belong to a conversation, so both wait for its session id.
@@ -502,15 +543,16 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
             return (
               <SwipeableChatRow
                 summary={item}
+                testKey={agent === null ? undefined : agentTestKey(agent)}
                 pinned={pinned}
                 muted={muted}
                 onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
                 onToggleMute={mutable ? () => prefs.toggleMute(item) : undefined}
-                selected={openHere === item.workspaceId}
-                unread={isChatUnread(item, rowReads, openHere)}
+                selected={openHere === (agent?.chatKey ?? item.workspaceId)}
+                unread={agent === null ? isChatUnread(item, rowReads, openHere) : isAgentUnread(agent, rowReads, openHere)}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openChat(item.connectionId, item.workspaceId, rowTitle(item));
+                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId);
                 }}
                 onLongPress={manage}
                 onSwiped={markHintSeen}

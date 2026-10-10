@@ -4,7 +4,7 @@ import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine } from '@/theme/tokens';
+import { headerTitleLine, minTouchTarget, screenPadding, size, spacing, useScaledLine } from '@/theme/tokens';
 
 /**
  * The screen header: a large title, an optional server line under it, and up to
@@ -27,9 +27,15 @@ import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine 
  * truncating the title. The menu sits outermost of the glyphs, where the trailing edge of a
  * system navigation bar puts its "more" control, so the "+" keeps the place it
  * has always had relative to the title.
+ *
+ * The title itself can be a menu (`titleMenu`), the way Mail's mailbox name
+ * is: a chevron after it says it opens one, and the whole title is the
+ * target. Chats uses it to switch between Spaces and Agents. The title keeps
+ * its line and its place; only a glyph is added after it.
  */
 export function Header({
   title,
+  titleMenu,
   subtitle,
   onSubtitlePress,
   actionSymbol,
@@ -43,6 +49,12 @@ export function Header({
   closeLabel = 'Done',
 }: {
   title: string;
+  /**
+   * Makes the title a control that opens a menu: what it is called for
+   * VoiceOver and Voice Control ("Showing Spaces. Change view."), its testID,
+   * and what a tap does.
+   */
+  titleMenu?: { label: string; testID: string; onPress: () => void };
   subtitle?: string | null;
   onSubtitlePress?: () => void;
   actionSymbol?: IconName;
@@ -74,9 +86,42 @@ export function Header({
   return (
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: titleLine }}>
-        <Text variant="largeTitle" numberOfLines={1} style={{ flexShrink: 1 }}>
-          {title}
-        </Text>
+        {titleMenu === undefined ? (
+          <Text variant="largeTitle" numberOfLines={1} style={{ flexShrink: 1 }}>
+            {title}
+          </Text>
+        ) : (
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              titleMenu.onPress();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={titleMenu.label}
+            testID={titleMenu.testID}
+            // No height of its own: the title stays on the line every other
+            // screen's title is on. The 44pt target comes from the slop, as
+            // the glyphs' does.
+            hitSlop={spacing.sm}
+            style={({ pressed }) => ({
+              flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+              opacity: pressed ? 0.5 : 1,
+            })}>
+            <Text variant="largeTitle" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {title}
+            </Text>
+            <Icon
+              name="chevron.down"
+              size={size.titleMenuChevron}
+              tintColor={colors.tint}
+              fallback={
+                <Text variant="title3" color="tint">
+                  ▾
+                </Text>
+              }
+            />
+          </Pressable>
+        )}
         <View style={{ flex: 1 }} />
 
         {hasAction && (

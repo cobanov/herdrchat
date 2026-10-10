@@ -55,3 +55,28 @@ describe('Header trailing controls', () => {
     expect(screen.getByTestId('header-close')).toHaveStyle({ marginLeft: 0 });
   });
 });
+
+describe('Header title menu', () => {
+  it('makes the title a button that names the view and opens the menu with a selection haptic', async () => {
+    const onPress = jest.fn();
+    const screen = await render(
+      <Header title="Spaces" titleMenu={{ label: 'Showing Spaces. Change view.', testID: 'chats-view', onPress }} subtitle="Demo" />
+    );
+    const title = screen.getByTestId('chats-view');
+    expect(title).toHaveProp('accessibilityLabel', 'Showing Spaces. Change view.');
+    expect(title).toHaveProp('accessibilityRole', 'button');
+    expect(screen.getByText('Spaces')).toBeTruthy();
+    await fireEvent.press(title);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(haptics.selection).toHaveBeenCalledTimes(1);
+  });
+
+  // The title sits on the same line on every screen; a menu must not move it.
+  it('gives the title control no height of its own, and draws a plain title without one', async () => {
+    const screen = await render(<Header title="Agents" titleMenu={{ label: 'x', testID: 'chats-view', onPress: () => {} }} />);
+    expect(screen.getByTestId('chats-view')).not.toHaveStyle({ minHeight: expect.anything() });
+    const plain = await render(<Header title="Settings" />);
+    expect(plain.queryByTestId('chats-view')).toBeNull();
+    expect(plain.queryAllByRole('button')).toHaveLength(0);
+  });
+});
