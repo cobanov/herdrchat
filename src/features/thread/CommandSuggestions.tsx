@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
 import { Text } from '@/components/Text';
@@ -25,8 +25,10 @@ export function commandTestID(name: string): string {
 
 /**
  * The `/` palette above the composer: every command the agent's terminal
- * would list for what has been typed, in its sections (Built-in, Skills,
- * Commands, Plugins), scrolling past `size.commandPaletteMaxHeight`.
+ * would list for what has been typed. A bare `/` shows them in their sections
+ * (Built-in, Skills, Commands, Plugins), each under its header; a typed name
+ * shows one ranked list with no header (`paletteSections`). It scrolls past
+ * `size.commandPaletteMaxHeight`, or a share of the window on a small phone.
  *
  * Each row is the name, the argument hint after it when the command takes
  * one, and its description. What a pick does is the caller's
@@ -44,25 +46,29 @@ export function CommandSuggestions({
   onPick: (command: CatalogueCommand) => void;
 }) {
   const { colors } = useTheme();
+  const { height } = useWindowDimensions();
+  const maxHeight = Math.min(size.commandPaletteMaxHeight, height * size.commandPaletteMaxWindowFraction);
   return (
     <Glass testID="command-suggestions" style={{ borderRadius: radius.lg, overflow: 'hidden' }}>
       <ScrollView
         testID="command-palette"
-        style={{ maxHeight: size.commandPaletteMaxHeight }}
+        style={{ maxHeight }}
         contentContainerStyle={{ paddingVertical: spacing.xs }}
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none">
         {sections.map(({ section, commands }) => (
-          <View key={section}>
-            <Text
-              testID={`command-section-${section}`}
-              variant="caption"
-              weight="600"
-              color="tertiary"
-              accessibilityRole="header"
-              style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxs }}>
-              {SECTION_TITLES[section].toUpperCase()}
-            </Text>
+          <View key={section ?? 'matches'}>
+            {section !== null && (
+              <Text
+                testID={`command-section-${section}`}
+                variant="caption"
+                weight="600"
+                color="tertiary"
+                accessibilityRole="header"
+                style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxs }}>
+                {SECTION_TITLES[section].toUpperCase()}
+              </Text>
+            )}
             {commands.map((command) => (
               <Pressable
                 key={`${command.source}:${command.name}`}

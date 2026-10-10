@@ -17,7 +17,7 @@ import {
 import { scanSlashCommands, slashScanDue } from '../slashCommands/client';
 import { filterCommands, paletteQuery, paletteSections } from '../slashCommands/filter';
 import type { ScanResult } from '../slashCommands/parse';
-import { pickSlashCommand } from '../slashCommands/pick';
+import { DESTRUCTIVE_COMMANDS, hintRequiresArgument, pickSlashCommand } from '../slashCommands/pick';
 import type { CatalogueCommand } from '../slashCommands/types';
 
 const command = (
@@ -58,19 +58,38 @@ describe('filtering, the terminal’s way', () => {
     expect(names(filterCommands(catalogue, ''))).toEqual(names(catalogue));
   });
 
-  it('puts a name prefix first, then a name substring, then a description match, inside each section', () => {
+  it('puts a name prefix first, then a name substring, then a description match, section order breaking ties', () => {
     expect(names(filterCommands(catalogue, 'rev'))).toEqual(['review', 'git:preview', 'demo-tools:lint']);
     expect(names(filterCommands(catalogue, 're'))).toEqual(['release-notes', 'review', 'git:preview', 'demo-tools:lint']);
     expect(names(filterCommands(catalogue, 'con'))).toEqual(['context', 'compact']);
     expect(names(filterCommands(catalogue, 'zzz'))).toEqual([]);
   });
 
-  it('groups the palette into its non-empty sections, in order', () => {
-    expect(paletteSections('/re', catalogue).map((section) => [section.section, names(section.commands)])).toEqual([
+  // The review of 4d5c706: ranked by section first, `/mi` put eight built-ins
+  // that only mention "mi" in their descriptions above the skill /mind.
+  it('ranks a name prefix in any section above a description match in Built-in', () => {
+    const mixed = [
+      command('permissions', 'builtin', 'Manage allow and deny rules'),
+      command('diff', 'builtin', 'Show the changes, file by file'),
+      command('upgrade', 'builtin', 'Upgrade to Max for higher rate limits'),
+      command('mind', 'skills', 'Read and write the vault'),
+      command('herdr', 'skills', 'Control Herdr'),
+    ];
+    expect(names(filterCommands(mixed, 'mi'))).toEqual(['mind', 'permissions', 'upgrade']);
+    expect(names(filterCommands(mixed, 'her'))).toEqual(['herdr', 'upgrade']);
+  });
+
+  it('browses a bare slash by section, and searches a typed name as one ranked list', () => {
+    expect(paletteSections('/', catalogue).map((section) => [section.section, names(section.commands)])).toEqual([
+      ['builtin', ['compact', 'context', 'model']],
       ['skills', ['release-notes']],
       ['commands', ['review', 'git:preview']],
       ['plugins', ['demo-tools:lint']],
     ]);
+    expect(paletteSections('/re', catalogue).map((section) => [section.section, names(section.commands)])).toEqual([
+      [null, ['release-notes', 'review', 'git:preview', 'demo-tools:lint']],
+    ]);
+    expect(paletteSections('/zzz', catalogue)).toEqual([]);
     expect(paletteSections('/review now', catalogue)).toEqual([]);
     // A name typed in full stays offered: picking it is how it runs.
     expect(names(paletteSections('/model', catalogue)[0]?.commands ?? [])).toEqual(['model']);
@@ -83,9 +102,38 @@ describe('picking a command', () => {
     expect(pickSlashCommand(command('x', 'builtin', '', '   '))).toEqual({ action: 'send', text: '/x' });
   });
 
-  it('fills one that takes an argument and shows what goes there', () => {
-    expect(pickSlashCommand(command('review', 'commands', '', '[pr]'))).toEqual({ action: 'fill', text: '/review ', placeholder: '[pr]' });
-    expect(pickSlashCommand(command('demo-tools:lint', 'plugins', '', '<path>'))).toEqual({ action: 'fill', text: '/demo-tools:lint ', placeholder: '<path>' });
+  // Enter in the terminal runs these: their argument is one they can do without.
+  it('sends one whose argument is optional, bracketed or said to be', () => {
+    expect(pickSlashCommand(command('compact', 'builtin', '', '<optional custom summarization instructions>'))).toEqual({ action: 'send', text: '/compact' });
+    expect(pickSlashCommand(command('model', 'builtin', '', '[model]'))).toEqual({ action: 'send', text: '/model' });
+    expect(pickSlashCommand(command('review', 'commands', '', '[pr]'))).toEqual({ action: 'send', text: '/review' });
+    expect(pickSlashCommand(command('autocompact', 'builtin', '', '[auto|<tokens>]'))).toEqual({ action: 'send', text: '/autocompact' });
+  });
+
+  // Its hint is a getter in the bundle, read as none: it sends, and its panel opens.
+  it('sends /effort, as the static list and the binary both give it no hint', () => {
+    const effort = CLAUDE_BUILTINS.find((entry) => entry.name === 'effort')!;
+    expect(effort.argumentHint).toBeNull();
+    expect(pickSlashCommand(effort)).toEqual({ action: 'send', text: '/effort' });
+  });
+
+  it('fills one that cannot run without its argument and shows what goes there', () => {
+    expect(pickSlashCommand(command('add-dir', 'builtin', '', '<path>'))).toEqual({ action: 'fill', text: '/add-dir ', placeholder: '<path>' });
+    expect(pickSlashCommand(command('demo-tools:lint', 'plugins', '', ' <path> '))).toEqual({ action: 'fill', text: '/demo-tools:lint ', placeholder: '<path>' });
+    expect(hintRequiresArgument('<Optional thing>')).toBe(false);
+    expect(hintRequiresArgument(null)).toBe(false);
+  });
+
+  // One tap on a short list must not end the agent or delete the session.
+  it.each(['exit', 'quit', 'logout', 'restart', 'stop', 'clear', 'delete', 'archive'])('fills /%s rather than sending it', (name) => {
+    expect(pickSlashCommand(command(name, 'builtin', '', null))).toEqual({ action: 'fill', text: `/${name}`, placeholder: '' });
+    expect(DESTRUCTIVE_COMMANDS.has(name)).toBe(true);
+  });
+
+  it('fills every destructive command either agent lists', () => {
+    for (const entry of [...CLAUDE_BUILTINS, ...CODEX_BUILTINS].filter((item) => DESTRUCTIVE_COMMANDS.has(item.name))) {
+      expect(pickSlashCommand(entry).action).toBe('fill');
+    }
   });
 });
 
@@ -128,6 +176,16 @@ describe('the cached catalogue', () => {
     expect(projectScanned(next, '/w')).toBe(true);
     expect(projectScanned(held, '/w')).toBe(false);
     expect(projectScanned(null, '/w')).toBe(false);
+  });
+
+  // A grep stopped at its deadline: the held built-ins and binary stay, so the
+  // next due scan reads the new binary again instead of answering "unchanged".
+  it('keeps the held built-ins and binary when the grep failed', () => {
+    const held = applyScan(emptyCatalogueCache(), scan({ binary: 'b 1,1', builtins: { kind: 'read', commands: [command('compact')] }, user: [], plugins: [] }), 1);
+    const next = applyScan(held, scan({ binary: 'b 2,2', builtins: null, user: [], plugins: [] }), 2);
+    expect(next.binary).toBe('b 1,1');
+    expect(next.builtins).toEqual(held.builtins);
+    expect(next.hostScannedAt).toBe(2);
   });
 
   it('remembers the binary read even when it held no literals, so it is not grepped again', () => {
@@ -193,13 +251,14 @@ describe('scanning a host', () => {
 });
 
 describe('the Demo’s catalogue', () => {
-  it('answers the script: four built-ins (one hidden left out), a command, a skill, a project command, a plugin', async () => {
+  it('answers the script: five built-ins (one hidden left out), a command, a skill, a project command, a plugin', async () => {
     const host = new DemoHost();
     const result = await scanSlashCommands(host, { host: true, cwds: [DEMO_NOTES_CWD], knownBinary: null });
     expect(result?.binary).toBe(`${DEMO_CLAUDE_BINARY} ${DEMO_CLAUDE_BINARY_STAT}`);
     const cache = applyScan(emptyCatalogueCache(), result!, 1);
     const listed = catalogueFor(cache, 'claude', DEMO_NOTES_CWD).map((entry) => [entry.section, entry.name, entry.argumentHint, entry.description]);
     expect(listed).toEqual([
+      ['builtin', 'add-dir', '<path>', 'Add a new working directory'],
       ['builtin', 'compact', '<optional custom summarization instructions>', 'Free up context by summarizing the conversation so far'],
       ['builtin', 'effort', null, 'Set effort level for model usage'],
       ['builtin', 'model', '[model]', 'Set the AI model for Claude Code'],

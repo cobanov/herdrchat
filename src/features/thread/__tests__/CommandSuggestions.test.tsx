@@ -37,10 +37,15 @@ it('shows each section under its header, each row with its hint and description,
   expect(onPick).toHaveBeenCalledWith(catalogue[3]);
 });
 
-it('shows only the sections that match what was typed', async () => {
+it('shows what matches a typed name as one ranked list, with no section headers', async () => {
   const screen = await render(<CommandSuggestions sections={paletteSections('/notes', catalogue)} onPick={() => {}} />);
-  expect(screen.queryByTestId('command-section-builtin')).toBeNull();
+  for (const section of ['builtin', 'skills', 'commands', 'plugins']) {
+    expect(screen.queryByTestId(`command-section-${section}`)).toBeNull();
+  }
   expect(screen.getByTestId('command-suggestion-notes-summarise')).toBeOnTheScreen();
   // A description match: "Write release notes".
   expect(screen.getByTestId('command-suggestion-release-notes')).toBeOnTheScreen();
+  // The name match first, the description match after it, whatever their sections.
+  const rows = screen.getAllByRole('button').map((row) => row.props.testID as string);
+  expect(rows).toEqual(['command-suggestion-notes-summarise', 'command-suggestion-release-notes']);
 });

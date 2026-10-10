@@ -61,11 +61,15 @@ export const STREAM_START_TIMEOUT_MS = 20_000;
 export const SLASH_SCAN_TIMEOUT_MS = 20_000;
 
 /**
- * The same deadline for the binary `grep` inside the scan, in whole seconds,
- * for hosts that have `timeout(1)`: a channel the app gave up on does not stop
- * the command behind it, so the host must stop it by itself.
+ * The deadline for the two `grep`s over the binary inside the scan (they run
+ * side by side), in whole seconds, enforced by the host itself (`hs_bounded`
+ * in `discover.ts`: `timeout(1)`, Perl's `alarm` on a Mac, else a watchdog),
+ * since a channel the app gave up on does not stop the command behind it.
+ * Well inside `SLASH_SCAN_TIMEOUT_MS`: reaching the native deadline resets
+ * the whole SSH client, every live tail with it. Measured on Gimel with Claude
+ * Code 2.1.296 (230 MB, BSD grep): about 5 s.
  */
-export const SLASH_SCAN_GREP_TIMEOUT_S = 15;
+export const SLASH_SCAN_GREP_TIMEOUT_S = 12;
 
 /**
  * How often the chat list's poll reads the catalogue again. Commands and

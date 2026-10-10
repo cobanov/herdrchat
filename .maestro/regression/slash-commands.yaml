@@ -3,11 +3,12 @@
 # "binary", a user command with a hint (/review [pr]), a skill
 # (/release-notes), a project command in the notes folder (/notes:summarise)
 # and a plugin's (/demo-tools:lint). A pick does what Enter does in the
-# terminal: /usage takes nothing and runs at once; /review takes a pull
-# request and waits for it with its hint showing.
+# terminal: /compact and /review can do without their argument and run at
+# once; /add-dir cannot, and waits for its path with its hint showing.
 #
 # Rows are `command-suggestion-<name>` with `:` as `-`; section headers are
-# `command-section-<builtin|skills|commands|plugins>`.
+# `command-section-<builtin|skills|commands|plugins>`, shown for a bare `/`
+# only: a typed name is one ranked list, best match first.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -38,12 +39,14 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible:
     id: command-suggestion-extra-usage
 
-# Narrowing: a name prefix in Skills, then only Commands.
+# Narrowing: one ranked list, no headers, the name prefixes first.
 - inputText: re
 - extendedWaitUntil:
     visible:
       id: command-suggestion-release-notes
     timeout: 5000
+- assertNotVisible:
+    id: command-section-builtin
 - takeScreenshot: slash-palette-${APPEARANCE}
 - inputText: v
 - extendedWaitUntil:
@@ -53,40 +56,58 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible:
     id: command-suggestion-release-notes
 
-# A command with an argument fills in, the hint after it, and waits.
+# An optional argument ([pr]): a pick runs it at once, a prompt to the agent.
 - tapOn:
     id: command-suggestion-review
     retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*You said “/review”.*'
+    timeout: 10000
+- assertNotVisible:
+    id: command-suggestions
+
+# A command that cannot run without its argument fills in, the hint after it,
+# and waits.
+- tapOn:
+    id: composer-input
+- inputText: /add-d
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-add-dir
+    timeout: 5000
+- tapOn:
+    id: command-suggestion-add-dir
+    retryTapIfNoChange: true
 - assertVisible:
     id: composer-input
-    text: '/review.*'
+    text: '/add-dir.*'
 - assertVisible:
     id: composer-hint
 - assertNotVisible:
     id: command-suggestions
 - takeScreenshot: slash-filled-${APPEARANCE}
-- inputText: '42'
+- inputText: notes
 - assertNotVisible:
     id: composer-hint
 - runFlow: _send.yaml
 - extendedWaitUntil:
-    visible: '.*/review 42.*'
+    visible: '.*/add-dir did nothing here.*'
     timeout: 10000
 
-# A command that takes nothing runs the moment it is picked, and its note
-# lands in the thread.
+# /compact's argument says it is optional: picked from a fresh `/`, it runs at
+# once and its note lands in the thread.
 - tapOn:
     id: composer-input
-- inputText: /usa
+- inputText: /
 - extendedWaitUntil:
     visible:
-      id: command-suggestion-usage
+      id: command-suggestion-compact
     timeout: 5000
 - tapOn:
-    id: command-suggestion-usage
+    id: command-suggestion-compact
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible: '.*/usage did nothing here.*'
+    visible: '.*/compact did nothing here.*'
     timeout: 10000
 - assertNotVisible:
     id: command-suggestions
@@ -99,8 +120,6 @@ appId: dev.herdr.HerdrChat
     visible:
       id: command-suggestion-notes-summarise
     timeout: 10000
-- assertVisible:
-    id: command-section-commands
 - eraseText: 10
 - tapOn:
     id: composer-hide-keyboard

@@ -120,6 +120,12 @@ export const size = {
    */
   commandPaletteMaxHeight: 260,
   /**
+   * …and never more than this share of the window's height, so on a small
+   * phone (an iPhone SE's 667 points: about 200, three or four commands) the
+   * keyboard, the composer and the palette still leave some thread in view.
+   */
+  commandPaletteMaxWindowFraction: 0.3,
+  /**
    * A folded run of tool calls: its summary line, each call's row, and the
    * rail the rows hang off (the branch is `toolRail` wide and curves at
    * `radius.xs`). Rows are a thumb's height apart, not a full touch target:

@@ -14,7 +14,7 @@ export { CLAUDE_BUILTINS, CODEX_BUILTINS } from './builtins';
 export { binaryKey, discoveryCommand, type ScanRequest } from './discover';
 export { parseScanOutput, type ScanResult } from './parse';
 export { filterCommands, paletteQuery, paletteSections, type PaletteSection } from './filter';
-export { pickSlashCommand, type SlashPick } from './pick';
+export { DESTRUCTIVE_COMMANDS, hintRequiresArgument, pickSlashCommand, type SlashPick } from './pick';
 export {
   applyScan,
   catalogueFor,

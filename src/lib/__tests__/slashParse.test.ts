@@ -6,6 +6,7 @@ import {
   SLASH_BINARY,
   SLASH_BUILTINS,
   SLASH_BUILTINS_END,
+  SLASH_BUILTINS_FAILED,
   SLASH_BUILTINS_UNCHANGED,
   SLASH_END,
   SLASH_FILE,
@@ -20,6 +21,7 @@ import {
   parseBuiltinLiteral,
   parseBuiltins,
   parseFrontmatter,
+  parseNameTable,
   parseScanOutput,
   pluginNameFromPath,
   type FileRecord,
@@ -71,6 +73,27 @@ describe('a command literal out of the binary', () => {
     expect(parseBuiltinLiteral(literal)?.hidden).toBe(true);
   });
 
+  // The review of 4d5c706: `/simplify`, `/loop`, `/code-review` and more are
+  // registered by a variable, and the grep only took a string.
+  it('resolves a skill that names itself by a variable through the bundle’s name table', () => {
+    const literal = '({name:M7t,menuDescription:"Clean up the changed code without changing behavior",description:"Review the changed code",argumentHint:"[<target>]",userInvocable:!0,async getPromptForCommand(e,n)';
+    expect(parseBuiltinLiteral(literal, new Map([['M7t', 'simplify']]))).toEqual({
+      name: 'simplify',
+      type: 'bundled',
+      description: 'Clean up the changed code without changing behavior',
+      argumentHint: '[<target>]',
+      hidden: false,
+    });
+    // Unresolved: left out, never listed under a guessed name.
+    expect(parseBuiltinLiteral(literal)).toBeNull();
+    expect(parseBuiltins([literal, ',M7t="simplify"'].join('\n'), new Map()).map((command) => command.name)).toEqual(['simplify']);
+  });
+
+  it('leaves out an identifier the name table sets to two different names', () => {
+    const names = parseNameTable([',M7t="simplify"', ',TS="artifact-capabilities"', ',TS="openbsd"', ',oat="loop"', ',oat="loop"', 'junk', ',x="Not A Name"']);
+    expect([...names]).toEqual([['M7t', 'simplify'], ['oat', 'loop']]);
+  });
+
   it('leaves out what is not a command', () => {
     expect(parseBuiltinLiteral('{name:"Bash",description:"Run a command",inputSchema:x')).toBeNull();
     expect(parseBuiltinLiteral('{type:"text",name:"x"')).toBeNull();
@@ -89,8 +112,8 @@ describe('the built-ins of Claude Code 2.1.296', () => {
   it('come from the 121 command literals the bundle has in its usual shape, and more', () => {
     const pairs = new Set([...LITERALS.matchAll(/type:"(local|local-jsx|prompt)",name:"([a-z0-9-]+)"/g)].map((m) => `${m[1]} ${m[2]}`));
     expect(pairs.size).toBe(121);
-    expect(builtins).toHaveLength(106);
-    expect(builtins.filter((command) => command.source === 'bundled')).toHaveLength(12);
+    expect(builtins).toHaveLength(123);
+    expect(builtins.filter((command) => command.source === 'bundled')).toHaveLength(29);
   });
 
   it('are the static list, which stands in when the binary cannot be read', () => {
@@ -113,6 +136,12 @@ describe('the built-ins of Claude Code 2.1.296', () => {
     expect(byName.get('usage')?.description).toBe('Show session cost, plan usage, and activity stats');
     expect(byName.get('exit')?.description).toBe('Exit the CLI');
     expect(byName.get('batch')).toMatchObject({ section: 'skills', source: 'bundled' });
+    // Registered by a variable (`zs({name:M7t,…})`): the terminal lists them all.
+    for (const name of ['simplify', 'loop', 'code-review', 'schedule', 'commit', 'pr', 'verify']) {
+      expect(byName.get(name)).toMatchObject({ section: 'skills', source: 'bundled' });
+    }
+    expect(byName.get('loop')).toMatchObject({ description: 'Repeat a prompt or command on an interval (e.g. /loop 5m /foo)', argumentHint: '[interval] [prompt]' });
+    expect(byName.get('schedule')?.description).toBe('Create and manage routines: cloud agents on a schedule');
   });
 });
 
@@ -220,6 +249,18 @@ describe('the script’s answer', () => {
     const none = parseScanOutput(frame(SLASH_NO_BINARY), { host: true, cwds: [] })!;
     expect(none.binary).toBeNull();
     expect(none.builtins).toEqual({ kind: 'read', commands: [] });
+  });
+
+  // The review of 4d5c706: a grep cut by its deadline was taken as a whole read.
+  it('reads a grep that failed or hit its deadline as nothing read, the files still read', () => {
+    const stdout = frame(
+      [SLASH_BINARY, '/b/claude', '1,2'].join('\t'),
+      SLASH_BUILTINS_FAILED,
+      ...record(['command', 'user', '-', 'review.md', '/h/.claude/commands/review.md'], 'Review')
+    );
+    const result = parseScanOutput(stdout, { host: true, cwds: [] })!;
+    expect(result.builtins).toBeNull();
+    expect(result.user?.map((command) => command.name)).toEqual(['review']);
   });
 
   it('keeps the whole records of an answer cut short, and not the cut one', () => {

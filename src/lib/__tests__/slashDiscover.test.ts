@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { binaryKey, discoveryCommand, discoveryScript, SLASH_BEGIN, SLASH_END, type ScanRequest } from '../slashCommands/discover';
@@ -14,7 +14,7 @@ describe('the discovery script, as a string', () => {
     const hostOnly = discoveryScript({ host: true, cwds: [], knownBinary: null });
     expect(hostOnly).toContain(`echo ${SLASH_BEGIN}`);
     expect(hostOnly).toContain(SLASH_END);
-    expect(hostOnly).toMatch(/^\s*hs_builtins ''$/m);
+    expect(hostOnly).toMatch(new RegExp(`^\\s*hs_builtins '' ${SLASH_SCAN_GREP_TIMEOUT_S}$`, 'm'));
     expect(hostOnly).toMatch(/^\s*hs_user$/m);
     expect(hostOnly).toMatch(/^\s*hs_plugins$/m);
     expect(hostOnly).not.toMatch(/^\s*hs_project /m);
@@ -29,7 +29,10 @@ describe('the discovery script, as a string', () => {
     const script = discoveryScript({ host: true, cwds: ['/a'], knownBinary: null });
     for (const depth of script.matchAll(/-maxdepth (\d+)/g)) expect(Number(depth[1])).toBeLessThanOrEqual(3);
     expect(script).not.toMatch(/find[^\n]*plugins"?\s/);
-    expect(script).toContain(`timeout ${SLASH_SCAN_GREP_TIMEOUT_S} grep`);
+    // Every grep over the binary under a deadline the host enforces itself.
+    expect(script).toMatch(/hs_builtins '' \d+$/m);
+    for (const grep of script.matchAll(/^.*grep -a -o -E "\$hs_(re|nt)" "\$hs_b".*$/gm)) expect(grep[0]).toMatch(/hs_bounded "\$2" grep/);
+    expect(script).toContain('perl -e \'alarm shift @ARGV; exec @ARGV');
     expect(script).toMatch(/\} \| head -c \d+\n/);
     // Nothing GNU-only, and no glob (an unmatched one aborts zsh).
     expect(script).not.toMatch(/-printf|grep -P|\bfor \w+ in /);
@@ -54,7 +57,15 @@ function scratchHost(): { home: string; project: string; cleanup: () => void } {
   };
   // The binary: two kilobytes of the real Claude Code 2.1.296 bundle.
   mkdirSync(join(home, '.local/bin'), { recursive: true });
-  copyFileSync(join(FIXTURES, 'claude-2.1.296-excerpt.txt'), join(home, '.local/bin/claude'));
+  // Then the bundle's name table and a skill that names itself through it
+  // (`zs({name:M7t,…})`, `M7t="simplify"`).
+  writeFileSync(
+    join(home, '.local/bin/claude'),
+    Buffer.concat([
+      readFileSync(join(FIXTURES, 'claude-2.1.296-excerpt.txt')),
+      readFileSync(join(FIXTURES, 'claude-2.1.296-simplify-excerpt.txt')),
+    ])
+  );
   chmodSync(join(home, '.local/bin/claude'), 0o755);
 
   const claude = join(home, '.claude');
@@ -122,7 +133,13 @@ describe.each(SHELLS)('the discovery script under %s', (shell) => {
       ['compact', '<optional custom summarization instructions>'],
       ['config', '[key=value]'],
       ['output-style', '[style]'],
+      ['simplify', '[<target>]'],
     ]);
+    expect(builtins.find((command) => command.name === 'simplify')).toMatchObject({
+      description: 'Clean up the changed code without changing behavior',
+      section: 'skills',
+      source: 'bundled',
+    });
 
     const names = (list: { name: string }[] | null | undefined) => (list ?? []).map((command) => command.name).sort();
     expect(names(result.user)).toEqual(['git:push', 'herdr', 'mind', 'review']);
@@ -149,6 +166,64 @@ describe.each(SHELLS)('the discovery script under %s', (shell) => {
     expect(result.binary).toBeNull();
     expect(result.builtins).toEqual({ kind: 'read', commands: [] });
     expect(result.user?.length).toBe(4);
+  });
+
+  // The review of 4d5c706: a grep cut by its deadline printed the built-ins'
+  // end anyway, so a partial read was cached against the binary for good.
+  describe('when the grep over the binary is slow', () => {
+    const tools = ['head', 'sed', 'find', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat'];
+    let bin: string;
+    beforeAll(() => {
+      bin = join(host.home, `slow-${shell}`);
+      mkdirSync(bin, { recursive: true });
+      const realGrep = execFileSync('sh', ['-c', 'command -v grep'], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      // Slow only over the binary; any other grep is the real one.
+      writeFileSync(
+        join(bin, 'grep'),
+        `#!/bin/sh
+for a in "$@"; do case "$a" in */claude) exec sleep 30 ;; esac; done
+exec ${realGrep} "$@"
+`
+      );
+      chmodSync(join(bin, 'grep'), 0o755);
+      for (const tool of tools) {
+        const path = execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+        symlinkSync(path, join(bin, tool));
+      }
+      symlinkSync(join(host.home, '.local/bin/claude'), join(bin, 'claude'));
+    });
+
+    const scan = (path: string) => {
+      const request: ScanRequest = { host: true, cwds: [], knownBinary: null, grepDeadlineS: 1 };
+      const started = Date.now();
+      const shellPath = execFileSync('sh', ['-c', `command -v ${shell}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      const stdout = execFileSync(shellPath, ['-c', discoveryScript(request)], {
+        env: { ...process.env, HOME: host.home, CLAUDE_CONFIG_DIR: '', PATH: path },
+        encoding: 'utf8',
+      });
+      return { result: parseScanOutput(stdout, request)!, stdout, seconds: (Date.now() - started) / 1000 };
+    };
+
+    // This host's own way: timeout(1) on Linux, Perl's alarm on a Mac.
+    it('stops it at the deadline and says nothing was read', () => {
+      const { result, stdout, seconds } = scan(`${bin}:/usr/bin:/bin`);
+      expect(seconds).toBeLessThan(10);
+      expect(stdout).toContain('HERDRCHAT_SLASH_BUILTINS_FAILED');
+      expect(stdout).not.toContain('HERDRCHAT_SLASH_BUILTINS\n');
+      expect(result.builtins).toBeNull();
+      expect(result.binary).toMatch(/claude \d+,\d+$/);
+      // The rest of the host's part still arrives.
+      expect(result.user?.length).toBe(4);
+    }, 20_000);
+
+    // A host with neither timeout(1) nor Perl: the watchdog.
+    it('stops it with the watchdog where there is no timeout(1) and no Perl', () => {
+      const { result, stdout, seconds } = scan(bin);
+      expect(seconds).toBeLessThan(10);
+      expect(stdout).toContain('HERDRCHAT_SLASH_BUILTINS_FAILED');
+      expect(result.builtins).toBeNull();
+      expect(result.user?.length).toBe(4);
+    }, 20_000);
   });
 
   it('answers a project-only scan with the project alone, a folder with nothing as empty', () => {
@@ -184,6 +259,7 @@ local('the discovery script on this Mac', () => {
     const compact = builtins.find((command) => command.name === 'compact');
     expect(compact?.description).toMatch(/context/i);
     expect(builtins.some((command) => command.name === 'extra-usage')).toBe(false);
+    for (const name of ['simplify', 'loop', 'code-review', 'schedule']) expect(builtins.map((command) => command.name)).toContain(name);
     const all = dedupeCommands([...builtins, ...(result.user ?? []), ...(result.plugins ?? [])]);
     expect(all.length).toBeGreaterThan(builtins.length - 1);
 
