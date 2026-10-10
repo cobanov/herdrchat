@@ -84,7 +84,7 @@ describe('an agent\'s own pin and mute', () => {
   const w6: ChatSummary = {
     workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [p1, p2],
     panes: [p1, p2].map((item) => ({ paneId: item.paneId, agent: item, sessionSig: `sig-${item.paneId}`, preview: null, status: 'idle' as const, sessionTitle: null, agentName: null })),
-    preview: null, sessionSig: 'sig-w6:p1,sig-w6:p2', restoreError: null, sessionTitle: null, agentName: null,
+    preview: null, sessionSig: 'sig-w6:p1,sig-w6:p2', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
   };
   const listed = listChats([w6], host.id, null);
   const [api] = listed as [ListedChat];

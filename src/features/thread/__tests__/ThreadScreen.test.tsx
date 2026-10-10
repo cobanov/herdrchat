@@ -31,6 +31,8 @@ jest.mock('@/components/Glass', () => ({
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+const mockOpenTerminal = jest.fn();
+jest.mock('@/features/terminal/navigation', () => ({ openTerminal: (...args: unknown[]) => mockOpenTerminal(...args) }));
 let mockConnection: unknown = null;
 let mockHostConnection: unknown = null;
 let mockHydrated = false;
@@ -259,6 +261,33 @@ it('resolves a machine chat from its route and leads its line with the machine',
   mockSessionTitle = null;
   mockWorkingDirName = 'project-with-a-long-folder-name';
   mockAgents = [];
+});
+
+// The chat cannot show everything an agent draws (a panel it does not parse, a
+// login prompt). Its header opens the agent's own screen: the pane of a pane
+// chat, and for a workspace chat the agent herdr has focused.
+it('opens the agent\'s terminal from the header, on this chat\'s pane or its focused agent', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = null;
+  mockHostConnection = { id: 'srv-1' };
+  mockAgents = [
+    { agent: 'claude', paneId: 'w6:p1', agentSession: null, focused: false },
+    { agent: 'codex', paneId: 'w6:p2', agentSession: null, focused: true },
+  ];
+  const workspace = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
+  await fireEvent.press(workspace.getByRole('button', { name: 'Terminal' }));
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith({ connectionId: 'srv-1', paneId: 'w6:p2', kind: 'agent', title: 'api' });
+  await workspace.unmount();
+  const pane = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" paneId="w6:p1" title="api" />);
+  await fireEvent.press(pane.getByTestId('thread-terminal'));
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ paneId: 'w6:p1', kind: 'agent' }));
+  await pane.unmount();
+  // No agent bound yet: nothing to attach to, so no button.
+  mockAgents = [];
+  const empty = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
+  expect(empty.queryByTestId('thread-terminal')).toBeNull();
+  await empty.unmount();
+  mockHostConnection = null;
 });
 
 // herdr names a workspace after its folder, so the label leading the line and

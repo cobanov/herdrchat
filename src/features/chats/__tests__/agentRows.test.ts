@@ -24,7 +24,7 @@ const workspace = (
       paneId: agent.paneId, agent, sessionSig: `sig-${agent.paneId}`, preview: null, status: 'idle',
       sessionTitle: agent.title, agentName: agent.name, ...panes[agent.paneId],
     })),
-    preview: null, sessionSig: conversational.map((agent) => `sig-${agent.paneId}`).join(',') || null, restoreError: null,
+    preview: null, sessionSig: conversational.map((agent) => `sig-${agent.paneId}`).join(',') || null, shellPanes: [], restoreError: null,
     sessionTitle: titled?.title ?? null, agentName: titled?.name ?? null,
   };
 };

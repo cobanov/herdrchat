@@ -36,6 +36,7 @@ import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { DelegationScopeProvider, type DelegationScope } from '@/features/thread/delegation';
+import { openTerminal } from '@/features/terminal/navigation';
 import { ThreadRow } from '@/features/thread/ThreadRow';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
@@ -199,6 +200,12 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   });
   const linkTitle = title?.trim() ?? '';
   const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
+
+  // The pane the header's Terminal opens: this chat's own, or for a
+  // workspace's chat the agent herdr has focused (the first, when none is).
+  const terminalPane = paneId !== undefined && paneId !== ''
+    ? paneId
+    : (thread.agents.find((agent) => agent.focused) ?? thread.agents[0])?.paneId;
 
   const key = draftKey(connection?.id ?? '', chat);
   const sessionSig = sessionSignature(thread.agents);
@@ -787,6 +794,24 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                     {thread.status === 'working' && <TypingDots size={3.5} />}
                   </View>
                 </View>
+                {/* The agent's own screen, for what the chat cannot show:
+                    a panel it does not know, a login prompt, a TUI. */}
+                {terminalPane !== undefined && connection !== null && (
+                  <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+                    <Pressable
+                      onPress={() => {
+                        haptics.selection();
+                        Keyboard.dismiss();
+                        openTerminal({ connectionId: connection.id, paneId: terminalPane, kind: 'agent', title: heading });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Terminal"
+                      testID="thread-terminal"
+                      style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="terminal" size={size.headerGlyph} tintColor={colors.label} fallback={<Text>{'>_'}</Text>} />
+                    </Pressable>
+                  </Glass>
+                )}
                 <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
                   {thread.status === 'working' ? (

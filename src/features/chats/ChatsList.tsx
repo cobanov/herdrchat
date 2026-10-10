@@ -14,13 +14,17 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
 import { agentPrefRow, agentRowKey, agentRows, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
-import { groupChats, paneChats, type ChatListItem } from './chatGroups';
+import { groupChats, paneChats } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
-import { paneTitle, rowTitle } from './rowText';
+import { paneTitle, rowTitle, terminalContext } from './rowText';
+import { TerminalRow } from './TerminalRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
+import { withTerminalRows, type ListItemWithTerminals } from '@/features/terminal/listRows';
+import { openTerminal } from '@/features/terminal/navigation';
+import { paneKind } from '@/lib/terminal/command';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { StarCard } from '@/features/welcome/StarCard';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
@@ -111,7 +115,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
   const [query, setQuery] = useState('');
   const prefs = useChatPrefs(db, connection, summaries, connectionIds);
   const listMode = useSettings((state) => state.listMode);
-  const list = useRef<FlashListRef<ChatListItem<ListedChat>>>(null);
+  const list = useRef<FlashListRef<ListItemWithTerminals<ListedChat>>>(null);
   // The other view opens at its top, at Needs you, as Mail does after a
   // filter change: the same list under new rows kept the old offset, and
   // landed partway down, past the groups that matter.
@@ -121,10 +125,13 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
   }, [db]);
   // Both views are grouped by the one function, so pins, search and the
   // attention order cannot drift apart between them.
-  const rows = useMemo((): ChatListItem<ListedChat>[] =>
+  // Each workspace's panes that are not chats (a shell, a build) follow its
+  // agents under its card in Spaces, and open the pane's terminal. Agents
+  // lists agents: a shell is not one, and its row would sit under no card.
+  const rows = useMemo((): ListItemWithTerminals<ListedChat>[] =>
     listMode === 'agents'
       ? groupChats(agentRows(summaries), query, prefs.pinnedAt, agentRowKey)
-      : groupChats(summaries, query, prefs.pinnedAt, rowKey),
+      : withTerminalRows(groupChats(summaries, query, prefs.pinnedAt, rowKey)),
   [listMode, summaries, query, prefs.pinnedAt]);
   // Whose reads to load, as a string so a rebuilt list of the same ids does
   // not reload them.
@@ -450,6 +457,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
           keyExtractor={(item) =>
             item.kind === 'group' ? `group-${item.id}`
               : item.kind === 'pane' ? `pane-${rowKey(item.summary)}-${item.pane.paneId}`
+                : item.kind === 'terminal' ? `terminal-${rowKey(item.summary)}-${item.terminal.paneId}`
                 : isAgentRow(item.summary) ? `agent-${agentRowKey(item.summary)}` : rowKey(item.summary)}
           getItemType={(item) => item.kind}
           // FlashList keeps the first visible row in place by default, so a
@@ -512,6 +520,26 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
                 <Text variant="caption" mono color="secondary">{row.count}</Text>
               </View>
             );
+            if (row.kind === 'terminal') {
+              const { summary, terminal } = row;
+              return (
+                <TerminalRow
+                  summary={summary}
+                  terminal={terminal}
+                  first={row.first}
+                  last={row.last}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    openTerminal({
+                      connectionId: summary.connectionId,
+                      paneId: terminal.paneId,
+                      kind: paneKind(terminal.pane.agent),
+                      title: terminalContext(terminal.pane, terminal.processName),
+                    });
+                  }}
+                />
+              );
+            }
             const item = row.summary;
             // An agent's row in the Agents view: its pin, its read and its
             // thread are its agent's (`chatKey`). Rename and Close still act

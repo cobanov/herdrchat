@@ -1,0 +1,89 @@
+# A pane's terminal, on the Demo. The Demo's w6 ("api") has a shell pane,
+# w6:p3, listed under its card after its two agents as a terminal row; it
+# opens a terminal attached to that pane. The Demo opens a native echo shell
+# (no SSH) and feeds it a recording: a zsh prompt in /home/demo/api, an `ls`,
+# a coloured `git status`. Then the chat w2's header opens the same terminal
+# on its agent's pane.
+#
+# What SwiftTerm draws is not reliably in the accessibility tree, so the
+# prompt and the echo are checked in the screenshots, which must be opened:
+# `terminal-<appearance>` must show the coloured prompt, the listing and
+# `ls` typed after the last prompt, in the app's colours, light and dark.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w6:p3
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: terminal-row-w6:p3
+    text: 'Terminal in api, .*'
+- takeScreenshot: terminal-row-${APPEARANCE}
+- tapOn:
+    id: terminal-row-w6:p3
+- extendedWaitUntil:
+    visible:
+      id: terminal-status
+      text: '.*Connected.*'
+    timeout: 10000
+- assertVisible:
+    id: terminal-view
+- assertNotVisible:
+    id: terminal-reconnect
+# The bar's keys go to the shell; the echo shell takes them without a crash.
+- tapOn:
+    id: terminal-key-tab
+- tapOn:
+    id: terminal-key-esc
+- tapOn:
+    id: terminal-key-ctrl
+- tapOn:
+    id: terminal-key-ctrl
+# The keyboard, from the bar's own control, then typing into the terminal.
+- tapOn:
+    id: terminal-keyboard
+- inputText: ls
+- pressKey: enter
+- assertVisible:
+    id: terminal-status
+    text: '.*Connected.*'
+- takeScreenshot: terminal-${APPEARANCE}
+- tapOn:
+    id: terminal-back
+- extendedWaitUntil:
+    visible:
+      id: terminal-row-w6:p3
+    timeout: 10000
+
+# An agent's chat: the header's Terminal opens the agent's own screen.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: thread-terminal
+    timeout: 15000
+- tapOn:
+    id: thread-terminal
+- extendedWaitUntil:
+    visible:
+      id: terminal-status
+      text: '.*Connected.*'
+    timeout: 10000
+- assertVisible:
+    id: terminal-view
+- takeScreenshot: terminal-agent-${APPEARANCE}
+- tapOn:
+    id: terminal-back
+- extendedWaitUntil:
+    visible:
+      id: thread-title
+    timeout: 10000
+- tapOn:
+    id: thread-back

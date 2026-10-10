@@ -146,6 +146,14 @@ function RootStack() {
             accident that happened to be right. `.maestro/thread-back.yaml`
             checks it still works. */}
         <Stack.Screen name="chat/[workspaceId]" options={{ gestureEnabled: true }} />
+        {/* What a chat's subagent and workflow cards open: pushed over the
+            chat, on iPad over the split, with the same swipe back. */}
+        <Stack.Screen name="chat/agent" options={{ gestureEnabled: true }} />
+        <Stack.Screen name="chat/workflow" options={{ gestureEnabled: true }} />
+        {/* A pane's terminal: pushed the same way, over the chats or a chat.
+            The edge swipe still goes back; SwiftTerm's own gestures (scroll,
+            select, pinch) start inside the screen, not at its edge. */}
+        <Stack.Screen name="chat/terminal" options={{ gestureEnabled: true }} />
         {/* Hosts and Settings are places you visit and come back from, so they
             are presented like the other full-height screens here rather than
             pushed: a sheet says "this goes away and you are back in your
@@ -157,10 +165,6 @@ function RootStack() {
             second sheet over it, and picking a host dismisses both. */}
         <Stack.Screen name="hosts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
-        {/* What a chat's subagent and workflow cards open: pushed over the
-            chat, on iPad over the split, with the same swipe back. */}
-        <Stack.Screen name="chat/agent" options={{ gestureEnabled: true }} />
-        <Stack.Screen name="chat/workflow" options={{ gestureEnabled: true }} />
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />

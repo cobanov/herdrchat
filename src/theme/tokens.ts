@@ -295,6 +295,27 @@ export const threadLayout = {
   initialControlsHeight: 96,
 } as const;
 
+/**
+ * A pane's terminal (`src/features/terminal`). The font is SwiftTerm's own
+ * monospace at `fontSize` points until a pinch picks another, held between
+ * `minFontSize` and `maxFontSize`: below 8 a cell is unreadable on a phone,
+ * above 28 an 80-column line no longer fits an iPad held upright. The
+ * accessory bar's keys are touch targets, as wide as they are tall at least,
+ * `keyGap` apart so a thumb on one does not graze the next.
+ */
+export const terminal = {
+  fontSize: 13,
+  minFontSize: 8,
+  maxFontSize: 28,
+  keyGap: spacing.xxs,
+  /** The paste and keyboard glyphs beside the keys. */
+  glyph: 18,
+  /** A key with no shell to send to. */
+  disabledOpacity: 0.4,
+  /** The scroll room past the last key, so it can come clear of the paste and keyboard controls. */
+  barTail: spacing.sm,
+} as const;
+
 /** System navigation material, continuous through the status-bar safe area. */
 export const glass = {
   chromeIntensity: 100,

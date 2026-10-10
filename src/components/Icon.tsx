@@ -49,6 +49,7 @@ const MATERIAL = {
   'circle.fill': ['radio_button_checked', 0xe837],
   'cpu': ['memory', 0xe322],
   'desktopcomputer': ['computer', 0xe30a],
+  'doc.on.clipboard': ['content_paste', 0xe14f],
   'doc.text': ['description', 0xe873],
   'ellipsis.circle': ['pending', 0xef64],
   // A bubble with "!", not `chat_error`, which is a bubble with an X: the bar
@@ -61,6 +62,7 @@ const MATERIAL = {
   'gearshape': ['settings', 0xe8b8],
   'gearshape.fill': ['settings', 0xe8b8],
   'globe': ['language', 0xe894],
+  'keyboard': ['keyboard', 0xe312],
   'keyboard.chevron.compact.down': ['keyboard_hide', 0xe31a],
   'magnifyingglass': ['search', 0xe8b6],
   'network': ['lan', 0xeb2f],

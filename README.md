@@ -78,6 +78,24 @@ non-interactive SSH session on the machine looks (`~/.local/bin`, `~/bin`,
 `/opt/homebrew/bin` or `/usr/local/bin`); one in `~/.cargo/bin` needs a link
 into `~/.local/bin`.
 
+## Terminal
+
+Every herdr pane has a terminal, not only the ones running an agent you can
+chat with. A pane with a shell, a build, `vim` or `htop` in it is listed under
+its workspace as a **Terminal** row, with the program herdr reports and its
+folder; an agent's chat opens its own pane from **Terminal** in its header,
+for whatever the chat cannot show (a panel, a login prompt, a full-screen
+tool). It is a real emulator ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)):
+colours, cursor, scrollback, mouse, selection, pinch to change the size, a
+hardware keyboard with Ctrl and Option, and a bar over the software keyboard
+with Esc, Tab, sticky Ctrl and Alt, the arrows, Home and End, and Paste. It
+runs on the host's SSH connection: an agent pane through `herdr agent attach`,
+a shell pane through `herdr session attach` with the pane zoomed to fill the
+screen. That zoom is herdr's own, so a desktop attached to the same session
+zooms too while the phone has the pane open; leaving the terminal puts the
+zoom and herdr's focus back. Leaving also hangs up: nothing keeps running.
+iPhone and iPad only for now.
+
 ## Theming
 
 Each host can restyle the app with a file of its own, `~/.herdrchat/theme.json`,
