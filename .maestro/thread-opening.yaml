@@ -21,13 +21,17 @@ appId: dev.herdr.HerdrChat
           id: server-switcher
 - tapOn:
     id: server-demo
-- tapOn: Settings
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       text: '${APPEARANCE}'
     direction: DOWN
 - tapOn: '${APPEARANCE}'
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - tapOn:
     id: chat-group-idle
 - assertVisible:

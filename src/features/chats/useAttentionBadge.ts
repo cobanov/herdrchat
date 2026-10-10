@@ -6,11 +6,12 @@ import { useBadge } from '@/state/badge';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
- * Publish the attention count for the tab bar's badge.
+ * Publish the attention count (see `src/state/badge.ts`; nothing reads it since
+ * the tab bar and its badge went away).
  *
  * Computed here because the number is already in hand — the alternative is a
- * second poll in the tab layout, which would double every host's SSH round-trips
- * to learn something this screen recalculated a moment ago.
+ * second poll wherever it is shown, which would double every host's SSH
+ * round-trips to learn something this screen recalculated a moment ago.
  *
  * The write is an effect, not a render-phase call: publishing to a store outside
  * React's tree is a side effect, and doing it during render is the kind of thing

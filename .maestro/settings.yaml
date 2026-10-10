@@ -16,7 +16,10 @@ appId: dev.herdr.HerdrChat
 - runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
 - assertVisible: "Chats"
-- tapOn: "Settings"
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - runFlow:
     when:
       visible:

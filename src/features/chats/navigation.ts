@@ -10,8 +10,8 @@ export function openChat(connectionId: string, workspaceId: string, title?: stri
   // No `paneId` key at all for the workspace chat, so its params are exactly
   // what they were before panes had chats of their own.
   const params = { connectionId, workspaceId, title: title ?? '', ...(paneId ? { paneId } : {}) };
-  // Also dismiss a sheet or legacy deep-link screen above the existing tabs.
-  // Replacing that screen with another tab shell would leave two in history.
+  // Also dismiss a sheet or legacy deep-link screen above the root chats.
+  // Replacing that screen with another root would leave two in history.
   if (Platform.OS === 'ios' && Platform.isPad) {
     useChatSelection.getState().select(params);
     router.dismissTo('/');

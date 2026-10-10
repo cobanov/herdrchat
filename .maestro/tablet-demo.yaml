@@ -11,7 +11,10 @@ appId: dev.herdr.HerdrChat
     id: server-switcher
 - tapOn:
     id: server-demo
-- tapOn: Settings
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - tapOn:
     id: settings-section-appearance
 - tapOn: '${APPEARANCE}'
@@ -29,7 +32,8 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: settings-section-storage
 - assertVisible: Cached messages
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - assertVisible:
     id: chat-group-needs-you
 - tapOn:
@@ -59,16 +63,26 @@ appId: dev.herdr.HerdrChat
     id: tablet-sidebar
 - assertNotVisible:
     id: thread-back
-- assertVisible: Hosts
-- assertVisible: Settings
+# The chats column keeps its menu while a thread is open beside it.
+- assertVisible:
+    id: chats-menu
 - tapOn:
     id: composer-input
 - inputText: Unsent tablet draft
-- tapOn: Settings
-- tapOn: Chats
+# A sheet over the split leaves the thread, and its draft, where they were.
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
+- tapOn:
+    id: header-close
 - assertVisible: Unsent tablet draft
-- tapOn: Hosts
-- tapOn: Chats
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Hosts
+- tapOn:
+    id: header-close
 - assertVisible: Unsent tablet draft
 - tapOn:
     id: composer-input
@@ -110,18 +124,26 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - takeScreenshot: tablet-keyboard-portrait
-- tapOn: Settings
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - assertVisible:
     id: settings-section-connection
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - takeScreenshot: tablet-thread-reopened
 - assertNotVisible:
     id: thread-back
-- tapOn: Hosts
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Hosts
 - assertVisible:
     id: server-demo
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - assertVisible: '(?s)Agent message.*${output.prompt}.*This is the demo host.*'
 - setOrientation: LANDSCAPE_LEFT
 - tapOn:
@@ -134,10 +156,14 @@ appId: dev.herdr.HerdrChat
 - setOrientation: PORTRAIT
 - tapOn:
     id: chat-row-w2
-- tapOn: Settings
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
 - assertVisible:
     id: settings-section-connection
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - tapOn:
     id: chat-row-w3
 - longPressOn:
@@ -158,15 +184,15 @@ appId: dev.herdr.HerdrChat
     id: thread-messages
 - assertVisible:
     id: chat-row-w3
-# Existing deep links must select inside the same tab shell, not cover it.
+# Existing deep links must select inside the root split, not cover it.
 - openLink: herdrchat://chat/w2?title=Notes
 - tapOn:
     text: '^(Open|Aç)$'
     optional: true
 - assertVisible:
     id: composer-input
-- assertVisible: Hosts
-- assertVisible: Settings
+- assertVisible:
+    id: chats-menu
 - assertNotVisible:
     id: thread-back
 # The saved host loads asynchronously on a cold launch.
@@ -177,7 +203,7 @@ appId: dev.herdr.HerdrChat
     optional: true
 - assertVisible:
     id: thread-messages
-- assertVisible: Hosts
-- assertVisible: Settings
+- assertVisible:
+    id: chats-menu
 - assertNotVisible:
     id: thread-back
