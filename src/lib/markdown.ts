@@ -167,7 +167,13 @@ export function parseInline(text: string): InlineSpan[] {
   // The link target allows one level of balanced parentheses, so a URL such as
   // https://en.wikipedia.org/wiki/Rust_(programming_language) is not cut at its
   // first `)` (#108).
-  const pattern = /(\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(_([^_]+)_)/g;
+  // A bare address (`https://…`) is a link too, as it is in every chat app:
+  // agents paste pull request and issue addresses in prose far more often
+  // than they write a markdown link, and a URL you have to copy out by hand
+  // on a phone is not a link. `<https://…>` is the same with its brackets
+  // dropped. Both take the same balanced-parentheses rule as a link target,
+  // and trailing punctuation stays prose (`see https://x.dev.`).
+  const pattern = /(\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(_([^_]+)_)|(<(https?:\/\/[^\s<>]+)>)|(https?:\/\/(?:[^()\s<>]|\([^()\s]*\))+)/g;
 
   let cursor = 0;
   for (;;) {
@@ -187,14 +193,18 @@ export function parseInline(text: string): InlineSpan[] {
       spans.push({ kind: 'text', text: text.slice(cursor, match.index) });
     }
 
+    if (match[13] !== undefined || match[14] !== undefined) {
+      // A sentence's full stop or comma after an address is not part of it.
+      const bare = match[14];
+      const href = bare === undefined ? match[13]! : bare.replace(/[.,;:!?'"]+$/, '');
+      spans.push(safeLink(href) ? { kind: 'link', text: href, href } : { kind: 'text', text: href });
+      cursor = match.index + (bare === undefined ? match[0].length : href.length);
+      pattern.lastIndex = cursor;
+      continue;
+    }
+
     if (match[2] !== undefined && match[3] !== undefined) {
-      // Agent output is untrusted. Never dispatch app/file/script schemes.
-      let safe = false;
-      try {
-        const url = new URL(match[3]);
-        safe = (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.length > 0;
-      } catch { /* Relative paths stay readable, not actionable. */ }
-      spans.push(safe ? { kind: 'link', text: match[2], href: match[3] }
+      spans.push(safeLink(match[3]) ? { kind: 'link', text: match[2], href: match[3] }
         : { kind: 'text', text: `${match[2]} (${match[3]})` });
     } else if (match[5] !== undefined) {
       spans.push({ kind: 'code', text: match[5] });
@@ -216,6 +226,17 @@ export function parseInline(text: string): InlineSpan[] {
 }
 
 // MARK: - Internals
+
+/** Agent output is untrusted. Never dispatch app/file/script schemes. */
+function safeLink(href: string): boolean {
+  try {
+    const url = new URL(href);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.length > 0;
+  } catch {
+    // Relative paths stay readable, not actionable.
+    return false;
+  }
+}
 
 function isRule(line: string): boolean {
   return line.length >= 3 && /^(-+|\*+|_+)$/.test(line);

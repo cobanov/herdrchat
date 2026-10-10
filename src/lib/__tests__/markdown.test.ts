@@ -126,6 +126,41 @@ describe('inline parsing', () => {
   it('does not format inside a code span', () => {
     expect(parseInline('`ls *.ts`')).toEqual([{ kind: 'code', text: 'ls *.ts' }]);
   });
+
+  // An address pasted into prose is a link, as in every chat app; the sentence
+  // around it stays prose.
+  it('links a bare address and keeps its trailing punctuation as prose', () => {
+    expect(parseInline('see https://github.com/cobanov/herdrchat/pull/161.')).toEqual([
+      { kind: 'text', text: 'see ' },
+      { kind: 'link', text: 'https://github.com/cobanov/herdrchat/pull/161', href: 'https://github.com/cobanov/herdrchat/pull/161' },
+      { kind: 'text', text: '.' },
+    ]);
+    expect(parseInline('(http://x.dev/a?b=1&c=2), then')).toEqual([
+      { kind: 'text', text: '(' },
+      { kind: 'link', text: 'http://x.dev/a?b=1&c=2', href: 'http://x.dev/a?b=1&c=2' },
+      { kind: 'text', text: '), then' },
+    ]);
+  });
+  it('keeps balanced parentheses in a bare address', () => {
+    expect(parseInline('https://en.wikipedia.org/wiki/Rust_(programming_language) is it')).toEqual([
+      { kind: 'link', text: 'https://en.wikipedia.org/wiki/Rust_(programming_language)', href: 'https://en.wikipedia.org/wiki/Rust_(programming_language)' },
+      { kind: 'text', text: ' is it' },
+    ]);
+  });
+  it('drops the brackets of an angle-bracket address', () => {
+    expect(parseInline('at <https://x.dev/>.')).toEqual([
+      { kind: 'text', text: 'at ' },
+      { kind: 'link', text: 'https://x.dev/', href: 'https://x.dev/' },
+      { kind: 'text', text: '.' },
+    ]);
+  });
+  it('leaves an address inside a code span or a markdown link alone', () => {
+    expect(parseInline('`curl https://x.dev`')).toEqual([{ kind: 'code', text: 'curl https://x.dev' }]);
+    expect(parseInline('[docs](https://x.dev/docs)')).toEqual([{ kind: 'link', text: 'docs', href: 'https://x.dev/docs' }]);
+  });
+  it('links only web addresses', () => {
+    expect(parseInline('ftp://x.dev and file:///etc/hosts')).toEqual([{ kind: 'text', text: 'ftp://x.dev and file:///etc/hosts' }]);
+  });
 });
 
 describe('fences and link targets (#108)', () => {
