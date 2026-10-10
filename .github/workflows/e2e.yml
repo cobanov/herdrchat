@@ -33,9 +33,6 @@ jobs:
       - name: Generate the iOS project
         run: npx expo prebuild -p ios --clean
 
-      - name: Install the Metal toolchain (SwiftTerm compiles a shader)
-        run: scripts/ensure-metal-toolchain.sh
-
       - name: Build for the simulator (Release, bundle embedded)
         run: |
           set -o pipefail

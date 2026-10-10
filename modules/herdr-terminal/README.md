@@ -25,8 +25,9 @@ so the iOS build needs Xcode's Metal toolchain, which Xcode 26 downloads
 separately. Without it the build fails in `SwiftTerm_SwiftTerm` with "cannot
 execute tool 'metal' due to missing Metal Toolchain".
 `scripts/ensure-metal-toolchain.sh` installs it when missing (`xcodebuild
--downloadComponent MetalToolchain`); `testflight.sh` and the E2E workflow run it
-before building.
+-downloadComponent MetalToolchain`); `testflight.sh` runs it before building.
+The E2E workflow's GitHub runner needs it too; the workflow does not run it
+yet.
 
 ## How it fits
 
