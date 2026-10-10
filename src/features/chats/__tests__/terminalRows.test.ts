@@ -4,6 +4,8 @@ import { decodePane, type Pane } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { buildSummaries, refreshProcessNames, type CachedProcessName } from '../useWorkspaces';
 import { terminalContext } from '../rowText';
+import { chatListRows } from '../chatListRows';
+import { listChats } from '../listedChat';
 
 jest.mock('../../usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => false }));
@@ -107,5 +109,27 @@ describe('terminalContext', () => {
     expect(terminalContext(pane('w1:p2'), null)).toBe('Shell · demo/api');
     expect(terminalContext(pane('w1:p2', { agent: 'letta' }), null)).toBe('Letta · demo/api');
     expect(terminalContext(pane('w1:p2', { cwd: '/' }), '-zsh')).toBe('zsh');
+  });
+});
+
+describe('chatListRows', () => {
+  // The Demo: w6 has two agents and the shell pane w6:p3.
+  const listed = async () => {
+    const snapshot = await new HerdrClient(new DemoHost()).snapshot();
+    return listChats(buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes), 'demo', null);
+  };
+
+  it("hangs a workspace's shell pane under its card in Spaces", async () => {
+    const rows = chatListRows('spaces', await listed(), '', new Map());
+    const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.terminal.paneId}`]));
+    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3']);
+  });
+
+  // Every agent row carries its workspace's `shellPanes`; the view of agents
+  // must still list none of them.
+  it('lists no terminal rows in Agents', async () => {
+    const rows = chatListRows('agents', await listed(), '', new Map());
+    expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
+    expect(rows.some((row) => row.kind === 'chat' && row.summary.workspaceId === 'w6')).toBe(true);
   });
 });

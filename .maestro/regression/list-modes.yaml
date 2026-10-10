@@ -56,11 +56,14 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: chat-row-w6:p1
     text: Archived projects migration, Claude · demo/api.*
-# No workspace card and no pane rows in this view.
+# No workspace card, no pane rows and no terminal rows in this view: w6's
+# shell pane (w6:p3) is not an agent, and would sit under no card.
 - assertNotVisible:
     id: chat-row-w6
 - assertNotVisible:
     id: pane-row-w6:p1
+- assertNotVisible:
+    id: terminal-row-w6:p3
 # Back to the top (w1 needs you, so it leads the list) for the screenshot.
 - scrollUntilVisible:
     element:
@@ -123,6 +126,12 @@ appId: dev.herdr.HerdrChat
     id: pane-row-w6:p2
 - assertNotVisible:
     id: chat-row-w6:p1
+# And its shell pane's terminal row under them again.
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w6:p3
+    direction: DOWN
+    centerElement: true
 # Back to the top (w1 needs you, so it leads the list) for the screenshot.
 - scrollUntilVisible:
     element:

@@ -13,8 +13,8 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { agentPrefRow, agentRowKey, agentRows, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
-import { groupChats, paneChats } from './chatGroups';
+import { agentPrefRow, agentRowKey, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
+import { paneChats } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
 import { paneTitle, rowTitle, terminalContext } from './rowText';
@@ -22,7 +22,8 @@ import { TerminalRow } from './TerminalRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
-import { withTerminalRows, type ListItemWithTerminals } from '@/features/terminal/listRows';
+import type { ListItemWithTerminals } from '@/features/terminal/listRows';
+import { chatListRows } from './chatListRows';
 import { openTerminal } from '@/features/terminal/navigation';
 import { paneKind } from '@/lib/terminal/command';
 import { SwipeHint } from '@/features/chats/SwipeHint';
@@ -123,16 +124,10 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
     list.current?.scrollToOffset({ offset: 0, animated: false });
     saveSetting(db, 'listMode', mode);
   }, [db]);
-  // Both views are grouped by the one function, so pins, search and the
-  // attention order cannot drift apart between them.
-  // Each workspace's panes that are not chats (a shell, a build) follow its
-  // agents under its card in Spaces, and open the pane's terminal. Agents
-  // lists agents: a shell is not one, and its row would sit under no card.
-  const rows = useMemo((): ListItemWithTerminals<ListedChat>[] =>
-    listMode === 'agents'
-      ? groupChats(agentRows(summaries), query, prefs.pinnedAt, agentRowKey)
-      : withTerminalRows(groupChats(summaries, query, prefs.pinnedAt, rowKey)),
-  [listMode, summaries, query, prefs.pinnedAt]);
+  const rows = useMemo(
+    () => chatListRows(listMode, summaries, query, prefs.pinnedAt),
+    [listMode, summaries, query, prefs.pinnedAt]
+  );
   // Whose reads to load, as a string so a rebuilt list of the same ids does
   // not reload them.
   const readIds = connectionIds.join('\n');
