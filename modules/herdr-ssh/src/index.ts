@@ -160,3 +160,16 @@ export class SshStreamError extends Error {
     this.code = failure.code;
   }
 }
+
+export {
+  DEFAULT_TERM,
+  DEMO_CONNECTION,
+  base64FromBytes,
+  closeShell,
+  openShell,
+  resizeShell,
+  utf8Bytes,
+  writeShell,
+  writeShellText,
+  type OpenShellOptions,
+} from './shell';

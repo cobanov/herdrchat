@@ -5,6 +5,8 @@ import type {
   ExecResult,
   HerdrSshEvents,
   NativeSshConfig,
+  OpenShellResult,
+  ShellWriteResult,
   StartStreamResult,
 } from './HerdrSsh.types';
 
@@ -39,6 +41,28 @@ declare class HerdrSshModule extends NativeModule<HerdrSshEvents> {
   ): Promise<StartStreamResult>;
   /** Stop a stream and tear down its channel. Safe to call on a dead stream. */
   stopStream(streamId: string): Promise<void>;
+  /**
+   * Open a pseudo-terminal on the connection `id` and run `command` (POSIX
+   * shell) in it, under the id `shellId` the caller chose. Resolves once the
+   * channel is open; `startTimeoutMs` bounds that. The output goes natively to
+   * the terminal view showing `shellId`, never through here. On the id
+   * `demo`, opens an echo shell with no SSH under it.
+   */
+  openShell(
+    id: string,
+    shellId: string,
+    command: string,
+    cols: number,
+    rows: number,
+    term: string,
+    startTimeoutMs: number
+  ): Promise<OpenShellResult>;
+  /** Bytes (base64) to the shell's input, as if typed. */
+  writeShell(shellId: string, base64: string): Promise<ShellWriteResult>;
+  /** The terminal's size in cells changed. */
+  resizeShell(shellId: string, cols: number, rows: number): Promise<ShellWriteResult>;
+  /** Hang up. Safe on a shell that has ended. Reports no `onShellClosed`. */
+  closeShell(shellId: string): Promise<void>;
 }
 
 export default requireNativeModule<HerdrSshModule>('HerdrSsh');

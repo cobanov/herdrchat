@@ -12,6 +12,8 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  # Where a terminal shell's output goes, and its view's input comes from.
+  s.dependency 'HerdrShellRegistry'
 
   # Citadel ships only through SPM. React Native's spm_dependency helper
   # (available since RN 0.75, and loaded by the generated Podfile) wires the

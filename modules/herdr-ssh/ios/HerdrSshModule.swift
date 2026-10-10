@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import HerdrShellRegistry
 
 /// Connection config as it arrives from JavaScript. Records flatten the TS
 /// discriminated union — Expo's Record decoding has no sum type — so `authKind`
@@ -31,7 +32,7 @@ public class HerdrSshModule: Module {
   public func definition() -> ModuleDefinition {
     Name("HerdrSsh")
 
-    Events("onStreamLine", "onStreamEnd", "onStreamError")
+    Events("onStreamLine", "onStreamEnd", "onStreamError", "onShellClosed")
 
     AsyncFunction("connect") { (id: String, config: SshConfigRecord) -> [String: Any] in
       do {
@@ -109,11 +110,94 @@ public class HerdrSshModule: Module {
       await self.connections.stopStream(streamId)
     }
 
+    // MARK: Terminal shells
+    //
+    // A PTY shell's output never comes through here: it goes to the terminal
+    // view via `ShellRegistry`, and keystrokes from the view go straight back.
+    // JavaScript opens, sizes and closes the shell, writes the accessory bar's
+    // keys, and hears how it ended.
+
+    AsyncFunction("openShell") {
+      (id: String, shellId: String, command: String, cols: Int, rows: Int, term: String, startTimeoutMs: Int)
+        -> [String: Any] in
+      let registry = ShellRegistry.shared
+      if id == Self.demoConnection {
+        EchoShell.open(shellId, registry: registry)
+        return ["ok": true, "shellId": shellId]
+      }
+      guard let connection = await self.connections.existing(id) else {
+        return Self.notConnected
+      }
+      // Registered before the channel opens, so a command that ends at once
+      // unregisters after this, never before it.
+      let pending = PendingShell()
+      registry.register(shellId, input: ShellRegistry.Input(
+        write: { data in pending.handle?.write(data) },
+        resize: { cols, rows in pending.handle?.resize(cols: cols, rows: rows) }
+      ))
+      do {
+        let handle = try await connection.openShell(
+          command,
+          cols: cols,
+          rows: rows,
+          term: term,
+          startTimeoutMs: startTimeoutMs,
+          onOutput: { data in registry.deliver(shellId, data) },
+          onClose: { [weak self] end in
+            registry.unregister(shellId)
+            var event: [String: Any] = ["shellId": shellId, "reason": end.reason]
+            if let code = end.exitCode { event["exitCode"] = code }
+            if let message = end.message { event["message"] = message }
+            self?.sendEvent("onShellClosed", event)
+            guard let store = self?.connections else { return }
+            Task { await store.forgetShell(shellId) }
+          }
+        )
+        pending.handle = handle
+        await self.connections.registerShell(shellId, handle: handle)
+        return ["ok": true, "shellId": shellId]
+      } catch let failure as SshFailure {
+        registry.unregister(shellId)
+        return failureMap(failure)
+      } catch {
+        registry.unregister(shellId)
+        return ["ok": false, "code": "transport_failed", "message": SshFailure.friendly(error)]
+      }
+    }
+
+    AsyncFunction("writeShell") { (shellId: String, base64: String) -> [String: Any] in
+      guard let data = Data(base64Encoded: base64) else {
+        return ["ok": false, "code": "bad_input", "message": "The input was not base64."]
+      }
+      guard ShellRegistry.shared.send(shellId, data) else { return Self.shellClosed }
+      return ["ok": true]
+    }
+
+    AsyncFunction("resizeShell") { (shellId: String, cols: Int, rows: Int) -> [String: Any] in
+      guard ShellRegistry.shared.resize(shellId, cols: cols, rows: rows) else { return Self.shellClosed }
+      return ["ok": true]
+    }
+
+    AsyncFunction("closeShell") { (shellId: String) in
+      ShellRegistry.shared.forget(shellId)
+      await self.connections.closeShell(shellId)
+    }
+
     OnDestroy {
       let store = self.connections
       Task { await store.closeAll() }
     }
   }
+
+  /// The Demo host's connection id: `openShell` on it opens an echo shell
+  /// with no SSH under it, which the Demo feeds its recorded screens to.
+  static let demoConnection = "demo"
+
+  private static let shellClosed: [String: Any] = [
+    "ok": false,
+    "code": "shell_closed",
+    "message": "This terminal is no longer connected.",
+  ]
 
   private static let notConnected: [String: Any] = [
     "ok": false,
@@ -128,6 +212,7 @@ public class HerdrSshModule: Module {
 actor ConnectionStore {
   private var connections: [String: SshConnection] = [:]
   private var streams: [String: Task<Void, Never>] = [:]
+  private var shells: [String: ShellHandle] = [:]
 
   func connection(for id: String, config: SshConfigRecord) -> SshConnection {
     if let existing = connections[id] { return existing }
@@ -152,6 +237,18 @@ actor ConnectionStore {
     streams.removeValue(forKey: streamId)?.cancel()
   }
 
+  func registerShell(_ shellId: String, handle: ShellHandle) {
+    shells[shellId] = handle
+  }
+
+  func forgetShell(_ shellId: String) {
+    shells[shellId] = nil
+  }
+
+  func closeShell(_ shellId: String) {
+    shells.removeValue(forKey: shellId)?.close()
+  }
+
   func drop(_ id: String) async {
     guard let connection = connections.removeValue(forKey: id) else { return }
     await connection.close()
@@ -160,8 +257,22 @@ actor ConnectionStore {
   func closeAll() async {
     for task in streams.values { task.cancel() }
     streams.removeAll()
+    for shell in shells.values { shell.close() }
+    shells.removeAll()
     for connection in connections.values { await connection.close() }
     connections.removeAll()
+  }
+}
+
+/// The handle of a shell still opening. Input that arrives before it is set
+/// has nowhere to go and is dropped; nothing is typed into a terminal that has
+/// not drawn yet.
+private final class PendingShell: @unchecked Sendable {
+  private let lock = NSLock()
+  private weak var _handle: ShellHandle?
+  var handle: ShellHandle? {
+    get { lock.lock(); defer { lock.unlock() }; return _handle }
+    set { lock.lock(); _handle = newValue; lock.unlock() }
   }
 }
 
