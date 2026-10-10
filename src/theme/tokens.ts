@@ -114,6 +114,12 @@ export const size = {
   /** How tall a panel's list of rows may grow before it scrolls. */
   panelOptionsMaxHeight: 240,
   /**
+   * How tall the `/` palette above the composer may grow before it scrolls:
+   * about five commands with their descriptions, so the thread keeps most of
+   * the room above it with the keyboard up.
+   */
+  commandPaletteMaxHeight: 260,
+  /**
    * A folded run of tool calls: its summary line, each call's row, and the
    * rail the rows hang off (the branch is `toolRail` wide and curves at
    * `radius.xs`). Rows are a thumb's height apart, not a full touch target:

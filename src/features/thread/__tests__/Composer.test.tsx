@@ -89,3 +89,22 @@ it('offers to hide the keyboard while typing, and keeps the draft', async () => 
   expect(dismiss).toHaveBeenCalled();
   expect(screen.getByTestId('composer-input').props.value).toBe('a long prompt');
 });
+
+// A filled command's argument hint, as the terminal shows it.
+describe('the placeholder', () => {
+  it('says Message by default, and the given text over an empty field', async () => {
+    const plain = await render(<Composer onSend={async () => true} draft="" onDraftChange={() => {}} />);
+    expect(plain.getByTestId('composer-input')).toHaveProp('placeholder', 'Message');
+    await plain.unmount();
+    const hinted = await render(<Composer onSend={async () => true} draft="" onDraftChange={() => {}} placeholder="[pr]" />);
+    expect(hinted.getByTestId('composer-input')).toHaveProp('placeholder', '[pr]');
+    expect(hinted.queryByTestId('composer-hint')).toBeNull();
+  });
+
+  it('follows a draft as ghost text, and not past its first line', async () => {
+    const screen = await render(<Composer onSend={async () => true} draft="/review " onDraftChange={() => {}} placeholder="[pr]" />);
+    expect(screen.getByTestId('composer-hint')).toHaveTextContent('/review [pr]');
+    await screen.rerender(<Composer onSend={async () => true} draft={'/review\nmore'} onDraftChange={() => {}} placeholder="[pr]" />);
+    expect(screen.queryByTestId('composer-hint')).toBeNull();
+  });
+});

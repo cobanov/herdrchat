@@ -5,6 +5,7 @@ import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
 import { loadHostMachines, mirrorHostMachines } from './hostMachines';
 import { loadHostThemes, mirrorHostThemes } from './hostTheme';
+import { loadSlashCatalogues, mirrorSlashCatalogues } from './slashCommands';
 import {
   SETTINGS_DEFAULTS,
   decodeBool,
@@ -32,6 +33,8 @@ export function Hydrate({ children }: { children: ReactNode }) {
   useEffect(() => mirrorHostThemes(db), [db]);
   // And to the machines each host lists.
   useEffect(() => mirrorHostMachines(db), [db]);
+  // And to each connection's slash-command catalogue.
+  useEffect(() => mirrorSlashCatalogues(db), [db]);
 
   useEffect(() => {
     void (async () => {
@@ -72,6 +75,8 @@ export function Hydrate({ children }: { children: ReactNode }) {
           // Likewise, so a host's machine chats are listed from launch rather
           // than after the first poll that asks for them.
           loadHostMachines(db).catch(() => undefined),
+          // And the `/` palette is complete from launch, before any scan.
+          loadSlashCatalogues(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,

@@ -436,6 +436,26 @@ export async function loadHostMachineRows(
   return loadSettingsWithPrefix(db, HOST_MACHINES_KEY_PREFIX);
 }
 
+// MARK: - Slash commands
+
+/**
+ * Each connection's slash-command catalogue (`src/lib/slashCommands/catalogue.ts`),
+ * cached in `settings` under `slashCommands.<connection id>` as
+ * `serializeCatalogueCache` writes it, so the palette is complete at launch
+ * before any scan. `clearConnectionSettings` deletes it with the host, and a
+ * machine's (`slashCommands.<host id>/<machine id>`) with its host.
+ */
+export const SLASH_COMMANDS_KEY_PREFIX = 'slashCommands.';
+
+export const slashCommandsKey = (connectionId: string) => `${SLASH_COMMANDS_KEY_PREFIX}${connectionId}`;
+
+/** Every cached catalogue, for the launch. */
+export async function loadSlashCommandRows(
+  db: SQLite.SQLiteDatabase
+): Promise<{ key: string; value: string }[]> {
+  return loadSettingsWithPrefix(db, SLASH_COMMANDS_KEY_PREFIX);
+}
+
 function loadSettingsWithPrefix(
   db: SQLite.SQLiteDatabase,
   prefix: string

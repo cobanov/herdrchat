@@ -52,7 +52,8 @@ let mockAgentName: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
 let mockWorkingDirName = 'project-with-a-long-folder-name';
-let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
+let mockAgents: { agent: string | null; paneId: string; agentSession: null; focused?: boolean; cwd?: string }[] = [];
+const mockSend = jest.fn(async (_text: string) => true);
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: mockAgents,
@@ -67,7 +68,7 @@ jest.mock('@/features/thread/useThread', () => ({
     isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
-    reload: mockReload, clearError: mockClearError,
+    reload: mockReload, clearError: mockClearError, send: mockSend,
   }),
 }));
 
@@ -297,4 +298,77 @@ it('says a chat\'s machine is gone, by name, when its host is still here', async
   mockHydrated = false;
   mockHostConnection = null;
   useHostMachines.setState({ byHost: {} });
+});
+
+// The palette offers what the terminal offers, and a pick does what Enter on
+// it does there: a command that takes nothing runs, one that takes something
+// waits for it with the hint showing.
+describe('the / palette', () => {
+  beforeEach(() => {
+    mockLoading = false;
+    mockSend.mockClear();
+  });
+
+  it('lists a Claude chat\'s built-ins and skills in sections, and narrows as you type', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w20:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w20" />);
+    expect(screen.queryByTestId('command-suggestions')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/');
+    expect(screen.getByTestId('command-section-builtin')).toHaveTextContent('BUILT-IN');
+    expect(screen.getByTestId('command-section-skills')).toBeOnTheScreen();
+    expect(screen.getByTestId('command-suggestion-model-hint')).toHaveTextContent('[model]');
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    expect(screen.getByTestId('command-suggestion-usage')).toBeOnTheScreen();
+    expect(screen.queryByTestId('command-suggestion-model')).toBeNull();
+    // A space ends the name: the arguments are being typed.
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usage ');
+    expect(screen.queryByTestId('command-suggestions')).toBeNull();
+    await screen.unmount();
+  });
+
+  it('sends a command that takes nothing the moment it is picked', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w21:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w21" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    await fireEvent.press(screen.getByTestId('command-suggestion-usage'));
+    expect(mockSend).toHaveBeenCalledWith('/usage');
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '');
+    await screen.unmount();
+  });
+
+  it('puts back what was typed when the send is refused', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w22:p1', agentSession: null, focused: true, cwd: '/p' }];
+    mockSend.mockResolvedValueOnce(false);
+    const screen = await render(<ThreadScreen workspaceId="w22" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    await fireEvent.press(screen.getByTestId('command-suggestion-usage'));
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/usa');
+    await screen.unmount();
+  });
+
+  it('fills a command that takes an argument, with its hint after it until something is typed', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w23:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w23" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/mod');
+    await fireEvent.press(screen.getByTestId('command-suggestion-model'));
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/model ');
+    expect(screen.getByTestId('composer-hint')).toHaveTextContent('/model [model]');
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/model opus');
+    expect(screen.queryByTestId('composer-hint')).toBeNull();
+    await screen.unmount();
+  });
+
+  it('offers Codex its own menu, and an OMP chat nothing', async () => {
+    mockAgents = [{ agent: 'codex', paneId: 'w24:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const codex = await render(<ThreadScreen workspaceId="w24" />);
+    await fireEvent.changeText(codex.getByTestId('composer-input'), '/');
+    expect(codex.getByTestId('command-suggestion-model')).toHaveTextContent(/choose what model/);
+    await codex.unmount();
+    mockAgents = [{ agent: 'omp', paneId: 'w25:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const omp = await render(<ThreadScreen workspaceId="w25" />);
+    await fireEvent.changeText(omp.getByTestId('composer-input'), '/');
+    expect(omp.queryByTestId('command-suggestions')).toBeNull();
+    await omp.unmount();
+  });
 });

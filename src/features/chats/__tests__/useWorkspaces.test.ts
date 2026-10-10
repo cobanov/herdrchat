@@ -33,6 +33,11 @@ const mockRefreshMachines = jest.fn(async (_hostId: string, _client: unknown) =>
 jest.mock('@/state/hostMachines', () => ({
   refreshHostMachines: (hostId: string, client: unknown) => mockRefreshMachines(hostId, client),
 }));
+const mockScanSlash = jest.fn(async (_connectionId: string, _transport: unknown, _ask: unknown) => undefined);
+jest.mock('@/state/slashCommands', () => ({
+  scanSlashCatalogue: (connectionId: string, transport: unknown, ask: unknown) =>
+    mockScanSlash(connectionId, transport, ask),
+}));
 jest.mock('@/lib/transcript/store', () => ({
   previewText: (message: ChatMessage) =>
     message.segments[0]?.kind === 'text' ? message.segments[0].text : null,
@@ -78,6 +83,8 @@ beforeEach(() => {
   mockCheckTheme.mockResolvedValue(true);
   mockRefreshMachines.mockReset();
   mockRefreshMachines.mockResolvedValue(true);
+  mockScanSlash.mockReset();
+  mockScanSlash.mockResolvedValue(undefined);
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -527,6 +534,74 @@ describe('the host\'s machine list, riding on the list poll', () => {
     expect(result.current.error).toBeNull();
     mockRefreshMachines.mockResolvedValue(false);
     await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
+// b704ec8 scanned on every thread open and queued in front of everything
+// else. The scan now rides this poll like the theme check: the first poll
+// after connecting, then every ten minutes, and a pull.
+describe('the slash-command scan, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('scans the host-wide part on the first poll, then at most every 10 minutes', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: [] });
+    // Polls every 3 s up to 597 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(597_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    // The poll at 600 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('scans again on a pull to refresh, not on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('never scans after a poll that failed, or without a connection to file it under', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const failed = await renderHook(() => useWorkspaces(client, 'host'));
+    await failed.unmount();
+    expect(mockScanSlash).not.toHaveBeenCalled();
+  });
+
+  // A machine has its own Claude Code and home folder: its own scan,
+  // through its own client, filed under its own connection id.
+  it('scans a machine\'s list under the machine\'s own id', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: [] });
+    await unmount();
+  });
+
+  // The list never waits on the scan or reports it.
+  it('keeps a failed or hanging scan out of the list', async () => {
+    mockScanSlash.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    await act(async () => { await jest.advanceTimersByTimeAsync(601_000); });
     expect(result.current.error).toBeNull();
     expect(result.current.loading).toBe(false);
     await unmount();
