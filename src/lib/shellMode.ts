@@ -16,10 +16,12 @@ export function isShellDraft(draft: string, agent: 'claude' | 'codex' | null): b
 /**
  * What a shell line and its record must share to be the same line.
  *
- * Claude records `!pwd` and `! pwd` alike as `<bash-input> pwd</bash-input>`:
- * a space after the `!` whether one was typed or not. The receipt compares
- * `!pwd` on both sides, so either spelling is confirmed. Text that does not
- * start with `!` is returned as it came.
+ * Claude records the command with or without a leading space
+ * (`<bash-input> pwd</bash-input>` or `<bash-input>pwd</bash-input>`),
+ * depending on its version and how the line was typed, so neither side can
+ * be trusted to carry exactly one. The receipt trims both and compares `!pwd`,
+ * so either spelling is confirmed. Text that does not start with `!` is
+ * returned as it came.
  */
 export function shellReceiptText(text: string): string {
   const trimmed = text.trim();
@@ -37,16 +39,22 @@ export interface FoldedOutput {
 }
 
 /**
- * A command's output, cut to its first `limit` lines unless `open`. Counted
- * in the output's own lines, not wrapped ones, so "Show all 200 lines" says
- * what `seq 1 200` printed whatever the phone's width.
+ * A command's output, cut to `limit` lines unless `open`. Counted in the
+ * output's own lines, not wrapped ones, so "Show all 200 lines" says what
+ * `seq 1 200` printed whatever the phone's width.
+ *
+ * stdout's first lines, then stderr's, but stdout never takes the whole fold
+ * while there is stderr: up to half of it is kept for stderr's first lines.
+ * Cutting stdout first hid a build's error under thirty lines of progress,
+ * and the error is what the person ran the command to see.
  */
 export function foldShellOutput(stdout: string, stderr: string, limit: number, open: boolean): FoldedOutput {
   const out = splitLines(stdout);
   const err = splitLines(stderr);
   const lines = out.length + err.length;
   if (open || lines <= limit) return { stdout, stderr, lines, hidden: 0 };
-  const keptOut = out.slice(0, limit);
+  const forErr = Math.min(err.length, Math.max(1, Math.floor(limit / 2)));
+  const keptOut = out.slice(0, Math.max(0, limit - forErr));
   const keptErr = err.slice(0, limit - keptOut.length);
   return { stdout: keptOut.join('\n'), stderr: keptErr.join('\n'), lines, hidden: lines - limit };
 }

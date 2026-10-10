@@ -58,7 +58,11 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
     [copy, item.key]
   );
 
-  const state = item.running ? 'running' : empty ? 'no output' : `${fold.lines} ${fold.lines === 1 ? 'line' : 'lines'} of output`;
+  // Printed nothing, or never said: an interrupted command's output turn was never written.
+  const emptyLabel = item.recorded ? 'No output' : 'No output recorded';
+  const state = item.running
+    ? 'running'
+    : empty ? emptyLabel.toLowerCase() : `${fold.lines} ${fold.lines === 1 ? 'line' : 'lines'} of output`;
 
   return (
     <GestureDetector gesture={longPress}>
@@ -73,7 +77,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
         }}>
         <View
           accessible
-          accessibilityRole="button"
+          accessibilityRole="text"
           accessibilityLabel={`Shell command: ${item.command ?? 'output'}, ${state}${timeLabel !== null ? `, ${timeLabel}` : ''}`}
           accessibilityHint="Long press to copy"
           accessibilityActions={[{ name: 'longpress', label: 'Copy' }]}
@@ -110,7 +114,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
             </View>
           ) : empty ? (
             <Text testID="shell-empty" variant="caption" color="tertiary">
-              No output
+              {emptyLabel}
             </Text>
           ) : (
             <Text testID="shell-output" variant="caption" mono>

@@ -17,7 +17,7 @@ jest.mock('@/components/ActionSheet', () => ({ showActionSheet: jest.fn() }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(() => Promise.resolve(true)) }));
 
 const shell = (extra: Partial<ShellItem> = {}): ShellItem => ({
-  kind: 'shell', key: 'u1', command: 'git status --short', stdout: ' M a.ts\n?? b.ts', stderr: '', running: false, timestamp: 1, ...extra,
+  kind: 'shell', key: 'u1', command: 'git status --short', stdout: ' M a.ts\n?? b.ts', stderr: '', running: false, recorded: true, timestamp: 1, ...extra,
 });
 
 beforeEach(() => {
@@ -44,7 +44,12 @@ it('runs until its output lands', async () => {
 
 it('says when a command printed nothing', async () => {
   await render(<ShellRun item={shell({ stdout: '' })} timeLabel={null} />);
-  expect(screen.getByTestId('shell-empty')).toHaveTextContent('No output');
+  expect(screen.getByTestId('shell-empty')).toHaveTextContent('No output', { exact: true });
+});
+
+it('does not say an interrupted command printed nothing', async () => {
+  await render(<ShellRun item={shell({ stdout: '', recorded: false })} timeLabel={null} />);
+  expect(screen.getByTestId('shell-empty')).toHaveTextContent('No output recorded');
 });
 
 it('draws stderr after stdout in the attention colour', async () => {

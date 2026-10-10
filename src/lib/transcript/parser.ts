@@ -252,8 +252,15 @@ function singleText(content: unknown): string | null {
  */
 const SHELL_OUTPUT_CHARS = 20_000;
 
+/**
+ * Said on its own line where a shell output was cut, in the block and in what
+ * "Copy output" puts on the clipboard: a lone "…" let a cut log be pasted as
+ * if it were whole.
+ */
+export const SHELL_OUTPUT_CUT = '[Output cut at 20,000 characters; the rest is on the host]';
+
 function cappedShell(text: string): string {
-  return text.length <= SHELL_OUTPUT_CHARS ? text : `${text.slice(0, SHELL_OUTPUT_CHARS)}…`;
+  return text.length <= SHELL_OUTPUT_CHARS ? text : `${text.slice(0, SHELL_OUTPUT_CHARS)}\n${SHELL_OUTPUT_CUT}`;
 }
 
 /**

@@ -78,9 +78,13 @@ Matching text alone confirmed a picture-only message with any tool result.
 **A `!` line is a shell exchange, not a message.** Claude records it as two
 user turns back to back, `<bash-input> cmd</bash-input>` then
 `<bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr>`; `threadItems` pairs
-only those two adjacent turns into one shell block, never across another turn.
-Claude adds a space after the `!` whether one was typed, so the receipt
-compares both sides through `shellReceiptText`.
+only those two turns into one shell block, adjacent in their own transcript
+(by `agentLabel`; an echo is in none), never across another line of it: a
+workspace thread merges two agents' lines, and the output is written seconds
+after the command. Claude escapes `&`, `<`, `>` in the output (not the command)
+except inside `<persisted-output>`. It records the command with or without a
+leading space, depending on its version, so the receipt trims both sides
+through `shellReceiptText`; never strip exactly one space.
 
 **Only `useThreadScroll` moves the thread list.** The rules are one pure
 function (`src/lib/threadScroll.ts`): the reader is following the end or

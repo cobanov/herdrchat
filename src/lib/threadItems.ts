@@ -16,7 +16,7 @@
 import { handbackPointer, isFailedStatus } from './subagents/taskNotice';
 import { scriptMeta, WORKFLOW_FALLBACK_NAME } from './subagents/scriptMeta';
 import { runIdFromResult } from './subagents/workflowRun';
-import type { ChatMessage, MessageSegment, TaskNotice } from './transcript/message';
+import { isEcho, type ChatMessage, type MessageSegment, type TaskNotice } from './transcript/message';
 
 export type ToolKind = 'command' | 'edit' | 'read' | 'search' | 'fetch' | 'todo' | 'question' | 'agent' | 'tool';
 
@@ -71,10 +71,10 @@ export type ThreadItem =
 /**
  * A line run in the agent's shell (`! git status`) and what it printed: one
  * block, not a bubble. Claude writes the command and its output as two user
- * turns back to back; the output is paired with the turn directly before it
- * and nothing else, so an output whose command fell outside the window shows
- * alone (`command` null). `key` is the command turn's id, or the output's when
- * there is no command.
+ * turns back to back in its transcript; the output is paired with the line
+ * directly before it in that same transcript and nothing else, so an output
+ * whose command fell outside the window shows alone (`command` null). `key` is
+ * the command turn's id, or the output's when there is no command.
  */
 export interface ShellItem {
   kind: 'shell';
@@ -82,8 +82,13 @@ export interface ShellItem {
   command: string | null;
   stdout: string;
   stderr: string;
-  /** The command is the last thing in the window and its output has not landed. */
+  /** The command is its transcript's last line and its output has not landed. */
   running: boolean;
+  /**
+   * The output turn was read. False for a command whose transcript moved on
+   * without one (an interrupt): "No output" would say it printed nothing.
+   */
+  recorded: boolean;
   timestamp: number | null;
 }
 
@@ -147,8 +152,15 @@ export function threadItems(
   const resumes = new Map<string, number>();
   let at: number | null = null;
   let seq = 0;
-  /** A shell command placed by the turn just read, waiting for its output in the next. */
-  let shellAwaiting: ShellItem | null = null;
+  /**
+   * Shell commands waiting for their output, by the transcript that ran them
+   * (`agentLabel`). A workspace thread merges two agents' lines as they
+   * arrive, and puts a sent message's echo among them by time, so the output
+   * is often not the next line of the list, only of its own transcript. Two
+   * agents of the same kind share a label; both running a `!` command in the
+   * same seconds is the one case this cannot tell apart.
+   */
+  const shellAwaiting = new Map<string | null, ShellItem>();
 
   const flush = () => {
     if (run !== null && (run.calls.length > 0 || run.thoughts.length > 0)) items.push(run);
@@ -174,16 +186,20 @@ export function threadItems(
     if (message.isSidechain && !options.showSidechain) continue;
     at = message.timestamp;
     seq += 1;
-    // A shell command's output is the very next turn or none at all: anything
-    // else in between means the output is never coming (an interrupt).
-    const awaiting = shellAwaiting;
-    shellAwaiting = null;
-    if (awaiting !== null) awaiting.running = false;
+    // A shell command's output is its transcript's very next line or none at
+    // all: another line of the same transcript in between means the output is
+    // never coming (an interrupt). An echo is no transcript's line.
+    const awaiting = isEcho(message) ? undefined : shellAwaiting.get(message.agentLabel);
+    if (awaiting !== undefined) {
+      shellAwaiting.delete(message.agentLabel);
+      awaiting.running = false;
+    }
     const shell = shellParts(message);
     if (shell !== null) {
-      if (awaiting !== null && shell.command === null && shell.output !== null) {
+      if (awaiting !== undefined && shell.command === null && shell.output !== null) {
         awaiting.stdout = shell.output.stdout;
         awaiting.stderr = shell.output.stderr;
+        awaiting.recorded = true;
         continue;
       }
       flush();
@@ -194,10 +210,11 @@ export function threadItems(
         stdout: shell.output?.stdout ?? '',
         stderr: shell.output?.stderr ?? '',
         running: shell.command !== null && shell.output === null,
+        recorded: shell.output !== null,
         timestamp: message.timestamp,
       };
       items.push(item);
-      if (item.running) shellAwaiting = item;
+      if (item.running) shellAwaiting.set(message.agentLabel, item);
       continue;
     }
     // A background task's end: kept by the call it names, never a row. The

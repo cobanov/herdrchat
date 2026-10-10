@@ -30,6 +30,16 @@ where regressions are found.
 | `regression/shell-commands` | a `!` command as one block in the thread: the Demo notes chat's seeded `! git status --short` with its two lines of output, the hint above the composer once `!` is typed in a Claude chat, a sent `! ls` landing as a block with the Demo's three-file listing under it and its echo confirmed rather than "Failed to send" (screenshots `shell-seeded-<appearance>`, `shell-<appearance>`: the output box must read as a terminal, stdout in the label colour) |
 | `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect, no Take over), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
 
+The shell block against a real Claude Code, checked by hand on a phone
+(Gimel), in light and dark, since the Demo cannot reproduce a real record:
+
+- `! pwd` and `!pwd` from the phone, and `!pwd` typed in the desktop TUI: one
+  block each, the echo confirmed, never "Failed to send".
+- `! ls -la | head`: symlinks read `->`, not `-&gt;`.
+- `! ls /nope`: the error in the attention colour.
+- `! seq 1 200`: folded with "Show all 200 lines", opening and closing.
+- `! sleep 3; echo done`: "Running" until `done` lands.
+
 Maestro cannot press hardware-keyboard key commands, so these are checked by
 hand on an iPad with a keyboard, after a native build:
 

@@ -440,16 +440,18 @@ export function commandLines(command: string, printed: string, uuids: [string, s
 }
 
 /**
- * What Claude records for a `!` line: the command, with the space it always
- * adds after the `!`, then what it printed. Both are `user` turns, back to
- * back, as in a real transcript (Claude Code 2.1.286).
+ * What Claude records for a `!` line: the command, with a leading space as
+ * Claude Code 2.1.286 wrote it (other versions write none), then what it
+ * printed. Both are `user` turns, back to back, as in a real transcript.
+ * The output is escaped as Claude escapes it (`&`, `<`, `>`); the command is not.
  */
 export function shellInputLine(command: string, uuid: string, timestamp: string): string {
   return line({ type: 'user', uuid, timestamp, content: `<bash-input> ${command}</bash-input>` });
 }
 
 export function shellOutputLine(stdout: string, stderr: string, uuid: string, timestamp: string): string {
-  return line({ type: 'user', uuid, timestamp, content: `<bash-stdout>${stdout}</bash-stdout><bash-stderr>${stderr}</bash-stderr>` });
+  const escape = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return line({ type: 'user', uuid, timestamp, content: `<bash-stdout>${escape(stdout)}</bash-stdout><bash-stderr>${escape(stderr)}</bash-stderr>` });
 }
 
 /** An assistant turn that is one tool call. */

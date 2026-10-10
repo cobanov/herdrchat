@@ -24,6 +24,18 @@ export interface ChatMessage {
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+/**
+ * How the id of a message the app shows before its transcript line lands (a
+ * sent message's echo) starts. Such a message is merged into the thread by
+ * time, so it can fall between two lines a transcript wrote back to back.
+ */
+export const ECHO_ID_PREFIX = 'local-';
+
+/** True for a sent message's echo, not yet a line of any transcript. */
+export function isEcho(message: ChatMessage): boolean {
+  return message.id.startsWith(ECHO_ID_PREFIX);
+}
+
 /** What a `<task-notification>` says about the background task a tool call started. */
 export interface TaskNotice {
   /** The call that started the task, or that last resumed it (a `SendMessage`). */

@@ -110,7 +110,8 @@ const COMMAND_OUTPUT_TAGS = ['local-command-stdout', 'local-command-stderr'] as 
  *
  * A line typed with a leading `!` runs in the agent's shell, not the model,
  * and Claude writes two user turns back to back: `<bash-input> pwd</bash-input>`
- * (with a leading space, whether `! pwd` or `!pwd` was typed), then
+ * (with or without a leading space, depending on the version and how it was
+ * typed, so the command is trimmed), then
  * `<bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr>`. Read as text, the
  * first became a bubble and the second was peeled away as harness, so the
  * phone showed that a command ran and never what it printed.
@@ -120,8 +121,10 @@ const COMMAND_OUTPUT_TAGS = ['local-command-stdout', 'local-command-stderr'] as 
  * else in the turn means it is not shell mode, and it is left to
  * `claudeUserText`.
  *
- * The output is matched greedily: what a command prints can itself contain
- * `</bash-stdout>` (a `cat` of this file), and Claude does not escape it.
+ * The output is matched greedily. Claude escapes `&`, `<` and `>` in what a
+ * command printed (`main -&gt; main` from a `git push`), so its own closing
+ * tags cannot occur inside it, but a persisted output (below) is written
+ * unescaped and can hold anything. The command itself is never escaped.
  */
 export function claudeShell(text: string): ClaudeShell | null {
   let rest = text.trim();
@@ -154,12 +157,29 @@ const SHELL_OUTPUT = /^(?:<bash-stdout>([\s\S]*)<\/bash-stdout>\s*<bash-stderr>(
 /** What Claude writes for a command that printed nothing. Shown as nothing, which the block words itself. */
 const NO_OUTPUT = '(Bash completed with no output)';
 
-/** Output as the block shows it: no colour codes, no blank lines around it, nothing for Claude's "no output" note. */
+/**
+ * Output as the block shows it: unescaped, no colour codes, no blank lines
+ * around it, nothing for Claude's "no output" note.
+ *
+ * Claude escapes `&`, `<` and `>` in the output (Claude Code 2.1.296), except
+ * when the output was too large and it saved it to a file on the host: then
+ * the stream is `<persisted-output>` holding a note saying where, and a
+ * preview, written as is. The tags are dropped and the note and preview kept.
+ */
 function shellText(raw: string): string {
-  const text = stripAnsi(raw).replace(/^\n+|\s+$/g, '');
+  const persisted = PERSISTED.exec(raw);
+  const body = persisted !== null ? persisted[1] ?? '' : unescapeShell(raw);
+  const text = stripAnsi(body).replace(/^\n+|\s+$/g, '');
   return text === NO_OUTPUT ? '' : text;
 }
 
+/** A stream Claude saved to a file on the host, the tags around its note and preview. */
+const PERSISTED = /^<persisted-output>([\s\S]*?)(?:<\/persisted-output>\s*)?$/;
+
+/** Undo Claude's escaping of an output stream; `&amp;` last, so `&amp;lt;` stays `&lt;`. */
+function unescapeShell(text: string): string {
+  return text.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+}
 
 /** A note, not a transcript: the rest stays in the terminal. */
 const COMMAND_OUTPUT_MAX = 600;

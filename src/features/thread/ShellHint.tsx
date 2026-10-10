@@ -4,7 +4,7 @@ import { Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, size, spacing } from '@/theme/tokens';
+import { radius, shellPrompt, size, spacing } from '@/theme/tokens';
 
 /**
  * One line above the composer while the draft starts with `!` in a Claude
@@ -20,7 +20,7 @@ export function ShellHint() {
         accessible
         accessibilityRole="text"
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-        <Icon name="terminal" size={size.toolGlyph} tintColor={colors.secondaryLabel} fallback={<Text color="secondary">$</Text>} />
+        <Icon name="terminal" size={size.toolGlyph} tintColor={colors.secondaryLabel} fallback={<Text color="secondary">{shellPrompt}</Text>} />
         <Text variant="footnote" color="secondary" style={{ flexShrink: 1 }}>
           Runs in the agent&apos;s shell, not sent to Claude
         </Text>
