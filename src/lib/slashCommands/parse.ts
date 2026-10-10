@@ -12,6 +12,7 @@ import {
   SLASH_BINARY,
   SLASH_BUILTINS,
   SLASH_BUILTINS_END,
+  SLASH_BUILTINS_FAILED,
   SLASH_BUILTINS_UNCHANGED,
   SLASH_END,
   SLASH_FILE,
@@ -250,11 +251,43 @@ function stringOf(value: LiteralValue | undefined): string | null {
   return null;
 }
 
-/** One grepped line, or null when it is not a command literal. */
-export function parseBuiltinLiteral(line: string): BuiltinVariant | null {
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * A literal's name: its string, or the string its variable is set to in the
+ * bundle's name table (`zs({name:M7t,…})` with `M7t="simplify"`).
+ */
+function literalName(value: LiteralValue | undefined, names: ReadonlyMap<string, string>): string | null {
+  if (value?.kind === 'string') return NAME.test(value.value) ? value.value : null;
+  if (value?.kind === 'raw' && IDENTIFIER.test(value.raw)) return names.get(value.raw) ?? null;
+  return null;
+}
+
+/**
+ * The name-table lines the script sent with the literals (`,M7t="simplify"`),
+ * as identifier to name. A minified identifier is reused across modules, so
+ * one the table sets to two different names is left out: a wrong name is
+ * worse than a missing one.
+ */
+export function parseNameTable(lines: readonly string[]): Map<string, string> {
+  const seen = new Map<string, string | null>();
+  for (const line of lines) {
+    const match = /^,([A-Za-z_$][\w$]*)="([a-z0-9][a-z0-9-]*)"$/.exec(line.trim());
+    if (match === null) continue;
+    const [, id, name] = match as unknown as [string, string, string];
+    const held = seen.get(id);
+    seen.set(id, held === undefined || held === name ? name : null);
+  }
+  const names = new Map<string, string>();
+  for (const [id, name] of seen) if (name !== null) names.set(id, name);
+  return names;
+}
+
+/** One grepped line, or null when it is not a command literal (or names itself by a variable not in `names`). */
+export function parseBuiltinLiteral(line: string, names: ReadonlyMap<string, string> = new Map()): BuiltinVariant | null {
   const keys = literalKeys(line);
-  const name = keys.get('name');
-  if (name?.kind !== 'string' || !NAME.test(name.value)) return null;
+  const name = literalName(keys.get('name'), names);
+  if (name === null) return null;
   const typeValue = keys.get('type');
   let type: BuiltinType;
   if (typeValue?.kind === 'string' && ['local', 'local-jsx', 'prompt'].includes(typeValue.value)) {
@@ -274,7 +307,7 @@ export function parseBuiltinLiteral(line: string): BuiltinVariant | null {
     return value?.kind === 'raw' ? value.raw.replace(/\s/g, '') : null;
   };
   return {
-    name: name.value,
+    name,
     type,
     description: described === null ? null : oneLine(described),
     // A computed hint (`get argumentHint(){…}`) depends on the session; show none.
@@ -325,16 +358,20 @@ export function mergeBuiltins(
 }
 
 /**
- * The built-ins in what the grep printed. A description only computed at run
- * time comes from `fallback`, by default the static list's.
+ * The built-ins in what the grep printed: command literals, and the name-table
+ * lines for the ones that name themselves by a variable. A description only
+ * computed at run time comes from `fallback`, by default the static list's.
  */
 export function parseBuiltins(
   text: string,
   fallback: ReadonlyMap<string, string> = CLAUDE_BUILTIN_DESCRIPTIONS
 ): CatalogueCommand[] {
+  const lines = text.split('\n');
+  const names = parseNameTable(lines.filter((line) => line.startsWith(',')));
   const variants: BuiltinVariant[] = [];
-  for (const line of text.split('\n')) {
-    const variant = parseBuiltinLiteral(line);
+  for (const line of lines) {
+    if (line.startsWith(',')) continue;
+    const variant = parseBuiltinLiteral(line, names);
     if (variant !== null) variants.push(variant);
   }
   return mergeBuiltins(variants, fallback);
@@ -492,6 +529,11 @@ export function parseScanOutput(
       result.binary = `${fields[1]!} ${fields.slice(2).join('\t')}`;
     } else if (tag === SLASH_BUILTINS_UNCHANGED) {
       result.builtins = { kind: 'unchanged' };
+    } else if (tag === SLASH_BUILTINS_FAILED) {
+      // The grep failed or hit its deadline: nothing read, nothing to record.
+      // The held built-ins stay, and so does the held binary, so the next due
+      // scan reads this one again.
+      result.builtins = null;
     } else if (tag === SLASH_BUILTINS) {
       const close = lines.indexOf(SLASH_BUILTINS_END, i + 1);
       // Cut before its end: the built-ins did not arrive whole; keep the ones held.

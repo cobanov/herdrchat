@@ -346,15 +346,40 @@ describe('the / palette', () => {
     await screen.unmount();
   });
 
-  it('fills a command that takes an argument, with its hint after it until something is typed', async () => {
+  it('fills a command that cannot run without its argument, with its hint after it until something is typed', async () => {
     mockAgents = [{ agent: 'claude', paneId: 'w23:p1', agentSession: null, focused: true, cwd: '/p' }];
     const screen = await render(<ThreadScreen workspaceId="w23" />);
-    await fireEvent.changeText(screen.getByTestId('composer-input'), '/mod');
-    await fireEvent.press(screen.getByTestId('command-suggestion-model'));
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/add-d');
+    await fireEvent.press(screen.getByTestId('command-suggestion-add-dir'));
     expect(mockSend).not.toHaveBeenCalled();
-    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/model ');
-    expect(screen.getByTestId('composer-hint')).toHaveTextContent('/model [model]');
-    await fireEvent.changeText(screen.getByTestId('composer-input'), '/model opus');
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/add-dir ');
+    expect(screen.getByTestId('composer-hint')).toHaveTextContent('/add-dir <path>');
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/add-dir ~/src');
+    expect(screen.queryByTestId('composer-hint')).toBeNull();
+    await screen.unmount();
+  });
+
+  // Enter runs these in the terminal: an optional argument, and a computed hint.
+  it.each([
+    ['/mod', 'model'],
+    ['/compa', 'compact'],
+    ['/effo', 'effort'],
+  ])('sends a command whose argument is optional the moment it is picked (%s)', async (typed, name) => {
+    mockAgents = [{ agent: 'claude', paneId: 'w26:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w26" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), typed);
+    await fireEvent.press(screen.getByTestId(`command-suggestion-${name}`));
+    expect(mockSend).toHaveBeenCalledWith(`/${name}`);
+    await screen.unmount();
+  });
+
+  it('only fills a command that would end the agent, so a mis-tap never sends it', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w27:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w27" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/exi');
+    await fireEvent.press(screen.getByTestId('command-suggestion-exit'));
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/exit');
     expect(screen.queryByTestId('composer-hint')).toBeNull();
     await screen.unmount();
   });

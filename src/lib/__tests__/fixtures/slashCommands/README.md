@@ -13,6 +13,10 @@ the files keep is the *shape* the grep and the parser rely on:
 - `synthetic-bundle.txt`: a stand-in for the binary the script greps, with
   noise around the literals and one literal longer than the line the script
   keeps (`BUILTIN_LINE_BYTES`).
+- `synthetic-name-table.txt`: appended to that binary, a name table and a
+  bundled skill that names itself by a variable (`zr({name:Qz7,…})` with
+  `Qz7="polish"`). `synthetic-literals.txt` ends with the name-table lines
+  the script sends, one identifier set to two names.
 
 Do not regenerate these from a real `claude` binary. The test that reads the
 installed one runs only with `HERDRCHAT_REAL_CLAUDE=1` and checks nothing

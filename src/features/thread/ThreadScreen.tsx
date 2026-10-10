@@ -217,7 +217,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
    * does until something is typed.
    */
   const [filled, setFilled] = useState<{ text: string; placeholder: string } | null>(null);
-  const composerHint = filled !== null && draft === filled.text ? filled.placeholder : undefined;
+  const composerHint = filled !== null && filled.placeholder !== '' && draft === filled.text ? filled.placeholder : undefined;
 
   // Pictures waiting to go with the next message. They stay until a send is
   // taken, so a failed upload leaves them in place with the draft.
@@ -259,9 +259,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   };
   /**
    * A pick in the palette, the terminal's way (`pickSlashCommand`): a command
-   * that takes nothing is sent at once, as Enter on it does; one that takes
-   * an argument is filled in to wait for it. A send the thread refuses puts
-   * back what was typed.
+   * that can run as it is is sent at once, as Enter on it does; one that
+   * needs an argument, or one that would end the agent or the session, is
+   * filled in to wait for the person's own send. A send the thread refuses
+   * puts back what was typed.
    */
   const pickCommand = (command: CatalogueCommand) => {
     const pick = pickSlashCommand(command);

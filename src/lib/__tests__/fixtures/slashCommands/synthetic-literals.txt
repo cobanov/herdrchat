@@ -24,3 +24,14 @@
 ({name:"frobnicate",description:"A bundled skill that shares a built-in's name",userInvocable:!0,async getPromptForCommand(){return[]}
 {name:"Shell",description:"Run a shell line",userInvocable:!0,inputSchema:qs
 {type:"text",name:"chunk",getPrompt:qt
+({name:Qz7,menuDescription:"Polish the changed code without changing behavior",description:"Model-facing text the menu does not show",argumentHint:"[<target>]",userInvocable:!0,async getPromptForCommand(e,n){return[]}
+({name:Kc,menuDescription:"Audit the branch for slips",userInvocable:!0,defaultDepth(){if(qa()){return{a:{b:1}}
+({name:Wb,description:"Repeat a line on an interval (e.g. /repeat 5m /tidy)",argumentHint:"[interval] [line]",userInvocable:!0,async getPromptForCommand(){return[]}
+({name:Xd,description:"Its identifier names two commands",userInvocable:!0,async getPromptForCommand(){return[]}
+({name:Yu,description:"Its identifier is not in the name table",userInvocable:!0,async getPromptForCommand(){return[]}
+,Kc="audit"
+,Qz7="polish"
+,Wb="repeat"
+,Wb="repeat"
+,Xd="alpha"
+,Xd="beta"

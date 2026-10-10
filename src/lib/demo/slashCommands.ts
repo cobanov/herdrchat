@@ -3,9 +3,9 @@
  * (`src/lib/slashCommands/discover.ts`), answered in the script's own output
  * format so the real parser reads it.
  *
- * Its "binary" holds four built-ins in the literal shapes Claude Code 2.1.296
- * uses (a computed description, a computed hint, a plain hint, none) and one
- * hidden one that must not be listed. On disk: a user command with a hint, a
+ * Its "binary" holds five built-ins in the literal shapes Claude Code 2.1.296
+ * uses (a computed description, a computed hint, an optional hint, a required
+ * one, none) and one hidden one that must not be listed. On disk: a user command with a hint, a
  * user skill, a project command in the notes folder (no frontmatter, so its
  * description is its first line) and a plugin with one command.
  */
@@ -31,6 +31,7 @@ export const DEMO_BUILTIN_LITERALS: readonly string[] = [
   '{type:"local-jsx",name:"model",get description(){return`Choose the model (now ${current()})`},argumentHint:"[model]",immediate:!0',
   '{type:"local-jsx",name:"effort",description:"Choose how hard the model thinks",get argumentHint(){return hint("[","]")},immediate:!0',
   '{type:"local",name:"compact",description:"Summarise the conversation to make room in the context",isEnabled:()=>enabled(),argumentHint:"<optional instructions for the summary>"',
+  '{type:"local-jsx",name:"add-dir",description:"Let the agent work in one more folder",argumentHint:"<path>",immediate:!0',
   '{type:"local-jsx",name:"usage",aliases:["cost","stats"],description:"Cost, plan usage and activity for this session",immediate:!0',
   '{type:"local-jsx",name:"extra-usage",description:"Now /usage-credits",isHidden:!0,isEnabled:()=>enabled()',
 ];
@@ -127,7 +128,7 @@ function record(file: DemoCommandFile): string {
 export function demoSlashScan(script: string): string | null {
   if (!script.includes(`echo ${SLASH_BEGIN}`)) return null;
   const out: string[] = [SLASH_BEGIN];
-  const builtins = /^\s*hs_builtins '(.*)'$/m.exec(script);
+  const builtins = /^\s*hs_builtins '(.*)' \d+$/m.exec(script);
   if (builtins !== null) {
     out.push([SLASH_BINARY, DEMO_CLAUDE_BINARY, DEMO_CLAUDE_BINARY_STAT].join('\t'));
     if (builtins[1] === `${DEMO_CLAUDE_BINARY} ${DEMO_CLAUDE_BINARY_STAT}`) {

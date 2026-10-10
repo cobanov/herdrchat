@@ -6,6 +6,7 @@ import {
   SLASH_BINARY,
   SLASH_BUILTINS,
   SLASH_BUILTINS_END,
+  SLASH_BUILTINS_FAILED,
   SLASH_BUILTINS_UNCHANGED,
   SLASH_END,
   SLASH_FILE,
@@ -20,6 +21,7 @@ import {
   parseBuiltinLiteral,
   parseBuiltins,
   parseFrontmatter,
+  parseNameTable,
   parseScanOutput,
   pluginNameFromPath,
   sortCommands,
@@ -74,6 +76,27 @@ describe('a command literal out of the binary', () => {
     expect(parseBuiltinLiteral(literal)?.hidden).toBe(true);
   });
 
+  // The review of 4d5c706: `/simplify`, `/loop`, `/code-review` and more are
+  // registered by a variable, and the grep only took a string.
+  it('resolves a skill that names itself by a variable through the bundle’s name table', () => {
+    const literal = '({name:Qz7,menuDescription:"Polish the changed code without changing behavior",description:"Model-facing text",argumentHint:"[<target>]",userInvocable:!0,async getPromptForCommand(e,n)';
+    expect(parseBuiltinLiteral(literal, new Map([['Qz7', 'polish']]))).toEqual({
+      name: 'polish',
+      type: 'bundled',
+      description: 'Polish the changed code without changing behavior',
+      argumentHint: '[<target>]',
+      hidden: false,
+    });
+    // Unresolved: left out, never listed under a guessed name.
+    expect(parseBuiltinLiteral(literal)).toBeNull();
+    expect(parseBuiltins([literal, ',Qz7="polish"'].join('\n'), new Map()).map((command) => command.name)).toEqual(['polish']);
+  });
+
+  it('leaves out an identifier the name table sets to two different names', () => {
+    const names = parseNameTable([',Qz7="polish"', ',Xd="alpha"', ',Xd="beta"', ',Wb="repeat"', ',Wb="repeat"', 'junk', ',x="Not A Name"']);
+    expect([...names]).toEqual([['Qz7', 'polish'], ['Wb', 'repeat']]);
+  });
+
   it('leaves out what is not a command', () => {
     expect(parseBuiltinLiteral('{name:"Shell",description:"Run a shell line",inputSchema:x')).toBeNull();
     expect(parseBuiltinLiteral('{type:"text",name:"x"')).toBeNull();
@@ -92,8 +115,8 @@ describe('the built-ins of a bundle, in every shape its literals take', () => {
   it('come from the literals in the usual `type:…,name:…` shape, and the others', () => {
     const pairs = new Set([...LITERALS.matchAll(/type:"(local|local-jsx|prompt)",name:"([a-z0-9-]+)"/g)].map((m) => `${m[1]} ${m[2]}`));
     expect(pairs.size).toBe(19);
-    expect(builtins).toHaveLength(17);
-    expect(builtins.filter((command) => command.source === 'bundled').map((command) => command.name)).toEqual(['bulk', 'inspect']);
+    expect(builtins).toHaveLength(20);
+    expect(builtins.filter((command) => command.source === 'bundled').map((command) => command.name)).toEqual(['audit', 'bulk', 'inspect', 'polish', 'repeat']);
     // Keys in another order, or the description first.
     expect(byName.get('gauge')).toMatchObject({ description: 'Draw the gauge as a row of blocks', argumentHint: '[all]' });
     expect(byName.get('counters')?.description).toBe('Show the widget’s counters — every one');
@@ -101,7 +124,8 @@ describe('the built-ins of a bundle, in every shape its literals take', () => {
 
   it('leave out the hidden, the disabled and what is not a command', () => {
     const names = builtins.map((command) => command.name);
-    for (const left of ['old-gauge', 'trial-over', 'spools', 'model-only', 'Shell', 'chunk']) {
+    // `Xd` is set to two names and `Yu` to none: neither is guessed.
+    for (const left of ['old-gauge', 'trial-over', 'spools', 'model-only', 'Shell', 'chunk', 'alpha', 'beta']) {
       expect(names).not.toContain(left);
     }
   });
@@ -117,6 +141,11 @@ describe('the built-ins of a bundle, in every shape its literals take', () => {
     expect(byName.get('sketch')?.description).toBe('Sketch a plan in a side pane');
     expect(byName.get('long-hint')?.argumentHint).toBe('[--id <uuid>] (--mode a=… b=… --dry | --apply <path>)');
     expect(byName.get('bulk')).toMatchObject({ section: 'skills', source: 'bundled', argumentHint: '<instruction>' });
+    // Registered by a variable (`zr({name:Qz7,…})`), resolved through the name table.
+    expect(byName.get('polish')).toMatchObject({ description: 'Polish the changed code without changing behavior', argumentHint: '[<target>]', source: 'bundled' });
+    expect(byName.get('repeat')).toMatchObject({ description: 'Repeat a line on an interval (e.g. /repeat 5m /tidy)', argumentHint: '[interval] [line]' });
+    // Cut before its prompt builder by deep braces: kept by the keys only a skill has.
+    expect(byName.get('audit')?.description).toBe('Audit the branch for slips');
   });
 
   it('take a description only computed at run time from the fallback, by name', () => {
@@ -239,6 +268,18 @@ describe('the script’s answer', () => {
     const none = parseScanOutput(frame(SLASH_NO_BINARY), { host: true, cwds: [] })!;
     expect(none.binary).toBeNull();
     expect(none.builtins).toEqual({ kind: 'read', commands: [] });
+  });
+
+  // The review of 4d5c706: a grep cut by its deadline was taken as a whole read.
+  it('reads a grep that failed or hit its deadline as nothing read, the files still read', () => {
+    const stdout = frame(
+      [SLASH_BINARY, '/b/claude', '1,2'].join('\t'),
+      SLASH_BUILTINS_FAILED,
+      ...record(['command', 'user', '-', 'review.md', '/h/.claude/commands/review.md'], 'Review')
+    );
+    const result = parseScanOutput(stdout, { host: true, cwds: [] })!;
+    expect(result.builtins).toBeNull();
+    expect(result.user?.map((command) => command.name)).toEqual(['review']);
   });
 
   it('keeps the whole records of an answer cut short, and not the cut one', () => {
