@@ -2,7 +2,14 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { Keyboard, Platform, Pressable, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardHandler,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showActionSheet } from '@/components/ActionSheet';
@@ -33,24 +40,47 @@ import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
-import { sessionSignature } from '@/lib/herdr/models';
+import { chatKey } from '@/lib/chatKey';
+import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
+import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
 import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
+import {
+  clientFor,
+  isMachineConnection,
+  useConnectionFor,
+  useConnections,
+  useSelectedConnection,
+} from '@/state/connections';
+import { splitMachineConnectionId } from '@/lib/herdr/machines';
 import { markThreadRead } from '@/state/db';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
+import { useHostMachines } from '@/state/hostMachines';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
 
-/** One workspace conversation. */
-export default function ThreadScreen({ workspaceId, title, onBack }: {
+/**
+ * One conversation: a workspace's, or with `paneId` the one agent in that pane
+ * of a workspace that holds several.
+ */
+export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
+  /**
+   * The connection the chat is on: a host, or one of a host's machines
+   * (`${hostId}/${machineId}`). Absent (a notification, an older link): the
+   * selected host.
+   */
+  connectionId?: string;
   workspaceId: string;
+  /** Absent: the workspace chat, every agent in it. */
+  paneId?: string;
   title?: string;
   onBack?: () => void;
 }) {
@@ -58,8 +88,16 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const connection = useSelectedConnection();
+  // From the route, not the selected host: a chat on one of the host's
+  // machines is read, followed and sent to through the machine's client,
+  // whose transport jumps through the host. `useThread` and the transcript
+  // store see only a transport, so nothing below knows the difference.
+  const selected = useSelectedConnection();
+  const wantedId = connectionId !== undefined && connectionId !== '' ? connectionId : selected?.id ?? null;
+  const connection = useConnectionFor(wantedId);
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
+  /** The machine's label, which leads the subtitle, when the chat is on one. */
+  const machineLabel = connection !== null && isMachineConnection(connection) ? connection.name : null;
   const listRef = useRef<FlashListRef<PlacedItem>>(null);
   const historyInteraction = useRef<number | null>(null);
 
@@ -74,6 +112,15 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    */
   const hydrated = useConnections((state) => state.hydrated);
   const hostGone = hydrated && connection === null;
+  // A machine is gone when its host is still here but no longer lists it as
+  // enabled; the placeholder then says so, rather than that the host is gone.
+  const machineIds = wantedId === null ? null : splitMachineConnectionId(wantedId);
+  const viaHost = useConnectionFor(machineIds?.hostId ?? null);
+  const machineGone = hostGone && viaHost !== null;
+  // A disabled machine stays in its host's cached list, so its label is
+  // usually still known, for the command that brings it back.
+  const goneLabel = useHostMachines((state) =>
+    machineIds === null ? null : state.byHost[machineIds.hostId]?.find((item) => item.id === machineIds.machineId)?.label ?? null);
 
   const showSidechain = useSettings((state) => state.showSidechain);
 
@@ -82,7 +129,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', workspaceId, []);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId);
+  /** Where this chat's read marker and draft are kept; the bare workspace id for the workspace chat. */
+  const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
 
   // The agents array is rebuilt by every status poll, so it cannot go in the
@@ -104,13 +153,13 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         // the chat that actually lands in this workspace slot.
         const sig = sessionSignature(agentsRef.current);
         if (sig === null) return;
-        void markThreadRead(db, connectionId, workspaceId, sig, Date.now());
+        void markThreadRead(db, connectionId, chat, sig, Date.now());
       };
       stamp();
       // Again on the way out, so a message that arrived while you were reading
       // it counts as seen rather than re-lighting the row you just left.
       return stamp;
-    }, [db, connection, workspaceId])
+    }, [db, connection, chat])
   );
 
   const rows = useMemo(
@@ -125,13 +174,22 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * outlive this screen so leaving a chat doesn't lose half a prompt (#113).
    */
   /**
-   * What the chat is called. The host's current label wins over the one the
-   * link carried, which may be stale after a rename. Without either, 'Chat'
-   * rather than an internal id like 'w7' (#113).
+   * What the chat is called: its session's title, as the row has it
+   * (`chatTitle`). What the host says now wins over what the link carried,
+   * which may be stale after a rename or a retitle; the link's is shown only
+   * until the first poll lands. Without either, 'Chat' rather than an
+   * internal id like 'w7' (#113).
    */
-  const heading = thread.workspaceLabel ?? (title !== undefined && title.length > 0 ? title : 'Chat');
+  const polledTitle = chatTitle({
+    sessionTitle: thread.sessionTitle,
+    agentName: thread.agentName,
+    workspaceLabel: thread.workspaceLabel,
+    workspaceId: null,
+  });
+  const linkTitle = title?.trim() ?? '';
+  const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
 
-  const key = draftKey(connection?.id ?? '', workspaceId);
+  const key = draftKey(connection?.id ?? '', chat);
   const sessionSig = sessionSignature(thread.agents);
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
@@ -226,17 +284,36 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
   const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
+  /**
+   * A chat titled by its session names its workspace here instead, first, as
+   * its row's line does. One agent of several also says which agent it is,
+   * after the workspace. Both read from the agents the poll bound, so they
+   * wait for the first poll rather than guessing.
+   */
+  const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
+  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
   const subtitle = [
+    // The machine first: the same folder on two computers is two chats.
+    machineLabel,
+    workspaceLine,
+    paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
-    thread.workingDirName,
-    // The connection before the agent: "online" under a banner saying the
-    // chat is offline or paused contradicted it (#4 acceptance).
-    thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),
+    // The folder, unless it is the workspace's own name already said first:
+    // the line is one line, and the less said the less of it is cut.
+    sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+  /**
+   * The connection before the agent: "online" under a banner saying the chat
+   * is offline or paused contradicted it (#4 acceptance). Its own text after
+   * the line, which never shrinks: at the end of one truncated line it was the
+   * first word cut, and a machine's label in front made that the usual case,
+   * leaving the dot's colour as the only status on a phone.
+   */
+  const statusText = thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status);
 
   // A command's panel needs the room the keyboard takes, and nothing typed
   // goes to it: its rows and actions are taps.
@@ -250,28 +327,65 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
    * keyboard already covers it, so keeping the inset then would leave the
    * composer floating a thumb's width above the keys.
    *
-   * `will*` on iOS so the change rides the same curve as the keyboard rather
-   * than snapping after it lands; Android has no `will` phase.
+   * This was a `keyboardUp` flag from React Native's `Keyboard` events, `will*`
+   * on iOS so the change rode the keyboard's curve. Those events say nothing
+   * while a finger drags the keyboard down (iOS posts only the end), so once
+   * the list could dismiss it interactively the composer would have jumped by
+   * the whole inset after the drag. The keyboard's height now comes frame by
+   * frame from react-native-keyboard-controller, on the UI thread, and
+   * `composerInset` turns it into the gap; see there for the rule.
+   *
+   * The controls keep their resting inset as layout and are TRANSLATED down by
+   * what the keyboard takes of it. Animating their padding instead would
+   * re-measure them, and set `controlsHeight`, on every frame of the drag.
+   *
+   * Seeded from the keyboard as it is now, not 0: the thread can open with a
+   * keyboard or an iPad's assistant bar already up (split view, focus left in
+   * another field), and the avoider and the footer read that state at once.
+   * Starting at 0 left the controls an inset higher than both until the next
+   * keyboard event.
    */
-  const [keyboardUp, setKeyboardUp] = useState(false);
-  useEffect(() => {
-    const shown = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardUp(true)
-    );
-    const hidden = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardUp(false)
-    );
-    return () => {
-      shown.remove();
-      hidden.remove();
-    };
-  }, []);
-
+  const keyboardHeight = useSharedValue(KeyboardController.state().height);
+  useKeyboardHandler(
+    {
+      onMove: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+      onInteractive: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+      onEnd: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+    },
+    []
+  );
+  const safeBottom = insets.bottom;
   // Floating controls clear the home indicator. Without this the composer sits
   // on the very bottom edge, where it is genuinely hard to hit.
-  const bottomInset = keyboardUp ? spacing.md : Math.max(insets.bottom, spacing.md);
+  const restingInset = composerInset(0, safeBottom, spacing.md);
+  /*
+    The keyboard controller measures a keyboard by its frame's height and
+    assumes it rests on the bottom edge, so the avoider lifts the controls by
+    that much. The input-assistant bar an iPad shows with a hardware keyboard
+    can float above the edge, and the composer stayed that gap behind it. The
+    gap comes from the frame's origin and is added to the lift; for any docked
+    keyboard it is 0. Settled, not per frame: a hardware keyboard's bar has no
+    drag to follow.
+  */
+  const floatingGap = useFloatingKeyboardGap();
+  const followKeyboard = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: restingInset - composerInset(keyboardHeight.get(), safeBottom, spacing.md) - floatingGap },
+    ],
+  }));
+  // The list's clearance is layout, so it takes the settled keyboard only: a
+  // footer that changed size every frame would move the rows under the reader.
+  const settledKeyboard = useKeyboardState((state) => state.height);
+  const keyboardTakes = restingInset - composerInset(settledKeyboard, safeBottom, spacing.md) - floatingGap;
 
   return (
     <Screen presentation="edge-to-edge">
@@ -292,15 +406,34 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
         the bottom of the window", and the overlay, the whole reason the glass
         has anything to refract, is preserved.
 
-        Android is left on the default behaviour: `adjustResize` already shrinks
-        the window, and adding padding on top of that would double-count it.
+        Android was once left on the default behaviour, `adjustResize`, which
+        shrank the window, so padding on top of it would have double-counted.
+        Now Android pads too: edge-to-edge stops the window resizing, and the
+        keyboard controller keeps it so. Under edge-to-edge it treats the
+        navigation bar as translucent and reports the IME's whole height, nav
+        bar included, which is exactly what the window loses; `composerInset`
+        then drops the safe-area inset the IME covers, so the composer sits
+        just above the IME with no nav-bar-sized gap.
+
+        The avoider is react-native-keyboard-controller's, not React Native's.
+        React Native's hears `keyboardWillChangeFrame`, which iOS posts only at
+        the end of an interactive drag, so pulling the list down left the
+        composer parked mid-screen while the keyboard slid away under it; and
+        an iPad with a hardware keyboard drew its floating input-assistant bar
+        over the composer. This one follows the keyboard's real frame on the UI
+        thread, the drag and the assistant bar included.
       */}
       <KeyboardAvoidingView
         // Padding on Android too: with edge-to-edge (Android 15 enforces it) the
         // window no longer resizes for the keyboard, which covered the composer.
+        // The keyboard controller keeps it that way (it takes the insets itself
+        // rather than resizing the window), so this padding is the only one.
         behavior="padding"
         // The viewport now starts at the window edge, not below the status bar.
         keyboardVerticalOffset={0}
+        // Measure where the avoider really is in the window, not relative to
+        // its parent: on iPad the thread is one pane of a split view.
+        automaticOffset
         style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
         {/*
           The controls anchor to this wrapper, NOT to the avoider itself.
@@ -330,7 +463,12 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
           */}
           {hostGone ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
-              <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+              <MissingHost
+                machine={machineGone ? { label: goneLabel, host: viaHost.name } : null}
+                onBack={onBack}
+                onHosts={() => router.navigate('/hosts')}
+                onChats={() => router.navigate('/')}
+              />
             </View>
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
@@ -360,6 +498,18 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 paddingTop: spacing.sm,
               }}
               scrollIndicatorInsets={{ top: headerHeight }}
+              /*
+                Pulling the conversation down takes the keyboard with it, under
+                the finger, the way Messages does; let go past the threshold and
+                it finishes going. The list only shrinks and grows with the
+                avoider: nothing here scrolls it, which stays useThreadScroll's.
+
+                iOS only, on purpose. Android's ScrollView ignores `interactive`,
+                and its `on-drag` would drop the keyboard the moment a reader
+                scrolled back to check something while typing, so Android keeps
+                the keyboard until "Hide keyboard" or a send, as before.
+              */
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
               /**
                * The first frame is already at the end rather than scrolling there
                * after measuring, and rows keep their place as older history lands
@@ -448,7 +598,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                     // FlashList does not re-anchor for a container-padding-only
                     // change, so a growing composer otherwise covers the last
                     // bubble even though its new height has been measured.
-                    paddingBottom: controlsHeight + spacing.lg,
+                    // Less what the settled keyboard takes of the controls'
+                    // resting inset, since they sit that much lower then.
+                    paddingBottom: controlsHeight - keyboardTakes + spacing.lg,
                   }}>
                   {waiting && (
                     <View style={{ gap: spacing.md }}>
@@ -462,20 +614,23 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
           )}
 
           {/* Sits just above the composer, so it never covers the newest bubble. */}
-          <View
+          <Animated.View
             pointerEvents="box-none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: controlsHeight,
-            }}>
+            style={[
+              {
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: controlsHeight,
+              },
+              followKeyboard,
+            ]}>
             <JumpToBottom
               visible={scroll.awayFromEnd && rows.length > 0}
               unreadBelow={scroll.awayFromEnd && waiting}
               onPress={() => scroll.followEnd(true)}
             />
-          </View>
+          </Animated.View>
 
           {/*
             The controls OVERLAY the list rather than sitting in a row beneath it.
@@ -486,23 +641,27 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
           {/* No composer without a host to send to: a text field that cannot
               deliver anything is a promise the screen can't keep. */}
           {!hostGone && (
-            <View
+            <Animated.View
+              testID="thread-controls"
               onLayout={(event) => {
                 const height = event.nativeEvent.layout.height;
                 // The footer's clearance follows, and the list follows its
                 // content size change.
                 if (height !== controlsHeight) setControlsHeight(height);
               }}
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                gap: spacing.sm,
-                paddingHorizontal: screenPadding,
-                paddingTop: spacing.sm,
-                paddingBottom: bottomInset,
-              }}>
+              style={[
+                {
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  gap: spacing.sm,
+                  paddingHorizontal: screenPadding,
+                  paddingTop: spacing.sm,
+                  paddingBottom: restingInset,
+                },
+                followKeyboard,
+              ]}>
               {thread.overlay !== null && !thread.isBlocked && (
                 <CommandPanelBar
                   overlay={thread.overlay}
@@ -533,8 +692,9 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                 onAttach={() => void offerAttachment()}
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
+                onPasteImage={() => void addAttachments('paste')}
               />
-            </View>
+            </Animated.View>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -575,15 +735,18 @@ export default function ThreadScreen({ workspaceId, title, onBack }: {
                   <Text testID="thread-title" variant="headline" numberOfLines={1}>
                     {heading}
                   </Text>
-                  {subtitle.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                    <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                    {subtitle.length > 0 && (
                       <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
                         {subtitle}
                       </Text>
-                      {thread.status === 'working' && <TypingDots size={3.5} />}
-                    </View>
-                  )}
+                    )}
+                    <Text testID="thread-status" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 0 }} numberOfLines={1}>
+                      {subtitle.length > 0 ? `· ${statusText}` : statusText}
+                    </Text>
+                    {thread.status === 'working' && <TypingDots size={3.5} />}
+                  </View>
                 </View>
                 <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>

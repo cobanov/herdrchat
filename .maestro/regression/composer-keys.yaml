@@ -1,0 +1,82 @@
+# Return sends from the composer, and with "Return sends" off it does not
+# (Settings > Conversations). Shift-Return, Command-Return and Command-V with a
+# picture are hardware-keyboard key commands the simulator's Maestro cannot
+# press; they are checked by hand on an iPad (see .maestro/README.md).
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+# Send stays off until the thread has loaded; wait for its history first.
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+# Return sends (the default).
+- tapOn:
+    id: composer-input
+- inputText: sent with return
+- extendedWaitUntil:
+    visible:
+      id: composer-send
+      enabled: true
+    timeout: 15000
+- pressKey: Enter
+# The bubble's label, not the text: the text alone also matches an unsent draft.
+- extendedWaitUntil:
+    visible: 'Your message\. sent with return.*'
+    timeout: 15000
+- takeScreenshot: composer-keys-${APPEARANCE}
+
+# Off, Return is a newline: the draft stays and nothing is sent.
+- tapOn:
+    id: thread-back
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: toggle-return-sends
+    direction: DOWN
+- tapOn:
+    id: toggle-return-sends
+- assertVisible:
+    id: toggle-return-sends
+    checked: false
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- inputText: kept as a draft
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertNotVisible: 'Your message\. kept as a draft.*'
+- assertVisible:
+    id: composer-send
+    enabled: true
+- takeScreenshot: composer-keys-off-${APPEARANCE}
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: composer-send
+      enabled: false
+    timeout: 15000
+
+# Put the default back for the flows after this one.
+- tapOn:
+    id: thread-back
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: toggle-return-sends
+    direction: DOWN
+- tapOn:
+    id: toggle-return-sends
+- assertVisible:
+    id: toggle-return-sends
+    checked: true
+- tapOn: Chats

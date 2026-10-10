@@ -1,6 +1,15 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
-import { DEMO_SESSION_IDS, DEMO_WORKSPACES, HISTORY_DAYS, transcriptFor } from '../demo/fixtures';
+import {
+  DEMO_NUKU_SESSION_IDS,
+  DEMO_NUKU_WORKSPACES,
+  DEMO_SESSION_IDS,
+  DEMO_WORKSPACES,
+  HISTORY_DAYS,
+  transcriptFor,
+} from '../demo/fixtures';
+import { withMachine } from '../herdr/machine';
+import { DEMO_PHRASES } from '../demo/scenarios';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { displayText } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
@@ -32,7 +41,40 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
+  });
+
+  // A workspace with two agents, each a chat of its own in the list.
+  it('lists two Claude panes under the api workspace, one of them busy', async () => {
+    const client = new HerdrClient(new DemoHost());
+    const snapshot = await client.snapshot();
+    const api = snapshot.workspaces?.find((w) => w.workspaceId === 'w6');
+    expect(api).toMatchObject({ label: 'api', number: 6, paneCount: 2, agentStatus: 'working' });
+    const agents = snapshot.agents.filter((a) => a.workspaceId === 'w6');
+    expect(agents.map((a) => [a.paneId, a.agent, a.cwd, a.agentStatus, a.agentSession?.value])).toEqual([
+      ['w6:p1', 'claude', '/home/demo/api', 'idle', DEMO_SESSION_IDS['w6:p1']],
+      ['w6:p2', 'claude', '/home/demo/api/web', 'working', DEMO_SESSION_IDS['w6:p2']],
+    ]);
+    // Each titled by its own session, which titles its row and its thread.
+    expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
+    // The other five keep the one pane they always had.
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  // Scratch and the OMP ledger have no session title, so the Demo also shows
+  // a chat titled by its workspace's label.
+  it('titles most chats by their session, and leaves two to their workspace', async () => {
+    const client = new HerdrClient(new DemoHost());
+    const { agents } = await client.snapshot();
+    expect(agents.map((a) => [a.paneId, a.title])).toEqual([
+      ['w1:p1', 'Folder picker read errors'],
+      ['w2:p1', 'Release notes summary'],
+      ['w3:p1', null],
+      ['w4:p1', null],
+      ['w5:p1', 'Daily screen journal'],
+      ['w6:p1', 'Archived projects migration'],
+      ['w6:p2', 'Save button wrap'],
+    ]);
   });
 
   it('reports one workspace as blocked, because that is the state worth seeing', async () => {
@@ -141,7 +183,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {
@@ -377,5 +419,127 @@ describe('DemoHost as an OMP host', () => {
     const after = (await store.recent(path, 'omp', 262_144)).messages;
     expect(after.slice(-2).map((m) => m.role)).toEqual(['user', 'assistant']);
     expect(displayText(after.at(-2)!)).toBe('and february?');
+  });
+});
+
+describe('DemoHost with two agents in one workspace', () => {
+  async function paneTranscript(host: DemoHost, paneId: string, cwd: string) {
+    const store = new TranscriptStore(host);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), cwd, DEMO_SESSION_IDS[paneId]!)!;
+    return async () => (await store.recent(path, 'claude', 262_144)).messages;
+  }
+
+  it('keeps a separate transcript for each pane', async () => {
+    const host = new DemoHost();
+    const p1 = await (await paneTranscript(host, 'w6:p1', '/home/demo/api'))();
+    const p2 = await (await paneTranscript(host, 'w6:p2', '/home/demo/api/web'))();
+    expect(JSON.stringify(p1)).toContain('migration');
+    expect(JSON.stringify(p1)).not.toContain('save button');
+    expect(JSON.stringify(p2)).toContain('save button');
+    expect(JSON.stringify(p2)).not.toContain('migration');
+  });
+
+  it('echoes a message sent to one pane into that pane only', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    const p1 = await paneTranscript(host, 'w6:p1', '/home/demo/api');
+    const p2 = await paneTranscript(host, 'w6:p2', '/home/demo/api/web');
+    const before = (await p1()).length;
+
+    await client.sendPrompt('w6:p2', 'centre the icon too');
+    now += 10_000;
+
+    expect(JSON.stringify(await p2())).toContain('centre the icon too');
+    expect((await p2()).at(-1)?.role).toBe('assistant');
+    expect(await p1()).toHaveLength(before);
+    expect(JSON.stringify(await p1())).not.toContain('centre the icon too');
+  });
+
+  it('leaves the five single-agent transcripts as they were', () => {
+    for (const workspace of DEMO_WORKSPACES.slice(0, 5)) {
+      expect(workspace.morePanes).toBeUndefined();
+    }
+    expect(transcriptFor('w6:p1')).not.toBe(transcriptFor('w6:p2'));
+  });
+});
+
+// The demo host has a machine saved on it, so the chats list shows a machine's
+// chat on the Demo, through the same jump a real host's `ssh` would run.
+describe('DemoHost machine nuku', () => {
+  const nuku = (host: DemoHost) => withMachine(host, 'nuku', { host: 'Demo', machine: 'nuku' });
+
+  it('lists its one machine, enabled', async () => {
+    const { machines, skipped } = await new HerdrClient(new DemoHost()).machines();
+    expect(machines).toEqual([{ id: 'demo-nuku', label: 'nuku', target: 'nuku', session: 'default', enabled: true }]);
+    expect(skipped).toEqual([]);
+  });
+
+  it("answers a jumped snapshot with the machine's own chat", async () => {
+    const snapshot = await new HerdrClient(nuku(new DemoHost())).snapshot();
+    expect(snapshot.workspaces?.map((w) => [w.workspaceId, w.label])).toEqual([['w1', 'kenneth-bot']]);
+    expect(snapshot.agents.map((a) => [a.paneId, a.agent, a.title, a.agentStatus, a.agentSession?.value])).toEqual([
+      ['w1:p1', 'claude', 'Nightly digest', 'idle', DEMO_NUKU_SESSION_IDS['w1:p1']],
+    ]);
+  });
+
+  it("reads the machine's transcript, not the host's", async () => {
+    const store = new TranscriptStore(nuku(new DemoHost()));
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_NUKU_WORKSPACES[0]!.cwd, DEMO_NUKU_SESSION_IDS['w1:p1']!)!;
+    const { messages } = await store.recent(path, 'claude', 262_144);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(JSON.stringify(messages[1]?.segments)).toContain('Digest is out');
+  });
+
+  it('follows a jumped tail, so a reply on the machine lands live', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const machine = nuku(host);
+    const store = new TranscriptStore(machine);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_NUKU_WORKSPACES[0]!.cwd, DEMO_NUKU_SESSION_IDS['w1:p1']!)!;
+    const probe = await store.fileProbe(path);
+    const size = probe.kind === 'size' ? probe.bytes : 0;
+
+    await new HerdrClient(machine).sendPrompt('w1:p1', 'hello nuku');
+    now += 10_000;
+
+    const received: string[] = [];
+    const controller = new AbortController();
+    for await (const { message } of store.tail(path, 'claude', size, controller.signal)) {
+      if (message !== null) received.push(`${message.role}: ${JSON.stringify(message.segments)}`);
+      if (received.length === 2) break;
+    }
+    expect(received[0]).toContain('user: ');
+    expect(received[0]).toContain('hello nuku');
+    expect(received[1]).toContain('assistant: ');
+    // The host's own chats never heard it.
+    const hostStore = new TranscriptStore(host);
+    const hostPath = hostStore.sessionTranscriptPath(await hostStore.homeDirectory(), DEMO_WORKSPACES[0]!.cwd, DEMO_SESSION_IDS['w1:p1']!)!;
+    expect(JSON.stringify((await hostStore.recent(hostPath, 'claude', 262_144)).messages)).not.toContain('hello nuku');
+  }, 15_000);
+
+  // The list's line for a machine the host cannot reach had nothing in the
+  // Demo to show it, so no flow could check it was there.
+  it('goes off the network when a host chat asks, and the jump says so', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const machine = new HerdrClient(nuku(host), 'herdr', { host: 'Demo', machine: 'nuku' });
+    await expect(machine.snapshot()).resolves.toBeTruthy();
+    await new HerdrClient(host).sendPrompt('w2:p1', `please ${DEMO_PHRASES.unplug}`);
+    // Not before the reply lands.
+    await expect(new HerdrClient(nuku(host)).ping()).resolves.toBeUndefined();
+    now += 10_000;
+    await new HerdrClient(host).snapshot();
+    await expect(new HerdrClient(nuku(host)).snapshot()).rejects.toMatchObject({
+      code: 'connect_failed',
+      message: "Demo can't reach nuku right now.",
+    });
+    const lines: string[] = [];
+    for await (const line of nuku(host).streamLines('tail -c +1 -f x', 1_000)) lines.push(line);
+    expect(lines).toEqual([]);
+    // The host itself is fine, and its chat has the reply.
+    const store = new TranscriptStore(host);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_WORKSPACES[1]!.cwd, DEMO_SESSION_IDS['w2:p1']!)!;
+    expect(JSON.stringify((await store.recent(path, 'claude', 262_144)).messages)).toContain('nuku is off the network');
   });
 });

@@ -42,6 +42,14 @@ appId: dev.herdr.HerdrChat
     id: chat-group-pinned
 
 # Trailing swipe: Rename and Close, and it closes again cleanly.
+# The Demo's two-agent workspace (w6) lists under Working, above Idle, with a
+# row for each agent, which pushes w3 down to where the tab bar floats over
+# it; brought up to the middle first, so the swipe starts on the row.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w3
+    direction: DOWN
+    centerElement: true
 - swipe:
     from:
       id: chat-row-w3

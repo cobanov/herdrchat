@@ -12,6 +12,7 @@ import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/tokens';
 import { ChatRow } from './ChatRow';
+import { rowTestKey, type MachineRef } from './listedChat';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
@@ -21,7 +22,7 @@ import type { ChatSummary } from './useWorkspaces';
  * `ChatRow` stays presentational — it does not know it can be swiped, which is
  * what lets it keep being used wherever a row is drawn without one.
  *
- * The leading side is safe here because the chats list is a tab root (and the
+ * The leading side is safe here because the chats list is the app's root (and the
  * iPad sidebar) with no back gesture to fight: a leading action would begin in
  * the left-edge strip an interactive pop owns. Reusing this row on a pushed
  * screen means dropping `onTogglePin` and `onToggleMute`, which removes them.
@@ -45,7 +46,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onToggleMute,
   onSwiped,
 }: {
-  summary: ChatSummary;
+  summary: ChatSummary & { machine?: MachineRef | null };
   unread: boolean;
   selected?: boolean;
   onPress: () => void;
@@ -85,7 +86,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
    * The state value is unused; `onReset` firing on a workspace-id change is the
    * whole point, and it is the hook FlashList ships for exactly this.
    */
-  useRecyclingState(false, [summary.workspaceId], () => {
+  useRecyclingState(false, [rowTestKey(summary)], () => {
     swipeable.current?.reset();
   });
 
@@ -174,7 +175,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
         haptics.selection();
         onSwiped();
       }}
-      testID={`chat-swipe-${summary.workspaceId}`}
+      testID={`chat-swipe-${rowTestKey(summary)}`}
       renderRightActions={renderRightActions}
       renderLeftActions={leading ? renderLeftActions : undefined}>
       <ChatRow

@@ -69,6 +69,18 @@ export interface AgentInfo {
    * (`agent_input_pending`). False from a herdr too old to send it.
    */
   inputPending: boolean;
+  /**
+   * The name given with `herdr agent rename` (`feke-pm`), null when the agent
+   * was never named.
+   */
+  name: string | null;
+  /**
+   * The session's own title, the one Claude Code and Codex set as the
+   * terminal's title ("Feke animation smoothness"): what a person calls the
+   * conversation. Without its status glyph, unlike herdr's `terminal_title`.
+   * Null for a plain pane, or from a herdr too old to send it.
+   */
+  title: string | null;
 }
 
 /**
@@ -79,6 +91,33 @@ export function hasSessionReference(agent: AgentInfo): boolean {
   const session = agent.agentSession;
   return (session?.value ?? '') !== '' &&
     (session?.kind === 'id' || (agent.agent === 'omp' && session?.kind === 'path'));
+}
+
+/** The agents whose transcripts this app reads and whose panes it talks to. */
+export const CONVERSATIONAL_AGENTS: readonly string[] = ['claude', 'codex', 'omp'];
+
+/**
+ * True for a pane holding an agent the app can hold a conversation with. A
+ * plain shell, or an agent with no transcript reader, has no chat of its own.
+ */
+export function isConversationalAgent(agent: AgentInfo): boolean {
+  return agent.agent !== null && CONVERSATIONAL_AGENTS.includes(agent.agent);
+}
+
+/**
+ * How the agents herdr detects are named to a person. Letta Code joined in
+ * herdr 0.9.1 (#120); anything else shows herdr's own id.
+ */
+export const AGENT_NAMES: Readonly<Record<string, string>> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  omp: 'OMP',
+  letta: 'Letta',
+};
+
+/** A pane's agent by name: "Claude", herdr's own id for one not named above, "Terminal" for a shell. */
+export function agentName(kind: string | null): string {
+  return kind === null ? 'Terminal' : AGENT_NAMES[kind] ?? kind;
 }
 
 /**
@@ -268,7 +307,27 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     stateChangeSeq: optionalNum(value.state_change_seq),
     completionSeq: optionalNum(value.completion_seq),
     inputPending: value.input_pending === true,
+    name: optionalStr(value.name),
+    title: sessionTitle(value),
   };
+}
+
+/**
+ * The session's title out of an agent's snapshot entry.
+ *
+ * For Claude, `title` is it, and `terminal_title_stripped` is the same text
+ * from herdrs that predate `title`; `terminal_title` carries a status glyph in
+ * front (`✳ `) and is never used. Codex is the other way round: herdr's `title`
+ * is the first prompt cut off with an ellipsis ("can i control the codex app
+ * from here, can you ask…"), while the terminal's title is the thread's name
+ * followed by ` | ` and the folder ("Explain Codex agent controls | kenneth").
+ */
+function sessionTitle(value: Record<string, unknown>): string | null {
+  const title = optionalStr(value.title);
+  const stripped = optionalStr(value.terminal_title_stripped);
+  if (value.agent !== 'codex') return title ?? stripped;
+  const named = stripped?.replace(/ \| [^|]*$/, '').trim() ?? '';
+  return named !== '' ? named : title;
 }
 
 export function decodeWorkspace(raw: unknown): Workspace {

@@ -3,6 +3,8 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
+import { loadHostMachines, mirrorHostMachines } from './hostMachines';
+import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import {
   SETTINGS_DEFAULTS,
   decodeBool,
@@ -26,6 +28,11 @@ export function Hydrate({ children }: { children: ReactNode }) {
   const setAll = useConnections((state) => state.setAll);
   const hydrateSettings = useSettings((state) => state.hydrate);
 
+  // From launch on, every change to a host's theme is written back.
+  useEffect(() => mirrorHostThemes(db), [db]);
+  // And to the machines each host lists.
+  useEffect(() => mirrorHostMachines(db), [db]);
+
   useEffect(() => {
     void (async () => {
       const [
@@ -35,12 +42,14 @@ export function Hydrate({ children }: { children: ReactNode }) {
         toolActivity,
         sidechain,
         haptics,
+        returnSends,
         notifications,
         pollScale,
         seenSwipeHint,
         welcomeSeen,
         starAsked,
         activeDays,
+        useHostThemes,
       ] =
         await Promise.all([
           loadConnections(db),
@@ -49,24 +58,34 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'showToolActivity'),
           getSetting(db, 'showSidechain'),
           getSetting(db, 'haptics'),
+          getSetting(db, 'returnSends'),
           getSetting(db, 'notifications'),
           getSetting(db, 'pollScale'),
           getSetting(db, 'seenSwipeHint'),
           getSetting(db, 'welcomeSeen'),
           getSetting(db, 'starAsked'),
           getSetting(db, 'activeDays'),
+          getSetting(db, 'useHostThemes'),
+          // Before the connections land, so the selected host opens in its
+          // own colours rather than flashing the default first.
+          loadHostThemes(db).catch(() => undefined),
+          // Likewise, so a host's machine chats are listed from launch rather
+          // than after the first poll that asks for them.
+          loadHostMachines(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,
         showToolActivity: decodeBool(toolActivity, SETTINGS_DEFAULTS.showToolActivity),
         showSidechain: decodeBool(sidechain, SETTINGS_DEFAULTS.showSidechain),
         haptics: decodeBool(haptics, SETTINGS_DEFAULTS.haptics),
+        returnSends: decodeBool(returnSends, SETTINGS_DEFAULTS.returnSends),
         notifications: decodeBool(notifications, SETTINGS_DEFAULTS.notifications),
         pollScale: decodePollScale(pollScale),
         seenSwipeHint: decodeBool(seenSwipeHint, SETTINGS_DEFAULTS.seenSwipeHint),
         welcomeSeen: decodeBool(welcomeSeen, SETTINGS_DEFAULTS.welcomeSeen),
         starAsked: decodeBool(starAsked, SETTINGS_DEFAULTS.starAsked),
         activeDays: activeDays ?? SETTINGS_DEFAULTS.activeDays,
+        useHostThemes: decodeBool(useHostThemes, SETTINGS_DEFAULTS.useHostThemes),
       });
       // After the settings: `hydrated` is what the welcome waits on, and it
       // must not read the defaults (never welcomed) for a moment first.

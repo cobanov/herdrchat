@@ -22,6 +22,13 @@ export interface Settings {
   showSidechain: boolean;
   /** Haptic feedback on sends, taps and confirmations. */
   haptics: boolean;
+  /**
+   * Return in the composer sends, and Shift-Return starts a new line, the way
+   * a chat app on a hardware keyboard behaves. On by default. Off restores
+   * #113: Return is a newline and Command-Return sends, for whoever writes
+   * long multi-line prompts on an iPad.
+   */
+  returnSends: boolean;
   /** Push notifications when an agent blocks or finishes. */
   notifications: boolean;
   /**
@@ -48,6 +55,13 @@ export interface Settings {
   starAsked: boolean;
   /** Days the app was opened on a real host, as `encodeActiveDays` writes it. */
   activeDays: string;
+  /**
+   * Colour the app with the selected host's `~/.herdrchat/theme.json`. On by
+   * default: a host without the file looks the same either way, and a host
+   * with one has it because someone asked for it. Off renders the app's own
+   * colours and leaves the file alone.
+   */
+  useHostThemes: boolean;
 }
 
 /**
@@ -76,12 +90,14 @@ export const SETTINGS_DEFAULTS: Settings = {
   showToolActivity: false,
   showSidechain: false,
   haptics: true,
+  returnSends: true,
   notifications: false,
   pollScale: 1,
   seenSwipeHint: false,
   welcomeSeen: false,
   starAsked: false,
   activeDays: '',
+  useHostThemes: true,
 };
 
 interface SettingsState extends Settings {
@@ -106,12 +122,14 @@ export function settingsSnapshot(): Settings {
     showToolActivity: state.showToolActivity,
     showSidechain: state.showSidechain,
     haptics: state.haptics,
+    returnSends: state.returnSends,
     notifications: state.notifications,
     pollScale: state.pollScale,
     seenSwipeHint: state.seenSwipeHint,
     welcomeSeen: state.welcomeSeen,
     starAsked: state.starAsked,
     activeDays: state.activeDays,
+    useHostThemes: state.useHostThemes,
   };
 }
 

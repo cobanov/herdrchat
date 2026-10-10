@@ -1,0 +1,82 @@
+# A workspace running two agents (the Demo's w6, "api": two Claude panes in
+# /home/demo/api and /home/demo/api/web). Each agent is listed under the
+# workspace and opens a thread of its own: only its transcript, its agent
+# named in the header, a message sent to it alone, and its row the only one
+# that shows the reply. Before, the second agent was invisible except as
+# unattributed lines merged into the first one's thread. Each agent's row and
+# thread are titled by its own Claude session; the workspace's card keeps the
+# workspace's label, since it stands for both.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+# p2 is working, so the workspace sits under Working with both agents below it.
+- scrollUntilVisible:
+    element:
+      id: pane-row-w6:p2
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-group-working
+- assertVisible:
+    id: chat-row-w6
+    text: 'api, .*2 agents · Claude.*'
+- assertVisible:
+    id: pane-row-w6:p1
+    text: Archived projects migration, Claude in api, demo/api.*
+- assertVisible:
+    id: pane-row-w6:p2
+    text: Save button wrap, Claude in api, api/web.*
+- takeScreenshot: multi-agent-list-${APPEARANCE}
+
+# The second agent alone: its own lines, none of the first one's.
+- tapOn:
+    id: pane-row-w6:p2
+- extendedWaitUntil:
+    visible: .*save button wraps.*
+    timeout: 15000
+- assertNotVisible: .*archived_at.*
+- assertVisible:
+    id: thread-title
+    text: Save button wrap
+# The header names the workspace, then the agent, once the first poll has
+# bound it.
+- extendedWaitUntil:
+    visible:
+      id: thread-meta
+      text: api · Claude · .*
+    timeout: 10000
+- tapOn:
+    id: composer-input
+- inputText: ship the fix
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .ship the fix.*
+    timeout: 15000
+- assertNotVisible: .*archived_at.*
+- takeScreenshot: multi-agent-thread-${APPEARANCE}
+- tapOn:
+    id: thread-back
+
+# The reply is on p2's row and nowhere near p1's. p2 went idle with it, so the
+# workspace moved down into Idle; scrolling also waits for the next refresh.
+- scrollUntilVisible:
+    element:
+      id: pane-row-w6:p2
+      text: .*You said .ship the fix.*
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- assertNotVisible:
+    id: pane-row-w6:p1
+    text: .*ship the fix.*
+- assertVisible:
+    id: pane-row-w6:p1
+    text: .*archived_at.*
+# Opening p2 read it; p1 was never opened.
+- assertVisible:
+    id: pane-row-w6:p1
+    text: .*Unread.*
+- assertNotVisible:
+    id: pane-row-w6:p2
+    text: .*Unread.*
+- takeScreenshot: multi-agent-reply-${APPEARANCE}

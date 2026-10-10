@@ -15,14 +15,56 @@ where regressions are found.
 | `regression/new-chat` | Start reachable with the keyboard up, Cancel |
 | `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
-| `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+| `regression/thread` | the row and the header titled by the Claude session with the workspace below, effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+| `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
+| `regression/composer-keys` | Return sends from the composer; with Settings > "Return sends" off, Return keeps the draft and sends nothing; the setting put back |
+| `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
+| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
+| `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
+| `regression/machines` | a machine saved on the host (the Demo's `nuku`) listing its chat in the host's list as `chat-row-demo-nuku-w1`, its line led by the machine, its thread titled by its session with the machine leading the header, a reply sent through the jump landing on its row and not on the host's `w1`, which stays its own row; then the Demo's unplug scenario taking `nuku` off the network, and the list keeping its row and saying so in `machine-notice-demo-nuku` rather than as its error (screenshots `machines-list-<appearance>`, `machines-<appearance>`, `machines-unplugged-<appearance>`) |
+| `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
+
+Maestro cannot press hardware-keyboard key commands, so these are checked by
+hand on an iPad with a keyboard, after a native build:
+
+- Shift-Return starts a new line, also over a selection, and right after
+  picking a `/` command from the suggestions (the newline goes at the end, not
+  where the caret was before the pick) and after a send.
+- Command-Return sends, with "Return sends" on and off.
+- With "Return sends" off, Return and Shift-Return both start a new line.
+- Return on an empty draft, or while a send is in flight, does nothing and
+  keeps the draft.
+- Return that commits a Chinese or Japanese candidate commits it and does not
+  send.
+- Command-V with a copied picture attaches it. Expect the system "Allow Paste"
+  prompt unless Settings > HerdrChat > Paste from Other Apps is Allow; the
+  attach menu's "Paste Picture" asks the same.
+- Command-V with copied text pastes the text with no "Allow Paste" prompt.
+- Command-V with a picture and text both on the pasteboard (a copied web page)
+  pastes the text.
+- At four pictures, Command-V with a picture does nothing new.
+
+On an iPhone, with no hardware keyboard: the keyboard's Return key reads Send
+with the setting on and return with it off, also after flipping the setting
+while the composer was focused; with it on, Return sends and there is no way to
+type a newline but turning the setting off, as its footnote says.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
+The app opens on Chats; Hosts, Settings and New chat sit behind its "…" menu
+(`chats-menu`) and open as sheets closed by Done (`header-close`). Flows reach
+them through `regression/_menu.yaml` with `ITEM` set to the row's text, never
+by tapping a screen's name on its own: the name is also a menu row and a sheet
+title, so assert something only that screen renders. Leaving a sheet is
+proved the same way: assert the sheet's own element is gone, since the chats'
+title is still in the hierarchy behind a page sheet.
+
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
-`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder".
+`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
+"restyle the app", "unplug the machine" (typed into a host chat: the Demo's machine
+`nuku` goes off the network).
 
 
 Run against a booted simulator with the app installed and Metro running:
@@ -33,7 +75,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 
 | Flow | Covers | Needs a host |
 |------|--------|--------------|
-| `smoke` | launch, all three tabs, the host switcher | no |
+| `smoke` | launch, the host switcher, Settings and Hosts from the Chats menu, back to Chats | no |
 | `scene-lifecycle` | Release launch, background return, warm and cold links on iOS 27 and older runtimes | no, selects Demo explicitly |
 | `settings` | host anchor, support, legal, danger zone | no |
 | `new-chat` | the sheet's fields, permission mode, both exits | no |
