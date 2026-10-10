@@ -25,7 +25,7 @@ const host = { id: 'gimel', name: 'Gimel', host: 'gimel', port: 22, username: 'm
 const klawId = 'gimel/m-klaw';
 const w1: ChatSummary = {
   workspaceId: 'w1', title: 'notes', number: 1, status: 'idle', agents: [], panes: [], preview: null,
-  sessionSig: 'sig-host', restoreError: null, sessionTitle: null, agentName: null,
+  sessionSig: 'sig-host', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
 };
 const [hostRow] = listChats([w1], host.id, null) as [ListedChat];
 const [klawRow] = listChats([{ ...w1, title: 'kenneth-bot', sessionSig: 'sig-klaw' }], klawId, { id: 'm-klaw', label: 'klaw' }) as [ListedChat];

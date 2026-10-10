@@ -163,6 +163,12 @@ export interface Pane {
   cwd: string;
   foregroundCwd: string | null;
   focused: boolean;
+  /**
+   * The title the program in the pane gave its terminal, without a status
+   * glyph (`terminal_title_stripped`, else `title`). Null for a shell that set
+   * none, which is most of them.
+   */
+  title: string | null;
 }
 
 /**
@@ -181,6 +187,12 @@ export interface Pane {
  */
 export interface Snapshot {
   agents: AgentInfo[];
+  /**
+   * Every pane, shells included: what a terminal row is made from. Empty from
+   * a herdr whose snapshot does not carry them, which then has no terminal
+   * rows rather than a second round-trip for them.
+   */
+  panes: Pane[];
   /** Null when this herdr's snapshot doesn't carry them — see above. */
   workspaces: Workspace[] | null;
   focusedPaneId: string | null;
@@ -356,6 +368,7 @@ export function decodePane(raw: unknown): Pane {
     cwd: str(value.cwd),
     foregroundCwd: optionalStr(value.foreground_cwd),
     focused: bool(value.focused),
+    title: optionalStr(value.terminal_title_stripped) ?? optionalStr(value.title),
   };
 }
 
@@ -403,6 +416,7 @@ export function decodeSnapshot(raw: unknown): Snapshot {
     : null;
   return {
     agents: array(value.agents).map(decodeAgentInfo),
+    panes: array(value.panes).map(decodePane),
     workspaces,
     focusedPaneId: optionalStr(value.focused_pane_id),
     focusedTabId: optionalStr(value.focused_tab_id),

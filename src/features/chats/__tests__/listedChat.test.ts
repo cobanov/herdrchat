@@ -4,7 +4,7 @@ import type { ChatSummary } from '../useWorkspaces';
 const nuku = { id: 'demo-nuku', label: 'nuku' };
 const chat: ChatSummary = {
   workspaceId: 'w1', title: 'kenneth-bot', number: 1, status: 'idle', agents: [], panes: [], preview: null,
-  sessionSig: null, restoreError: null, sessionTitle: null, agentName: null,
+  sessionSig: null, shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
 };
 
 it('tags every row and pane with its connection and machine', () => {

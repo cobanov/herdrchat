@@ -241,3 +241,20 @@ export const JUMP_KILL_GRACE_MS = 2_000;
  * `jumpStream`).
  */
 export const JUMP_KEEPALIVE_MS = 5_000;
+
+/**
+ * Opening a terminal on a pane (`src/lib/terminal/command.ts`): the PTY
+ * channel's handshake, plus the wait for the launch marker the native side
+ * cuts the login shell's noise at. Only the start is bounded; the terminal
+ * itself lives as long as the screen. A machine's terminal adds
+ * `JUMP_CONNECT_TIMEOUT_MS` (see `terminalStartTimeout`).
+ */
+export const TERMINAL_START_TIMEOUT_MS = 20_000;
+
+/**
+ * How often the chat list asks herdr which program a shell pane is running
+ * ("vim", "htop"), counted in the list's own polls. One socket call per shell
+ * pane, so not every poll: a pane seen for the first time is asked at once,
+ * and the rest on every this-many'th poll.
+ */
+export const PROCESS_NAME_SWEEP_POLLS = 5;

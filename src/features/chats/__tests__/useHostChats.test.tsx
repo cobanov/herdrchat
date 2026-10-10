@@ -55,7 +55,7 @@ const klaw: HostMachine = { id: 'm-klaw', label: 'klaw', target: 'klaw', session
 
 const chat = (workspaceId: string, title: string): ChatSummary => ({
   workspaceId, title, number: 1, status: 'idle', agents: [], panes: [], preview: null,
-  sessionSig: null, restoreError: null, sessionTitle: null, agentName: null,
+  sessionSig: null, shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
 });
 
 /** What the hook last returned, handed out after each render. */

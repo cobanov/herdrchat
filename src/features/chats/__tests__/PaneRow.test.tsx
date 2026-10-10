@@ -21,7 +21,7 @@ const p2: PaneSummary = {
 };
 const api: ChatSummary = {
   workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [p1.agent, p2.agent], panes: [p1, p2],
-  preview: p2.preview, sessionSig: 'ab', restoreError: null, sessionTitle: null, agentName: null,
+  preview: p2.preview, sessionSig: 'ab', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
 };
 
 it('names its agent and folder, and the workspace it belongs to for VoiceOver', async () => {

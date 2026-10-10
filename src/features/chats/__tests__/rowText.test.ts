@@ -15,7 +15,7 @@ const workspace = (agents: AgentInfo[]): ChatSummary => {
     panes: conversational.map((agent): PaneSummary => ({
       paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: agent.title, agentName: agent.name,
     })),
-    preview: null, sessionSig: null, restoreError: null,
+    preview: null, sessionSig: null, shellPanes: [], restoreError: null,
     sessionTitle: titled?.title ?? null, agentName: titled?.name ?? null,
   };
 };

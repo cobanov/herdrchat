@@ -22,11 +22,14 @@ import {
   isConversationalAgent,
   type AgentInfo,
   type AgentStatus,
+  type Pane,
   type RestoreError,
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
 import { titleAgent } from '@/lib/chatTitle';
+import { decodeProcessName, processNamesDue, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
+import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -83,6 +86,12 @@ export interface ChatSummary {
    * workspace with two or more of them lists each as a chat of its own.
    */
   panes: PaneSummary[];
+  /**
+   * Every pane that is not a chat, in herdr's order: shells, builds, and
+   * agents the app cannot converse with. Each is a terminal row under the
+   * workspace's card in the Spaces view (`src/lib/terminal/rows.ts`).
+   */
+  shellPanes: TerminalPane[];
   /** The newest of the panes' last messages: what the workspace row shows. */
   preview: ChatPreview | null;
   /**
@@ -218,6 +227,9 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
   const seqs = useRef(new Map<string, number>());
+  /** The program in front in each terminal row's pane, asked for now and then (`refreshProcessNames`). */
+  const processNames = useRef(new Map<string, CachedProcessName>());
+  const processTick = useRef(0);
   const alive = useRef(true);
 
   /** Resolves true when the poll failed, so the loop knows whether to back off. */
@@ -248,10 +260,28 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
       forcePreviews.current = false;
-      await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
+      processTick.current += 1;
+      await Promise.all([
+        refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current),
+        refreshProcessNames(
+          (paneId) => client.socket.call('pane.process_info', { pane_id: paneId }, POLL_TIMEOUT_MS),
+          snapshot.panes,
+          processNames.current,
+          // Not on `force`: every host event forces the previews, and a
+          // busy agent would turn that into a socket call per shell pane.
+          processTick.current % PROCESS_NAME_SWEEP_POLLS === 1
+        ),
+      ]);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current, snapshot.restoreErrors));
+      setSummaries(buildSummaries(
+        workspaces,
+        snapshot.agents,
+        previews.current,
+        snapshot.restoreErrors,
+        snapshot.panes,
+        processNameMap(processNames.current)
+      ));
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
       setErrorCode(null);
@@ -406,7 +436,9 @@ export function buildSummaries(
   workspaces: readonly Workspace[],
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
-  restoreErrors: readonly RestoreError[] = []
+  restoreErrors: readonly RestoreError[] = [],
+  allPanes: readonly Pane[] = [],
+  processNames: ReadonlyMap<string, string> = new Map()
 ): ChatSummary[] {
   const byWorkspace = groupByWorkspace(agents);
 
@@ -432,6 +464,7 @@ export function buildSummaries(
         status: panes.length >= 2 ? groupStatus(panes, herdrStatus) : herdrStatus,
         agents: group,
         panes,
+        shellPanes: terminalPanes(allPanes, workspace.workspaceId, processNames),
         preview: sessionSig === null ? null : newestPreview(electionOrder(panes)),
         sessionSig,
         restoreError:
@@ -604,6 +637,46 @@ export function dropStalePreviews(
     const agent = byPane.get(paneId);
     if (agent === undefined || sessionSignature([agent]) !== cached.sessionSig) previews.delete(paneId);
   }
+}
+
+/** A terminal row's program, with the terminal it was read from (herdr recycles pane ids). */
+export interface CachedProcessName {
+  terminalId: string | null;
+  name: string;
+}
+
+/**
+ * Ask herdr which program is in front in each terminal row's pane: one seen
+ * for the first time now, all of them on a sweep. One socket request per pane
+ * (the socket is single-shot), side by side, so the CLI-only host and the
+ * Demo, which have no socket, keep the row's fallback ("Shell") instead.
+ * Best-effort: a failed ask keeps what was known, and never becomes the
+ * list's error.
+ */
+export async function refreshProcessNames(
+  ask: (paneId: string) => Promise<unknown>,
+  panes: readonly Pane[],
+  cache: Map<string, CachedProcessName>,
+  sweep: boolean
+): Promise<void> {
+  const rows = panes.flatMap((pane) => terminalPanes([pane], pane.workspaceId));
+  const live = new Map(rows.map((row) => [row.paneId, row.pane.terminalId]));
+  for (const [paneId, cached] of cache) {
+    if (live.get(paneId) !== cached.terminalId) cache.delete(paneId);
+  }
+  const due = processNamesDue(rows, cache, sweep);
+  await Promise.all(due.map(async (paneId) => {
+    try {
+      const name = decodeProcessName(await ask(paneId));
+      if (name !== null) cache.set(paneId, { terminalId: live.get(paneId) ?? null, name });
+    } catch {
+      // Kept as it was; the row falls back to what it can say without it.
+    }
+  }));
+}
+
+function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<string, string> {
+  return new Map([...cache].map(([paneId, cached]) => [paneId, cached.name]));
 }
 
 export function summaryNeedsAttention(summary: ChatSummary): boolean {

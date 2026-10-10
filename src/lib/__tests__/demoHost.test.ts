@@ -49,7 +49,8 @@ describe('DemoHost as a herdr host', () => {
     const client = new HerdrClient(new DemoHost());
     const snapshot = await client.snapshot();
     const api = snapshot.workspaces?.find((w) => w.workspaceId === 'w6');
-    expect(api).toMatchObject({ label: 'api', number: 6, paneCount: 2, agentStatus: 'working' });
+    // Three panes: the two agents and a shell, whose terminal row the list shows.
+    expect(api).toMatchObject({ label: 'api', number: 6, paneCount: 3, agentStatus: 'working' });
     const agents = snapshot.agents.filter((a) => a.workspaceId === 'w6');
     expect(agents.map((a) => [a.paneId, a.agent, a.cwd, a.agentStatus, a.agentSession?.value])).toEqual([
       ['w6:p1', 'claude', '/home/demo/api', 'idle', DEMO_SESSION_IDS['w6:p1']],

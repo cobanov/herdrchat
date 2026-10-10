@@ -1,5 +1,6 @@
 import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
-import { agentName, type AgentStatus } from '@/lib/herdr/models';
+import { agentName, type AgentStatus, type Pane } from '@/lib/herdr/models';
+import { processLabel } from '@/lib/terminal/rows';
 import { paneChats } from './chatGroups';
 import type { MachineRef } from './listedChat';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
@@ -109,6 +110,17 @@ export function agentContext(row: ChatSummary & { machine?: MachineRef | null; o
 export function paneContext(pane: PaneSummary): string {
   const folder = pane.agent.cwd.split('/').filter(Boolean).slice(-2).join('/');
   return [agentName(pane.agent.agent), folder].filter(Boolean).join(' · ');
+}
+
+/**
+ * The line under a terminal row's title ("Terminal"): what runs there and
+ * where, `vim · api/web`. The folder is the program's own when herdr knows it
+ * (`foreground_cwd`), since a shell that `cd`s moves on from where the pane
+ * started. The card above names the workspace and the machine.
+ */
+export function terminalContext(pane: Pick<Pane, 'agent' | 'title' | 'cwd' | 'foregroundCwd'>, processName: string | null): string {
+  const folder = (pane.foregroundCwd ?? pane.cwd).split('/').filter(Boolean).slice(-2).join('/');
+  return [processLabel(pane, processName), folder].filter(Boolean).join(' · ');
 }
 
 /** The deepest folder every path is in, without its leading slash: `a/b` for `/a/b` and `/a/b/c`. */

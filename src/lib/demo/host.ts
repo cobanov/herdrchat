@@ -574,7 +574,7 @@ export class DemoHost implements HerdrTransport {
         agent_status: workspaceStatus(panes.map((pane) => this.statusOf(pane.paneId))),
         focused: panes.some((pane) => pane.paneId === this.fixtures.focusedPaneId),
         active_tab_id: `${w.workspaceId}:t1`,
-        pane_count: panes.length,
+        pane_count: panes.length + (w.shellPanes?.length ?? 0),
         tab_count: 1,
       };
     });
@@ -604,6 +604,28 @@ export class DemoHost implements HerdrTransport {
     })));
   }
 
+  /**
+   * Every pane, as the snapshot's `panes` carries them: each agent's (the
+   * same row as in `agents`) and then the workspace's shells, which have no
+   * agent, status or title, as herdr sends a shell's.
+   */
+  private paneRows(): unknown[] {
+    const agents = this.agentRows();
+    return this.fixtures.workspaces.flatMap((w) => [
+      ...agents.filter((row) => (row as { workspace_id: string }).workspace_id === w.workspaceId),
+      ...(w.shellPanes ?? []).map((pane) => ({
+        agent_status: 'unknown',
+        cwd: pane.cwd,
+        foreground_cwd: pane.cwd,
+        focused: pane.paneId === this.fixtures.focusedPaneId,
+        pane_id: pane.paneId,
+        tab_id: `${w.workspaceId}:t1`,
+        terminal_id: `term_${pane.paneId.replace(':', '_')}`,
+        workspace_id: w.workspaceId,
+      })),
+    ]);
+  }
+
   /** `herdr <verb>`. */
   private herdr(argv: string[]): ExecResult {
     const verb = argv.slice(1).join(' ');
@@ -629,6 +651,7 @@ export class DemoHost implements HerdrTransport {
       return ok({
         snapshot: {
           agents: this.agentRows(),
+          panes: this.paneRows(),
           workspaces: this.workspaceRows(),
           focused_pane_id: this.fixtures.focusedPaneId,
           focused_tab_id: `${this.focusedWorkspaceId()}:t1`,
