@@ -51,6 +51,38 @@ export const INSTALL_TIMEOUT_MS = 180_000;
 export const STREAM_START_TIMEOUT_MS = 20_000;
 
 /**
+ * Reading the slash-command catalogue off a host (`src/lib/slashCommands`):
+ * one bounded `find` per fixed directory and, once per Claude Code version, a
+ * `grep` over the installed binary, which takes a couple of seconds on a 230 MB
+ * bundle. A side task like the theme check, so a slow one only means the
+ * palette keeps what it had; but it holds the channel while it runs, so it is
+ * not allowed a transcript read's patience.
+ */
+export const SLASH_SCAN_TIMEOUT_MS = 20_000;
+
+/**
+ * The same deadline for the binary `grep` inside the scan, in whole seconds,
+ * for hosts that have `timeout(1)`: a channel the app gave up on does not stop
+ * the command behind it, so the host must stop it by itself.
+ */
+export const SLASH_SCAN_GREP_TIMEOUT_S = 15;
+
+/**
+ * How often the chat list's poll reads the catalogue again. Commands and
+ * skills change when someone installs one, which is rare; ten minutes keeps a
+ * new one appearing the same session without making the scan a regular cost.
+ * Pull-to-refresh asks sooner.
+ */
+export const SLASH_SCAN_INTERVAL_MS = 600_000;
+
+/**
+ * How long after a thread's first window has loaded a scan for that thread's
+ * folder may start. The open is the moment the person is waiting on the
+ * transcript; the scan goes after it, never in front of it.
+ */
+export const SLASH_SCAN_AFTER_OPEN_DELAY_MS = 1_500;
+
+/**
  * The grace period between the native deadline and the JS one.
  *
  * Firing first would report a timeout while the native side is still capable of
