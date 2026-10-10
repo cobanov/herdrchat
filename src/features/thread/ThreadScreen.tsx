@@ -2,7 +2,14 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { Keyboard, Platform, Pressable, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardHandler,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showActionSheet } from '@/components/ActionSheet';
@@ -33,11 +40,13 @@ import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { SubagentCard, ToolRun } from '@/features/thread/ToolRun';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
+import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
 import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -267,28 +276,65 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
    * keyboard already covers it, so keeping the inset then would leave the
    * composer floating a thumb's width above the keys.
    *
-   * `will*` on iOS so the change rides the same curve as the keyboard rather
-   * than snapping after it lands; Android has no `will` phase.
+   * This was a `keyboardUp` flag from React Native's `Keyboard` events, `will*`
+   * on iOS so the change rode the keyboard's curve. Those events say nothing
+   * while a finger drags the keyboard down (iOS posts only the end), so once
+   * the list could dismiss it interactively the composer would have jumped by
+   * the whole inset after the drag. The keyboard's height now comes frame by
+   * frame from react-native-keyboard-controller, on the UI thread, and
+   * `composerInset` turns it into the gap; see there for the rule.
+   *
+   * The controls keep their resting inset as layout and are TRANSLATED down by
+   * what the keyboard takes of it. Animating their padding instead would
+   * re-measure them, and set `controlsHeight`, on every frame of the drag.
+   *
+   * Seeded from the keyboard as it is now, not 0: the thread can open with a
+   * keyboard or an iPad's assistant bar already up (split view, focus left in
+   * another field), and the avoider and the footer read that state at once.
+   * Starting at 0 left the controls an inset higher than both until the next
+   * keyboard event.
    */
-  const [keyboardUp, setKeyboardUp] = useState(false);
-  useEffect(() => {
-    const shown = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardUp(true)
-    );
-    const hidden = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardUp(false)
-    );
-    return () => {
-      shown.remove();
-      hidden.remove();
-    };
-  }, []);
-
+  const keyboardHeight = useSharedValue(KeyboardController.state().height);
+  useKeyboardHandler(
+    {
+      onMove: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+      onInteractive: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+      onEnd: (event) => {
+        'worklet';
+        keyboardHeight.set(event.height);
+      },
+    },
+    []
+  );
+  const safeBottom = insets.bottom;
   // Floating controls clear the home indicator. Without this the composer sits
   // on the very bottom edge, where it is genuinely hard to hit.
-  const bottomInset = keyboardUp ? spacing.md : Math.max(insets.bottom, spacing.md);
+  const restingInset = composerInset(0, safeBottom, spacing.md);
+  /*
+    The keyboard controller measures a keyboard by its frame's height and
+    assumes it rests on the bottom edge, so the avoider lifts the controls by
+    that much. The input-assistant bar an iPad shows with a hardware keyboard
+    can float above the edge, and the composer stayed that gap behind it. The
+    gap comes from the frame's origin and is added to the lift; for any docked
+    keyboard it is 0. Settled, not per frame: a hardware keyboard's bar has no
+    drag to follow.
+  */
+  const floatingGap = useFloatingKeyboardGap();
+  const followKeyboard = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: restingInset - composerInset(keyboardHeight.get(), safeBottom, spacing.md) - floatingGap },
+    ],
+  }));
+  // The list's clearance is layout, so it takes the settled keyboard only: a
+  // footer that changed size every frame would move the rows under the reader.
+  const settledKeyboard = useKeyboardState((state) => state.height);
+  const keyboardTakes = restingInset - composerInset(settledKeyboard, safeBottom, spacing.md) - floatingGap;
 
   return (
     <Screen presentation="edge-to-edge">
@@ -309,15 +355,34 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
         the bottom of the window", and the overlay, the whole reason the glass
         has anything to refract, is preserved.
 
-        Android is left on the default behaviour: `adjustResize` already shrinks
-        the window, and adding padding on top of that would double-count it.
+        Android was once left on the default behaviour, `adjustResize`, which
+        shrank the window, so padding on top of it would have double-counted.
+        Now Android pads too: edge-to-edge stops the window resizing, and the
+        keyboard controller keeps it so. Under edge-to-edge it treats the
+        navigation bar as translucent and reports the IME's whole height, nav
+        bar included, which is exactly what the window loses; `composerInset`
+        then drops the safe-area inset the IME covers, so the composer sits
+        just above the IME with no nav-bar-sized gap.
+
+        The avoider is react-native-keyboard-controller's, not React Native's.
+        React Native's hears `keyboardWillChangeFrame`, which iOS posts only at
+        the end of an interactive drag, so pulling the list down left the
+        composer parked mid-screen while the keyboard slid away under it; and
+        an iPad with a hardware keyboard drew its floating input-assistant bar
+        over the composer. This one follows the keyboard's real frame on the UI
+        thread, the drag and the assistant bar included.
       */}
       <KeyboardAvoidingView
         // Padding on Android too: with edge-to-edge (Android 15 enforces it) the
         // window no longer resizes for the keyboard, which covered the composer.
+        // The keyboard controller keeps it that way (it takes the insets itself
+        // rather than resizing the window), so this padding is the only one.
         behavior="padding"
         // The viewport now starts at the window edge, not below the status bar.
         keyboardVerticalOffset={0}
+        // Measure where the avoider really is in the window, not relative to
+        // its parent: on iPad the thread is one pane of a split view.
+        automaticOffset
         style={{ flex: 1, width: '100%', maxWidth: size.contentMaxWidth, alignSelf: 'center' }}>
         {/*
           The controls anchor to this wrapper, NOT to the avoider itself.
@@ -377,6 +442,18 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                 paddingTop: spacing.sm,
               }}
               scrollIndicatorInsets={{ top: headerHeight }}
+              /*
+                Pulling the conversation down takes the keyboard with it, under
+                the finger, the way Messages does; let go past the threshold and
+                it finishes going. The list only shrinks and grows with the
+                avoider: nothing here scrolls it, which stays useThreadScroll's.
+
+                iOS only, on purpose. Android's ScrollView ignores `interactive`,
+                and its `on-drag` would drop the keyboard the moment a reader
+                scrolled back to check something while typing, so Android keeps
+                the keyboard until "Hide keyboard" or a send, as before.
+              */
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
               /**
                * The first frame is already at the end rather than scrolling there
                * after measuring, and rows keep their place as older history lands
@@ -465,7 +542,9 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                     // FlashList does not re-anchor for a container-padding-only
                     // change, so a growing composer otherwise covers the last
                     // bubble even though its new height has been measured.
-                    paddingBottom: controlsHeight + spacing.lg,
+                    // Less what the settled keyboard takes of the controls'
+                    // resting inset, since they sit that much lower then.
+                    paddingBottom: controlsHeight - keyboardTakes + spacing.lg,
                   }}>
                   {waiting && (
                     <View style={{ gap: spacing.md }}>
@@ -479,20 +558,23 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
           )}
 
           {/* Sits just above the composer, so it never covers the newest bubble. */}
-          <View
+          <Animated.View
             pointerEvents="box-none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: controlsHeight,
-            }}>
+            style={[
+              {
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: controlsHeight,
+              },
+              followKeyboard,
+            ]}>
             <JumpToBottom
               visible={scroll.awayFromEnd && rows.length > 0}
               unreadBelow={scroll.awayFromEnd && waiting}
               onPress={() => scroll.followEnd(true)}
             />
-          </View>
+          </Animated.View>
 
           {/*
             The controls OVERLAY the list rather than sitting in a row beneath it.
@@ -503,23 +585,27 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
           {/* No composer without a host to send to: a text field that cannot
               deliver anything is a promise the screen can't keep. */}
           {!hostGone && (
-            <View
+            <Animated.View
+              testID="thread-controls"
               onLayout={(event) => {
                 const height = event.nativeEvent.layout.height;
                 // The footer's clearance follows, and the list follows its
                 // content size change.
                 if (height !== controlsHeight) setControlsHeight(height);
               }}
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                gap: spacing.sm,
-                paddingHorizontal: screenPadding,
-                paddingTop: spacing.sm,
-                paddingBottom: bottomInset,
-              }}>
+              style={[
+                {
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  gap: spacing.sm,
+                  paddingHorizontal: screenPadding,
+                  paddingTop: spacing.sm,
+                  paddingBottom: restingInset,
+                },
+                followKeyboard,
+              ]}>
               {thread.overlay !== null && !thread.isBlocked && (
                 <CommandPanelBar
                   overlay={thread.overlay}
@@ -551,7 +637,7 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
               />
-            </View>
+            </Animated.View>
           )}
         </View>
       </KeyboardAvoidingView>

@@ -6,6 +6,7 @@ import * as SystemUI from 'expo-system-ui';
 import { Suspense, useEffect, useMemo } from 'react';
 import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import {
@@ -33,18 +34,24 @@ Notifications.setNotificationHandler({
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <Suspense fallback={<Booting />}>
-          <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrate} useSuspense>
-            <Hydrate>
-              <AppTheme>
-                <StatusBar style="auto" />
-                <RootStack />
-              </AppTheme>
-            </Hydrate>
-          </SQLiteProvider>
-        </Suspense>
-      </SafeAreaProvider>
+      {/* Tracks the keyboard's real frame on the UI thread, every frame of it,
+          including while a finger drags it down and when iPadOS shows only its
+          input-assistant bar for a hardware keyboard. React Native's own
+          keyboard events report neither; the thread's avoider reads this. */}
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <Suspense fallback={<Booting />}>
+            <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrate} useSuspense>
+              <Hydrate>
+                <AppTheme>
+                  <StatusBar style="auto" />
+                  <RootStack />
+                </AppTheme>
+              </Hydrate>
+            </SQLiteProvider>
+          </Suspense>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
