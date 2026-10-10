@@ -40,11 +40,13 @@ interface Leave {
  * too. Leaving undoes what the app did (`leaveShellPane`): the zoom unless
  * the pane was zoomed already, and the focus back to the pane that had it.
  */
-export function useTerminalShell({ connection, client, paneId, kind }: {
+export function useTerminalShell({ connection, client, paneId, kind, onOpened }: {
   connection: Connection | null;
   client: HerdrClient | null;
   paneId: string;
   kind: TerminalPaneKind;
+  /** The shell is open and taking input. */
+  onOpened?: () => void;
 }) {
   const launch = useMemo(() => (connection === null ? null : terminalLaunch(connection, paneId, kind)), [connection, paneId, kind]);
   const [phase, setPhase] = useState<TerminalPhase>({ kind: 'waiting' });
@@ -76,40 +78,74 @@ export function useTerminalShell({ connection, client, paneId, kind }: {
           return;
         }
         const up = await transport.open();
+        // Left while dialling: this open zoomed nothing, but a reconnect's
+        // earlier shell did, and the cleanup left that to this open.
+        if (!mounted.current) {
+          putBack(leave);
+          return;
+        }
         if (!up.ok) {
-          if (mounted.current) setPhase({ kind: 'failed', message: up.message });
+          setPhase({ kind: 'failed', message: up.message });
           return;
         }
         if (kind === 'shell' && client !== null && leave.current === null) {
           // As herdr had it before the app zoomed anything, read once: a
           // reconnect zooms again, and must not take its own zoom for the
           // person's.
-          leave.current = { client, paneId, before: await viewBefore(client, paneId) };
+          const before = await viewBefore(client, paneId);
+          // Left while reading it: the launch line (the zoom) is never sent.
+          if (!mounted.current) return;
+          leave.current = { client, paneId, before };
         }
       }
+      /**
+       * The shell's id, once `openShell` gives it; until then an end that
+       * arrives is this shell's (the listener is per shell) and is held: a
+       * command that ends at once can report it before the promise resolves.
+       */
+      let opened: string | null = null;
+      let endedEarly: ShellClosedEvent | null = null;
       const result = await openShell(launch.hostId, {
         command: launch.command,
         cols: cells.cols,
         rows: cells.rows,
         startTimeoutMs: launch.startTimeoutMs,
         onClosed: (event: ShellClosedEvent) => {
+          if (opened === null) {
+            endedEarly = event;
+            return;
+          }
           if (live.current !== event.shellId) return;
           live.current = null;
           if (!mounted.current) return;
-          setPhase({ kind: 'closed', reason: event.reason, exitCode: event.exitCode ?? null, message: event.message ?? null });
+          setPhase(closedPhase(event));
         },
       });
       if (!mounted.current) {
-        if (result.ok) void closeShell(result.shellId);
+        // Left while it opened. The cleanup left the zoom to this branch: the
+        // launch line may have zoomed the pane after the cleanup ran, so it is
+        // put back only once the channel is hung up.
+        if (result.ok) await closeShell(result.shellId);
+        putBack(leave);
         return;
       }
       if (!result.ok) {
         setPhase({ kind: 'failed', message: result.message });
         return;
       }
-      live.current = result.shellId;
+      opened = result.shellId;
       setShellId(result.shellId);
+      // A local, written in the callback: TypeScript's flow analysis does not
+      // see that write, hence the cast.
+      const early = endedEarly as ShellClosedEvent | null;
+      if (early !== null) {
+        // Over before it was ours: show its last output and how it ended.
+        setPhase(closedPhase(early));
+        return;
+      }
+      live.current = result.shellId;
       setPhase({ kind: 'open' });
+      onOpened?.();
       if (demo) {
         // The Demo's echo shell runs nothing: the screen the attach would
         // have drawn is its recording, fed to the view as if it came over SSH.
@@ -119,7 +155,7 @@ export function useTerminalShell({ connection, client, paneId, kind }: {
     } finally {
       starting.current = false;
     }
-  }, [launch, client, paneId, kind]);
+  }, [launch, client, paneId, kind, onOpened]);
 
   const onSizeChange = useCallback((next: TerminalSize) => {
     const first = size.current === null;
@@ -147,9 +183,9 @@ export function useTerminalShell({ connection, client, paneId, kind }: {
       const id = live.current;
       live.current = null;
       if (id !== null) void closeShell(id);
-      const left = leave.current;
-      leave.current = null;
-      if (left !== null) void restore(left);
+      // An open still under way puts the zoom back itself, after it hangs
+      // up (see `open`): restoring here could run before its launch line.
+      if (!starting.current) putBack(leave);
     };
   }, []);
 
@@ -158,6 +194,17 @@ export function useTerminalShell({ connection, client, paneId, kind }: {
     ? { kind: 'failed', message: "This pane's id can't be passed to herdr safely." }
     : phase;
   return { phase: shown, shellId, onSizeChange, reconnect, send };
+}
+
+/** Undo what the app moved on the host, once: the ref is emptied. */
+function putBack(leave: { current: Leave | null }): void {
+  const left = leave.current;
+  leave.current = null;
+  if (left !== null) void restore(left);
+}
+
+function closedPhase(event: ShellClosedEvent): TerminalPhase {
+  return { kind: 'closed', reason: event.reason, exitCode: event.exitCode ?? null, message: event.message ?? null };
 }
 
 async function viewBefore(client: HerdrClient, paneId: string): Promise<PaneViewBefore> {

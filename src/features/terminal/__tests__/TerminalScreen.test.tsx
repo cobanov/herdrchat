@@ -187,3 +187,54 @@ it('says so where this build has no terminal, rather than a blank screen', async
   expect(mockOpenShell).not.toHaveBeenCalled();
   await screen.unmount();
 });
+
+// The end is an event and the open a promise; a command that ends at once
+// (herdr missing) can report its end first. It used to be dropped, and the
+// header said Connected over a dead shell, with no Reconnect.
+it('shows a shell that ended before its open resolved as ended, with Reconnect', async () => {
+  mockConnection = host;
+  mockOpenShell.mockImplementationOnce(async (_id: string, options: { onClosed?: Closed }) => {
+    options.onClosed?.({ shellId: 't-early', reason: 'exited', exitCode: 127 });
+    return { ok: true, shellId: 't-early' };
+  });
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p1" kind="agent" title="api" onBack={jest.fn()} />);
+  await settle();
+  expect(screen.getByTestId('terminal-status')).toHaveTextContent('Ended with exit 127');
+  expect(screen.getByTestId('error-banner')).toHaveTextContent(/isn't installed/);
+  expect(screen.getByTestId('terminal-reconnect')).toBeOnTheScreen();
+  expect(screen.getByTestId('terminal-key-esc')).toBeDisabled();
+  await screen.unmount();
+});
+
+// Zoom is herdr's shared state: the desktop sees it too. Leaving while the
+// terminal was still connecting used to zoom the pane after the screen was
+// gone, with nothing left to undo it.
+it('zooms nothing when left while still dialling the host', async () => {
+  mockConnection = host;
+  let dialled: (value: { ok: true; fingerprint: string }) => void = () => undefined;
+  mockTransportOpen.mockImplementationOnce(() => new Promise((resolve) => { dialled = resolve; }));
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  await settle();
+  await screen.unmount();
+  await act(async () => dialled({ ok: true, fingerprint: 'SHA256:x' }));
+  await settle();
+  expect(mockOpenShell).not.toHaveBeenCalled();
+  expect(mockExec).not.toHaveBeenCalled();
+});
+
+it('hangs up and then puts the zoom back when left while the shell was opening', async () => {
+  mockConnection = host;
+  let opened: (value: { ok: true; shellId: string }) => void = () => undefined;
+  mockOpenShell.mockImplementationOnce(() => new Promise((resolve) => { opened = resolve; }));
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  await settle();
+  expect(mockOpenShell).toHaveBeenCalledTimes(1);
+  await screen.unmount();
+  // Not yet: the launch line may still zoom after this.
+  expect(mockExec).not.toHaveBeenCalled();
+  await act(async () => opened({ ok: true, shellId: 't-late' }));
+  await settle();
+  expect(mockCloseShell).toHaveBeenCalledWith('t-late');
+  expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("'zoom' '--pane' 'w6:p3' '--off'"), expect.any(Number));
+  expect(mockCloseShell.mock.invocationCallOrder[0]).toBeLessThan(mockExec.mock.invocationCallOrder[0] ?? 0);
+});

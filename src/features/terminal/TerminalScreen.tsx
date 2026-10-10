@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,8 +38,15 @@ export default function TerminalScreen({ connectionId, paneId, kind, title, onBa
   const connection = useConnectionFor(connectionId);
   const hydrated = useConnections((state) => state.hydrated);
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
-  const shell = useTerminalShell({ connection, client, paneId, kind });
   const view = useRef<TerminalViewHandle>(null);
+  // An iPad's hardware keyboard reaches the pane only once the terminal is
+  // first responder: without this, Ctrl-C and the arrows went nowhere until a
+  // tap. Not on a phone, where focusing means the software keyboard covering
+  // half of what was just opened.
+  const onOpened = useCallback(() => {
+    if (Platform.OS === 'ios' && Platform.isPad) void view.current?.focus();
+  }, []);
+  const shell = useTerminalShell({ connection, client, paneId, kind, onOpened });
   const theme = useMemo(() => terminalTheme(colors, scheme === 'dark'), [colors, scheme]);
   const fontSize = useTerminalFont((state) => state.size);
   const setFontSize = useTerminalFont((state) => state.set);
