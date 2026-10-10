@@ -19,6 +19,7 @@ where regressions are found.
 | `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
 | `regression/composer-keys` | Return sends from the composer; with Settings > "Return sends" off, Return keeps the draft and sends nothing; the setting put back |
 | `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
+| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 | `regression/multi-agent` | a workspace with two agents: a row for each under it, a thread with only that agent's lines and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
 | `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |

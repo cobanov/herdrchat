@@ -347,9 +347,9 @@ export default function ServerEditScreen() {
           like finishing. Saving is the button at the foot of the sheet. */}
       <Header title={isNew ? 'New host' : 'Edit host'} onClose={close} closeLabel="Cancel" />
 
-      {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets); Android
-          has no such prop, and with edge-to-edge the window no longer resizes,
-          so the fields near the bottom sat under the keyboard. */}
+      {/* iOS insets the form itself (automaticallyAdjustKeyboardInsets below);
+          Android has no such prop, and with edge-to-edge the window no longer
+          resizes, so the fields near the bottom sat under the keyboard. */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'android' ? 'padding' : undefined}
         // The avoider measures from the window's top, but this sheet starts
@@ -364,7 +364,13 @@ export default function ServerEditScreen() {
           gap: spacing.lg,
         }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag">
+        keyboardDismissMode="on-drag"
+        // This comment's claim above was true only here: the prop was never
+        // set, so a form that fit the sheet had no room to scroll, and the
+        // private key, the tallest field and the lowest, sat under the keys
+        // with no way to reach it. With the inset the form can scroll the
+        // keyboard's height further, and a focused key scrolls itself up.
+        automaticallyAdjustKeyboardInsets>
         <View
           onLayout={(event) => {
             fieldOffsets.current.address = event.nativeEvent.layout.y;
@@ -421,7 +427,13 @@ export default function ServerEditScreen() {
             }}
           />
           {authKind === 'privateKey' ? (
-            <KeyField value={secret} onChangeText={invalidate(setSecret)} />
+            <KeyField
+              value={secret}
+              onChangeText={invalidate(setSecret)}
+              // The key is several lines tall, so the inset alone can leave its
+              // top under the keyboard; bring the whole credentials block up.
+              onFocus={() => form.current?.scrollTo({ y: fieldOffsets.current.credentials, animated: true })}
+            />
           ) : (
             <Field
               label="Password"
