@@ -51,6 +51,10 @@ the interpretation lives in `client.ts` where a test pins it.
   in `app.json` or a config plugin, never in the generated project.
 - Use `npx expo install` for anything in the SDK, so versions stay aligned.
 - npm, not pnpm — its symlink layout breaks native module resolution.
+- The iOS build needs Xcode's Metal toolchain, a separate download since
+  Xcode 26: SwiftTerm (the terminal, `modules/herdr-terminal`) compiles a
+  Metal shader. `scripts/ensure-metal-toolchain.sh` installs it when missing;
+  the release scripts and the E2E workflow run it.
 - Changes under `modules/herdr-ssh/` need a native rebuild. Fast Refresh does
   not reload native code.
 - So does adding or upgrading a package with native code

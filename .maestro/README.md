@@ -19,7 +19,7 @@ where regressions are found.
 | `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
 | `regression/composer-keys` | Return sends from the composer; with Settings > "Return sends" off, Return keeps the draft and sends nothing; the setting put back |
 | `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
-| `regression/list-modes` | the chats title as a picker: Agents listing each agent as a row of its own (`chat-row-w2` for the one-agent w2, `chat-row-w6:p1` and `chat-row-w6:p2` for w6's two, by `agentTestKey`), titled by its session with its workspace on its line, a row opening that agent's own thread, and Spaces bringing back w6's card with its two agents under it; `scripts/e2e.sh` clears the saved choice around it (screenshots `list-agents-<appearance>`, `list-spaces-<appearance>`) |
+| `regression/list-modes` | the chats title as a picker: Agents listing each agent as a row of its own (`chat-row-w2` for the one-agent w2, `chat-row-w6:p1` and `chat-row-w6:p2` for w6's two, by `agentTestKey`), titled by its session with its workspace on its line, a row opening that agent's own thread, and no terminal row (`terminal-row-w6:p3`) among them, and Spaces bringing back w6's card with its two agents and its shell pane's terminal row under it; `scripts/e2e.sh` clears the saved choice around it (screenshots `list-agents-<appearance>`, `list-spaces-<appearance>`) |
 | `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 | `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
@@ -53,6 +53,49 @@ On an iPhone, with no hardware keyboard: the keyboard's Return key reads Send
 with the setting on and return with it off, also after flipping the setting
 while the composer was focused; with it on, Return sends and there is no way to
 type a newline but turning the setting off, as its footnote says.
+
+### Terminal, by hand on a device
+
+The Demo's terminal is an echo shell fed a recording, so the flow above proves
+the screen, not the attach. After a native build, on a real host (Gimel), with
+herdr open on the desktop as well, check each of these and what it should do:
+
+- **Zoom and focus, before, during and after.** Note which workspace, tab and
+  pane the desktop shows. Open a shell pane's Terminal row: the desktop
+  switches to that pane's workspace and tab and zooms the pane (herdr's zoom
+  and focus are shared by every client). Back out: the zoom is gone (unless
+  the pane was zoomed before) and focus is on the pane that had it. Known gap:
+  that workspace's active tab stays the pane's tab.
+- **Leaving while connecting.** Tap a shell pane's row and press Back while the
+  header still says Connecting…: the desktop's zoom and focus end as they
+  were, not zoomed.
+- **The app backgrounded or killed while attached.** The channel drops and no
+  unzoom runs: the pane stays zoomed on the desktop. Undo it there with herdr's
+  zoom key, or `herdr pane zoom --pane <id> --off`. Say if this happens to
+  you in practice.
+- **An agent pane through a chat's header Terminal.** Watch the desktop: does
+  the agent's pane shrink to the phone's size while the phone is attached
+  (`agent attach` draws it at the client's size), and get its size back on
+  leaving? Does the desktop's own client need `--takeover`, or reflow?
+- **Phone upright.** herdr draws its mobile layout (64 columns or fewer): a
+  two-line header over the pane, no sidebar. On its side, or on an iPad, the
+  sidebar shows beside the pane; herdr's prefix then `b` hides it.
+- **Scrolling.** After `git log` (or in an agent's pane), a one-finger swipe up
+  scrolls herdr's history of the pane, a swipe down comes back; it does not
+  select text or drag a split. A tap still clicks (a sidebar row). A pinch
+  changes the font size and moves nothing in herdr.
+- **Programs.** `htop` (colours, live, `q` quits), `vim` (arrows, Esc from the
+  bar, `:q`), a `git log` with colours, the agent's own `/model` panel through
+  the header Terminal.
+- **iPad with a keyboard.** Right after opening, without a tap: Ctrl-C stops a
+  running command, the arrows move, Option acts as Meta, Command-K clears the
+  scrollback. Ctrl-B is herdr's prefix and does not reach the program.
+- **Rotation.** Rotate the iPad: the pane redraws at the new size, nothing
+  left over from the old one.
+- **Light and dark.** Screenshot herdr's chrome (its header or sidebar) in
+  both: it should sit on the app's terminal background, not clash with it.
+- **klaw through the machine jump.** Open a shell pane on klaw: the same
+  attach, through the host, with the header naming klaw.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

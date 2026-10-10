@@ -130,6 +130,9 @@ npx expo run:ios --device "iPhone 17 Pro"
 npx expo start --dev-client
 ```
 
+The iOS build needs Xcode's Metal toolchain (SwiftTerm compiles a shader);
+`scripts/ensure-metal-toolchain.sh` installs it when missing.
+
 Changes under `modules/*/ios` or `.../android` need a native rebuild;
 Fast Refresh does not reload native code.
 

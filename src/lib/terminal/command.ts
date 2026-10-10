@@ -20,6 +20,23 @@ import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/tim
  * `session attach`. The third way, polling `pane read` into the emulator, was
  * not needed and is not built.
  *
+ * What a shell pane's attach shows, measured on herdr 0.9.3 against a
+ * throwaway session over a PTY (2026-10-11):
+ *
+ * - `pane zoom --on` on a pane in a tab that is not active, in a workspace
+ *   that is not focused, makes that workspace focused and that tab active, and
+ *   focuses the pane. A client that attaches after it opens on that pane, so
+ *   no separate workspace or tab focus is needed first.
+ * - At 64 columns or fewer (a phone held upright) herdr draws its mobile
+ *   layout: a two-line header over the pane, no sidebar. Wider (an iPad, a
+ *   phone on its side) it draws its sidebar, about 25 columns, beside the
+ *   pane; herdr's prefix then `b` hides it.
+ * - herdr's prefix key (Ctrl-B by default) is herdr's, not the pane's: Ctrl-B
+ *   typed for the program (vim's page up, readline's back a character) is
+ *   taken by herdr and does not reach it.
+ * - `pane zoom --off` focuses the pane too, which is why leaving unzooms
+ *   first and only then gives the focus back.
+ *
  * ZOOM AND FOCUS ARE SHARED STATE. `pane zoom --on` zooms the pane for every
  * client attached to the session, the desktop's too, and moves herdr's focus
  * to it. Leaving the terminal undoes the zoom (`leaveShellPane`) when the app

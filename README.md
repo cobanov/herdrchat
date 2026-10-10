@@ -86,14 +86,16 @@ its workspace as a **Terminal** row, with the program herdr reports and its
 folder; an agent's chat opens its own pane from **Terminal** in its header,
 for whatever the chat cannot show (a panel, a login prompt, a full-screen
 tool). It is a real emulator ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)):
-colours, cursor, scrollback, mouse, selection, pinch to change the size, a
+colours, cursor, mouse, selection, a swipe that scrolls back through the
+pane's history (herdr's own), pinch to change the size, a
 hardware keyboard with Ctrl and Option, and a bar over the software keyboard
 with Esc, Tab, sticky Ctrl and Alt, the arrows, Home and End, and Paste. It
 runs on the host's SSH connection: an agent pane through `herdr agent attach`,
 a shell pane through `herdr session attach` with the pane zoomed to fill the
 screen. That zoom is herdr's own, so a desktop attached to the same session
 zooms too while the phone has the pane open; leaving the terminal puts the
-zoom and herdr's focus back. Leaving also hangs up: nothing keeps running.
+zoom and herdr's focus back (not if the app is killed while attached: then
+unzoom it on the desktop). Leaving also hangs up: nothing keeps running.
 iPhone and iPad only for now.
 
 ## Theming

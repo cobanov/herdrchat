@@ -20,6 +20,14 @@ without `-skipPackagePluginValidation` (the simulator build failed on exactly
 that), so `expo run:ios` and CI would break. 1.99 is the 2.0 preview with a
 new I/O layer. Move deliberately, not by range.
 
+SwiftTerm compiles a Metal shader (`Sources/SwiftTerm/Apple/Metal/Shaders.metal`),
+so the iOS build needs Xcode's Metal toolchain, which Xcode 26 downloads
+separately. Without it the build fails in `SwiftTerm_SwiftTerm` with "cannot
+execute tool 'metal' due to missing Metal Toolchain".
+`scripts/ensure-metal-toolchain.sh` installs it when missing (`xcodebuild
+-downloadComponent MetalToolchain`); `testflight.sh` and the E2E workflow run it
+before building.
+
 ## How it fits
 
 `modules/herdr-ssh` opens the PTY shell on the host's existing connection and
@@ -52,6 +60,19 @@ feed(shellId, base64);         // the Demo's recorded screens, into an echo shel
 - Command-K clears the scrollback. A program's OSC 52 copy goes to the
   pasteboard; a program asking to read the pasteboard is refused.
 - Links open only for http(s).
+- A swipe scrolls herdr, not the emulator. Both attaches draw herdr's own
+  client, on the alternate screen with the mouse on, so SwiftTerm's
+  scrollback stays empty and its stock pan would send herdr a drag.
+  `PaneTerminalView` drops that pan and, while a program has the mouse, turns
+  a vertical one-finger swipe into wheel events (one per row of travel), which
+  herdr scrolls the pane's history with. Taps are still clicks. With the mouse
+  off, the swipe scrolls SwiftTerm's own scrollback.
+- herdr's prefix (Ctrl-B by default) is herdr's: typed in the terminal, it
+  never reaches the pane's program. At 64 columns or fewer herdr draws its
+  mobile layout (no sidebar); wider, its sidebar shows beside the pane.
+
+What to check by hand on a device is listed in `.maestro/README.md`
+("Terminal, by hand on a device").
 
 Changing anything under `ios/` needs a native rebuild (`npx expo prebuild
 --clean`, then `npx expo run:ios`).
