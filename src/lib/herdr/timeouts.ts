@@ -51,6 +51,32 @@ export const INSTALL_TIMEOUT_MS = 180_000;
 export const STREAM_START_TIMEOUT_MS = 20_000;
 
 /**
+ * Reading a workflow run's file. Several hundred kilobytes when it has
+ * changed, a line when it has not; a transcript read's budget either way.
+ */
+export const SUBAGENT_READ_TIMEOUT_MS = TRANSCRIPT_TIMEOUT_MS;
+
+/**
+ * How often an open workflow run is read again while it runs. Its agents take
+ * minutes; a few seconds is live enough, and an unchanged file costs one line.
+ */
+export const WORKFLOW_POLL_MS = 3_000;
+
+/**
+ * How often a subagent card asks which agent its call started, until the
+ * agent has written its meta. The status poll's pace: the meta lands within a
+ * second or two of the call.
+ */
+export const SUBAGENT_RESOLVE_RETRY_MS = 2_000;
+
+/**
+ * How often an open subagent screen looks in its parent transcript for its
+ * agent's end, while it runs. A grep over the transcript on the host; only
+ * the few lines naming the agent come back, and one line when none changed.
+ */
+export const SUBAGENT_END_POLL_MS = 3_000;
+
+/**
  * The grace period between the native deadline and the JS one.
  *
  * Firing first would report a timeout while the native side is still capable of

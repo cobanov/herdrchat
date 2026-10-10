@@ -130,12 +130,24 @@ export const size = {
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
   /**
+   * A subagent's or a workflow's card: its state mark (running, done,
+   * failed), and how much of a result an opened card shows before it stops.
+   * A result is the agent's answer, so it gets more room than a tool's
+   * output does.
+   */
+  delegationGlyph: 16,
+  delegationResultLines: 24,
+  /** A workflow's agent row on its run screen: its label line and caption together. */
+  workflowAgentRow: 52,
+  /**
    * A Markdown table column's width bounds. The column is as wide as its widest
    * cell within them; past the maximum a cell wraps, and past the bubble the
    * table scrolls sideways.
    */
   tableColumnMin: 56,
   tableColumnMax: 220,
+  /** The chevron at the end of a row that opens or goes somewhere. */
+  rowChevron: 13,
 } as const;
 
 /**

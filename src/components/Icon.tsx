@@ -24,6 +24,8 @@ const MATERIAL: Partial<Record<IconName, AndroidSymbol>> = {
   'bubble.left.and.bubble.right': 'forum',
   'bubble.left.and.bubble.right.fill': 'forum',
   checkmark: 'check',
+  'checkmark.circle': 'check_circle',
+  'square.stack.3d.up': 'stacks',
   'checkmark.square.fill': 'check_box',
   'chevron.down': 'expand_more',
   'chevron.left': 'chevron_left',

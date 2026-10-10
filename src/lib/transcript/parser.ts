@@ -2,6 +2,7 @@ import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
 import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine } from './harness';
 import { splitImages } from './images';
+import { parseHandback, parseTaskNotices } from '../subagents/taskNotice';
 import { ompEntry } from './omp';
 import type { SessionMeta } from './sessionMeta';
 
@@ -158,12 +159,21 @@ function messageFrom(
   line: string,
   agentLabel: string | null
 ): ChatMessage | null {
-  if (raw.type === 'attachment') return queuedPrompt(raw, line, agentLabel);
+  if (raw.type === 'attachment') {
+    return queuedHandback(raw, line, agentLabel) ?? queuedPrompt(raw, line, agentLabel) ?? queuedNotice(raw, line, agentLabel);
+  }
   const role = roleOf(raw.type);
   if (role === null) return null;
+  const message = asRecord(raw.message);
+  // Before the harness rule hides it: a background task's end is the harness's
+  // turn, and the only sign that a background subagent or workflow finished.
+  const notices = role === 'user' ? noticeMessage(raw, message?.content, line, agentLabel) : null;
+  if (notices !== null) return notices;
+  // So is a background subagent's report, which arrives as the agent's own turn.
+  const handback = role === 'user' ? handbackMessage(raw, raw.origin, message?.content, line, agentLabel) : null;
+  if (handback !== null) return handback;
   if (role === 'user' && isClaudeHarnessLine(raw)) return null;
 
-  const message = asRecord(raw.message);
   const output = role === 'user' ? commandOutput(message?.content) : null;
   if (output !== null) {
     return {
@@ -220,6 +230,80 @@ function queuedPrompt(
     agentLabel,
     isSidechain: raw.isSidechain === true,
   };
+}
+
+/**
+ * A user turn that is a `<task-notification>`, as one message of `taskNotice`
+ * segments: nothing a person reads, so it never becomes a bubble, but the
+ * thread finishes the card of the call it names. Null for any other turn.
+ */
+function noticeMessage(
+  raw: Record<string, unknown>,
+  content: unknown,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const notices = parseTaskNotices(contentText(content));
+  if (notices.length === 0) return null;
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role: 'user',
+    segments: notices.map((notice) => ({
+      kind: 'taskNotice' as const,
+      notice: { ...notice, result: notice.result === null ? null : capped(notice.result) },
+    })),
+    timestamp: parseTimestamp(raw.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
+/** A turn's text, whether it is a string or text blocks. */
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((block) => {
+    const value = asRecord(block);
+    return value?.type === 'text' && typeof value.text === 'string' ? value.text : '';
+  }).join('\n');
+}
+
+/**
+ * A user turn that is a background subagent's hand-back, as one `handback`
+ * segment: never a bubble (it is the harness's turn, not yours), but the
+ * report the agent's card folds open onto. Null for any other turn.
+ */
+function handbackMessage(
+  raw: Record<string, unknown>,
+  origin: unknown,
+  content: unknown,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const found = parseHandback(origin, contentText(content));
+  if (found === null) return null;
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role: 'user',
+    segments: [{ kind: 'handback', agentId: found.agentId, report: capped(found.report) }],
+    timestamp: parseTimestamp(raw.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
+/** A hand-back that arrived while Claude was busy, recorded only as a queued attachment. */
+function queuedHandback(raw: Record<string, unknown>, line: string, agentLabel: string | null): ChatMessage | null {
+  const attachment = asRecord(raw.attachment);
+  if (attachment?.type !== 'queued_command') return null;
+  return handbackMessage({ ...raw, timestamp: raw.timestamp ?? attachment.timestamp }, attachment.origin, attachment.prompt, line, agentLabel);
+}
+
+/** A task notification that arrived while Claude was busy, recorded only as an attachment. */
+function queuedNotice(raw: Record<string, unknown>, line: string, agentLabel: string | null): ChatMessage | null {
+  const attachment = asRecord(raw.attachment);
+  if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'task-notification') return null;
+  return noticeMessage({ ...raw, timestamp: raw.timestamp ?? attachment.timestamp }, attachment.prompt, line, agentLabel);
 }
 
 function metaFrom(raw: Record<string, unknown>): SessionMeta | null {
