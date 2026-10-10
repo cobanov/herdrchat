@@ -6,6 +6,7 @@ import { getSetting, loadConnections } from './db';
 import { loadHostMachines, mirrorHostMachines } from './hostMachines';
 import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import { loadSlashCatalogues, mirrorSlashCatalogues } from './slashCommands';
+import { decodeListMode } from '@/lib/listModes';
 import {
   SETTINGS_DEFAULTS,
   decodeBool,
@@ -53,6 +54,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         starAsked,
         activeDays,
         useHostThemes,
+        listMode,
       ] =
         await Promise.all([
           loadConnections(db),
@@ -69,6 +71,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'starAsked'),
           getSetting(db, 'activeDays'),
           getSetting(db, 'useHostThemes'),
+          getSetting(db, 'listMode'),
           // Before the connections land, so the selected host opens in its
           // own colours rather than flashing the default first.
           loadHostThemes(db).catch(() => undefined),
@@ -91,6 +94,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         starAsked: decodeBool(starAsked, SETTINGS_DEFAULTS.starAsked),
         activeDays: activeDays ?? SETTINGS_DEFAULTS.activeDays,
         useHostThemes: decodeBool(useHostThemes, SETTINGS_DEFAULTS.useHostThemes),
+        listMode: decodeListMode(listMode),
       });
       // After the settings: `hydrated` is what the welcome waits on, and it
       // must not read the defaults (never welcomed) for a moment first.

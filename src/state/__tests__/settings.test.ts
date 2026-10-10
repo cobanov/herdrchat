@@ -1,3 +1,4 @@
+import { decodeListMode } from '@/lib/listModes';
 import { SETTINGS_DEFAULTS, decodeBool, encodeBool, settingsSnapshot, useSettings } from '../settings';
 
 describe('returnSends', () => {
@@ -24,5 +25,23 @@ describe('returnSends', () => {
   it('is mirrored into the snapshot', () => {
     useSettings.getState().set('returnSends', false);
     expect(settingsSnapshot().returnSends).toBe(false);
+  });
+});
+
+describe('listMode', () => {
+  afterEach(() => useSettings.getState().hydrate(SETTINGS_DEFAULTS));
+
+  // The chats list opens on the view it always had until someone picks Agents.
+  it('is Spaces by default', () => {
+    expect(SETTINGS_DEFAULTS.listMode).toBe('spaces');
+    expect(useSettings.getState().listMode).toBe('spaces');
+  });
+
+  it('round-trips through its stored form and into the snapshot', () => {
+    useSettings.getState().set('listMode', 'agents');
+    expect(settingsSnapshot().listMode).toBe('agents');
+    expect(decodeListMode(String(useSettings.getState().listMode))).toBe('agents');
+    useSettings.getState().hydrate({ listMode: decodeListMode(null) });
+    expect(useSettings.getState().listMode).toBe('spaces');
   });
 });

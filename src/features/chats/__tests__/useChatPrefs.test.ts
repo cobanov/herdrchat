@@ -69,3 +69,47 @@ it('offers no mute on a machine\'s row, and saves none', async () => {
   await act(async () => result.current.toggleMute(hostRow));
   expect(saveChatPref).toHaveBeenCalledWith(db, host.id, 'w1', 'sig-host', { muted: true });
 });
+
+// The Agents view pins one agent of a workspace that runs several. Its pin is
+// that agent's chat (`w6/w6:p2`), on that agent's session, and orders it by
+// the key the Agents view groups by.
+describe('an agent\'s own pin and mute', () => {
+  const agent = (paneId: string, cwd: string) => ({
+    agent: 'claude', agentStatus: 'idle' as const, cwd, foregroundCwd: null, focused: false, paneId, tabId: 't1', terminalId: null,
+    workspaceId: 'w6', agentSession: null, stateChangeSeq: null, completionSeq: null, inputPending: false, name: null, title: null,
+  });
+  const p1 = agent('w6:p1', '/home/demo/api');
+  const p2 = agent('w6:p2', '/home/demo/api/web');
+  const w6: ChatSummary = {
+    workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [p1, p2],
+    panes: [p1, p2].map((item) => ({ paneId: item.paneId, agent: item, sessionSig: `sig-${item.paneId}`, preview: null, status: 'idle' as const, sessionTitle: null, agentName: null })),
+    preview: null, sessionSig: 'sig-w6:p1,sig-w6:p2', restoreError: null, sessionTitle: null, agentName: null,
+  };
+  const listed = listChats([w6], host.id, null);
+  const [api] = listed as [ListedChat];
+  const p2Row = { connectionId: host.id, workspaceId: 'w6', sessionSig: 'sig-w6:p2', chatKey: 'w6/w6:p2' };
+
+  it('reads and writes the agent\'s pin under its chat key and session', async () => {
+    mockSaved.set(host.id, new Map([['w6/w6:p2', { sessionSig: 'sig-w6:p2', pinnedAt: 7, muted: false }]]));
+    const { result } = await renderHook(() => useChatPrefs(db, host, listed, [host.id]));
+    await waitFor(() => expect(result.current.pinnedAt.size).toBe(1));
+    expect([...result.current.pinnedAt.entries()]).toEqual([[`${host.id}\nw6/w6:p2`, 7]]);
+    expect(result.current.isPinned(p2Row)).toBe(true);
+    // The workspace is not pinned by its agent's pin.
+    expect(result.current.isPinned(api)).toBe(false);
+
+    await act(async () => result.current.togglePin(p2Row));
+    expect(saveChatPref).toHaveBeenLastCalledWith(db, host.id, 'w6/w6:p2', 'sig-w6:p2', { pinnedAt: null });
+    await act(async () => result.current.toggleMute(p2Row));
+    expect(saveChatPref).toHaveBeenLastCalledWith(db, host.id, 'w6/w6:p2', 'sig-w6:p2', { muted: true });
+  });
+
+  // herdr recycles panes: a new conversation in w6:p2 is not the pinned one.
+  it('holds no pin made on an earlier session in the pane', async () => {
+    mockSaved.set(host.id, new Map([['w6/w6:p2', { sessionSig: 'sig-old', pinnedAt: 7, muted: false }]]));
+    const { result } = await renderHook(() => useChatPrefs(db, host, listed, [host.id]));
+    await waitFor(() => expect(loadChatPrefs).toHaveBeenCalled());
+    expect(result.current.pinnedAt.size).toBe(0);
+    expect(result.current.isPinned(p2Row)).toBe(false);
+  });
+});

@@ -81,6 +81,21 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null 
 }
 
 /**
+ * The line under an agent's row in the Agents view, where no workspace card
+ * sits above it to say where the agent lives: the machine, the workspace, then
+ * the provider and the folder (`klaw · api · Claude · api/web`).
+ *
+ * The very rule `rowContext` gives a one-agent workspace, and by design: an
+ * agent row is shaped as one (`agentRows`), so the row `ChatRow` draws says
+ * this without being told which view it is in. The workspace is said once:
+ * not when the row is titled by it, and not when it is the folder's own name,
+ * which the folder on the same line already says.
+ */
+export function agentContext(row: ChatSummary & { machine?: MachineRef | null }): string {
+  return rowContext(row);
+}
+
+/**
  * The line under one agent's title in a workspace that holds several: its
  * provider and folder. The workspace's card above already names the
  * workspace, and its machine when it is on one; said again on every agent's

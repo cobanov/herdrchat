@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { DEFAULT_LIST_MODE, type ListMode } from '@/lib/listModes';
 import type { ThemePreference } from '@/theme/ThemeProvider';
 
 /**
@@ -62,6 +63,12 @@ export interface Settings {
    * colours and leaves the file alone.
    */
   useHostThemes: boolean;
+  /**
+   * What the chats list shows: a card per workspace (`spaces`) or a row per
+   * agent (`agents`), picked from its title (`listModes`). Kept, so the app
+   * opens on the view last used.
+   */
+  listMode: ListMode;
 }
 
 /**
@@ -98,6 +105,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   starAsked: false,
   activeDays: '',
   useHostThemes: true,
+  listMode: DEFAULT_LIST_MODE,
 };
 
 interface SettingsState extends Settings {
@@ -130,6 +138,7 @@ export function settingsSnapshot(): Settings {
     starAsked: state.starAsked,
     activeDays: state.activeDays,
     useHostThemes: state.useHostThemes,
+    listMode: state.listMode,
   };
 }
 
