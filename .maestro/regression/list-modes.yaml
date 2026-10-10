@@ -38,8 +38,8 @@ appId: dev.herdr.HerdrChat
     id: chat-row-w2
     text: Release notes summary, Claude · demo/notes.*
 # w6's agents, each a full row titled by its session, its line naming its
-# workspace when the folder does not. p2 is working, so it sits in Working;
-# p1 is idle, below it.
+# workspace only when no folder on it does (here both folders say "api"). p2
+# is working, so it sits in Working; p1 is idle, below it.
 - scrollUntilVisible:
     element:
       id: chat-row-w6:p2
@@ -47,7 +47,7 @@ appId: dev.herdr.HerdrChat
     centerElement: true
 - assertVisible:
     id: chat-row-w6:p2
-    text: Save button wrap, api · Claude · api/web.*
+    text: Save button wrap, Claude · api/web.*
 - scrollUntilVisible:
     element:
       id: chat-row-w6:p1

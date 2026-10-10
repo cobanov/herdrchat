@@ -1,7 +1,7 @@
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,7 +13,7 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { agentRowKey, agentRows, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
+import { agentPrefRow, agentRowKey, agentRows, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
 import { groupChats, paneChats, type ChatListItem } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
@@ -38,6 +38,7 @@ import { chatKey } from '@/lib/chatKey';
 import { mainMenuActions, mainMenuTitle } from '@/lib/mainMenu';
 import {
   LIST_MODE_SHEET_TITLE,
+  emptyListState,
   listModeAccessibilityLabel,
   listModeActions,
   listModeTitle,
@@ -110,7 +111,14 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
   const [query, setQuery] = useState('');
   const prefs = useChatPrefs(db, connection, summaries, connectionIds);
   const listMode = useSettings((state) => state.listMode);
-  const chooseListMode = useCallback((mode: ListMode) => saveSetting(db, 'listMode', mode), [db]);
+  const list = useRef<FlashListRef<ChatListItem<ListedChat>>>(null);
+  // The other view opens at its top, at Needs you, as Mail does after a
+  // filter change: the same list under new rows kept the old offset, and
+  // landed partway down, past the groups that matter.
+  const chooseListMode = useCallback((mode: ListMode) => {
+    list.current?.scrollToOffset({ offset: 0, animated: false });
+    saveSetting(db, 'listMode', mode);
+  }, [db]);
   // Both views are grouped by the one function, so pins, search and the
   // attention order cannot drift apart between them.
   const rows = useMemo((): ChatListItem<ListedChat>[] =>
@@ -436,6 +444,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
         )
       ) : (
         <FlashList
+          ref={list}
           data={rows}
           extraData={listExtra}
           keyExtractor={(item) =>
@@ -478,7 +487,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
               )}
             </>
           }
-          ListEmptyComponent={listMode === 'agents' && query.trim() === '' ? (
+          ListEmptyComponent={emptyListState(listMode, query) === 'no-agents' ? (
             // Every workspace is a shell: a list of agents with none in it
             // is not a failed search.
             <EmptyState
@@ -524,19 +533,32 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
             ] : []);
             if (row.kind === 'pane') {
               const { pane } = row;
+              // The agent's own pin and mute, as its row in Agents reads and
+              // makes them (`agentPrefRow`): acting on the workspace from
+              // here pinned something the other view never showed.
+              const own = agentPrefRow(item, pane);
+              const ownPersonal = own.sessionSig !== null;
+              const ownPinned = prefs.isPinned(own);
+              const ownMuted = prefs.isMuted(own);
+              const ownMutable = ownPersonal && prefs.canMute(own);
               return (
                 <PaneRow
                   summary={item}
                   pane={pane}
                   first={row.first}
                   last={row.last}
-                  selected={openHere === chatKey({ workspaceId: item.workspaceId, paneId: pane.paneId })}
+                  pinned={ownPinned}
+                  muted={ownMuted}
+                  selected={openHere === own.chatKey}
                   unread={isPaneUnread(item, pane, rowReads, openHere)}
                   onPress={() => {
                     Keyboard.dismiss();
                     openChat(item.connectionId, item.workspaceId, paneTitle(item, pane), pane.paneId);
                   }}
-                  onLongPress={manage}
+                  onLongPress={() => actions.manageChat(item, ownPersonal ? [
+                    { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
+                    ...(ownMutable ? [{ label: ownMuted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(own) }] : []),
+                  ] : [])}
                 />
               );
             }

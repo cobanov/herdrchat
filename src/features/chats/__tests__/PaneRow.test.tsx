@@ -75,3 +75,10 @@ it('names its machine to VoiceOver only, and keeps a testID apart from the host\
   const row = screen.getByTestId('pane-row-demo-nuku-w6:p2');
   expect(row.props.accessibilityLabel).toBe('Codex in api on nuku, api/web, Idle, Fixed the toolbar');
 });
+
+// Pinned or muted from its row in Agents, or by its card: the row under the
+// card says so, as its Agents row does.
+it('says when its agent is pinned or muted', async () => {
+  const screen = await render(<PaneRow summary={api} pane={p2} unread={false} pinned muted onPress={jest.fn()} />);
+  expect(screen.getByTestId('pane-row-w6:p2').props.accessibilityLabel).toBe('Pinned, Muted, Codex in api, api/web, Idle, Fixed the toolbar');
+});

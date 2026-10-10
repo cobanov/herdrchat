@@ -1,6 +1,6 @@
 import type { AgentInfo } from '@/lib/herdr/models';
 import type { ThreadRead } from '@/lib/unread';
-import { agentRowKey, agentRows, agentTestKey, isAgentUnread, type AgentRow } from '../agentRows';
+import { agentPrefRow, agentRowKey, agentRows, agentTestKey, isAgentUnread, type AgentRow } from '../agentRows';
 import { groupChats } from '../chatGroups';
 import { listChats, rowKey } from '../listedChat';
 import { agentContext, rowTitle } from '../rowText';
@@ -94,6 +94,25 @@ describe('agentRows', () => {
     expect(agentRowKey(bot)).toBe('gimel/demo-nuku\nw1');
   });
 
+  // herdr restarted and w3's agent did not come back: no pane, but the
+  // conversation the person most needs to hear about.
+  it('keeps a workspace whose agent failed to restore, as one row', () => {
+    const lost = { ...workspace('w3', 'lost', 'unknown', [agentIn('w3', 'w3:p1', null, '/home/demo')]), restoreError: 'Session file missing.' };
+    const listed = agentRows(listChats([lost, shell], 'gimel', null));
+    expect(listed.map((row) => [row.chatKey, row.pane, row.restoreError])).toEqual([['w3', null, 'Session file missing.']]);
+  });
+
+  // The one rule both views read pins and mutes by, so they agree.
+  it('pins and mutes an agent of several as its own chat, then its lone-agent pref, then its card', () => {
+    const p2 = byKey('w6/w6:p2');
+    expect(agentPrefRow(host[1]!, host[1]!.panes[1]!)).toEqual({
+      connectionId: 'gimel', workspaceId: 'w6', sessionSig: 'sig-w6:p2', chatKey: 'w6/w6:p2',
+      inherits: [{ key: 'w6', sessionSig: 'sig-w6:p2' }, { key: 'w6', sessionSig: 'sig-w6:p1,sig-w6:p2' }],
+    });
+    expect(p2.inherits).toEqual(agentPrefRow(host[1]!, host[1]!.panes[1]!).inherits);
+    expect(byKey('w2').inherits).toEqual([]);
+  });
+
   it('is empty for an empty list', () => {
     expect(agentRows([])).toEqual([]);
   });
@@ -126,7 +145,12 @@ describe('agentRows through groupChats', () => {
 
 describe('agentContext', () => {
   it('leads with the workspace, then the provider and the agent\'s own folder', () => {
-    expect(agentContext(byKey('w6/w6:p2'))).toBe('api · Codex · api/web');
+    expect(agentContext({ ...byKey('w6/w6:p2'), title: 'server' })).toBe('server · Codex · api/web');
+  });
+
+  // `api · Codex · api/web` said "api" twice on one phone-width line.
+  it('leaves off a workspace named after either folder shown', () => {
+    expect(agentContext(byKey('w6/w6:p2'))).toBe('Codex · api/web');
   });
 
   it('says a workspace named after its folder once, in the folder', () => {
@@ -140,11 +164,24 @@ describe('agentContext', () => {
 
   // An untitled agent's row is titled by the workspace, so its line does not repeat it.
   it('leaves the workspace off a row it already titles', () => {
-    const [untitled] = agentRows(listChats([workspace('w9', 'docs', 'idle', [
-      agentIn('w9', 'w9:p1', 'claude', '/srv/docs/site'), agentIn('w9', 'w9:p2', 'claude', '/srv/docs/api'),
+    const [untitled] = agentRows(listChats([workspace('w9', 'site', 'idle', [
+      agentIn('w9', 'w9:p1', 'claude', '/srv/x/docs'), agentIn('w9', 'w9:p2', 'claude', '/srv/x/api', 'API'),
     ])], 'gimel', null)) as [AgentRow];
-    expect(rowTitle(untitled)).toBe('docs');
-    expect(agentContext(untitled)).toBe('Claude · docs/site');
+    expect(rowTitle(untitled)).toBe('site');
+    expect(agentContext(untitled)).toBe('1 of 2 · Claude · x/docs');
+  });
+
+  // Two agents just started in one folder, neither titled yet: the rows
+  // read "api" over "Claude · x/api" twice.
+  it('tells untitled agents of one workspace apart', () => {
+    const twins = agentRows(listChats([workspace('w9', 'api', 'idle', [
+      agentIn('w9', 'w9:p1', 'claude', '/srv/x/api'), agentIn('w9', 'w9:p2', 'claude', '/srv/x/api'),
+    ])], 'gimel', null));
+    expect(twins.map(rowTitle)).toEqual(['api', 'api']);
+    expect(twins.map((row) => agentContext(row))).toEqual(['1 of 2 · Claude · x/api', '2 of 2 · Claude · x/api']);
+    // A titled agent needs no number.
+    expect(byKey('w6/w6:p1').ordinal).toBeNull();
+    expect(byKey('w2').ordinal).toBeNull();
   });
 });
 

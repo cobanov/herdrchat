@@ -92,8 +92,9 @@ Windows-native paths are not translated.
    agent to talk to it alone, or the workspace to read them all together.
    Tap the list's title to switch views: **Spaces** lists workspaces this way,
    **Agents** lists every agent as a row of its own, flat, with its workspace
-   named on its line. Unread dots are the same in both views, and so is a pin
-   on a workspace with one agent. The app remembers the view you left it on.
+   named on its line. Unread dots, pins and mutes are an agent's own and read
+   the same in both views; pinning or muting a workspace's card in Spaces
+   covers each agent in it. The app remembers the view you left it on.
 
 ## Build the iOS app
 

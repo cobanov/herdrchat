@@ -75,3 +75,16 @@ export function listModeActions(current: ListMode, choose: (mode: ListMode) => v
 export function listModeAccessibilityLabel(mode: ListMode): string {
   return `Showing ${listModeTitle(mode)}. Change view.`;
 }
+
+/** What an empty list says: no agents at all, or nothing matching a search. */
+export type EmptyListState = 'no-agents' | 'no-match';
+
+/**
+ * Why the list is empty, given rows exist on the host (an empty host is the
+ * screen's own empty state). In Agents with no search, every workspace is a
+ * shell: a list of agents with none in it is not a failed search, and it
+ * offers Spaces. A search that finds nothing says so in either view.
+ */
+export function emptyListState(mode: ListMode, query: string): EmptyListState {
+  return mode === 'agents' && query.trim() === '' ? 'no-agents' : 'no-match';
+}

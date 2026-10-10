@@ -21,17 +21,23 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
  * agent in it, while the workspace row above still opens them all together.
  *
  * Inset and hung off a rail so it reads as part of the workspace, not as a
- * chat of equal rank: pin, mute, rename and close belong to the workspace, so
- * there is no swipe here, and a long press offers the workspace's own sheet.
+ * chat of equal rank: rename and close belong to the workspace, so there is
+ * no swipe here. Pin and mute are the agent's own, in its long-press sheet,
+ * and marked on the row as its row in the Agents view marks them, since the
+ * two are the same choice (`agentPrefRow`).
  */
 export const PaneRow = memo(function PaneRow({
-  summary, pane, unread, selected = false, first = false, last = false, onPress, onLongPress,
+  summary, pane, unread, selected = false, pinned = false, muted = false, first = false, last = false, onPress, onLongPress,
 }: {
   /** With `machine`, a workspace on one of the host's machines: named to VoiceOver, and on the card above. */
   summary: ChatSummary & { machine?: MachineRef | null };
   pane: PaneSummary;
   unread: boolean;
   selected?: boolean;
+  /** This agent is pinned, by its own pin or its workspace's. */
+  pinned?: boolean;
+  /** Notifications for this agent are off on this phone, by its own mute or its workspace's. */
+  muted?: boolean;
   /**
    * The first agent listed under its workspace: the rail reaches up across
    * the gap below the workspace's card, which would otherwise leave it
@@ -79,7 +85,7 @@ export const PaneRow = memo(function PaneRow({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         // The title first, when the agent has one.
-        accessibilityLabel={[title ?? '', `${provider} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
+        accessibilityLabel={[title ?? '', pinned ? 'Pinned' : '', muted ? 'Muted' : '', `${provider} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
         testID={`pane-row-${rowTestKey(summary, pane.paneId)}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -104,7 +110,11 @@ export const PaneRow = memo(function PaneRow({
               line here does: an agent with no title of its own leads with its
               provider. */}
           {title !== null && <Text variant="subhead" weight="600" numberOfLines={2}>{title}</Text>}
-          <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <Text variant="caption" color="secondary" mono numberOfLines={1} style={{ flexShrink: 1 }}>{context}</Text>
+            {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
+            {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
+          </View>
           <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
             {attention ? 'Waiting for your input' : preview}
           </Text>

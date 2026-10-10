@@ -1,6 +1,6 @@
 import { buildSheet } from '../actionSheet';
 import {
-  DEFAULT_LIST_MODE, LIST_MODE_SHEET_TITLE, decodeListMode, isListMode, listModeAccessibilityLabel,
+  DEFAULT_LIST_MODE, LIST_MODE_SHEET_TITLE, decodeListMode, emptyListState, isListMode, listModeAccessibilityLabel,
   listModeActions, listModeTitle, listModes,
 } from '../listModes';
 
@@ -52,5 +52,15 @@ describe('decodeListMode', () => {
     expect(decodeListMode(String('spaces'))).toBe('spaces');
     expect(isListMode('agents')).toBe(true);
     expect(isListMode(1)).toBe(false);
+  });
+});
+
+describe('emptyListState', () => {
+  it('says "No agents" for an Agents list with no search, and a failed search in either view', () => {
+    expect(emptyListState('agents', '')).toBe('no-agents');
+    expect(emptyListState('agents', '  ')).toBe('no-agents');
+    expect(emptyListState('agents', 'api')).toBe('no-match');
+    expect(emptyListState('spaces', '')).toBe('no-match');
+    expect(emptyListState('spaces', 'api')).toBe('no-match');
   });
 });

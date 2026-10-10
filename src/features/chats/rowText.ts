@@ -62,7 +62,7 @@ export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
  * list mixes the host's chats with its machines', and the same folder on two
  * computers is two different chats.
  */
-export function rowContext(summary: ChatSummary & { machine?: MachineRef | null }): string {
+export function rowContext(summary: ChatSummary & { machine?: MachineRef | null; ordinal?: string | null }): string {
   const machine = summary.machine?.label ?? '';
   const panes = paneChats(summary);
   if (panes.length === 0) {
@@ -70,10 +70,12 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null 
       ?? summary.agents.find((item) => item.agent !== null);
     const parts = agent?.cwd.split('/').filter(Boolean).slice(-2) ?? [];
     const folder = parts.join('/');
-    // A label that is the folder's own name is already on the line, in the
+    // A label that is a folder named on the line already says it, in the
     // folder; said again in front, it pushed the folder off a phone's row.
-    const workspace = titledBySession(summary) && !sameName(summary.title, parts.at(-1)) ? summary.title.trim() : '';
-    return [machine, workspace, agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
+    // Either folder shown: an agent in `api/web` of workspace `api` read
+    // `api · Claude · api/web`.
+    const workspace = titledBySession(summary) && !parts.some((part) => sameName(summary.title, part)) ? summary.title.trim() : '';
+    return [machine, workspace, summary.ordinal ?? '', agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];
   const shared = sharedFolder(panes.map((pane) => pane.agent.cwd)).split('/').filter(Boolean).slice(-2).join('/');
@@ -88,10 +90,12 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null 
  * The very rule `rowContext` gives a one-agent workspace, and by design: an
  * agent row is shaped as one (`agentRows`), so the row `ChatRow` draws says
  * this without being told which view it is in. The workspace is said once:
- * not when the row is titled by it, and not when it is the folder's own name,
- * which the folder on the same line already says.
+ * not when the row is titled by it, and not when it names either folder
+ * shown, which the folder on the same line already says. An untitled agent of
+ * several says which one it is (`AgentRow.ordinal`): `api · 2 of 2 · Claude`
+ * would repeat its title, so it reads `2 of 2 · Claude · x/api`.
  */
-export function agentContext(row: ChatSummary & { machine?: MachineRef | null }): string {
+export function agentContext(row: ChatSummary & { machine?: MachineRef | null; ordinal?: string | null }): string {
   return rowContext(row);
 }
 

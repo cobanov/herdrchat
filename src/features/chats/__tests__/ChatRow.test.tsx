@@ -145,14 +145,14 @@ it('draws an agent of several as a row of its own, found by its pane', async () 
   const base = summary('claude');
   const [first] = base.agents;
   if (first === undefined) throw new Error('fixture has an agent');
-  const second = { ...first, agent: 'codex', paneId: 'w1:p2', focused: false, cwd: '/home/me/code/parser/web', title: 'Save button wrap' };
+  const second = { ...first, agent: 'codex', paneId: 'w1:p2', focused: false, cwd: '/home/me/code/web/ui', title: 'Save button wrap' };
   const pane = { paneId: second.paneId, agent: second, sessionSig: 's2', preview: null, status: 'working' as const, sessionTitle: 'Save button wrap', agentName: null };
   const [row] = agentRows(listChats([{ ...base, agents: [first, second], panes: [
     { paneId: first.paneId, agent: first, sessionSig: 's1', preview: null, status: 'idle', sessionTitle: null, agentName: null }, pane,
   ] }], 'gimel', null)).slice(1) as [AgentRow];
   const screen = await render(<ChatRow summary={row} testKey={agentTestKey(row)} unread={false} onPress={jest.fn()} />);
   expect(screen.getByText('Save button wrap')).toBeOnTheScreen();
-  expect(screen.getByText('Parser · Codex · parser/web')).toBeOnTheScreen();
-  expect(screen.getByTestId('chat-row-w1:p2').props.accessibilityLabel).toMatch(/^Save button wrap, Parser · Codex · parser\/web, Working/);
+  expect(screen.getByText('Parser · Codex · web/ui')).toBeOnTheScreen();
+  expect(screen.getByTestId('chat-row-w1:p2').props.accessibilityLabel).toMatch(/^Save button wrap, Parser · Codex · web\/ui, Working/);
   expect(screen.queryByTestId('chat-row-w1')).toBeNull();
 });
