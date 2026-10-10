@@ -230,6 +230,8 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   /** The program in front in each terminal row's pane, asked for now and then (`refreshProcessNames`). */
   const processNames = useRef(new Map<string, CachedProcessName>());
   const processTick = useRef(0);
+  /** A round of `refreshProcessNames` is still out: the next poll starts none. */
+  const processNamesAsking = useRef(false);
   const alive = useRef(true);
 
   /** Resolves true when the poll failed, so the loop knows whether to back off. */
@@ -261,17 +263,23 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       const force = forcePreviews.current;
       forcePreviews.current = false;
       processTick.current += 1;
-      await Promise.all([
-        refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current),
-        refreshProcessNames(
+      // Not awaited, and one round at a time: each ask is an SSH exec of its
+      // own, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you) must
+      // not wait on a program's name. What lands shows on the next poll.
+      if (!processNamesAsking.current) {
+        processNamesAsking.current = true;
+        void refreshProcessNames(
           (paneId) => client.socket.call('pane.process_info', { pane_id: paneId }, POLL_TIMEOUT_MS),
           snapshot.panes,
           processNames.current,
           // Not on `force`: every host event forces the previews, and a
           // busy agent would turn that into a socket call per shell pane.
           processTick.current % PROCESS_NAME_SWEEP_POLLS === 1
-        ),
-      ]);
+        ).finally(() => {
+          processNamesAsking.current = false;
+        });
+      }
+      await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
       setSummaries(buildSummaries(
@@ -639,10 +647,15 @@ export function dropStalePreviews(
   }
 }
 
-/** A terminal row's program, with the terminal it was read from (herdr recycles pane ids). */
+/**
+ * A terminal row's program, with the terminal it was read from (herdr
+ * recycles pane ids). `name` is null when herdr gave none (an older herdr
+ * without `pane.process_info`, nothing in front): kept so that pane is asked
+ * again only on a sweep, not on every poll.
+ */
 export interface CachedProcessName {
   terminalId: string | null;
-  name: string;
+  name: string | null;
 }
 
 /**
@@ -666,17 +679,19 @@ export async function refreshProcessNames(
   }
   const due = processNamesDue(rows, cache, sweep);
   await Promise.all(due.map(async (paneId) => {
+    const terminalId = live.get(paneId) ?? null;
     try {
-      const name = decodeProcessName(await ask(paneId));
-      if (name !== null) cache.set(paneId, { terminalId: live.get(paneId) ?? null, name });
+      cache.set(paneId, { terminalId, name: decodeProcessName(await ask(paneId)) });
     } catch {
-      // Kept as it was; the row falls back to what it can say without it.
+      // A name known before is kept; none known is recorded as none, so the
+      // pane waits for the sweep. The row says what it can without it.
+      if (!cache.has(paneId)) cache.set(paneId, { terminalId, name: null });
     }
   }));
 }
 
 function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<string, string> {
-  return new Map([...cache].map(([paneId, cached]) => [paneId, cached.name]));
+  return new Map([...cache].flatMap(([paneId, cached]) => (cached.name === null ? [] : [[paneId, cached.name] as const])));
 }
 
 export function summaryNeedsAttention(summary: ChatSummary): boolean {

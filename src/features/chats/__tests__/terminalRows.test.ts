@@ -70,7 +70,28 @@ describe('refreshProcessNames', () => {
       ['w1:p9', { terminalId: 'term_w1:p9', name: 'htop' }],
     ]);
     await refreshProcessNames(async () => { throw new HerdrError('socket_unavailable', 'none'); }, [pane('w1:p2')], cache, false);
-    expect([...cache]).toEqual([]);
+    // The old answers are gone; the new terminal is recorded as unanswered.
+    expect([...cache]).toEqual([['w1:p2', { terminalId: 'term_w1:p2', name: null }]]);
+  });
+
+  it('asks a pane herdr gave no name for again only on a sweep', async () => {
+    const asked: string[] = [];
+    const cache = new Map<string, CachedProcessName>();
+    const panes = [pane('w1:p2'), pane('w1:p3')];
+    // An older herdr without `pane.process_info`, and one with nothing in front.
+    const ask = async (paneId: string) => {
+      asked.push(paneId);
+      if (paneId === 'w1:p2') throw new HerdrError('unknown_method', 'unknown method');
+      return { process_info: { foreground_processes: [] } };
+    };
+    await refreshProcessNames(ask, panes, cache, false);
+    expect(asked).toEqual(['w1:p2', 'w1:p3']);
+    asked.length = 0;
+    await refreshProcessNames(ask, panes, cache, false);
+    await refreshProcessNames(ask, panes, cache, false);
+    expect(asked).toEqual([]);
+    await refreshProcessNames(ask, panes, cache, true);
+    expect(asked).toEqual(['w1:p2', 'w1:p3']);
   });
 
   it('keeps what it knew when the host cannot answer', async () => {

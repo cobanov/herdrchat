@@ -654,3 +654,26 @@ it('titles a one-agent workspace chat by that agent\'s session', () => {
   expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['Test', 'Feke animation smoothness', 'feke-pm']);
   expect(summary?.panes[0]?.sessionTitle).toBe('Feke animation smoothness');
 });
+
+describe("a shell pane's program name, riding on the list poll", () => {
+  const withShell = decodeSnapshot({
+    version: '0.9.0',
+    workspaces: [{ workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' }],
+    agents: [],
+    panes: [{ pane_id: 'chat:p2', workspace_id: 'chat', terminal_id: 'term_p2', cwd: '/test' }],
+  });
+
+  // Each ask is an SSH exec of its own: one that hangs must not hold the
+  // statuses, and the next poll must not pile a second round on top of it.
+  it('never holds the list on a hanging ask, nor starts another while one is out', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(withShell);
+    const ask = jest.spyOn(client.socket, 'call').mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries.map((summary) => summary.shellPanes.map((row) => row.paneId))).toEqual([['chat:p2']]);
+    expect(ask).toHaveBeenCalledTimes(1);
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toBeNull();
+    await unmount();
+  });
+});
