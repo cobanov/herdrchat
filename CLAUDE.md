@@ -75,6 +75,13 @@ block; Codex keeps it as typed. `splitImages` must leave exactly what was
 typed, or the echo is never confirmed and the bubble says "Failed to send".
 Matching text alone confirmed a picture-only message with any tool result.
 
+**A `!` line is a shell exchange, not a message.** Claude records it as two
+user turns back to back, `<bash-input> cmd</bash-input>` then
+`<bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr>`; `threadItems` pairs
+only those two adjacent turns into one shell block, never across another turn.
+Claude adds a space after the `!` whether one was typed, so the receipt
+compares both sides through `shellReceiptText`.
+
 **Only `useThreadScroll` moves the thread list.** The rules are one pure
 function (`src/lib/threadScroll.ts`): the reader is following the end or
 reading, only the reader's own scrolls and asks (send, jump, reload) change

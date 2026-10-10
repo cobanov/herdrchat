@@ -9,9 +9,9 @@ import {
   transcriptFor,
 } from '../demo/fixtures';
 import { withMachine } from '../herdr/machine';
-import { DEMO_PHRASES } from '../demo/scenarios';
+import { DEMO_GIT_STATUS, DEMO_LS_OUTPUT, DEMO_PHRASES } from '../demo/scenarios';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
-import { displayText } from '../transcript/message';
+import { displayText, receiptKey } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
 import { threadItems, toolRunSummary } from '../threadItems';
@@ -397,6 +397,42 @@ describe('DemoHost scenarios', () => {
     const run = items.find((placed) => placed.item.kind === 'tools')!.item;
     expect(run.kind === 'tools' && toolRunSummary(run.calls, run.thoughts.length)).toBe('Ran 2 commands · edited 1 file · read 1 file · 1 failed');
     expect(items.at(-1)!.item.kind).toBe('agent');
+  });
+
+  it('opens the notes chat with a ! command and its two lines of output', async () => {
+    const items = threadItems(await messagesOf(new DemoHost(), 1), { showSidechain: false });
+    const shell = items.map((placed) => placed.item).find((item) => item.kind === 'shell');
+    expect(shell).toMatchObject({ key: 'd2-0g', command: DEMO_GIT_STATUS.command, stdout: DEMO_GIT_STATUS.stdout, stderr: '', running: false });
+    expect(DEMO_GIT_STATUS.stdout.split('\n')).toHaveLength(2);
+  });
+
+  it('runs a sent ! line in its shell: the command at once, its listing a beat later', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', '! ls');
+    const shellOf = async () => threadItems(await messagesOf(host, 1), { showSidechain: false }).at(-1)!.item;
+    const sent = await shellOf();
+    expect(sent).toMatchObject({ kind: 'shell', command: 'ls', running: true });
+    // The echo of `! ls` is confirmed by what was recorded.
+    const recorded = (await messagesOf(host, 1)).at(-1)!;
+    expect(receiptKey(recorded)).toBe(receiptKey({ ...recorded, segments: [{ kind: 'text', text: '! ls' }] }));
+
+    now += 10_000;
+    expect(await shellOf()).toMatchObject({ kind: 'shell', command: 'ls', running: false, stdout: DEMO_LS_OUTPUT, stderr: '' });
+    expect(DEMO_LS_OUTPUT.split('\n')).toHaveLength(3);
+    // The model never saw it, so the agent never answered it.
+    expect((await client.agents()).find((agent) => agent.paneId === 'w2:p1')?.agentStatus).toBe('idle');
+  });
+
+  it('says on stderr that any other ! line did not run', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    await new HerdrClient(host).sendPrompt('w2:p1', '!rm -rf /');
+    now += 10_000;
+    const last = threadItems(await messagesOf(host, 1), { showSidechain: false }).at(-1)!.item;
+    expect(last).toMatchObject({ kind: 'shell', command: 'rm -rf /', stdout: '' });
+    expect(last.kind === 'shell' && last.stderr).toMatch(/nothing ran/);
   });
 });
 

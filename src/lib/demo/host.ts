@@ -26,6 +26,7 @@ import {
   DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
+  demoShellOutput,
   TRUST_OPTIONS,
   trustScreen,
   effortPanelScreen,
@@ -46,6 +47,8 @@ import {
   demoPanes,
   demoSessionDir,
   replyFor,
+  shellInputLine,
+  shellOutputLine,
   replyLine,
   toolResultLine,
   toolUseLine,
@@ -68,6 +71,9 @@ const DEMO_HERDR_VERSION = '0.8.0';
  * move time instead of waiting for it.
  */
 const REPLY_DELAY_MS = 1_500;
+
+/** How long the demo's shell takes to print, so a UI test sees the block running. */
+const SHELL_DELAY_MS = 1_000;
 
 /** How often the fake tail looks for newly appended lines. */
 const TAIL_POLL_MS = 200;
@@ -707,6 +713,7 @@ export class DemoHost implements HerdrTransport {
         } }));
       }
       if (text.trim().startsWith('/') && !this.isOmp(paneId)) return this.command(paneId, text);
+      if (text.startsWith('!') && !this.isOmp(paneId)) return this.shell(paneId, text.slice(1));
       this.append(paneId, this.isOmp(paneId) ? ompLine('user', text, this.uuid(), this.stamp()) : userLine(text, this.uuid(), this.stamp()));
       const asked = text.toLowerCase();
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
@@ -770,6 +777,23 @@ export class DemoHost implements HerdrTransport {
     for (const written of commandLines(command, printed, [this.uuid(), this.uuid()], this.stamp())) {
       this.append(paneId, written);
     }
+  }
+
+  /**
+   * A `!` line: Claude's shell mode. The command lands at once, as Claude
+   * records it, and its output a beat later, so the block is seen running.
+   * The agent stays idle: the model never sees the line.
+   */
+  private shell(paneId: string, command: string): ExecResult {
+    this.append(paneId, shellInputLine(command.trim(), this.uuid(), this.stamp()));
+    const { stdout, stderr } = demoShellOutput(command);
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + SHELL_DELAY_MS,
+      lines: (next, timestamp) => [shellOutputLine(stdout, stderr, next(), timestamp)],
+    });
+    return silent();
   }
 
   /** AskUserQuestion with two questions, then the review screen that submits them. */

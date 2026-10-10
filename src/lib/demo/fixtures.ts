@@ -9,6 +9,7 @@
 
 import { splitImages } from '../transcript/images';
 import { projectDirName } from '../transcript/parser';
+import { DEMO_GIT_STATUS } from './scenarios';
 import { delegationSeed } from './subagents';
 
 /** One agent pane on the demo host. */
@@ -224,6 +225,9 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
     // A subagent that finished and a workflow still running, before the summary
     // the chat has always opened on (src/lib/demo/subagents.ts).
     ...delegationSeed(demoSessionDir('w2:p1') ?? ''),
+    // A `!` command run in the agent's shell, with two lines of output.
+    shellInputLine(DEMO_GIT_STATUS.command, 'd2-0g', '2026-08-19T08:35:00.000Z'),
+    shellOutputLine(DEMO_GIT_STATUS.stdout, '', 'd2-0h', '2026-08-19T08:35:00.040Z'),
     line({
       type: 'user',
       uuid: 'd2-1',
@@ -433,6 +437,19 @@ export function commandLines(command: string, printed: string, uuids: [string, s
     line({ type: 'user', uuid: uuids[0], timestamp, content: typed }),
     line({ type: 'user', uuid: uuids[1], timestamp, content: `<local-command-stdout>${printed}</local-command-stdout>` }),
   ];
+}
+
+/**
+ * What Claude records for a `!` line: the command, with the space it always
+ * adds after the `!`, then what it printed. Both are `user` turns, back to
+ * back, as in a real transcript (Claude Code 2.1.286).
+ */
+export function shellInputLine(command: string, uuid: string, timestamp: string): string {
+  return line({ type: 'user', uuid, timestamp, content: `<bash-input> ${command}</bash-input>` });
+}
+
+export function shellOutputLine(stdout: string, stderr: string, uuid: string, timestamp: string): string {
+  return line({ type: 'user', uuid, timestamp, content: `<bash-stdout>${stdout}</bash-stdout><bash-stderr>${stderr}</bash-stderr>` });
 }
 
 /** An assistant turn that is one tool call. */

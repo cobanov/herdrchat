@@ -1,0 +1,61 @@
+# Claude Code's shell mode in the thread (the Demo notes chat, w2): a `!` line
+# runs in the agent's shell, and the thread shows it as one block, the command
+# after a `$` and what it printed under it. Before, the command was a bubble
+# reading "! git status --short" and its output was dropped as harness, so
+# nobody saw what it printed.
+#
+# The seeded block is `! git status --short` with two lines of output, above
+# the summary the chat opens on (src/lib/demo/fixtures.ts). Typing `!` shows a
+# hint above the composer; the Demo answers a sent `! ls` with a listing of
+# three files a second later (src/lib/demo/scenarios.ts).
+#
+# The block's header is one accessibility element: "Shell command: <command>,
+# <N lines of output | running | no output>". Its output box is
+# `shell-output`, matched by text.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+# The seeded command, above the summary.
+- scrollUntilVisible:
+    element:
+      id: shell-run-d2-0g
+    direction: UP
+    timeout: 20000
+    centerElement: true
+- assertVisible: 'Shell command: git status --short, 2 lines of output.*'
+- assertVisible:
+    id: shell-output
+    text: '(?s).*draft-0\.12\.md.*'
+- takeScreenshot: shell-seeded-${APPEARANCE}
+
+# A `!` in a Claude chat says where the line will go.
+- tapOn:
+    id: composer-input
+- inputText: '!'
+- extendedWaitUntil:
+    visible:
+      id: shell-hint
+    timeout: 5000
+- assertVisible: .*Runs in the agent's shell, not sent to Claude.*
+- inputText: ' ls'
+- runFlow: _send.yaml
+- assertNotVisible:
+    id: shell-hint
+
+# The command lands as a block, then its listing under it. The echo is
+# confirmed by what Claude records, so no "Failed to send".
+- extendedWaitUntil:
+    visible: 'Shell command: ls, 3 lines of output.*'
+    timeout: 15000
+- assertVisible:
+    id: shell-output
+    text: '(?s).*release-notes\.md.*'
+- assertNotVisible: 'Failed to send, retry'
+- takeScreenshot: shell-${APPEARANCE}

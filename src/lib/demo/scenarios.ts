@@ -6,7 +6,7 @@
  * one failure, the folder-trust question a first start asks, a reply with a
  * table, an agent restyling the app through the host's theme file, a machine
  * the host can no longer reach, a subagent handed the review (its files in
- * subagents.ts). The UI tests drive the Demo with the phrases below, and anyone
+ * subagents.ts), a `!` line run in the agent's shell. The UI tests drive the Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
  * them without a special case.
@@ -244,3 +244,20 @@ export const DEMO_THEME_REPLY = [
  */
 export const DEMO_UNPLUG_REPLY =
   "Done. nuku is off the network now, so the host's ssh can't reach it. Its chat stays in the list as it was, with a line under the chats saying why.";
+
+// MARK: - Shell mode
+
+/**
+ * What the demo agent's shell prints for a `!` line. `! ls` lists the notes
+ * folder's three files, which the UI suite waits for; anything else says it
+ * did not run, on stderr, so the block's stderr colour is there to look at.
+ * The seeded `! git status --short` in the notes chat prints two lines.
+ */
+export const DEMO_LS_OUTPUT = 'CHANGELOG.md\nREADME.md\nrelease-notes.md';
+
+export const DEMO_GIT_STATUS = { command: 'git status --short', stdout: ' M release-notes.md\n?? draft-0.12.md' } as const;
+
+export function demoShellOutput(command: string): { stdout: string; stderr: string } {
+  if (command.trim() === 'ls') return { stdout: DEMO_LS_OUTPUT, stderr: '' };
+  return { stdout: '', stderr: `demo: ${command.trim()}: this is the demo host, so nothing ran` };
+}
