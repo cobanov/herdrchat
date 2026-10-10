@@ -77,12 +77,21 @@ public final class ShellRegistry: @unchecked Sendable {
 
   /// Output for the view. Callable from any thread. Public so the Demo's
   /// recorded screens can be fed to a view the same way a host's bytes are.
+  ///
+  /// With no view attached, it is held only for a shell that is still
+  /// registered: a channel delivers its last chunks after `forget` (closing
+  /// is not instant), and holding those under an id nobody will attach to
+  /// again kept up to `maxBacklogBytes` per terminal opened for good.
   public func deliver(_ shellId: String, _ data: Data) {
     guard !data.isEmpty else { return }
     lock.lock()
     if let sink = sinks[shellId] {
       lock.unlock()
       DispatchQueue.main.async { sink.receive(data) }
+      return
+    }
+    guard inputs[shellId] != nil else {
+      lock.unlock()
       return
     }
     var backlog = backlogs[shellId] ?? Data()

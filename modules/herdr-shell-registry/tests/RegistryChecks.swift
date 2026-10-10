@@ -19,6 +19,19 @@ import Foundation
     registry.unregister("echo-1")
     precondition(!registry.send("echo-1", Data("x".utf8)) && !registry.isOpen("echo-1"))
     registry.detach("echo-1", token: token)
-    print("PASS echo shell, and the registry hands early output to a late view")
+
+    // Output that arrives after the app forgot a shell is not held for a view
+    // that will never come.
+    EchoShell.open("echo-2", registry: registry)
+    registry.forget("echo-2")
+    registry.deliver("echo-2", Data("late".utf8))
+    let late = await MainActor.run { () -> Data in
+      var got = Data()
+      let token = registry.attach("echo-2") { got.append($0) }
+      registry.detach("echo-2", token: token)
+      return got
+    }
+    precondition(late.isEmpty, "output after forget is dropped, got \(late)")
+    print("PASS echo shell, and the registry hands early output to a late view, and drops it once forgotten")
   }
 }

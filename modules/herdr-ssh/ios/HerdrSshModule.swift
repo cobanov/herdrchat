@@ -213,6 +213,10 @@ actor ConnectionStore {
   private var connections: [String: SshConnection] = [:]
   private var streams: [String: Task<Void, Never>] = [:]
   private var shells: [String: ShellHandle] = [:]
+  /// Shells that ended before they were registered. A command that exits at
+  /// once runs `onClose` (and its `forgetShell`) before `openShell` returns
+  /// and registers it; without this the dead handle stayed until `closeAll`.
+  private var endedShells: Set<String> = []
 
   func connection(for id: String, config: SshConfigRecord) -> SshConnection {
     if let existing = connections[id] { return existing }
@@ -238,11 +242,14 @@ actor ConnectionStore {
   }
 
   func registerShell(_ shellId: String, handle: ShellHandle) {
+    if endedShells.remove(shellId) != nil { return }
     shells[shellId] = handle
   }
 
+  /// The shell ended on its own. Either order with `registerShell` leaves
+  /// nothing behind.
   func forgetShell(_ shellId: String) {
-    shells[shellId] = nil
+    if shells.removeValue(forKey: shellId) == nil { endedShells.insert(shellId) }
   }
 
   func closeShell(_ shellId: String) {
@@ -259,6 +266,7 @@ actor ConnectionStore {
     streams.removeAll()
     for shell in shells.values { shell.close() }
     shells.removeAll()
+    endedShells.removeAll()
     for connection in connections.values { await connection.close() }
     connections.removeAll()
   }

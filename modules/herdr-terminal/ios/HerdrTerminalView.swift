@@ -26,7 +26,7 @@ final class HerdrTerminalView: ExpoView, TerminalViewDelegate, UIGestureRecogniz
   let onFontSizeChange = EventDispatcher()
   let onModifiersReset = EventDispatcher()
 
-  let terminal = SwiftTerm.TerminalView(frame: .zero)
+  let terminal = PaneTerminalView(frame: .zero)
 
   var minFontSize: CGFloat = 8
   var maxFontSize: CGFloat = 28
@@ -160,8 +160,10 @@ final class HerdrTerminalView: ExpoView, TerminalViewDelegate, UIGestureRecogniz
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
   ) -> Bool {
-    // Scrolling the scrollback stays the terminal's own.
-    !(other is UIPinchGestureRecognizer)
+    // Scrolling the scrollback stays the terminal's own, alongside a pinch.
+    // Not the wheel (a swipe while the program has the mouse): a pinch that
+    // also scrolled herdr would move what is being zoomed.
+    !(other is UIPinchGestureRecognizer) && other !== terminal.wheelGesture
   }
 
   override var keyCommands: [UIKeyCommand]? {
