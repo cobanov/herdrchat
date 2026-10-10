@@ -13,7 +13,8 @@ appId: dev.herdr.HerdrChat
 - launchApp
 - runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 # A disposable test thread, never an unrelated conversation on the shared host.
 - tapOn:
@@ -36,7 +37,8 @@ appId: dev.herdr.HerdrChat
 # completed rather than rubber-banding back.
 - assertNotVisible:
     id: "thread-back"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 # And the chevron still works, since the swipe is an addition to it, not a
 # replacement.
@@ -44,4 +46,5 @@ appId: dev.herdr.HerdrChat
     id: "chat-row-${WORKSPACE_ID}"
 - tapOn:
     id: "thread-back"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"

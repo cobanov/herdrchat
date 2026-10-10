@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 DEVICE=${E2E_DEVICE:-$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; d=[x for r in json.load(sys.stdin)["devices"].values() for x in r if x["state"]=="Booted"]; print(d[0]["udid"] if d else "")')}
 if [ -z "$DEVICE" ]; then echo "No booted simulator. Boot one, or set E2E_DEVICE." >&2; exit 2; fi
 OUT=${E2E_OUT:-${TMPDIR:-/tmp}/herdrchat-e2e/$(date +%Y%m%d-%H%M%S)}
-FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/history regression/multi-agent regression/welcome regression/host-theme regression/machines regression/menu regression/host-editor-keyboard regression/subagents regression/slash-commands smoke new-chat tool-activity thread-header"}
+FLOWS=${E2E_FLOWS:-"regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/history regression/multi-agent regression/welcome regression/host-theme regression/machines regression/menu regression/list-modes regression/host-editor-keyboard regression/subagents regression/slash-commands smoke new-chat tool-activity thread-header"}
 APPEARANCES=${E2E_APPEARANCES:-"Dark Light"}
 mkdir -p "$OUT"
 
@@ -40,6 +40,14 @@ reset_return_setting() {
   return 0
 }
 
+# list-modes switches the chats list to Agents and back; the choice is saved,
+# so a run that failed in between must not leave every later flow on Agents.
+# Cleared before it and again after it.
+reset_list_mode() {
+  [ -f "$DB" ] && sqlite3 "$DB" "delete from settings where key='listMode'" 2>/dev/null
+  return 0
+}
+
 failed=""
 passed=0
 for appearance in $APPEARANCES; do
@@ -47,6 +55,7 @@ for appearance in $APPEARANCES; do
     name="$(echo "$flow" | tr '/' '-')-$appearance"
     [ "$flow" = "tool-activity" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_tool_setting; }
     [ "$flow" = "regression/composer-keys" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_return_setting; }
+    [ "$flow" = "regression/list-modes" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_list_mode; }
     printf '%-40s ' "$name"
     if maestro --device "$DEVICE" test -e APPEARANCE="$appearance" --test-output-dir "$OUT/$name" ".maestro/$flow.yaml" >"$OUT/$name.log" 2>&1; then
       echo pass
@@ -55,6 +64,7 @@ for appearance in $APPEARANCES; do
       echo FAIL
       failed="$failed $name"
     fi
+    [ "$flow" = "regression/list-modes" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_list_mode; }
   done
 done
 

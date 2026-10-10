@@ -32,7 +32,10 @@ appId: dev.herdr.HerdrChat
 # Off, Return is a newline: the draft stays and nothing is sent.
 - tapOn:
     id: thread-back
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: toggle-return-sends
@@ -42,7 +45,8 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: toggle-return-sends
     checked: false
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:
@@ -69,7 +73,10 @@ appId: dev.herdr.HerdrChat
 # Put the default back for the flows after this one.
 - tapOn:
     id: thread-back
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: toggle-return-sends
@@ -79,4 +86,5 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: toggle-return-sends
     checked: true
-- tapOn: Chats
+- tapOn:
+    id: header-close

@@ -19,6 +19,7 @@ where regressions are found.
 | `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
 | `regression/composer-keys` | Return sends from the composer; with Settings > "Return sends" off, Return keeps the draft and sends nothing; the setting put back |
 | `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
+| `regression/list-modes` | the chats title as a picker: Agents listing each agent as a row of its own (`chat-row-w2` for the one-agent w2, `chat-row-w6:p1` and `chat-row-w6:p2` for w6's two, by `agentTestKey`), titled by its session with its workspace on its line, a row opening that agent's own thread, and Spaces bringing back w6's card with its two agents under it; `scripts/e2e.sh` clears the saved choice around it (screenshots `list-agents-<appearance>`, `list-spaces-<appearance>`) |
 | `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 | `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
@@ -55,7 +56,8 @@ type a newline but turning the setting off, as its footnote says.
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
-The app opens on Chats; Hosts, Settings and New chat sit behind its "…" menu
+The app opens on the chats list, titled by its view (Spaces or Agents, picked
+by tapping the title, `chats-view`); Hosts, Settings and New chat sit behind its "…" menu
 (`chats-menu`) and open as sheets closed by Done (`header-close`). Flows reach
 them through `regression/_menu.yaml` with `ITEM` set to the row's text, never
 by tapping a screen's name on its own: the name is also a menu row and a sheet

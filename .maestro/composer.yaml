@@ -29,4 +29,5 @@ appId: dev.herdr.HerdrChat
 # Never send this fixture. Discard the unsent draft by leaving the route.
 - tapOn:
     id: thread-back
-- assertVisible: Chats
+- assertVisible:
+    id: chats-view

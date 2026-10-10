@@ -7,7 +7,10 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: toggle-host-themes
@@ -23,9 +26,13 @@ appId: dev.herdr.HerdrChat
           id: toggle-host-themes
 # Waited for, not asserted: a failed earlier run can also leave the Demo's
 # theme cached on the device, and the first check clears it. That check rides
-# on the chat list's poll, so pass by Chats to let it run.
-- tapOn: Chats
-- tapOn: Settings
+# on the chat list's poll, so close Settings onto the chats to let it run.
+- tapOn:
+    id: header-close
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: host-theme-row
@@ -51,7 +58,8 @@ appId: dev.herdr.HerdrChat
     direction: UP
 
 # The agent writes the file.
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:
@@ -69,7 +77,10 @@ appId: dev.herdr.HerdrChat
     id: thread-back
 
 # Reload reads it, and the switch going back on shows what Reload stored.
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: host-theme-row
@@ -118,4 +129,5 @@ appId: dev.herdr.HerdrChat
       text: 'Host theme, Default'
     timeout: 10000
 - takeScreenshot: host-theme-reset-${APPEARANCE}
-- tapOn: Chats
+- tapOn:
+    id: header-close

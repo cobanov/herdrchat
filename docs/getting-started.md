@@ -90,6 +90,10 @@ Windows-native paths are not translated.
    which conversation belongs to you.
    A workspace running more than one agent lists each one under it: tap an
    agent to talk to it alone, or the workspace to read them all together.
+   Tap the list's title to switch views: **Spaces** lists workspaces this way,
+   **Agents** lists every agent as a row of its own, flat, with its workspace
+   named on its line. Unread dots are the same in both views, and so is a pin
+   on a workspace with one agent. The app remembers the view you left it on.
 
 ## Build the iOS app
 

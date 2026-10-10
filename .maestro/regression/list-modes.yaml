@@ -1,0 +1,131 @@
+# The chats title is a picker: Spaces (a card per workspace, each agent of a
+# workspace that runs several hung under it) or Agents (every agent a row of
+# its own, flat). On the Demo, w2 "notes" has one agent and w6 "api" two, so
+# Agents lists w2's agent as `chat-row-w2` (a one-agent workspace keeps its
+# workspace's testID) and w6's agents as `chat-row-w6:p1` and
+# `chat-row-w6:p2` (`agentTestKey`: the pane's id, since the two share their
+# workspace's). The picker is the system sheet, so its rows are matched by
+# text; the current view's row carries a tick ("Spaces ✓").
+#
+# The choice is saved, so this flow ends on Spaces, as every other flow
+# expects; scripts/e2e.sh also clears it before and after this flow, in case
+# a failed run stopped on Agents.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- assertVisible:
+    id: chats-view
+    text: Showing Spaces\. Change view\.
+
+# Agents.
+- tapOn:
+    id: chats-view
+- extendedWaitUntil:
+    visible: Agents
+    timeout: 5000
+- assertVisible: Spaces ✓
+- tapOn:
+    text: Agents
+    below:
+      id: chats-view
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+      text: Showing Agents\. Change view\.
+    timeout: 5000
+- assertVisible:
+    id: chat-row-w2
+    text: Release notes summary, Claude · demo/notes.*
+# w6's agents, each a full row titled by its session, its line naming its
+# workspace when the folder does not. p2 is working, so it sits in Working;
+# p1 is idle, below it.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w6:p2
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w6:p2
+    text: Save button wrap, api · Claude · api/web.*
+- scrollUntilVisible:
+    element:
+      id: chat-row-w6:p1
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w6:p1
+    text: Archived projects migration, Claude · demo/api.*
+# No workspace card and no pane rows in this view.
+- assertNotVisible:
+    id: chat-row-w6
+- assertNotVisible:
+    id: pane-row-w6:p1
+# Back to the top (w1 needs you, so it leads the list) for the screenshot.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+- takeScreenshot: list-agents-${APPEARANCE}
+
+# An agent's row opens that agent's own thread.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w6:p2
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: chat-row-w6:p2
+- extendedWaitUntil:
+    visible:
+      id: thread-title
+      text: Save button wrap
+    timeout: 15000
+- extendedWaitUntil:
+    visible: .*save button wraps.*
+    timeout: 15000
+- assertNotVisible: .*archived_at.*
+- tapOn:
+    id: thread-back
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+      text: Showing Agents\. Change view\.
+    timeout: 5000
+
+# Back to Spaces: w6 is a card again, with its two agents under it.
+- tapOn:
+    id: chats-view
+- extendedWaitUntil:
+    visible: Agents ✓
+    timeout: 5000
+- tapOn:
+    text: Spaces
+    below:
+      id: chats-view
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+      text: Showing Spaces\. Change view\.
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: pane-row-w6:p2
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w6
+    text: 'api, .*2 agents · Claude.*'
+- assertVisible:
+    id: pane-row-w6:p1
+- assertVisible:
+    id: pane-row-w6:p2
+- assertNotVisible:
+    id: chat-row-w6:p1
+# Back to the top (w1 needs you, so it leads the list) for the screenshot.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+- takeScreenshot: list-spaces-${APPEARANCE}
