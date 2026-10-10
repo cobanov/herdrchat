@@ -15,7 +15,12 @@ import { minTouchTarget, radius, spacing } from '@/theme/tokens';
  * key work as before. Out of focus it is a one-line summary, and Replace
  * clears it for a new one rather than revealing the old.
  */
-export function KeyField({ value, onChangeText }: { value: string; onChangeText: (text: string) => void }) {
+export function KeyField({ value, onChangeText, onFocus }: {
+  value: string;
+  onChangeText: (text: string) => void;
+  /** The field took focus, so the form can bring it into view. */
+  onFocus?: () => void;
+}) {
   const { colors } = useTheme();
   const [editing, setEditing] = useState(false);
 
@@ -59,7 +64,10 @@ export function KeyField({ value, onChangeText }: { value: string; onChangeText:
       placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…'}
       value={value}
       onChangeText={onChangeText}
-      onFocus={() => setEditing(true)}
+      onFocus={() => {
+        setEditing(true);
+        onFocus?.();
+      }}
       onBlur={() => setEditing(false)}
       autoFocus={editing}
       multiline

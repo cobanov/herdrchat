@@ -8,7 +8,7 @@ import { Text } from '@/components/Text';
 import { errorText } from '@/features/chats/useWorkspaces';
 import { haptics } from '@/lib/haptics';
 import { useChatEdits } from '@/state/chatEdits';
-import { clientFor, useSelectedConnection } from '@/state/connections';
+import { clientFor, useConnectionFor, useSelectedConnection } from '@/state/connections';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 
@@ -34,9 +34,13 @@ import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 export default function RenameChatScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const connection = useSelectedConnection();
   const markDirty = useChatEdits((state) => state.markDirty);
-  const params = useLocalSearchParams<{ workspaceId: string; title?: string }>();
+  // `connectionId` names the row's connection: one of the host's machines
+  // for a chat on that machine, whose workspace is renamed there. Without it
+  // (an older link), the selected host, as before.
+  const params = useLocalSearchParams<{ workspaceId: string; title?: string; connectionId?: string }>();
+  const selected = useSelectedConnection();
+  const connection = useConnectionFor(params.connectionId ?? selected?.id ?? null);
 
   const original = params.title ?? '';
   const [label, setLabel] = useState(original);

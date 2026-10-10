@@ -1,0 +1,35 @@
+# Pulling the conversation down takes the keyboard with it, the way Messages
+# does. Before, the thread's list had no keyboardDismissMode and the keyboard
+# stayed up until "Hide keyboard" or a send. The composer's hide button shows
+# only while the field has focus, so it is the flow's sign of the keyboard.
+# Open both screenshots: the composer must sit just above the keys in the
+# first and just above the home indicator in the second, never behind either.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- extendedWaitUntil:
+    visible:
+      id: composer-hide-keyboard
+    timeout: 5000
+- waitForAnimationToEnd
+- takeScreenshot: keyboard-up-${APPEARANCE}
+- swipe:
+    from:
+      id: thread-messages
+    direction: DOWN
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: composer-hide-keyboard
+    timeout: 5000
+- assertVisible:
+    id: composer-input
+- takeScreenshot: keyboard-dismissed-${APPEARANCE}

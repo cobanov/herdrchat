@@ -9,8 +9,11 @@ import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
+import { chatKey } from '@/lib/chatKey';
+import { titleAgent } from '@/lib/chatTitle';
 import {
   hasSessionReference,
+  isConversationalAgent,
   sessionSignature,
   type AgentInfo,
   type AgentStatus,
@@ -175,6 +178,15 @@ export interface ThreadState {
    * notification may arrive without one, and a rename elsewhere changes it.
    */
   workspaceLabel: string | null;
+  /**
+   * The title the chat's session gave itself, read from the bound agent on
+   * every poll: a pane chat's one agent, or a workspace chat's one
+   * conversational agent. Null with several, as the workspace's row keeps
+   * its label then (`titleAgent`), so the list and the thread never disagree.
+   */
+  sessionTitle: string | null;
+  /** That agent's herdr name, the title while the session has none. */
+  agentName: string | null;
   blockedPrompt: BlockedPrompt | null;
   /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
   blockedPending: BlockedPending | null;
@@ -229,8 +241,27 @@ export interface ThreadState {
 }
 
 /**
- * Drives one workspace thread: tails the transcript into bubbles, tracks live
+ * The panes a thread is about, out of a host snapshot: every pane in the
+ * workspace, or with `paneId` only that one.
+ *
+ * Everything the thread does derives from this list, so a pane's chat binds,
+ * tails, sends and reports presence for its own agent and nothing else, while
+ * the workspace chat keeps every pane exactly as it always has. When the pane
+ * is gone the list is empty, which unbinds the thread and holds sending the
+ * way an emptied workspace does. Matching on the pane id rather than following
+ * the session to another pane is deliberate: the pane is what the user picked
+ * out of the list, and its row disappears with it.
+ */
+function chatAgents(agents: readonly AgentInfo[], workspaceId: string, paneId: string | undefined): AgentInfo[] {
+  return agents.filter((agent) => agent.workspaceId === workspaceId && (paneId === undefined || agent.paneId === paneId));
+}
+
+/**
+ * Drives one thread: tails the transcript into bubbles, tracks live
  * blocked/working state, and sends replies back through herdr.
+ *
+ * The thread is a workspace's, merging every agent in it, or with `paneId` the
+ * one agent in that pane (see `chatAgents`).
  *
  * Transcripts are targeted by the agent's native session reference, herdr's
  * `agent_session.value` IS the Claude transcript filename, rather than by
@@ -242,8 +273,18 @@ export function useThread(
   client: HerdrClient | null,
   connectionId: string,
   workspaceId: string,
-  initialAgents: readonly AgentInfo[]
+  initialAgents: readonly AgentInfo[],
+  paneId?: string
 ): ThreadState {
+  /** Absent and empty both mean the workspace chat, as in `chatKey`. */
+  const pane = paneId === undefined || paneId === '' ? undefined : paneId;
+  /**
+   * What the message cache and tail cursors are filed under. The workspace
+   * chat's is its bare id, as it always was. A pane's chat needs its own: the
+   * cache holds one session signature per key, so sharing the workspace's
+   * would have each chat `rebind` away the other's history on every open.
+   */
+  const cacheKey = chatKey({ workspaceId, paneId: pane });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(client !== null);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -442,10 +483,10 @@ export function useThread(
       if (fresh.length === 0) return;
       for (const message of fresh) seen.current.add(message.id);
       arrivals.current.push(...fresh);
-      await appendMessages(db, connectionId, workspaceId, sig, fresh);
+      await appendMessages(db, connectionId, cacheKey, sig, fresh);
       if (alive.current) rebuild();
     },
-    [db, connectionId, workspaceId, rebuild]
+    [db, connectionId, cacheKey, rebuild]
   );
 
   /**
@@ -615,7 +656,7 @@ export function useThread(
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
           if (agent.agent === 'omp') await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
           absentRetry.current.delete(key);
-          const cached = await tailCursor(db, connectionId, workspaceId, path);
+          const cached = await tailCursor(db, connectionId, cacheKey, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
         } catch (thrown) {
           release(sessionSignature([agent])!);
@@ -637,7 +678,7 @@ export function useThread(
         const latest = windows.flatMap(window => window.recent?.messages ?? []);
         // A single transcript keeps host order even without timestamps.
         if (windows.length > 1) latest.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-        await replaceMessages(db, connectionId, workspaceId, sig, latest);
+        await replaceMessages(db, connectionId, cacheKey, sig, latest);
         if (!current()) return;
         // A restart re-reads the end of the transcript. When that continues what
         // is on screen, keep the older history the reader paged back to and the
@@ -656,7 +697,7 @@ export function useThread(
       for (const source of windows) {
         const followFrom = source.recent?.consumedBytes ?? await resumePoint(store, source.path, source.cached!);
         if (source.recent !== null) {
-          await setTailCursor(db, connectionId, workspaceId, source.path, followFrom);
+          await setTailCursor(db, connectionId, cacheKey, source.path, followFrom);
         }
         if (!current()) return;
         if (olderSource.current === null) {
@@ -690,7 +731,7 @@ export function useThread(
               if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
               if (chunk.message !== null) await ingest([chunk.message], sig);
               if (!current()) break;
-              await setTailCursor(db, connectionId, workspaceId, source.path, chunk.consumedBytes);
+              await setTailCursor(db, connectionId, cacheKey, source.path, chunk.consumedBytes);
             }
           } catch (thrown) {
             if (current()) {
@@ -723,7 +764,7 @@ export function useThread(
         for (const agent of identified) release(sessionSignature([agent])!);
       }
     }
-  }, [client, db, connectionId, workspaceId, ingest, applyMeta, rebuild]);
+  }, [client, db, connectionId, cacheKey, ingest, applyMeta, rebuild]);
 
   /**
    * Read the pane for a slash command's panel.
@@ -802,12 +843,12 @@ export function useThread(
       try {
         const snapshot = await client.snapshot();
         if (!alive.current || stopped) return;
-        const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
+        const live = chatAgents(snapshot.agents, workspaceId, pane);
         setAgents(live);
         const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
         if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
-        const conversational = live.filter((agent) => agent.agent === 'claude' || agent.agent === 'codex' || agent.agent === 'omp');
+        const conversational = live.filter(isConversationalAgent);
         const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
         const sig = sessionSignature(conversational);
         const panes = conversational.map((agent) => agent.paneId).sort().join(',');
@@ -874,12 +915,12 @@ export function useThread(
           tailBeats.current.clear();
           tailFailures.current.clear();
           const rotated = boundSig.current !== null;
-          const dropped = await rebind(db, connectionId, workspaceId, sig);
+          const dropped = await rebind(db, connectionId, cacheKey, sig);
           if (dropped || rotated) resetHistory();
           if (stopped) return;
           boundSig.current = sig;
           setLoading(true);
-          const cached = await seedMessages(db, connectionId, workspaceId);
+          const cached = await seedMessages(db, connectionId, cacheKey);
           if (stopped) return;
           arrivals.current = cached;
           // Deduplicate what is ON SCREEN, not every cached row ever seen.
@@ -1021,7 +1062,7 @@ export function useThread(
         */
         if (!offlineSeeded.current && boundSig.current === null && arrivals.current.length === 0) {
           offlineSeeded.current = true;
-          const cached = await seedMessages(db, connectionId, workspaceId);
+          const cached = await seedMessages(db, connectionId, cacheKey);
           if (!alive.current || stopped || boundSig.current !== null || cached.length === 0) return;
           arrivals.current = cached;
           seen.current = new Set(cached.map((message) => message.id));
@@ -1064,6 +1105,8 @@ export function useThread(
     db,
     connectionId,
     workspaceId,
+    pane,
+    cacheKey,
     startTails,
     resetHistory,
     clearBlockedPending,
@@ -1121,7 +1164,7 @@ export function useThread(
       if (client === null) return fallback;
       try {
         const snapshot = await client.snapshot();
-        const live = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
+        const live = chatAgents(snapshot.agents, workspaceId, pane);
         return (
           live.find((a) => a.focused && a.agent !== null) ??
           live.find((a) => a.agent !== null) ??
@@ -1132,7 +1175,7 @@ export function useThread(
         return fallback;
       }
     },
-    [client, workspaceId]
+    [client, workspaceId, pane]
   );
 
   /**
@@ -1458,7 +1501,7 @@ export function useThread(
         await db.runAsync(
           `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
           connectionId,
-          workspaceId
+          cacheKey
         );
       }
     });
@@ -1467,7 +1510,9 @@ export function useThread(
     setLoading(true);
     failures.current = 0;
     kick.current();
-  }, [db, connectionId, workspaceId, resetHistory]);
+  }, [db, connectionId, cacheKey, resetHistory]);
+
+  const titled = titleAgent(agents);
 
   return {
     loading,
@@ -1485,6 +1530,8 @@ export function useThread(
     status,
     agents,
     workspaceLabel,
+    sessionTitle: titled?.title ?? null,
+    agentName: titled?.name ?? null,
     blockedPrompt,
     blockedPending,
     isBlocked: blockedPane !== null,

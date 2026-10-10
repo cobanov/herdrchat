@@ -4,7 +4,7 @@ import { Button } from './Button';
 import { Text } from './Text';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, size, spacing, useScaledLine } from '@/theme/tokens';
+import { minTouchTarget, spacing, useScaledLine } from '@/theme/tokens';
 
 /**
  * An empty state: an icon, one line of explanation, one clear action.
@@ -48,10 +48,10 @@ export function EmptyState({
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: spacing.xxl,
-        // Clears the floating tab bar, which overlays this rather than sitting
-        // beneath it — without this the action ends up underneath the bar at the
-        // exact sizes where it is already hardest to reach.
-        paddingBottom: size.floatingBarClearance,
+        // Lifts the centred block a little above the true middle, where the eye
+        // expects it, and keeps the action clear of the home indicator when
+        // large text makes this scroll.
+        paddingBottom: spacing.xxxl,
         gap: spacing.md,
       }}>
       <Icon

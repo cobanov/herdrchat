@@ -1,0 +1,122 @@
+# A machine saved on the host (`herdr machine add`) lists its chats in the
+# host's list. The Demo host saves one, `nuku` (id demo-nuku), with one idle
+# Claude chat in workspace w1 "kenneth-bot", titled "Nightly digest" by its
+# session; the Demo answers the machine's commands through the same ssh jump a
+# real host runs (src/lib/demo/host.ts). Before, the app asked the host for
+# its own snapshot only, and a chat on a machine was nowhere on the phone.
+#
+# A machine's row is `chat-row-<machineId>-<workspaceId>` (`rowTestKey`):
+# its w1 is not the host's w1, and a connection id's slash has no place in a
+# testID.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+# The machine's list rides on the host's first poll, then nuku's own poll
+# lands its rows after the host's; idle, so near the end.
+- scrollUntilVisible:
+    element:
+      id: chat-row-demo-nuku-w1
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+# Titled by its session, and its line says which machine first.
+- assertVisible:
+    id: chat-row-demo-nuku-w1
+    text: 'Nightly digest, nuku · .*'
+- takeScreenshot: machines-list-${APPEARANCE}
+# The host's own w1 is still its own row, with its own chat: both are w1, and
+# a merge keyed by workspace would have put one in the other's place. It needs
+# you, so it is near the top.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+    centerElement: true
+    timeout: 20000
+- assertVisible:
+    id: chat-row-w1
+    text: 'Folder picker read errors, .*'
+- assertNotVisible:
+    id: chat-row-w1
+    text: '.*(nuku|Nightly digest).*'
+
+- tapOn:
+    id: chat-row-demo-nuku-w1
+- extendedWaitUntil:
+    visible: .*the backup job ran twice.*
+    timeout: 15000
+- assertVisible:
+    id: thread-title
+    text: Nightly digest
+# The header names the machine first, once the first poll has bound it.
+- extendedWaitUntil:
+    visible:
+      id: thread-meta
+      text: 'nuku · .*'
+    timeout: 10000
+- tapOn:
+    id: composer-input
+- inputText: anything new tonight
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .anything new tonight.*
+    timeout: 15000
+- takeScreenshot: machines-${APPEARANCE}
+- tapOn:
+    id: thread-back
+
+# The reply is on the machine's row, read by the visit; the host's w1 row
+# never heard of it. Checked with that row on screen, or the check says nothing.
+- scrollUntilVisible:
+    element:
+      id: chat-row-demo-nuku-w1
+      text: .*You said .anything new tonight.*
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: chat-row-w1
+    direction: UP
+    centerElement: true
+    timeout: 20000
+- assertVisible:
+    id: chat-row-w1
+    text: 'Folder picker read errors, .*'
+- assertNotVisible:
+    id: chat-row-w1
+    text: .*anything new tonight.*
+
+# A machine the host cannot reach is one line under the chats, never the
+# list's error, and its row stays as last seen. The Demo's scenario
+# (DEMO_PHRASES.unplug, typed into a host chat) takes nuku off the network;
+# every jump to it then fails as ssh does, with exit 255.
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- inputText: unplug the machine
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*nuku is off the network.*
+    timeout: 15000
+- tapOn:
+    id: thread-back
+- scrollUntilVisible:
+    element:
+      id: machine-notice-demo-nuku
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- assertVisible:
+    id: machine-notice-demo-nuku
+    text: "Demo can't reach nuku right now."
+- assertVisible:
+    id: chat-row-demo-nuku-w1
+- assertNotVisible:
+    id: error-banner
+- takeScreenshot: machines-unplugged-${APPEARANCE}

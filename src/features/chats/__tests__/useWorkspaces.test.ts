@@ -1,10 +1,12 @@
 import { act, renderHook } from '@testing-library/react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
+import { useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
-import { TranscriptStore } from '@/lib/transcript/store';
+import { buildSummaries, refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
+import { TranscriptStore, type PreviewRequest } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 
 let mockPolling = true;
@@ -18,22 +20,37 @@ jest.mock('../../useHostEvents', () => ({
     return mockLive;
   },
 }));
-jest.mock('@/state/settings', () => ({ useSettings: () => 1 }));
+let mockHostThemes = true;
+jest.mock('@/state/settings', () => ({
+  useSettings: (select: (state: { pollScale: number; useHostThemes: boolean }) => unknown) =>
+    select({ pollScale: 1, useHostThemes: mockHostThemes }),
+}));
+const mockCheckTheme = jest.fn(async (_connectionId: string, _transport: unknown) => true);
+jest.mock('@/state/hostTheme', () => ({
+  checkHostTheme: (connectionId: string, transport: unknown) => mockCheckTheme(connectionId, transport),
+}));
+const mockRefreshMachines = jest.fn(async (_hostId: string, _client: unknown) => true);
+jest.mock('@/state/hostMachines', () => ({
+  refreshHostMachines: (hostId: string, client: unknown) => mockRefreshMachines(hostId, client),
+}));
+const mockScanSlash = jest.fn(async (_connectionId: string, _transport: unknown, _ask: unknown) => undefined);
+jest.mock('@/state/slashCommands', () => ({
+  scanSlashCatalogue: (connectionId: string, transport: unknown, ask: unknown) =>
+    mockScanSlash(connectionId, transport, ask),
+}));
 jest.mock('@/lib/transcript/store', () => ({
   previewText: (message: ChatMessage) =>
     message.segments[0]?.kind === 'text' ? message.segments[0].text : null,
   TranscriptStore: class {
-    latestMessages = async () =>
-      new Map([
-        [
-          'chat',
-          {
-            role: 'assistant',
-            timestamp: 100,
-            segments: [{ kind: 'text', text: mockPreview }],
-          },
-        ],
-      ]);
+    latestMessages = async (requests: readonly { workspaceId: string; key?: string }[]) =>
+      new Map(requests.map((request) => [
+        request.key ?? request.workspaceId,
+        {
+          role: 'assistant',
+          timestamp: 100,
+          segments: [{ kind: 'text', text: mockPreview }],
+        },
+      ]));
   },
 }));
 const client = new HerdrClient({
@@ -61,6 +78,13 @@ beforeEach(() => {
   mockPolling = true;
   mockLive = true;
   mockPreview = 'Before';
+  mockHostThemes = true;
+  mockCheckTheme.mockReset();
+  mockCheckTheme.mockResolvedValue(true);
+  mockRefreshMachines.mockReset();
+  mockRefreshMachines.mockResolvedValue(true);
+  mockScanSlash.mockReset();
+  mockScanSlash.mockResolvedValue(undefined);
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -264,4 +288,350 @@ it('keeps retrying, with backoff, a host that is merely unreachable', async () =
   await act(async () => { await jest.advanceTimersByTimeAsync(300_000); });
   expect(snapshot.mock.calls.length).toBeGreaterThan(3);
   await unmount();
+});
+
+// MARK: - Several agents in one workspace
+
+const twoAgents = (p2: Record<string, unknown> = {}) => decodeSnapshot({
+  version: '0.9.0',
+  workspaces: [{ workspace_id: 'w6', label: 'api', number: 6, agent_status: 'idle' }],
+  agents: [
+    { workspace_id: 'w6', pane_id: 'w6:p1', agent: 'claude', agent_status: 'idle', cwd: '/api', focused: true,
+      agent_session: { kind: 'id', value: 'sess-1' }, state_change_seq: 1 },
+    { workspace_id: 'w6', pane_id: 'w6:p2', agent: 'claude', agent_status: 'idle', cwd: '/api/web',
+      agent_session: { kind: 'id', value: 'sess-2' }, state_change_seq: 1, ...p2 },
+    { workspace_id: 'w6', pane_id: 'w6:p3', agent: null, agent_status: 'unknown', cwd: '/api' },
+  ],
+});
+const message = (text: string, timestamp: number) =>
+  ({ role: 'assistant', timestamp, segments: [{ kind: 'text', text }] }) as unknown as ChatMessage;
+/** A store that answers each request with a line naming the session it read. */
+const storeAnswering = (at: Record<string, number> = {}) => {
+  const latestMessages = jest.fn(async (requests: readonly PreviewRequest[]) =>
+    new Map(requests.map((request) => [request.key ?? request.workspaceId,
+      message(`from ${request.sessionId ?? ''}`, at[request.sessionId ?? ''] ?? 100)])));
+  return { store: { latestMessages } as unknown as TranscriptStore, latestMessages };
+};
+
+// Fetched per workspace, only the elected agent ever had a line; the other
+// agent's row could show nothing and its dot could never light.
+it('fetches one preview per agent in a single batch, and files each by its pane', async () => {
+  const { store, latestMessages } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  await refreshPreviews(store, twoAgents().agents, previews, { current: 0 });
+
+  expect(latestMessages).toHaveBeenCalledTimes(1);
+  expect(latestMessages.mock.calls[0]?.[0].map((request) => [request.key, request.sessionId])).toEqual([
+    ['w6:p1', 'sess-1'], ['w6:p2', 'sess-2'],
+  ]);
+  expect(previews.get('w6:p1')).toMatchObject({ sessionSig: 'sess-1', preview: { text: 'from sess-1' } });
+  expect(previews.get('w6:p2')).toMatchObject({ sessionSig: 'sess-2', preview: { text: 'from sess-2' } });
+});
+
+it('between sweeps refreshes only the agent that is busy or moved', async () => {
+  const { store, latestMessages } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  const seqs = new Map<string, number>();
+  const tick = { current: 0 };
+  await refreshPreviews(store, twoAgents().agents, previews, tick, false, seqs);
+  await refreshPreviews(store, twoAgents().agents, previews, tick, false, seqs);
+  expect(latestMessages).toHaveBeenCalledTimes(1);
+  await refreshPreviews(store, twoAgents({ agent_status: 'working' }).agents, previews, tick, false, seqs);
+  expect(latestMessages.mock.calls[1]?.[0].map((request) => request.key)).toEqual(['w6:p2']);
+  await refreshPreviews(store, twoAgents({ state_change_seq: 2 }).agents, previews, tick, false, seqs);
+  expect(latestMessages.mock.calls[2]?.[0].map((request) => request.key)).toEqual(['w6:p2']);
+});
+
+it('summarises each agent with its own line, and the workspace with the newest', async () => {
+  const { store } = storeAnswering({ 'sess-1': 100, 'sess-2': 200 });
+  const previews = new Map<string, CachedPreview>();
+  const { agents, workspaces } = twoAgents({ agent_status: 'working' });
+  await refreshPreviews(store, agents, previews, { current: 0 });
+  const [summary] = buildSummaries(workspaces ?? [], agents, previews);
+
+  expect(summary?.panes.map((pane) => [pane.paneId, pane.sessionSig, pane.preview?.text, pane.status])).toEqual([
+    ['w6:p1', 'sess-1', 'from sess-1', 'idle'],
+    ['w6:p2', 'sess-2', 'from sess-2', 'working'],
+  ]);
+  // The plain shell has no chat of its own, but stays among the agents.
+  expect(summary?.agents).toHaveLength(3);
+  expect(summary?.preview?.text).toBe('from sess-2');
+  expect(summary?.sessionSig).toBe('sess-1,sess-2');
+  // herdr said idle for the workspace; one of its agents is working.
+  expect(summary?.status).toBe('working');
+});
+
+it('says a workspace needs you when any one of its agents waits on a menu', () => {
+  const { agents, workspaces } = twoAgents({ agent_status: 'working' });
+  const waiting = agents.map((agent) => agent.paneId === 'w6:p1' ? { ...agent, inputPending: true } : agent);
+  const [summary] = buildSummaries(workspaces ?? [], waiting, new Map());
+  expect(summary?.panes.map((pane) => pane.status)).toEqual(['blocked', 'working']);
+  expect(summary?.status).toBe('blocked');
+});
+
+// herdr recycles pane ids: a new conversation in the same pane must not wear
+// the previous one's line.
+it('hides a pane\'s line once a different session holds the pane', async () => {
+  const { store } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  await refreshPreviews(store, twoAgents().agents, previews, { current: 0 });
+  const { agents, workspaces } = twoAgents({ agent_session: { kind: 'id', value: 'sess-new' } });
+  const [summary] = buildSummaries(workspaces ?? [], agents, previews);
+  expect(summary?.panes.map((pane) => [pane.sessionSig, pane.preview?.text ?? null])).toEqual([
+    ['sess-1', 'from sess-1'], ['sess-new', null],
+  ]);
+});
+
+it('keeps a single-agent workspace exactly as it was: one row, its own line, no pane rows', async () => {
+  const { store } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  await refreshPreviews(store, snapshot.agents, previews, { current: 0 });
+  const [summary] = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, previews);
+  expect(summary).toMatchObject({ status: 'idle', sessionSig: 'session', preview: { text: 'from session' } });
+  expect(summary?.panes).toHaveLength(1);
+});
+
+describe('the host theme check, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('checks on the first poll, then at most every 10 s', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockCheckTheme).toHaveBeenCalledTimes(1);
+    expect(mockCheckTheme).toHaveBeenLastCalledWith('host', client.transport);
+    // Polls at 3, 6 and 9 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(9_100); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(1);
+    // The poll at 12 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('checks again on a pull to refresh and on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockCheckTheme).toHaveBeenCalledTimes(3);
+    await unmount();
+  });
+
+  it('never checks after a poll that failed', async () => {
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  it('never checks without a host to file it under, or with host themes off', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    mockHostThemes = false;
+    const off = await renderHook(() => useWorkspaces(client, 'host'));
+    await off.unmount();
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+  });
+
+  // The check is a side task: the list never waits on it or reports it.
+  it('keeps a failed or hanging check out of the list', async () => {
+    mockCheckTheme.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    mockCheckTheme.mockResolvedValue(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(12_100); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
+describe('the host\'s machine list, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('asks on the first poll, then at most every 60 s', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
+    expect(mockRefreshMachines).toHaveBeenLastCalledWith('host', client);
+    // Polls every 3 s up to 57 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(57_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
+    // The poll at 60 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('asks again on a pull to refresh and on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(3);
+    await unmount();
+  });
+
+  it('never asks after a poll that failed, or without a host to file it under', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const failed = await renderHook(() => useWorkspaces(client, 'host'));
+    await failed.unmount();
+    expect(mockRefreshMachines).not.toHaveBeenCalled();
+  });
+
+  // A machine's own list: the host's theme applies to it, and its own
+  // machines are not federated a second hop.
+  it('asks neither the machines nor the theme for a machine\'s list', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    expect(mockRefreshMachines).not.toHaveBeenCalled();
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  // Settings shows the host's herdr version, which the host's poll records.
+  // A machine's poll runs beside it and used to overwrite it with the
+  // machine's own.
+  it('leaves the host\'s herdr version to the host\'s poll', async () => {
+    useHostVersion.setState({ version: null });
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(useHostVersion.getState().version).toBeNull();
+    await unmount();
+    const host = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(useHostVersion.getState().version).toBe('0.9.0');
+    await host.unmount();
+  });
+
+  // The list never waits on the ask or reports it.
+  it('keeps a failed or hanging ask out of the list', async () => {
+    mockRefreshMachines.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    mockRefreshMachines.mockResolvedValue(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
+// b704ec8 scanned on every thread open and queued in front of everything
+// else. The scan now rides this poll like the theme check: the first poll
+// after connecting, then every ten minutes, and a pull.
+describe('the slash-command scan, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('scans the host-wide part on the first poll, then at most every 10 minutes', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: [] });
+    // Polls every 3 s up to 597 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(597_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    // The poll at 600 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('scans again on a pull to refresh, not on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('never scans after a poll that failed, or without a connection to file it under', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const failed = await renderHook(() => useWorkspaces(client, 'host'));
+    await failed.unmount();
+    expect(mockScanSlash).not.toHaveBeenCalled();
+  });
+
+  // A machine has its own Claude Code and home folder: its own scan,
+  // through its own client, filed under its own connection id.
+  it('scans a machine\'s list under the machine\'s own id', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: [] });
+    await unmount();
+  });
+
+  // The list never waits on the scan or reports it.
+  it('keeps a failed or hanging scan out of the list', async () => {
+    mockScanSlash.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    await act(async () => { await jest.advanceTimersByTimeAsync(601_000); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
+// A chat is titled by its session, not its slot: the summaries carry what
+// herdr reports for each agent, and the workspace's label stays its label.
+it('carries each agent\'s session title and name from the snapshot', () => {
+  const { agents, workspaces } = twoAgents({ title: 'Web build', name: 'web-a' });
+  const titled = agents.map((agent) => agent.paneId === 'w6:p1' ? { ...agent, title: 'API contract' } : agent);
+  const [summary] = buildSummaries(workspaces ?? [], titled, new Map());
+  expect(summary?.panes.map((pane) => [pane.paneId, pane.sessionTitle, pane.agentName])).toEqual([
+    ['w6:p1', 'API contract', null],
+    ['w6:p2', 'Web build', 'web-a'],
+  ]);
+  // Several agents: the workspace row stands for all of them.
+  expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['api', null, null]);
+});
+
+it('titles a one-agent workspace chat by that agent\'s session', () => {
+  const titled = decodeSnapshot({
+    workspaces: [{ workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' }],
+    agents: [
+      { workspace_id: 'chat', pane_id: 'shell', agent: null, cwd: '/test', title: 'zsh' },
+      { workspace_id: 'chat', pane_id: 'pane', agent: 'claude', cwd: '/test', name: 'feke-pm',
+        title: 'Feke animation smoothness', terminal_title: '✳ Feke animation smoothness' },
+    ],
+  });
+  const [summary] = buildSummaries(titled.workspaces ?? [], titled.agents, new Map());
+  expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['Test', 'Feke animation smoothness', 'feke-pm']);
+  expect(summary?.panes[0]?.sessionTitle).toBe('Feke animation smoothness');
 });

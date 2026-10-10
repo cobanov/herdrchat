@@ -22,7 +22,21 @@ import type { SessionState } from './useThread';
  * This one is about there being no host to ask, so it offers the two places
  * worth going instead of a message field that cannot send.
  */
-export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts: () => void }) {
+export function MissingHost({ machine = null, onBack, onHosts, onChats }: {
+  /**
+   * The chat was on one of a host's machines, which the host no longer lists
+   * as enabled (`herdr machine disable`, or removed). The host is fine, and
+   * machines are not on the Hosts screen, so the way out is back to the
+   * chats, not to Hosts: there it looked as if the phone were the problem.
+   * `label` when the host's cached list still has it.
+   */
+  machine?: { label: string | null; host: string } | null;
+  onBack?: () => void;
+  onHosts: () => void;
+  /** Back to the chats list where there is no `onBack` (the iPad's split view). */
+  onChats?: () => void;
+}) {
+  const toChats = onBack ?? onChats;
   return (
     <View
       testID="thread-host-missing"
@@ -34,15 +48,27 @@ export function MissingHost({ onBack, onHosts }: { onBack?: () => void; onHosts:
         gap: spacing.sm,
       }}>
       <Text variant="title3" style={{ textAlign: 'center' }}>
-        This chat&apos;s host is gone
+        {machine !== null ? 'This chat\'s machine is gone' : 'This chat\'s host is gone'}
       </Text>
       <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-        The connection this conversation belongs to isn&apos;t on this device any more, so there is
-        nothing to read it from and nothing to send to.
+        {machine !== null
+          ? 'Its host no longer lists the machine this conversation is on, so there is nothing to read it from and nothing to send to.'
+          : 'The connection this conversation belongs to isn\'t on this device any more, so there is nothing to read it from and nothing to send to.'}
       </Text>
+      {machine !== null && (
+        <Text testID="thread-machine-enable" variant="footnote" color="secondary" style={{ textAlign: 'center' }}>
+          {`If it was disabled, run herdr machine enable ${machine.label ?? '<machine>'} on ${machine.host} to bring it back.`}
+        </Text>
+      )}
       <View style={{ marginTop: spacing.sm, alignSelf: 'stretch', gap: spacing.sm }}>
-        <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />
-        {onBack !== undefined && <Button title="Back to chats" variant="tinted" onPress={onBack} testID="thread-host-back" />}
+        {machine !== null ? (
+          toChats !== undefined && <Button title="Back to chats" onPress={toChats} testID="thread-host-back" />
+        ) : (
+          <>
+            <Button title="Go to Hosts" onPress={onHosts} testID="thread-open-hosts" />
+            {onBack !== undefined && <Button title="Back to chats" variant="tinted" onPress={onBack} testID="thread-host-back" />}
+          </>
+        )}
       </View>
     </View>
   );

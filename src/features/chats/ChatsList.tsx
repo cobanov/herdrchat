@@ -3,8 +3,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Keyboard, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { confirmDestructive } from '@/components/ActionSheet';
+import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
@@ -12,7 +13,10 @@ import { Screen } from '@/components/Screen';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
-import { groupChats } from './chatGroups';
+import { groupChats, paneChats } from './chatGroups';
+import { isChatUnread, isPaneUnread } from './chatUnread';
+import { PaneRow } from './PaneRow';
+import { paneTitle, rowTitle } from './rowText';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
@@ -23,11 +27,14 @@ import { IntegrationBanner } from '@/features/chats/IntegrationBanner';
 import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegrations';
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
-import { useWorkspaces } from '@/features/chats/useWorkspaces';
-import { useTabPressHaptic } from '@/features/useTabPressHaptic';
+import { useHostChats } from '@/features/chats/useHostChats';
+import { MachineNotices } from '@/features/chats/MachineNotices';
+import { MachineFeeds } from '@/features/chats/MachineChats';
+import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
-import { isThreadUnread, type ThreadRead } from '@/lib/unread';
+import { chatKey } from '@/lib/chatKey';
+import { mainMenuActions, mainMenuTitle } from '@/lib/mainMenu';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
 import { useChatSelection } from '@/state/chatSelection';
@@ -42,24 +49,40 @@ import { loadThreadReads, setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
 
 /**
- * Chats, the primary destination. One row per workspace, with live presence.
+ * Chats, the app's root. One row per workspace, with live presence, and under
+ * a workspace that runs several agents, one row for each of them. Hosts and
+ * Settings are behind the menu in its header, not beside it in a tab bar.
  *
- * Thin by design: everything it knows comes from `useWorkspaces`, everything it
+ * Thin by design: everything it knows comes from `useHostChats` (the host's
+ * `useWorkspaces`, and one for each machine saved on the host), everything it
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
- * `useChatActions`.
+ * `useChatActions`, on the row's own connection.
  */
-export default function ChatsList({ selectedWorkspaceId }: { selectedWorkspaceId?: string }) {
+export default function ChatsList({ selectedWorkspaceId, selectedConnectionId }: {
+  selectedWorkspaceId?: string;
+  /** The open chat's connection: the host's, or one of its machines'. Absent: the host's. */
+  selectedConnectionId?: string;
+}) {
   const connection = useSelectedConnection();
   // Keyed by server: switching hosts is a different conversation list, not an
   // update to this one, so the whole thing remounts rather than being reset
   // field by field.
-  return <ChatsForServer key={connection?.id ?? 'none'} selectedWorkspaceId={selectedWorkspaceId} />;
+  return (
+    <ChatsForServer
+      key={connection?.id ?? 'none'}
+      selectedWorkspaceId={selectedWorkspaceId}
+      selectedConnectionId={selectedConnectionId}
+    />
+  );
 }
 
-function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string }) {
+function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
+  selectedWorkspaceId?: string;
+  selectedConnectionId?: string;
+}) {
   const router = useRouter();
   const selection = useChatSelection((state) => state.selection);
   const select = useChatSelection((state) => state.select);
@@ -68,12 +91,17 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  const { summaries, loading, error, errorCode, refresh } =
-    useWorkspaces(client);
+  // The host's chats and its machines' in one list. The host's error and
+  // loading are the list's; a machine's failure is a notice at the end.
+  const chats = useHostChats(connection, client);
+  const { summaries, loading, error, errorCode, refresh, notices, connectionIds } = chats;
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
-  const prefs = useChatPrefs(db, connection, summaries);
-  const rows = useMemo(() => groupChats(summaries, query, prefs.pinnedAt), [summaries, query, prefs.pinnedAt]);
+  const prefs = useChatPrefs(db, connection, summaries, connectionIds);
+  const rows = useMemo(() => groupChats(summaries, query, prefs.pinnedAt, rowKey), [summaries, query, prefs.pinnedAt]);
+  // Whose reads to load, as a string so a rebuilt list of the same ids does
+  // not reload them.
+  const readIds = connectionIds.join('\n');
   /** One flag for both recovery actions, only one is ever offered at a time. */
   const [fixing, setFixing] = useState(false);
   // A key change is not one failure among many: it is the only one where the
@@ -93,21 +121,48 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       alive = false;
     };
   }, [keyChanged, connection]);
-  const [reads, setReads] = useState<Map<string, ThreadRead>>(new Map());
-  useTabPressHaptic();
+  const [reads, setReads] = useState<ReadsByConnection>(new Map());
+  // The selection names the pane too; the prop only says which workspace, and
+  // a pane row and its workspace's row are never selected together. A pane
+  // whose row is gone (its workspace is back to one agent, or it closed) is
+  // the workspace chat to the list: otherwise nothing was highlighted, and the
+  // thread being read lit its own workspace's dot and badge.
+  //
+  // By connection too: a machine's `w1` is not the host's `w1`.
+  const openConnectionId = selectedConnectionId ?? connection?.id ?? null;
+  const selectedSummary = summaries.find((item) =>
+    item.workspaceId === selectedWorkspaceId && item.connectionId === openConnectionId);
+  const selectedPaneId = selectedWorkspaceId !== undefined && selection?.workspaceId === selectedWorkspaceId &&
+    selection.connectionId === openConnectionId &&
+    selectedSummary !== undefined && paneChats(selectedSummary).some((pane) => pane.paneId === selection.paneId)
+    ? selection.paneId : undefined;
+  const openKey = selectedWorkspaceId === undefined ? null : chatKey({ workspaceId: selectedWorkspaceId, paneId: selectedPaneId });
+  const open = useMemo((): OpenChat | null =>
+    openKey === null || openConnectionId === null ? null : { connectionId: openConnectionId, key: openKey },
+  [openKey, openConnectionId]);
+  // Whatever a row draws from outside its item: the selection, and the read
+  // markers its unread dot compares against. A pane changes neither the rows
+  // nor the workspace id, so without the key its highlight would not repaint.
+  const listExtra = useMemo(() => ({ open, reads }), [open, reads]);
+  const insets = useSafeAreaInsets();
 
-  const actions = useChatActions({
+  const actions = useChatActions<ListedChat>({
     client,
     connectionId: connection?.id ?? null,
+    // A machine's chat is renamed and closed on the machine.
+    targetOf: chats.targetOf,
     db,
     refresh,
-    onClosed: useCallback((workspaceId: string) => {
-      if (workspaceId === selectedWorkspaceId) select(null);
-    }, [selectedWorkspaceId, select]),
+    onClosed: useCallback((workspaceId: string, closedOn: string) => {
+      if (workspaceId === selectedWorkspaceId && closedOn === openConnectionId) select(null);
+    }, [selectedWorkspaceId, openConnectionId, select]),
   });
 
-  // Renaming from the persistent sidebar must also update the open header.
-  const selectedTitle = summaries.find((item) => item.workspaceId === selectedWorkspaceId)?.title;
+  // Renaming from the persistent sidebar must also update the open header,
+  // and so must a session that retitles itself.
+  const selectedPane = selectedSummary?.panes.find((pane) => pane.paneId === selectedPaneId);
+  const selectedTitle = selectedSummary === undefined ? undefined
+    : selectedPane === undefined ? rowTitle(selectedSummary) : paneTitle(selectedSummary, selectedPane);
   useEffect(() => {
     if (selection !== null && selectedTitle !== undefined && selectedTitle !== selection.title) {
       select({ ...selection, title: selectedTitle });
@@ -121,28 +176,32 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
   // callback. A poll would just re-query the same rows every few seconds.
   useFocusEffect(
     useCallback(() => {
-      if (connection === null) return;
-      void loadThreadReads(db, connection.id).then(setReads);
+      if (readIds === '') return;
+      void loadReads(db, readIds).then(setReads);
       // A rename happened in the sheet that just closed. Re-fetch rather than
       // wait out the poll, but only then, refreshing on every focus would cost
-      // a round-trip each time you switch tabs.
+      // a round-trip each time a sheet above this list closes.
       if (editsDirty) {
         clearEdits();
         void refresh();
       }
-    }, [db, connection, editsDirty, clearEdits, refresh])
+    }, [db, readIds, editsDirty, clearEdits, refresh])
   );
 
   // The tablet list stays focused as its detail changes. Refresh read markers
   // after the previous detail has stamped its final read time on unmount.
+  // By chat key, not workspace: moving between two agents of one workspace
+  // closes a thread too.
   useEffect(() => {
-    if (connection === null || selectedWorkspaceId === undefined) return;
+    if (readIds === '' || open === null) return;
     let alive = true;
-    void loadThreadReads(db, connection.id).then((next) => { if (alive) setReads(next); });
+    void loadReads(db, readIds).then((next) => { if (alive) setReads(next); });
     return () => { alive = false; };
-  }, [db, connection, selectedWorkspaceId]);
+  }, [db, readIds, open]);
 
-  useAttentionBadge(summaries.filter((item) => item.workspaceId !== selectedWorkspaceId), reads, connection !== null);
+  // The chat on screen is not news. With one agent of a workspace open, the
+  // workspace still counts for its other agents.
+  useAttentionBadge(summaries, reads, connection !== null, open);
 
   /**
    * The hint stops the first time the gesture is used, so it teaches rather than
@@ -216,6 +275,8 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
 
   return (
     <Screen>
+      {/* One poll per machine saved on the host, feeding `useHostChats`. */}
+      {connection !== null && <MachineFeeds host={connection} />}
       <Header
         title="Chats"
         subtitle={connection?.name ?? null}
@@ -223,6 +284,18 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
+        menuTestID="chats-menu"
+        onMenu={() =>
+          showActionSheet({
+            title: mainMenuTitle(connection?.name),
+            actions: mainMenuActions({
+              hasConnection: connection !== null,
+              newChat: () => router.push('/new-chat'),
+              hosts: () => router.navigate('/hosts'),
+              settings: () => router.navigate('/settings'),
+            }),
+          })
+        }
       />
 
       {/* Rename and close fail outside the poll's own error path, so they get
@@ -328,13 +401,20 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 onAction={() => router.push('/new-chat')}
               />
             ) : null}
+            {notices.length > 0 && (
+              <View style={{ paddingHorizontal: screenPadding }}>
+                <MachineNotices notices={notices} />
+              </View>
+            )}
           </ScrollView>
         )
       ) : (
         <FlashList
           data={rows}
-          extraData={selectedWorkspaceId}
-          keyExtractor={(item) => item.kind === 'group' ? `group-${item.id}` : item.summary.workspaceId}
+          extraData={listExtra}
+          keyExtractor={(item) =>
+            item.kind === 'group' ? `group-${item.id}`
+              : item.kind === 'pane' ? `pane-${rowKey(item.summary)}-${item.pane.paneId}` : rowKey(item.summary)}
           getItemType={(item) => item.kind}
           // FlashList keeps the first visible row in place by default, so a
           // group that appears at the top (a chat pinned, or one that starts
@@ -344,11 +424,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
           maintainVisibleContentPosition={{ disabled: true }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          // The tab bar floats OVER the list, so the last row has to be able to
-          // scroll clear of it. Without this the final chat sits under the bar
-          // at the end of the list and cannot be read or tapped, however far you
-          // scroll, there is nothing left to scroll.
-          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: size.floatingBarClearance }}
+          // The list runs under the home indicator (the screen's safe area
+          // leaves the bottom edge to it), so the last row has to be able to
+          // scroll clear of it.
+          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + spacing.xl }}
           // Below the rows, not above them: the host answers the integration
           // check after the list has drawn, and a banner arriving on top pushed
           // every row down under a finger that was about to tap one (#4
@@ -363,6 +442,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                   onUpdate={() => void integrations.update()}
                 />
               )}
+              <MachineNotices notices={notices} />
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
               {askForStar && (
                 <View style={{ marginTop: spacing.lg }}>
@@ -389,23 +469,48 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
             const muted = prefs.isMuted(item);
             // Both belong to a conversation, so both wait for its session id.
             const personal = item.sessionSig !== null;
+            // Only the host's own chats notify, so only they can be muted.
+            const mutable = personal && prefs.canMute(item);
+            // Compared on the row's own connection: a machine's `w1` is not
+            // the host's.
+            const openHere = openFor(open, item);
+            const rowReads = readsOf(reads, item);
+            const manage = () => actions.manageChat(item, personal ? [
+              { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
+              ...(mutable ? [{ label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) }] : []),
+            ] : []);
+            if (row.kind === 'pane') {
+              const { pane } = row;
+              return (
+                <PaneRow
+                  summary={item}
+                  pane={pane}
+                  first={row.first}
+                  last={row.last}
+                  selected={openHere === chatKey({ workspaceId: item.workspaceId, paneId: pane.paneId })}
+                  unread={isPaneUnread(item, pane, rowReads, openHere)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    openChat(item.connectionId, item.workspaceId, paneTitle(item, pane), pane.paneId);
+                  }}
+                  onLongPress={manage}
+                />
+              );
+            }
             return (
               <SwipeableChatRow
                 summary={item}
                 pinned={pinned}
                 muted={muted}
                 onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
-                onToggleMute={personal ? () => prefs.toggleMute(item) : undefined}
-                selected={item.workspaceId === selectedWorkspaceId}
-                unread={item.workspaceId !== selectedWorkspaceId && isThreadUnread(item.preview, item.sessionSig, reads.get(item.workspaceId))}
+                onToggleMute={mutable ? () => prefs.toggleMute(item) : undefined}
+                selected={openHere === item.workspaceId}
+                unread={isChatUnread(item, rowReads, openHere)}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openChat(connection.id, item.workspaceId, item.title);
+                  openChat(item.connectionId, item.workspaceId, rowTitle(item));
                 }}
-                onLongPress={() => actions.manageChat(item, personal ? [
-                  { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
-                  { label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) },
-                ] : [])}
+                onLongPress={manage}
                 onSwiped={markHintSeen}
                 onRename={() => actions.renameChat(item)}
                 onClose={() => actions.closeChat(item)}
@@ -429,4 +534,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
       )}
     </Screen>
   );
+}
+
+/** Every listed connection's read markers: the host's and each machine's. */
+async function loadReads(db: Parameters<typeof loadThreadReads>[0], ids: string): Promise<ReadsByConnection> {
+  const loaded = await Promise.all(ids.split('\n').map(async (id) => [id, await loadThreadReads(db, id)] as const));
+  return new Map(loaded);
 }

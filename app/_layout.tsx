@@ -6,6 +6,7 @@ import * as SystemUI from 'expo-system-ui';
 import { Suspense, useEffect, useMemo } from 'react';
 import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import {
@@ -30,21 +31,36 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * The chats are under every presented screen, even one reached cold by a link.
+ * Without an anchor, `herdrchat://settings?section=…` (or `/hosts`) built a
+ * stack of that sheet alone: Done's `back()` had nowhere to go, there was no
+ * swipe-down on a root screen, and the welcome gate in `index` never ran. With
+ * the tab bar there was always a way out; now the chats have to be put there.
+ */
+export const unstable_settings = { anchor: 'index' };
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <Suspense fallback={<Booting />}>
-          <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrate} useSuspense>
-            <Hydrate>
-              <AppTheme>
-                <StatusBar style="auto" />
-                <RootStack />
-              </AppTheme>
-            </Hydrate>
-          </SQLiteProvider>
-        </Suspense>
-      </SafeAreaProvider>
+      {/* Tracks the keyboard's real frame on the UI thread, every frame of it,
+          including while a finger drags it down and when iPadOS shows only its
+          input-assistant bar for a hardware keyboard. React Native's own
+          keyboard events report neither; the thread's avoider reads this. */}
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <Suspense fallback={<Booting />}>
+            <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrate} useSuspense>
+              <Hydrate>
+                <AppTheme>
+                  <StatusBar style="auto" />
+                  <RootStack />
+                </AppTheme>
+              </Hydrate>
+            </SQLiteProvider>
+          </Suspense>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
@@ -115,9 +131,11 @@ function RootStack() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.systemBackground },
         }}>
-        {/* iPad keeps its selected conversation inside the Chats tab. Only
-            phones push the standalone thread route above this group. */}
-        <Stack.Screen name="(tabs)" />
+        {/* The root: the chats. iPad keeps its selected conversation beside
+            them on this same screen; only phones push the standalone thread
+            route above it. There is no tab bar: Hosts and Settings are opened
+            from the menu in the Chats header and presented below. */}
+        <Stack.Screen name="index" />
         {/* `gestureEnabled` is the native-stack default, and it is stated here
             anyway. This is the only pushed screen in the app, its back control
             is one chevron in the corner, and it draws its own header — so a
@@ -126,6 +144,17 @@ function RootStack() {
             accident that happened to be right. `.maestro/thread-back.yaml`
             checks it still works. */}
         <Stack.Screen name="chat/[workspaceId]" options={{ gestureEnabled: true }} />
+        {/* Hosts and Settings are places you visit and come back from, so they
+            are presented like the other full-height screens here rather than
+            pushed: a sheet says "this goes away and you are back in your
+            chats", and its Done control and swipe-down both do exactly that.
+            `modal`, not `formSheet`, on iPad too: Settings keeps its section
+            sidebar there (`AdaptiveColumns` reads the window, not the sheet),
+            and a form sheet's narrow centred card would leave the detail
+            column a sliver. Hosts opened from Settings' host card presents a
+            second sheet over it, and picking a host dismisses both. */}
+        <Stack.Screen name="hosts" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />

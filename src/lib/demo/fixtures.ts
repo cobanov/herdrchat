@@ -9,15 +9,27 @@
 
 import { splitImages } from '../transcript/images';
 
-export interface DemoWorkspace {
-  workspaceId: string;
-  label: string;
-  number: number;
+/** One agent pane on the demo host. */
+export interface DemoPane {
   paneId: string;
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /** Claude unless named; OMP reports its journal's path rather than an id. */
   agent?: 'claude' | 'omp';
+  /**
+   * The title the session gave itself, which titles its chat. Left out on
+   * two of them, so the Demo also shows a chat titled by its workspace.
+   */
+  title?: string;
+}
+
+/** A demo workspace: its first pane inline, any further agents in `morePanes`. */
+export interface DemoWorkspace extends DemoPane {
+  workspaceId: string;
+  label: string;
+  number: number;
+  /** More agents in the same workspace, each a chat of its own in the list. */
+  morePanes?: readonly DemoPane[];
 }
 
 export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
@@ -28,6 +40,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w1:p1',
     cwd: '/home/demo/herdrchat',
     agentStatus: 'blocked',
+    title: 'Folder picker read errors',
   },
   {
     workspaceId: 'w2',
@@ -36,6 +49,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w2:p1',
     cwd: '/home/demo/notes',
     agentStatus: 'idle',
+    title: 'Release notes summary',
   },
   {
     workspaceId: 'w3',
@@ -61,8 +75,29 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w5:p1',
     cwd: '/home/demo/journal',
     agentStatus: 'idle',
+    title: 'Daily screen journal',
+  },
+  {
+    // Two agents in one workspace, each its own chat. One is busy so the
+    // workspace row has a state to aggregate.
+    workspaceId: 'w6',
+    label: 'api',
+    number: 6,
+    paneId: 'w6:p1',
+    cwd: '/home/demo/api',
+    agentStatus: 'idle',
+    title: 'Archived projects migration',
+    morePanes: [{ paneId: 'w6:p2', cwd: '/home/demo/api/web', agentStatus: 'working', title: 'Save button wrap' }],
   },
 ];
+
+/** Every agent pane of a demo workspace, first pane first. */
+export function demoPanes(workspace: DemoWorkspace): DemoPane[] {
+  const { paneId, cwd, agentStatus, agent, title } = workspace;
+  return [{
+    paneId, cwd, agentStatus, ...(agent === undefined ? {} : { agent }), ...(title === undefined ? {} : { title }),
+  }, ...(workspace.morePanes ?? [])];
+}
 
 /** Where the OMP demo agent keeps its journal, which herdr reports as its session. */
 export const DEMO_OMP_PATHS: Readonly<Record<string, string>> = {
@@ -75,6 +110,8 @@ export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
   'w2:p1': '22222222-2222-4222-8222-222222222222',
   'w3:p1': '33333333-3333-4333-8333-333333333333',
   'w5:p1': '55555555-5555-4555-8555-555555555555',
+  'w6:p1': '66666666-6666-4666-8666-666666666661',
+  'w6:p2': '66666666-6666-4666-8666-666666666662',
 };
 
 export const DEMO_HOME = '/home/demo';
@@ -180,6 +217,46 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
       uuid: 'd3-1',
       timestamp: '2026-08-19T07:05:00.000Z',
       content: 'scratch pad — nothing running here',
+    }),
+  ],
+  'w6:p1': [
+    line({
+      type: 'user',
+      uuid: 'd6a-1',
+      timestamp: '2026-08-19T10:02:00.000Z',
+      content: 'write the migration that adds archived_at to projects',
+    }),
+    line({
+      type: 'assistant',
+      uuid: 'd6a-2',
+      timestamp: '2026-08-19T10:02:31.000Z',
+      model: MODEL,
+      content: [
+        {
+          type: 'text',
+          text: 'Added `0042_projects_archived_at`: a nullable `archived_at` column and an index on it. Existing rows stay unarchived, so nothing needs a backfill.',
+        },
+      ],
+    }),
+  ],
+  'w6:p2': [
+    line({
+      type: 'user',
+      uuid: 'd6b-1',
+      timestamp: '2026-08-19T10:05:00.000Z',
+      content: 'the save button wraps onto two lines on a narrow screen',
+    }),
+    line({
+      type: 'assistant',
+      uuid: 'd6b-2',
+      timestamp: '2026-08-19T10:05:20.000Z',
+      model: MODEL,
+      content: [
+        {
+          type: 'text',
+          text: 'The label sits in a flex row with no `white-space: nowrap`, so the toolbar squeezes it. Fixing the CSS in `web/toolbar.css` now.',
+        },
+      ],
     }),
   ],
 };
@@ -340,3 +417,102 @@ export function toolResultLine(id: string, text: string, isError: boolean, uuid:
     content: [{ type: 'tool_result', tool_use_id: id, content: text, ...(isError ? { is_error: true } : {}) }],
   });
 }
+
+// MARK: - A machine saved on the demo host
+//
+// The demo host has one machine saved on it, as a real host has after
+// `herdr machine add nuku`. Its commands reach a second `DemoHost` built from
+// the set below, through the same jump a real host's `ssh` would run, so the
+// machine's chat goes through the real wrapper, reader and tail.
+
+/** Everything one demo machine is made of. `DemoHost` takes one of these. */
+export interface DemoFixtures {
+  workspaces: readonly DemoWorkspace[];
+  /** The Claude session id each pane reports, and therefore its transcript filename. */
+  sessionIds: Readonly<Record<string, string>>;
+  /** Where an OMP pane keeps its journal. */
+  ompPaths: Readonly<Record<string, string>>;
+  /** The transcript a pane starts with, as the file's contents. */
+  transcript: (paneId: string) => string;
+  /** The pane herdr reports as focused. */
+  focusedPaneId: string;
+  /** The machines saved on this one, as `herdr machine list --json` lists them. */
+  machines: readonly DemoMachine[];
+}
+
+/** A machine saved on a demo host, and the demo machine behind it. */
+export interface DemoMachine {
+  id: string;
+  label: string;
+  target: string;
+  session: string;
+  enabled: boolean;
+  fixtures: DemoFixtures;
+}
+
+export const DEMO_NUKU_WORKSPACES: readonly DemoWorkspace[] = [
+  {
+    workspaceId: 'w1',
+    label: 'kenneth-bot',
+    number: 1,
+    paneId: 'w1:p1',
+    cwd: '/home/demo/kenneth-bot',
+    agentStatus: 'idle',
+    title: 'Nightly digest',
+  },
+];
+
+export const DEMO_NUKU_SESSION_IDS: Readonly<Record<string, string>> = {
+  'w1:p1': '77777777-7777-4777-8777-777777777777',
+};
+
+const NUKU_SEEDS: Readonly<Record<string, readonly string[]>> = {
+  'w1:p1': [
+    line({
+      type: 'user',
+      uuid: 'n1-1',
+      timestamp: '2026-08-19T06:00:00.000Z',
+      content: 'run the nightly digest and tell me what stood out',
+    }),
+    line({
+      type: 'assistant',
+      uuid: 'n1-2',
+      timestamp: '2026-08-19T06:00:41.000Z',
+      model: MODEL,
+      content: [
+        {
+          type: 'text',
+          text: 'Digest is out. Two things stood out: the backup job ran twice, and three issues were closed without a linked change. Everything else was routine.',
+        },
+      ],
+    }),
+  ],
+};
+
+/** The demo host's machine `nuku`: one workspace, one idle Claude chat. */
+export const DEMO_NUKU: DemoFixtures = {
+  workspaces: DEMO_NUKU_WORKSPACES,
+  sessionIds: DEMO_NUKU_SESSION_IDS,
+  ompPaths: {},
+  transcript: (paneId) => {
+    const lines = NUKU_SEEDS[paneId] ?? [];
+    return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+  },
+  focusedPaneId: 'w1:p1',
+  machines: [],
+};
+
+/** The machines saved on the demo host. */
+export const DEMO_MACHINES: readonly DemoMachine[] = [
+  { id: 'demo-nuku', label: 'nuku', target: 'nuku', session: 'default', enabled: true, fixtures: DEMO_NUKU },
+];
+
+/** The demo host itself. */
+export const DEMO_HOST: DemoFixtures = {
+  workspaces: DEMO_WORKSPACES,
+  sessionIds: DEMO_SESSION_IDS,
+  ompPaths: DEMO_OMP_PATHS,
+  transcript: transcriptFor,
+  focusedPaneId: 'w1:p1',
+  machines: DEMO_MACHINES,
+};

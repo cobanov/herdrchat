@@ -1,0 +1,19 @@
+fact-design",nat="artifact-diagramming",TS="artifact-capabilities",Sde="workshop",Lys="whiteboard",QNn="prototype",ZNn="dataviz",rat="design",O6="code-review";var Nys="artifact-pr-review",eoe="verify",M7t="simplify",D7t="commit",L7t="pr",Spo="commit-push-pr",eFn="cowork-plugin",Fys="explain-usage",$ys="setup-claude",oat="loop",tFn="schedule",X0="workflow-authoring";
+export{s3,nat,TS,Sde,Lys,QNn,ZN
+function wn(){zs({name:M7t,menuDescription:"Clean up the changed code without changing behavior",description:"Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only \u2014 it does not hunt for bugs; use /code-review for that.",argumentHint:"[<target>]",userInvocable:!0,async getPromptForCommand(e,n){let s=e.trim(),r=s?`Review target: \`${s}\`
+
+`:"",c="",h=Se(n)?dr:hr;return[{type:"text",text:`${r}${c}${h}`}]}})}function ur(){return`# Skillify {{userDescriptionBlock}}
+
+You are capturing this session's repeatable process as a reusable skill.
+
+Review the conversation above \u2014 it is your source material. Pay particular attention to the user's messages (how they steered and corrected the process) and the tools/commands that were actually used.
+
+## Your Task
+
+### Step 1: Analyze the Session
+
+Before asking any questions, analyze the session to identify:
+- What repeatable process was performed
+- What the inputs/parameters were
+- The distinct steps (in order)
+- The success artifacts/criteria (e.g. not just "writing code," b

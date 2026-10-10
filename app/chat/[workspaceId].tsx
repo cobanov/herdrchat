@@ -8,20 +8,32 @@ import { openChat } from '@/features/chats/navigation';
 import { useConnections, useSelectedConnection } from '@/state/connections';
 
 export default function ThreadRoute() {
-  const { workspaceId, title } = useLocalSearchParams<{ workspaceId: string; title?: string }>();
+  // `paneId` names one agent of a workspace; without it this is the workspace chat.
+  // `connectionId` is the chat's host, or one of its machines; older links and
+  // notifications without it mean the selected host.
+  const { workspaceId, title, paneId, connectionId: linked } =
+    useLocalSearchParams<{ workspaceId: string; title?: string; paneId?: string; connectionId?: string }>();
   const router = useRouter();
-  const connection = useSelectedConnection();
+  const selected = useSelectedConnection();
+  const connectionId = linked !== undefined && linked !== '' ? linked : selected?.id ?? '';
   const hydrated = useConnections((state) => state.hydrated);
   const tablet = Platform.OS === 'ios' && Platform.isPad;
   // Keep existing notification/deep-link URLs valid without opening a second
-  // tablet navigation shell above the tabs.
+  // tablet navigation shell above the root chats.
   useFocusEffect(useCallback(() => {
-    if (tablet && hydrated) openChat(connection?.id ?? '', workspaceId, title);
-  }, [tablet, hydrated, connection?.id, workspaceId, title]));
+    if (tablet && hydrated) openChat(connectionId, workspaceId, title, paneId);
+  }, [tablet, hydrated, connectionId, workspaceId, title, paneId]));
   if (tablet) return null;
   return (
     <AdaptiveColumns sidebar={null}>
-      <ThreadScreen key={`${connection?.id ?? ''}:${workspaceId}`} workspaceId={workspaceId} title={title} onBack={() => router.back()} />
+      <ThreadScreen
+        key={`${connectionId}:${workspaceId}:${paneId ?? ''}`}
+        connectionId={connectionId}
+        workspaceId={workspaceId}
+        paneId={paneId}
+        title={title}
+        onBack={() => router.back()}
+      />
     </AdaptiveColumns>
   );
 }

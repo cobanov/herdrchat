@@ -574,11 +574,12 @@ export class TranscriptStore {
   }
 
   /**
-   * Fetch the tail of every workspace's transcript in ONE round-trip and return
-   * the newest displayable message per workspace — the data behind the
+   * Fetch the tail of every requested transcript in ONE round-trip and return
+   * the newest displayable message for each, filed under the request's `key`
+   * (its workspace id when it names none) — the data behind the
    * Messages-style "last message" line in the chat list.
    *
-   * Workspaces with no transcript are simply absent from the result.
+   * Requests with no transcript are simply absent from the result.
    */
   async latestMessages(
     requests: readonly PreviewRequest[],
@@ -592,9 +593,10 @@ export class TranscriptStore {
     const ompSessions = new Map<string, string | null>();
     let script = '';
     for (const request of requests) {
+      const key = request.key ?? request.workspaceId;
       // Ids are interpolated into the script and the marker line, so refuse
       // anything that isn't obviously inert rather than trying to quote it.
-      if (!/^[A-Za-z0-9:_-]+$/.test(request.workspaceId)) continue;
+      if (!/^[A-Za-z0-9:_-]+$/.test(key)) continue;
 
       // Exact session file ONLY. Falling back to the newest transcript in the
       // project dir previews a foreign session's last message under a reused or
@@ -607,7 +609,7 @@ export class TranscriptStore {
         const path = await this.ompTranscriptPath(request.sessionId, request.sessionKind ?? 'id').catch(() => null);
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
-        ompSessions.set(request.workspaceId, request.sessionKind === 'path' ? null : request.sessionId);
+        ompSessions.set(key, request.sessionKind === 'path' ? null : request.sessionId);
       } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
       else if (request.agent === 'codex') {
         // One broken Codex session must not suppress every other row's preview.
@@ -622,7 +624,7 @@ export class TranscriptStore {
         // in any project folder. Never a different file.
         script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
       } else continue;
-      script += `printf '\\n${marker} %s\\n' '${request.workspaceId}'; `;
+      script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per OMP row.
       if (request.agent === 'omp') script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
       script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
@@ -636,9 +638,9 @@ export class TranscriptStore {
     for (const block of text.split(`\n${marker} `).slice(1)) {
       const headerEnd = block.indexOf('\n');
       if (headerEnd < 0) continue;
-      const workspaceId = block.slice(0, headerEnd).trim();
+      const key = block.slice(0, headerEnd).trim();
       let body = block.slice(headerEnd + 1);
-      const ompId = ompSessions.get(workspaceId);
+      const ompId = ompSessions.get(key);
       if (ompId !== undefined) {
         const secondNewline = body.indexOf('\n', body.indexOf('\n') + 1);
         if (secondNewline < 0 || !this.isOmpHeader(body.slice(0, secondNewline), ompId)) {
@@ -653,7 +655,7 @@ export class TranscriptStore {
         // A command's note ("Cancelled") is neither news nor the conversation.
         (message) => !message.isSidechain && !isToolOnly(message) && message.role !== 'system'
       );
-      if (last !== undefined) result.set(workspaceId, last);
+      if (last !== undefined) result.set(key, last);
     }
     return result;
   }
@@ -681,6 +683,12 @@ export class TranscriptStore {
  */
 export interface PreviewRequest {
   workspaceId: string;
+  /**
+   * What the answer is filed under; the workspace id when absent. The chat
+   * list asks once per agent pane, and two agents in one workspace would
+   * otherwise overwrite each other's line.
+   */
+  key?: string;
   cwd: string;
   /** null when the agent hasn't reported a session id yet. */
   sessionId: string | null;

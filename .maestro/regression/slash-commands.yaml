@@ -1,0 +1,127 @@
+# The `/` palette, offering what the agent's own terminal offers, against the
+# Demo's catalogue (src/lib/demo/slashCommands.ts): its built-ins read off its
+# "binary", a user command with a hint (/review [pr]), a skill
+# (/release-notes), a project command in the notes folder (/notes:summarise)
+# and a plugin's (/demo-tools:lint). A pick does what Enter does in the
+# terminal: /compact and /review can do without their argument and run at
+# once; /add-dir cannot, and waits for its path with its hint showing.
+#
+# Rows are `command-suggestion-<name>` with `:` as `-`; section headers are
+# `command-section-<builtin|skills|commands|plugins>`, shown for a bare `/`
+# only: a typed name is one ranked list, best match first.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+# Send stays off until the thread has loaded; wait for its history first.
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+# Sections, the terminal's way.
+- tapOn:
+    id: composer-input
+- inputText: /
+- extendedWaitUntil:
+    visible:
+      id: command-section-builtin
+    timeout: 5000
+- assertVisible:
+    id: command-section-skills
+# A built-in's argument hint after its name (a row reads as one element:
+# its name, hint and description).
+- assertVisible:
+    id: command-suggestion-model
+    text: '.*\[model\].*'
+# The hidden built-in in the Demo's binary is left out.
+- assertNotVisible:
+    id: command-suggestion-extra-usage
+
+# Narrowing: one ranked list, no headers, the name prefixes first.
+- inputText: re
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-release-notes
+    timeout: 5000
+- assertNotVisible:
+    id: command-section-builtin
+- takeScreenshot: slash-palette-${APPEARANCE}
+- inputText: v
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-review
+    timeout: 5000
+- assertNotVisible:
+    id: command-suggestion-release-notes
+
+# An optional argument ([pr]): a pick runs it at once, a prompt to the agent.
+- tapOn:
+    id: command-suggestion-review
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*You said “/review”.*'
+    timeout: 10000
+- assertNotVisible:
+    id: command-suggestions
+
+# A command that cannot run without its argument fills in, the hint after it,
+# and waits.
+- tapOn:
+    id: composer-input
+- inputText: /add-d
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-add-dir
+    timeout: 5000
+- tapOn:
+    id: command-suggestion-add-dir
+    retryTapIfNoChange: true
+- assertVisible:
+    id: composer-input
+    text: '/add-dir.*'
+- assertVisible:
+    id: composer-hint
+- assertNotVisible:
+    id: command-suggestions
+- takeScreenshot: slash-filled-${APPEARANCE}
+- inputText: notes
+- assertNotVisible:
+    id: composer-hint
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: '.*/add-dir did nothing here.*'
+    timeout: 10000
+
+# /compact's argument says it is optional: picked from a fresh `/`, it runs at
+# once and its note lands in the thread.
+- tapOn:
+    id: composer-input
+- inputText: /
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-compact
+    timeout: 5000
+- tapOn:
+    id: command-suggestion-compact
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: '.*/compact did nothing here.*'
+    timeout: 10000
+- assertNotVisible:
+    id: command-suggestions
+
+# The folder's own command, read once the thread had loaded.
+- tapOn:
+    id: composer-input
+- inputText: /notes
+- extendedWaitUntil:
+    visible:
+      id: command-suggestion-notes-summarise
+    timeout: 10000
+- eraseText: 10
+- tapOn:
+    id: composer-hide-keyboard
+- tapOn:
+    id: thread-back
