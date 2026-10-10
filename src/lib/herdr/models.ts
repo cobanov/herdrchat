@@ -69,6 +69,18 @@ export interface AgentInfo {
    * (`agent_input_pending`). False from a herdr too old to send it.
    */
   inputPending: boolean;
+  /**
+   * The name given with `herdr agent rename` (`feke-pm`), null when the agent
+   * was never named.
+   */
+  name: string | null;
+  /**
+   * The session's own title, the one Claude Code and Codex set as the
+   * terminal's title ("Feke animation smoothness"): what a person calls the
+   * conversation. Without its status glyph, unlike herdr's `terminal_title`.
+   * Null for a plain pane, or from a herdr too old to send it.
+   */
+  title: string | null;
 }
 
 /**
@@ -295,7 +307,27 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
     stateChangeSeq: optionalNum(value.state_change_seq),
     completionSeq: optionalNum(value.completion_seq),
     inputPending: value.input_pending === true,
+    name: optionalStr(value.name),
+    title: sessionTitle(value),
   };
+}
+
+/**
+ * The session's title out of an agent's snapshot entry.
+ *
+ * For Claude, `title` is it, and `terminal_title_stripped` is the same text
+ * from herdrs that predate `title`; `terminal_title` carries a status glyph in
+ * front (`✳ `) and is never used. Codex is the other way round: herdr's `title`
+ * is the first prompt cut off with an ellipsis ("can i control the codex app
+ * from here, can you ask…"), while the terminal's title is the thread's name
+ * followed by ` | ` and the folder ("Explain Codex agent controls | kenneth").
+ */
+function sessionTitle(value: Record<string, unknown>): string | null {
+  const title = optionalStr(value.title);
+  const stripped = optionalStr(value.terminal_title_stripped);
+  if (value.agent !== 'codex') return title ?? stripped;
+  const named = stripped?.replace(/ \| [^|]*$/, '').trim() ?? '';
+  return named !== '' ? named : title;
 }
 
 export function decodeWorkspace(raw: unknown): Workspace {

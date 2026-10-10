@@ -16,6 +16,7 @@ import { openChat } from './navigation';
 import { groupChats, paneChats } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
+import { paneTitle, rowTitle } from './rowText';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
@@ -126,8 +127,11 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     }, [selectedWorkspaceId, select]),
   });
 
-  // Renaming from the persistent sidebar must also update the open header.
-  const selectedTitle = selectedSummary?.title;
+  // Renaming from the persistent sidebar must also update the open header,
+  // and so must a session that retitles itself.
+  const selectedPane = selectedSummary?.panes.find((pane) => pane.paneId === selectedPaneId);
+  const selectedTitle = selectedSummary === undefined ? undefined
+    : selectedPane === undefined ? rowTitle(selectedSummary) : paneTitle(selectedSummary, selectedPane);
   useEffect(() => {
     if (selection !== null && selectedTitle !== undefined && selectedTitle !== selection.title) {
       select({ ...selection, title: selectedTitle });
@@ -441,7 +445,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                   unread={isPaneUnread(item, pane, reads, openKey)}
                   onPress={() => {
                     Keyboard.dismiss();
-                    openChat(connection.id, item.workspaceId, item.title, pane.paneId);
+                    openChat(connection.id, item.workspaceId, paneTitle(item, pane), pane.paneId);
                   }}
                   onLongPress={manage}
                 />
@@ -458,7 +462,7 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 unread={isChatUnread(item, reads, openKey)}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openChat(connection.id, item.workspaceId, item.title);
+                  openChat(connection.id, item.workspaceId, rowTitle(item));
                 }}
                 onLongPress={manage}
                 onSwiped={markHintSeen}

@@ -5,7 +5,7 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
-import { rowContext, statusLabel } from './rowText';
+import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
 /** Shared with the loading skeleton so content does not jump on arrival. */
@@ -42,6 +42,7 @@ export const ChatRow = memo(function ChatRow({
   const working = summary.status === 'working';
   const agent = summary.agents.find((item) => item.focused && item.agent !== null)
     ?? summary.agents.find((item) => item.agent !== null);
+  const title = rowTitle(summary);
   const context = rowContext(summary);
   const status = statusLabel(summary.status);
   const preview = summary.preview === null ? status
@@ -59,7 +60,7 @@ export const ChatRow = memo(function ChatRow({
       onAccessibilityAction={(event) => {
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
-      accessibilityLabel={[summary.title || summary.workspaceId, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
+      accessibilityLabel={[title, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
       testID={`chat-row-${summary.workspaceId}`}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -81,7 +82,7 @@ export const ChatRow = memo(function ChatRow({
 
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-          <Text variant="headline" numberOfLines={2} style={{ flexShrink: 1 }}>{summary.title || summary.workspaceId}</Text>
+          <Text variant="headline" numberOfLines={2} style={{ flexShrink: 1 }}>{title}</Text>
           {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
           {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
         </View>

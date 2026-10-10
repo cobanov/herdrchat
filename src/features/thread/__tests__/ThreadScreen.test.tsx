@@ -36,18 +36,23 @@ jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => null,
 }));
 let mockWorkspaceLabel: string | null = null;
+let mockSessionTitle: string | null = null;
+let mockAgentName: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
+let mockWorkingDirName = 'project-with-a-long-folder-name';
 let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: mockAgents,
     workspaceLabel: mockWorkspaceLabel,
+    sessionTitle: mockSessionTitle,
+    agentName: mockAgentName,
     offline: mockOffline,
     paused: mockPaused,
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,
-    workingDirName: 'project-with-a-long-folder-name', status: 'idle',
+    workingDirName: mockWorkingDirName, status: 'idle',
     isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
@@ -166,4 +171,68 @@ it('lets the conversation pull the keyboard down, and keeps clearance for the co
   jest.mocked(keyboard.useKeyboardState).mockImplementation(((select: (state: { height: number }) => unknown) => select({ height: 55 })) as never);
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Chat" />);
   expect(lastList().ListFooterComponent.props.style.paddingBottom).toBe(100 - 22 + 16);
+});
+
+// A chat is titled by its session, as its row is. What the host says now wins
+// over what the link carried; the link's title only bridges the first poll.
+it('titles the chat by its session once the poll has one, the link before, and Chat with neither', async () => {
+  mockLoading = false;
+  mockAgents = [];
+  mockWorkspaceLabel = null;
+  mockSessionTitle = null;
+  const screen = await render(<ThreadScreen workspaceId="w2" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Chat');
+  await screen.rerender(<ThreadScreen workspaceId="w2" title="Release notes summary" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Release notes summary');
+  // The first poll: the session retitled itself since the link was made.
+  mockWorkspaceLabel = 'notes';
+  mockSessionTitle = 'Release notes, three bullets';
+  await screen.rerender(<ThreadScreen workspaceId="w2" title="Release notes summary" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Release notes, three bullets');
+  // The workspace label, no longer the title, leads the line under it.
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^notes · /);
+  // The herdr name before the session has a title, then the label alone.
+  mockSessionTitle = null;
+  mockAgentName = 'notes-pm';
+  await screen.rerender(<ThreadScreen workspaceId="w2" title="Release notes summary" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('notes-pm');
+  mockAgentName = null;
+  await screen.rerender(<ThreadScreen workspaceId="w2" title="Release notes summary" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('notes');
+  expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/^notes · /);
+  await screen.unmount();
+});
+
+it('leads a titled pane chat\'s line with its workspace, then its agent', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'api';
+  mockSessionTitle = 'Web build';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p2', agentSession: null }];
+  const screen = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" title="api" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Web build');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^api · Claude · .*high effort/);
+  await screen.unmount();
+  mockSessionTitle = null;
+  mockAgents = [];
+});
+
+// herdr names a workspace after its folder, so the label leading the line and
+// the folder near its end are usually one word. Said twice, it pushed the
+// status off a phone's header.
+it('says a workspace named after its folder once in the line', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'herdrchat';
+  mockWorkingDirName = 'HerdrChat';
+  mockSessionTitle = 'Herdrchat repository clone';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p1', agentSession: null }];
+  const screen = await render(<ThreadScreen workspaceId="w6" />);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort · online$/);
+  expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/HerdrChat/);
+  await screen.unmount();
+  mockWorkingDirName = 'project-with-a-long-folder-name';
+  mockWorkspaceLabel = null;
+  mockSessionTitle = null;
+  mockAgents = [];
 });

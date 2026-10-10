@@ -22,6 +22,7 @@ import {
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
+import { titleAgent } from '@/lib/chatTitle';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -48,12 +49,28 @@ export interface PaneSummary {
   preview: ChatPreview | null;
   /** The agent's own status, `blocked` while a menu waits for its keys. */
   status: AgentStatus;
+  /** The session's own title, which titles this agent's row and thread (`chatTitle`). */
+  sessionTitle: string | null;
+  /** The agent's herdr name, the title while the session has none. */
+  agentName: string | null;
 }
 
 /** One row in the chat list: a workspace, plus the agents running in it. */
 export interface ChatSummary {
   workspaceId: string;
+  /**
+   * The workspace's label on the host: a folder or a slot name, not what the
+   * row is titled by when the chat has a session title (`rowTitle`).
+   */
   title: string;
+  /**
+   * The title the workspace chat's one conversational agent gave its session.
+   * Null with two or more, whose workspace row stands for all of them and
+   * keeps its label; each of their rows has its own (`PaneSummary`).
+   */
+  sessionTitle: string | null;
+  /** That same agent's herdr name, the title while the session has none. */
+  agentName: string | null;
   number: number;
   status: AgentStatus;
   agents: AgentInfo[];
@@ -354,9 +371,12 @@ export function buildSummaries(
       const herdrStatus = workspace.agentStatus !== 'working' && group.some((agent) => agent.inputPending)
         ? 'blocked'
         : workspace.agentStatus;
+      const titled = titleAgent(group);
       return {
         workspaceId: workspace.workspaceId,
         title: workspace.label,
+        sessionTitle: titled?.title ?? null,
+        agentName: titled?.name ?? null,
         number: workspace.number,
         status: panes.length >= 2 ? groupStatus(panes, herdrStatus) : herdrStatus,
         agents: group,
@@ -378,6 +398,8 @@ function paneSummary(agent: AgentInfo, previews: Map<string, CachedPreview>): Pa
     sessionSig,
     preview: cached !== undefined && sessionSig !== null && cached.sessionSig === sessionSig ? cached.preview : null,
     status: agent.agentStatus !== 'working' && agent.inputPending ? 'blocked' : agent.agentStatus,
+    sessionTitle: agent.title,
+    agentName: agent.name,
   };
 }
 

@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { confirmDestructive } from '@/components/ActionSheet';
+import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { HerdrClient } from '@/lib/herdr/client';
 import { forgetWorkspace } from '@/state/threadCache';
 import { useChatActions } from '../useChatActions';
@@ -20,7 +20,7 @@ const client = new HerdrClient({
 const db = {} as SQLiteDatabase;
 const summary: ChatSummary = {
   workspaceId: 'w2', title: 'Notes', number: 2, status: 'idle',
-  agents: [], panes: [], preview: null, sessionSig: null, restoreError: null,
+  agents: [], panes: [], preview: null, sessionSig: null, restoreError: null, sessionTitle: null, agentName: null,
 };
 
 afterEach(() => { jest.restoreAllMocks(); jest.clearAllMocks(); });
@@ -48,4 +48,20 @@ it.each([false, true])('leaves the selected detail only after a successful confi
     expect(onClosed).toHaveBeenCalledWith('w2');
     expect(refresh).toHaveBeenCalledTimes(1);
   }
+});
+
+// The sheet and the confirmation name the row that was pressed, which is
+// titled by its session, and the confirmation still says which workspace stops.
+it('names the chat by its session in the sheet and the close confirmation', async () => {
+  const titled: ChatSummary = { ...summary, sessionTitle: 'Release notes summary' };
+  const { result } = await renderHook(() => useChatActions({ client, connectionId: 'demo', db, refresh: jest.fn() }));
+  await act(() => result.current.manageChat(titled));
+  expect(jest.mocked(showActionSheet).mock.calls[0]?.[0].title).toBe('Release notes summary');
+  await act(() => result.current.closeChat(titled));
+  const asked = jest.mocked(confirmDestructive).mock.calls[0]?.[0];
+  expect(asked?.title).toBe('Close Release notes summary?');
+  expect(asked?.message).toMatch(/^This closes workspace Notes: every tab/);
+  await act(() => result.current.closeChat(summary));
+  expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].title).toBe('Close Notes?');
+  expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].message).toMatch(/^Every tab, pane/);
 });

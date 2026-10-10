@@ -438,3 +438,31 @@ describe('the host theme check, riding on the list poll', () => {
     await unmount();
   });
 });
+
+// A chat is titled by its session, not its slot: the summaries carry what
+// herdr reports for each agent, and the workspace's label stays its label.
+it('carries each agent\'s session title and name from the snapshot', () => {
+  const { agents, workspaces } = twoAgents({ title: 'Web build', name: 'web-a' });
+  const titled = agents.map((agent) => agent.paneId === 'w6:p1' ? { ...agent, title: 'API contract' } : agent);
+  const [summary] = buildSummaries(workspaces ?? [], titled, new Map());
+  expect(summary?.panes.map((pane) => [pane.paneId, pane.sessionTitle, pane.agentName])).toEqual([
+    ['w6:p1', 'API contract', null],
+    ['w6:p2', 'Web build', 'web-a'],
+  ]);
+  // Several agents: the workspace row stands for all of them.
+  expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['api', null, null]);
+});
+
+it('titles a one-agent workspace chat by that agent\'s session', () => {
+  const titled = decodeSnapshot({
+    workspaces: [{ workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' }],
+    agents: [
+      { workspace_id: 'chat', pane_id: 'shell', agent: null, cwd: '/test', title: 'zsh' },
+      { workspace_id: 'chat', pane_id: 'pane', agent: 'claude', cwd: '/test', name: 'feke-pm',
+        title: 'Feke animation smoothness', terminal_title: '✳ Feke animation smoothness' },
+    ],
+  });
+  const [summary] = buildSummaries(titled.workspaces ?? [], titled.agents, new Map());
+  expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['Test', 'Feke animation smoothness', 'feke-pm']);
+  expect(summary?.panes[0]?.sessionTitle).toBe('Feke animation smoothness');
+});
