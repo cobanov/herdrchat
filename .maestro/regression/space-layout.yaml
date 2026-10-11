@@ -38,9 +38,10 @@ appId: dev.herdr.HerdrChat
     id: terminal-row-w6:p4
     text: 'Terminal in api, npm run dev.*'
 
-# Its rows are grouped by tab: the first tab "api" (both agents and the shell
-# w6:p3), then a line and the second tab's name, "server", over the dev
-# server w6:p4 alone in it.
+# Its rows are grouped by tab: the first tab's name "api" over both agents
+# and the shell w6:p3 (no line above it, the card is right there), then a
+# line and the second tab's name, "server", over the dev server w6:p4 alone
+# in it.
 - assertVisible:
     id: tab-header-w6:t2
     text: server
@@ -52,8 +53,14 @@ appId: dev.herdr.HerdrChat
     id: tab-header-w6:t2
     below:
       id: terminal-row-w6:p3
-- assertNotVisible:
-    id: tab-divider-w6:t1
+- assertVisible:
+    id: tab-header-w6:t1
+    text: api
+- assertVisible:
+    id: pane-row-w6:p1
+    below:
+      id: tab-header-w6:t1
+- takeScreenshot: space-tab-groups-${APPEARANCE}
 
 # The layout, from the card's button: two tabs, every pane a box.
 - scrollUntilVisible:

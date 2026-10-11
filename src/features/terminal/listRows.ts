@@ -57,14 +57,19 @@ export function withTerminalRows<S extends ChatSummary>(
     const groups = groupByTab(members, (row) => (row.kind === 'pane' ? row.pane.agent.tabId : row.terminal.pane.tabId), summary.tabs);
     const ordered = groups.length > 1 ? groups.flatMap((group) => group.rows) : members;
     const tabStarts = new Map(groups.length > 1 ? groups.map((group, index) => [group.rows[0], { group, first: index === 0 }] as const) : []);
+    /** Whether a tab item leads: its rail reaches up to the card, so the row under it starts at its own top. */
+    let tabItemFirst = false;
     ordered.forEach((row, index) => {
       const start = tabStarts.get(row);
       // The first tab under the card has no line above it, so without a
       // label it has nothing to draw.
       if (start !== undefined && !(start.first && start.group.heading === null)) {
         out.push({ kind: 'tab', summary, tabId: start.group.tabId, label: start.group.heading, first: start.first });
+        if (index === 0) tabItemFirst = true;
       }
-      out.push({ ...row, first: index === 0, last: index === ordered.length - 1 });
+      // Under a leading tab item the row's rail starts at its own top: two
+      // translucent hairlines over one gap would show as a darker step.
+      out.push({ ...row, first: index === 0 && !tabItemFirst, last: index === ordered.length - 1 });
     });
     open = null;
     panes = [];

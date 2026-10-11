@@ -74,11 +74,13 @@ describe('grouped by tab', () => {
 
   // Tabs in number order, each tab's agents then its terminals; a line
   // before every tab but the first, a label only on a named one ("2" is
-  // herdr numbering a tab nobody named). The rail is still the card's.
+  // herdr numbering a tab nobody named). The rail is still the card's: the
+  // leading label carries it up to the card, so the row under it is not
+  // `first` (its rail would overlap the label's, a darker step in dark mode).
   it("lists a workspace's rows tab by tab, the first labelled tab with no line", () => {
     expect(shape(withTerminalRows(groupChats([{ ...w6(named), tabs: named }], '')))).toEqual([
       'idle', 'w6',
-      'tab w6:t1 "agents" first', 'pane w6:p1 first', 'pane w6:p5',
+      'tab w6:t1 "agents" first', 'pane w6:p1', 'pane w6:p5',
       'tab w6:t2', 'terminal w6:p4',
       'tab w6:t3 "web"', 'pane w6:p2', 'terminal w6:p3 last',
     ]);
@@ -94,6 +96,8 @@ describe('grouped by tab', () => {
     ]);
   });
 
+  // The Demo keeps both of w6's tabs named, so the line-only look (an
+  // unnamed tab after the first) is covered here and in TabDivider.test.
   // A herdr that sends no `tabs`: ordered by the number in the tab id, unlabelled.
   it('orders by the tab id without the snapshot\'s tabs', () => {
     expect(shape(withTerminalRows(groupChats([w6([])], '')))).toEqual([
