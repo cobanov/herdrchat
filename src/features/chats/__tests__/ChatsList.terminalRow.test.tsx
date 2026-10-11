@@ -115,6 +115,7 @@ function workspace(connectionId: string, machine: ListedChat['machine'], panes: 
     connectionId, machine, workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [], panes,
     preview: null, sessionSig: null, restoreError: null, sessionTitle: null, agentName: null,
     shellPanes: [{ paneId: 'w6:p3', pane: pane('w6:p3'), processName: 'vim' }],
+    tabs: [], layouts: [], activeTabId: null, tabCount: 1, paneCount: 1 + panes.length,
   };
 }
 const onHost = workspace('host-a', null, [agentPane('w6:p1', 'host-a'), agentPane('w6:p2', 'host-a')]);
@@ -148,8 +149,12 @@ it('repaints as the detail moves between terminals and a chat', async () => {
   // terminal in `extraData` repaints the two rows.
   await screen.rerender(<ChatsList selectedTerminal={{ connectionId: 'host-a/nuku', paneId: 'w6:p3' }} />);
   expect(lit(screen)).toEqual(['terminal-row-nuku-w6:p3']);
+  // w6 holds two agents, so its card is a space card and never lights itself:
+  // the open chat is one of its agents, and that agent's row is the lit one.
+  useChatSelection.setState({ detail: { kind: 'chat', connectionId: 'host-a', workspaceId: 'w6', paneId: 'w6:p1', title: '' } });
   await screen.rerender(<ChatsList selectedWorkspaceId="w6" selectedConnectionId="host-a" />);
-  expect(lit(screen)).toEqual(['chat-row-host-a-w6']);
+  expect(lit(screen)).toEqual(['pane-row-host-a-w6:p1']);
+  useChatSelection.setState({ detail: null });
   await screen.rerender(<ChatsList selectedTerminal={{ connectionId: 'host-a/nuku', paneId: 'w6:p3' }} />);
   expect(lit(screen)).toEqual(['terminal-row-nuku-w6:p3']);
 });
