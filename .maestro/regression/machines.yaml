@@ -12,12 +12,14 @@ appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
 # The machine's list rides on the host's first poll, then nuku's own poll
-# lands its rows after the host's; idle, so near the end.
+# lands its rows after the host's; idle, so near the end. Its row is the
+# list's last, which can never be scrolled to the middle, so the scrolls to
+# it do not ask for centring: that waited out its timeout on a row in plain
+# view.
 - scrollUntilVisible:
     element:
       id: chat-row-demo-nuku-w1
     direction: DOWN
-    centerElement: true
     timeout: 20000
 # Titled by its session, and its line says which machine first.
 - assertVisible:
@@ -46,7 +48,6 @@ appId: dev.herdr.HerdrChat
     element:
       id: chat-row-demo-nuku-w1
     direction: DOWN
-    centerElement: true
     timeout: 20000
 - tapOn:
     id: chat-row-demo-nuku-w1
@@ -80,7 +81,6 @@ appId: dev.herdr.HerdrChat
       id: chat-row-demo-nuku-w1
       text: .*You said .anything new tonight.*
     direction: DOWN
-    centerElement: true
     timeout: 20000
 - scrollUntilVisible:
     element:
