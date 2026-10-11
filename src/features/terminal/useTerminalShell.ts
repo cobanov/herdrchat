@@ -167,9 +167,10 @@ export function useTerminalShell({ connection, pane, onOpened }: {
     };
   }, []);
 
-  // A pane no command can be written for never opens; said as a failure.
+  // A pane no command can be written for never opens; said as a failure that
+  // offers no Reconnect, since `open` has nothing to run.
   const shown: TerminalPhase = connection !== null && launches === null
-    ? { kind: 'failed', message: noLaunchMessage({ kind, terminalId }) }
+    ? { kind: 'failed', message: noLaunchMessage({ kind, terminalId }), retryable: false }
     : phase;
   return { phase: shown, shellId, onSizeChange, reconnect, takeOver, send };
 }

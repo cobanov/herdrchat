@@ -21,8 +21,10 @@ import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/tim
  *   before, during and after: no zoom, no focus, no sidebar moved.
  * - A second attach on a terminal that already has one exits 1, with
  *   "terminal term_… already has an attached client; retry with --takeover"
- *   on the screen, and the first stays up. `--takeover` takes the pane and
- *   detaches the first. A desktop's herdr on the session is not such a
+ *   on the screen, and the first stays up. `--takeover` (measured only with
+ *   no other client: it behaves the same) is, by herdr's own hint, how a
+ *   second client takes the pane and detaches the first; what the first
+ *   then shows is on the device checklist. A desktop's herdr on the session is not such a
  *   client: the first attach needs no `--takeover` while it is up.
  * - What stays shared, as in any PTY two clients share (tmux too): while
  *   attached, the pane is drawn at this client's size, and gets its own back

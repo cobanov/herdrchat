@@ -22,3 +22,8 @@ export interface TerminalRouteParams {
 export function openTerminal(params: TerminalRouteParams) {
   router.push({ pathname: '/chat/terminal', params: { ...params } });
 }
+
+/** The route's terminal id back as the screen takes it: `''` (none sent) is null. */
+export function terminalIdParam(value: string | undefined): string | null {
+  return value !== undefined && value !== '' ? value : null;
+}

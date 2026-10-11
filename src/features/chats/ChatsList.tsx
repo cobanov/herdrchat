@@ -17,15 +17,14 @@ import { agentPrefRow, agentRowKey, agentTestKey, isAgentRow, isAgentUnread } fr
 import { paneChats } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
-import { paneTitle, rowTitle, terminalContext } from './rowText';
+import { paneTitle, rowTitle } from './rowText';
 import { TerminalRow } from './TerminalRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
-import type { ListItemWithTerminals } from '@/features/terminal/listRows';
+import { terminalRowParams, type ListItemWithTerminals } from '@/features/terminal/listRows';
 import { chatListRows } from './chatListRows';
 import { openTerminal } from '@/features/terminal/navigation';
-import { paneKind } from '@/lib/terminal/command';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { StarCard } from '@/features/welcome/StarCard';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
@@ -525,13 +524,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
                   last={row.last}
                   onPress={() => {
                     Keyboard.dismiss();
-                    openTerminal({
-                      connectionId: summary.connectionId,
-                      paneId: terminal.paneId,
-                      kind: paneKind(terminal.pane.agent),
-                      terminalId: terminal.pane.terminalId ?? '',
-                      title: terminalContext(terminal.pane, terminal.processName),
-                    });
+                    openTerminal(terminalRowParams(summary.connectionId, terminal));
                   }}
                 />
               );

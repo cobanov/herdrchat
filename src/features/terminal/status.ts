@@ -10,11 +10,19 @@ export type TerminalPhase =
   | { kind: 'opening' }
   | { kind: 'open' }
   | { kind: 'closed'; reason: ShellCloseReason; exitCode: number | null; message: string | null }
-  | { kind: 'failed'; message: string };
+  /**
+   * `retryable: false` when no command can be written for the pane (a herdr
+   * too old to send a terminal id): Reconnect could only do nothing, and the
+   * terminal id comes with the screen, so it could not succeed later either.
+   */
+  | { kind: 'failed'; message: string; retryable?: false };
 
-/** Whether the header offers Reconnect: the shell is gone, by whatever way it went. */
+/**
+ * Whether the header offers Reconnect: the shell is gone, by whatever way it
+ * went, and another try could open one.
+ */
 export function canReconnect(phase: TerminalPhase): boolean {
-  return phase.kind === 'closed' || phase.kind === 'failed';
+  return phase.kind === 'closed' || (phase.kind === 'failed' && phase.retryable !== false);
 }
 
 /**

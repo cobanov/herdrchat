@@ -2,7 +2,10 @@ import { groupChats } from '@/features/chats/chatGroups';
 import type { ChatSummary, PaneSummary } from '@/features/chats/useWorkspaces';
 import type { AgentInfo, Pane } from '@/lib/herdr/models';
 import type { TerminalPane } from '@/lib/terminal/rows';
-import { withTerminalRows } from '../listRows';
+import { terminalRowParams, withTerminalRows } from '../listRows';
+import { terminalIdParam } from '../navigation';
+
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 const agent = (paneId: string): AgentInfo => ({
   agent: 'claude', agentStatus: 'idle', cwd: '/home/demo/api', foregroundCwd: null, focused: false, paneId, tabId: 't1', terminalId: null,
@@ -46,4 +49,13 @@ it("lists a workspace's terminals after its agents, on one rail", () => {
 it('adds nothing to a workspace with no other panes', () => {
   const rows = groupChats([chat('w6', [paneSummary('w6:p1'), paneSummary('w6:p2')], [])], '');
   expect(withTerminalRows(rows)).toEqual(rows);
+});
+
+// A shell pane is attached by its own terminal id, so the row must hand it on;
+// without one the screen says it needs a newer herdr, never the session view.
+it("opens a terminal row's pane by its terminal id", () => {
+  const withId: TerminalPane = { ...shell('w6:p3'), pane: { ...shell('w6:p3').pane, terminalId: 'term_w6_p3' } };
+  expect(terminalRowParams('srv-1', withId)).toEqual(expect.objectContaining({ connectionId: 'srv-1', paneId: 'w6:p3', kind: 'shell', terminalId: 'term_w6_p3' }));
+  expect(terminalRowParams('srv-1', shell('w6:p3')).terminalId).toBe('');
+  expect([terminalIdParam('term_w6_p3'), terminalIdParam(''), terminalIdParam(undefined)]).toEqual(['term_w6_p3', null, null]);
 });

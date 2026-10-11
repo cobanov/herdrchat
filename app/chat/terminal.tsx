@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import type { TerminalRouteParams } from '@/features/terminal/navigation';
+import { terminalIdParam, type TerminalRouteParams } from '@/features/terminal/navigation';
 import TerminalScreen from '@/features/terminal/TerminalScreen';
 
 /**
@@ -13,7 +13,7 @@ export default function TerminalRoute() {
   const router = useRouter();
   const connectionId = params.connectionId ?? '';
   const paneId = params.paneId ?? '';
-  const terminalId = params.terminalId !== undefined && params.terminalId !== '' ? params.terminalId : null;
+  const terminalId = terminalIdParam(params.terminalId);
   return (
     <TerminalScreen
       key={`${connectionId}:${paneId}:${terminalId ?? ''}`}

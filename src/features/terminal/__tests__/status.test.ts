@@ -11,6 +11,9 @@ it('says where the shell stands, and offers Reconnect only once it has gone', ()
   expect(phaseLabel(closed('connection_lost'))).toBe('Connection lost');
   expect(phaseLabel({ kind: 'failed', message: 'Host unreachable' })).toBe('Not connected');
   expect([closed('exited', 0), closed('connection_lost'), { kind: 'failed', message: 'x' } as const].every(canReconnect)).toBe(true);
+  // Nothing to run (a herdr too old for a private attach): a Reconnect would do nothing.
+  expect(canReconnect({ kind: 'failed', message: 'x', retryable: false })).toBe(false);
+  expect(phaseLabel({ kind: 'failed', message: 'x', retryable: false })).toBe('Not connected');
 });
 
 it('explains an ending that is not just the pane closing', () => {

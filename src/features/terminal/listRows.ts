@@ -1,5 +1,9 @@
 import type { ChatListItem } from '@/features/chats/chatGroups';
+import { terminalContext } from '@/features/chats/rowText';
 import type { ChatSummary } from '@/features/chats/useWorkspaces';
+import type { TerminalRouteParams } from '@/features/terminal/navigation';
+import { paneKind } from '@/lib/terminal/command';
+import type { TerminalPane } from '@/lib/terminal/rows';
 
 /** A pane's terminal row under its workspace's card. */
 export interface TerminalListItem<S extends ChatSummary = ChatSummary> {
@@ -52,4 +56,18 @@ export function withTerminalRows<S extends ChatSummary>(rows: readonly ChatListI
   }
   flush();
   return out;
+}
+
+/**
+ * What a terminal row opens: its pane, attached by the pane's own terminal id
+ * (`''` when herdr sent none, which the screen says needs a newer herdr).
+ */
+export function terminalRowParams(connectionId: string, terminal: TerminalPane): TerminalRouteParams {
+  return {
+    connectionId,
+    paneId: terminal.paneId,
+    kind: paneKind(terminal.pane.agent),
+    terminalId: terminal.pane.terminalId ?? '',
+    title: terminalContext(terminal.pane, terminal.processName),
+  };
 }

@@ -30,7 +30,9 @@ export function TerminalHeader({ title, place, phase, onBack, onReconnect, onTak
 }) {
   const { colors } = useTheme();
   const subtitle = [place, phaseLabel(phase)].filter((part): part is string => part !== null).join(' · ');
-  const dot = phase.kind === 'open' ? colors.positive : canReconnect(phase) ? colors.attention : colors.tertiaryLabel;
+  // Gone, whether or not a Reconnect could bring it back.
+  const gone = phase.kind === 'closed' || phase.kind === 'failed';
+  const dot = phase.kind === 'open' ? colors.positive : gone ? colors.attention : colors.tertiaryLabel;
   const message = phaseMessage(phase);
   return (
     <View testID="terminal-header">
@@ -51,7 +53,7 @@ export function TerminalHeader({ title, place, phase, onBack, onReconnect, onTak
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
             <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: dot }} />
-            <Text testID="terminal-status" variant="caption" color={canReconnect(phase) ? 'attention' : 'secondary'} numberOfLines={1} style={{ flexShrink: 1 }}>
+            <Text testID="terminal-status" variant="caption" color={gone ? 'attention' : 'secondary'} numberOfLines={1} style={{ flexShrink: 1 }}>
               {subtitle}
             </Text>
           </View>

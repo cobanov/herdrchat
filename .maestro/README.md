@@ -76,8 +76,17 @@ herdr open on the desktop as well, check each of these and what it should do:
   (expected "Ended", or "Ended with exit N"). Reconnect on the iPad is then
   refused, with Take over offered, until the phone leaves; after that it
   attaches again.
-- **Leaving while connecting, or the app killed while attached.** Nothing to
-  undo on the host: the desktop shows what it showed before.
+- **The app killed while attached.** Attach a shell pane's terminal, then
+  kill the app (swipe it away). On the desktop, check the pane got its own
+  size back, and note how long that took. Reopen the app and the same pane's
+  Terminal row: record whether it attaches without Take over, or is refused
+  ("Another client may be attached") because herdr still holds the dead
+  client, and if so how long until a Reconnect attaches. A refusal here means
+  the person has to take the pane from their own ghost session.
+- **Leaving while connecting.** Open a shell pane's Terminal row and tap Back
+  while the header still says Connecting…. Then do the same checks: the
+  desktop's pane has its own size, nothing else moved, and opening the pane
+  again attaches without Take over (record how long, if not at once).
 - **An agent pane through a chat's header Terminal.** Watch the desktop: does
   the agent's pane shrink to the phone's size while the phone is attached
   (`agent attach` draws it at the client's size), and get its size back on

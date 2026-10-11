@@ -232,6 +232,8 @@ it("says a shell pane needs a newer herdr when it has no terminal id, and opens 
   await settle();
   expect(screen.getByTestId('error-banner')).toHaveTextContent("This pane can't be opened on this herdr. It needs herdr 0.9 or newer.");
   expect(screen.queryByTestId('terminal-takeover')).toBeNull();
+  // Nothing could open it on this screen, so no Reconnect that does nothing.
+  expect(screen.queryByTestId('terminal-reconnect')).toBeNull();
   expect(mockOpenShell).not.toHaveBeenCalled();
   await screen.unmount();
 });
