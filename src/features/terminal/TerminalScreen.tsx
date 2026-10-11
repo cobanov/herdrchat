@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isTerminalAvailable, TerminalView, type TerminalViewHandle } from '../../../modules/herdr-terminal/src';
 import { EmptyState } from '@/components/EmptyState';
@@ -86,11 +86,15 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
     );
   }
 
-  // Edge to edge: an iPad's terminal takes the whole width, not the
-  // readable column the other screens keep to. The insets are its own.
+  // Edge to edge: an iPad's terminal takes the whole width of its column,
+  // not the readable width the other screens keep to. The insets are its own,
+  // and measured where it is, as the thread's header measures them: beside
+  // the iPad's sidebar there is no left edge to clear, alone on a phone there
+  // is the status bar and, on its side, the notch. (The window's insets, read
+  // as numbers, would pad the column's left for an edge that is the sidebar's.)
   return (
     <Screen presentation="edge-to-edge">
-      <View style={{ flex: 1, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
+      <SafeAreaView testID="terminal-safe-area" edges={['top', 'left', 'right']} style={{ flex: 1 }}>
         {header}
         {/* The keyboard pushes the terminal up rather than covering its last
             rows, which is where a prompt is. The view takes the new height as a
@@ -125,7 +129,7 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
             />
           </View>
         </KeyboardAvoidingView>
-      </View>
+      </SafeAreaView>
     </Screen>
   );
 }

@@ -35,6 +35,7 @@ jest.mock('@/features/welcome/useWelcomeGate', () => ({ useWelcomeGate: () => {}
 jest.mock('@/features/chats/ChatsList', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/Screen', () => ({ Screen: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('@/components/EmptyState', () => ({ EmptyState: () => null }));
+jest.mock('@/features/terminal/TerminalScreen', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/features/thread/ThreadScreen', () => ({
   __esModule: true,
   default: (props: { workspaceId: string; onBack?: () => void }) => <MockThread {...props} />,
@@ -68,7 +69,7 @@ afterAll(() => {
 it('uses the root chats screen for all iPad chat entry points, including narrow windows', () => {
   openChat('host-a', 'w2', 'Notes');
   expect(mockDismissTo).toHaveBeenCalledWith('/');
-  expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w2', title: 'Notes' });
+  expect(useChatSelection.getState().detail).toEqual({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w2', title: 'Notes' });
   expect(mockPush).not.toHaveBeenCalled();
   windowAt(600);
   openChat('host-a', 'w3');
@@ -82,9 +83,9 @@ it('uses the root chats screen for all iPad chat entry points, including narrow 
 // One agent of a workspace is its own chat; opening it must say which.
 it('carries the pane into the route on a phone and into the selection on iPad', () => {
   openChat('host-a', 'w6', 'api', 'w6:p2');
-  expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w6', title: 'api', paneId: 'w6:p2' });
+  expect(useChatSelection.getState().detail).toEqual({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w6', title: 'api', paneId: 'w6:p2' });
   openChat('host-a', 'w6', 'api');
-  expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w6', title: 'api' });
+  expect(useChatSelection.getState().detail).toEqual({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w6', title: 'api' });
   windowAt(932, false);
   openChat('host-a', 'w6', 'api', 'w6:p2');
   expect(mockPush).toHaveBeenCalledWith({
@@ -109,7 +110,7 @@ it('keeps the selected detail and draft mounted across width changes, with back 
   windowAt(600);
   await screen.rerender(<ChatsScreen />);
   await fireEvent.press(screen.getByText('Back'));
-  expect(useChatSelection.getState().selection).toBeNull();
+  expect(useChatSelection.getState().detail).toBeNull();
   expect(mockPush).not.toHaveBeenCalled();
 });
 
@@ -126,12 +127,12 @@ it('waits for the saved host before redirecting a cold tablet deep link', async 
   useChatSelection.getState().select(null);
   const screen = await render(<ThreadRoute />);
   expect(mockDismissTo).not.toHaveBeenCalled();
-  expect(useChatSelection.getState().selection).toBeNull();
+  expect(useChatSelection.getState().detail).toBeNull();
   mockConnectionId = 'host-a';
   mockHydrated = true;
   await screen.rerender(<ThreadRoute />);
   expect(mockDismissTo).toHaveBeenCalledWith('/');
-  expect(useChatSelection.getState().selection?.connectionId).toBe('host-a');
+  expect(useChatSelection.getState().detail?.connectionId).toBe('host-a');
 });
 
 it('changes only the selected detail and does not carry a draft into another chat', async () => {

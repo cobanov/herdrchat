@@ -92,7 +92,8 @@ herdr open on the desktop as well, check each of these and what it should do:
   (`agent attach` draws it at the client's size), and get its size back on
   leaving? Nothing else on the desktop should move.
 - **Phone upright, on its side, and the iPad.** The pane alone at every
-  width: no herdr sidebar or header, whatever the size.
+  width: no herdr sidebar or header, whatever the size (on iPad, the width of
+  the detail column).
 - **Scrolling.** After `git log` (or in an agent's pane), a one-finger swipe up
   scrolls herdr's history of the pane, a swipe down comes back; it does not
   select text or drag a split. A tap still clicks. A pinch
@@ -110,6 +111,27 @@ herdr open on the desktop as well, check each of these and what it should do:
 - **klaw through the machine jump.** Open a shell pane on klaw: the same
   private attach, through the host, with the header naming klaw (klaw's herdr
   must be 0.9 or newer, or the screen says so).
+- **iPad: beside the sidebar, not over it.** In Spaces, open a shell pane's
+  Terminal row: the terminal fills the detail column with the chats still on
+  the left, that row lit as an open agent's row is, and no workspace card or
+  chat row lit. Its header sits where a chat's does in the same column, with
+  no gap on its left. Back shows "Select a conversation" again.
+- **iPad: a chat's Terminal swaps the detail.** Open a chat, tap its header's
+  Terminal: the terminal replaces the chat in the column (the chat's row is no
+  longer lit). Back brings that chat back. Open another pane's Terminal row
+  while a terminal is open: it replaces it, and the desktop shows the first
+  pane got its own size back (its shell hung up).
+- **iPad: narrow and upright.** Rotate to portrait, then narrow the app with
+  Split View to its smallest: the terminal goes on alone, its Back still goes
+  where it came from, and the accessory bar shows Esc, Tab, Ctrl and Alt
+  without a scroll, the rest scrolling sideways, Paste and the keyboard
+  control still beside it. At the widest two-column split and the narrowest,
+  the pane redraws at the column's size.
+- **iPad: klaw in the column.** Open a shell pane on klaw from the sidebar:
+  the same, with the header naming klaw and its row lit.
+- **iPad: a link.** There is no documented `herdrchat://` terminal link; if
+  one is added, it must land in the column (the route hands over to the
+  detail), never as a second screen over the split.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

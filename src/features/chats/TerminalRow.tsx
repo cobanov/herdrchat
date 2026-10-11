@@ -19,13 +19,15 @@ import type { ChatSummary } from './useWorkspaces';
  * of the workspace. No status, unread mark or preview: a terminal has no
  * conversation to summarise, and no pin, mute or rename either in this round.
  */
-export const TerminalRow = memo(function TerminalRow({ summary, terminal, first = false, last = false, onPress }: {
+export const TerminalRow = memo(function TerminalRow({ summary, terminal, first = false, last = false, selected = false, onPress }: {
   summary: ChatSummary & { machine?: MachineRef | null };
   terminal: TerminalPane;
   /** The first row under the workspace's card: the rail reaches up to the card. */
   first?: boolean;
   /** The last row under the card: the rail stops here. */
   last?: boolean;
+  /** Its terminal is the iPad's detail: lit as an open agent's row is. */
+  selected?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -48,15 +50,20 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityState={{ selected }}
         accessibilityLabel={[`${TERMINAL_ROW_TITLE} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, context].join(', ')}
         accessibilityHint="Opens the pane's terminal"
         testID={`terminal-row-${rowTestKey(summary, terminal.paneId)}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
           marginLeft: size.paneIndent, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
-          borderRadius: radius.sm,
+          borderRadius: radius.sm, borderWidth: 1,
+          borderColor: selected ? colors.tint : 'transparent',
           backgroundColor: pressed ? colors.chatCardPressed : colors.chatCard,
         })}>
+        {selected && (
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius.sm, backgroundColor: colors.tintMuted }]} />
+        )}
         <View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"

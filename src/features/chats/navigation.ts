@@ -4,7 +4,8 @@ import { useChatSelection } from '@/state/chatSelection';
 
 /**
  * Opens a chat: the workspace's, or with `paneId` the one agent in that pane.
- * iPad selects a detail inside Chats, even in a narrow multitasking window.
+ * iPad selects a detail inside Chats, even in a narrow multitasking window,
+ * in place of whatever detail was there (another chat, or a pane's terminal).
  */
 export function openChat(connectionId: string, workspaceId: string, title?: string, paneId?: string) {
   // No `paneId` key at all for the workspace chat, so its params are exactly

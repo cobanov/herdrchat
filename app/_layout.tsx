@@ -150,9 +150,11 @@ function RootStack() {
             chat, on iPad over the split, with the same swipe back. */}
         <Stack.Screen name="chat/agent" options={{ gestureEnabled: true }} />
         <Stack.Screen name="chat/workflow" options={{ gestureEnabled: true }} />
-        {/* A pane's terminal: pushed the same way, over the chats or a chat.
-            The edge swipe still goes back; SwiftTerm's own gestures (scroll,
-            select, pinch) start inside the screen, not at its edge. */}
+        {/* A pane's terminal on a phone: pushed the same way, over the chats
+            or a chat. On iPad it is the detail beside the chats instead, and
+            a link here hands over to that. The edge swipe still goes back;
+            SwiftTerm's own gestures (scroll, select, pinch) start inside the
+            screen, not at its edge. */}
         <Stack.Screen name="chat/terminal" options={{ gestureEnabled: true }} />
         {/* Hosts and Settings are places you visit and come back from, so they
             are presented like the other full-height screens here rather than

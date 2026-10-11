@@ -24,6 +24,11 @@ export interface StickyModifiers {
  * software keyboard through the view (`controlModifier`/`metaModifier`), so
  * Ctrl then C typed on the keyboard is a Ctrl-C; a hardware keyboard has its
  * own and never needs these.
+ *
+ * The keys scroll sideways rather than shrink: on iPad the terminal is the
+ * column beside the chats, and at its narrowest the fixed controls still leave
+ * Esc, Tab, Ctrl and Alt in view (`src/lib/terminal/barFit.ts`, tested with
+ * the measures drawn here).
  */
 export function AccessoryBar({ modifiers, onModifiers, onSend, onPaste, keyboardShown, onToggleKeyboard, disabled }: {
   modifiers: StickyModifiers;

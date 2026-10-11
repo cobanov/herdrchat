@@ -314,6 +314,12 @@ export const terminal = {
   disabledOpacity: 0.4,
   /** The scroll room past the last key, so it can come clear of the paste and keyboard controls. */
   barTail: spacing.sm,
+  /**
+   * A key label's advance per character (the mono subhead, 15pt, at about
+   * 0.6em): only for checking what fits the bar (`src/lib/terminal/barFit.ts`),
+   * never for drawing.
+   */
+  keyLabelAdvance: 9,
 } as const;
 
 /** System navigation material, continuous through the status-bar safe area. */

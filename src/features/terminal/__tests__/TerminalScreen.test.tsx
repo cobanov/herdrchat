@@ -250,3 +250,16 @@ it('hangs up a shell that opened after the screen was left', async () => {
   await settle();
   expect(mockCloseShell).toHaveBeenCalledWith('t-late');
 });
+
+// Beside the iPad's sidebar the window's left inset is not the terminal's to
+// clear: the insets are measured where the screen is, as the thread's header
+// measures them, never padded from the window's numbers.
+it('takes its top and side insets where it sits, as the thread does in the same column', async () => {
+  mockConnection = demo;
+  const screen = await render(<TerminalScreen connectionId="demo" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
+  await settle();
+  const safe = screen.getByTestId('terminal-safe-area');
+  expect(safe).toHaveProp('edges', ['top', 'left', 'right']);
+  expect(safe).not.toHaveStyle({ paddingTop: 59 });
+  await screen.unmount();
+});

@@ -50,7 +50,7 @@ import {
 } from '@/lib/listModes';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
-import { useChatSelection } from '@/state/chatSelection';
+import { chatOf, useChatSelection } from '@/state/chatSelection';
 import {
   clientFor,
   isDemo,
@@ -77,10 +77,12 @@ import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/th
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
  * `useChatActions`, on the row's own connection.
  */
-export default function ChatsList({ selectedWorkspaceId, selectedConnectionId }: {
+export default function ChatsList({ selectedWorkspaceId, selectedConnectionId, selectedTerminal }: {
   selectedWorkspaceId?: string;
   /** The open chat's connection: the host's, or one of its machines'. Absent: the host's. */
   selectedConnectionId?: string;
+  /** The pane whose terminal is the iPad's detail. Never set with a chat: one detail at a time. */
+  selectedTerminal?: OpenTerminal;
 }) {
   const connection = useSelectedConnection();
   // Keyed by server: switching hosts is a different conversation list, not an
@@ -91,16 +93,26 @@ export default function ChatsList({ selectedWorkspaceId, selectedConnectionId }:
       key={connection?.id ?? 'none'}
       selectedWorkspaceId={selectedWorkspaceId}
       selectedConnectionId={selectedConnectionId}
+      selectedTerminal={selectedTerminal}
     />
   );
 }
 
-function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
+/** A pane's terminal open in the detail, by its row's connection and pane. */
+interface OpenTerminal {
+  connectionId: string;
+  paneId: string;
+}
+
+function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTerminal }: {
   selectedWorkspaceId?: string;
   selectedConnectionId?: string;
+  selectedTerminal?: OpenTerminal;
 }) {
   const router = useRouter();
-  const selection = useChatSelection((state) => state.selection);
+  // The open chat, if a chat is the detail: a terminal has no row title to
+  // keep in step and no pane chat to light.
+  const selection = useChatSelection((state) => chatOf(state.detail));
   const select = useChatSelection((state) => state.select);
   const db = useSQLiteContext();
   const { colors } = useTheme();
@@ -171,7 +183,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
   // Whatever a row draws from outside its item: the selection, and the read
   // markers its unread dot compares against. A pane changes neither the rows
   // nor the workspace id, so without the key its highlight would not repaint.
-  const listExtra = useMemo(() => ({ open, reads }), [open, reads]);
+  // The open terminal is in it too, for the same reason: its row lights up.
+  const terminalConnectionId = selectedTerminal?.connectionId;
+  const terminalPaneId = selectedTerminal?.paneId;
+  const openTerminalKey = terminalConnectionId === undefined || terminalPaneId === undefined
+    ? null : `${terminalConnectionId}\n${terminalPaneId}`;
+  const listExtra = useMemo(() => ({ open, reads, openTerminalKey }), [open, reads, openTerminalKey]);
   const insets = useSafeAreaInsets();
 
   const actions = useChatActions<ListedChat>({
@@ -522,6 +539,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId }: {
                   terminal={terminal}
                   first={row.first}
                   last={row.last}
+                  selected={openTerminalKey === `${summary.connectionId}\n${terminal.paneId}`}
                   onPress={() => {
                     Keyboard.dismiss();
                     openTerminal(terminalRowParams(summary.connectionId, terminal));
