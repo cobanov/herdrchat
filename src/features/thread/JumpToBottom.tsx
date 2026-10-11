@@ -8,7 +8,12 @@ import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { motion, radius, size, spacing } from '@/theme/tokens';
 
-const PLACEMENT = { position: 'absolute', right: spacing.lg, bottom: spacing.sm } as const;
+// In the flow of the strip it is given, not absolute in it: the strips both
+// screens give it are anchored by their bottom edge alone, so they had no
+// height of their own, and a button hanging out of a zero-height parent was
+// drawn and tappable but left out of the accessibility tree (VoiceOver could
+// not reach it, and neither could the UI suite's regression/history).
+const PLACEMENT = { alignSelf: 'flex-end', marginRight: spacing.lg, marginBottom: spacing.sm } as const;
 
 /**
  * The "back to newest" affordance, shown only once the reader has scrolled away
