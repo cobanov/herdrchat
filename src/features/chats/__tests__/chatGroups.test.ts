@@ -8,7 +8,7 @@ const chat = (workspaceId: string, status: ChatSummary['status']): ChatSummary =
 });
 const chats = [chat('idle-a', 'idle'), chat('busy', 'working'), chat('approval', 'blocked'), chat('idle-b', 'done'), chat('unknown', 'unknown')];
 const ids = (rows: ReturnType<typeof groupChats>) => rows.map((row) =>
-  row.kind === 'chat' ? row.summary.workspaceId : row.kind === 'pane' ? `pane:${row.pane.paneId}` : row.id);
+  row.kind === 'chat' ? row.summary.workspaceId : row.kind === 'pane' ? `pane:${row.pane.paneId}` : row.kind === 'tab' ? `tab:${row.tabId}` : row.id);
 
 const agentIn = (workspaceId: string, paneId: string, agent: string | null, cwd: string): AgentInfo => ({
   agent, agentStatus: 'idle', cwd, foregroundCwd: null, focused: false, paneId, tabId: 't1', terminalId: null,

@@ -19,6 +19,7 @@ import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
 import { paneTarget } from './paneTarget';
 import { paneTitle, rowTitle } from './rowText';
+import { TabDivider } from './TabDivider';
 import { TerminalRow } from './TerminalRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
 import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
@@ -504,6 +505,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             item.kind === 'group' ? `group-${item.id}`
               : item.kind === 'pane' ? `pane-${rowKey(item.summary)}-${item.pane.paneId}`
                 : item.kind === 'terminal' ? `terminal-${rowKey(item.summary)}-${item.terminal.paneId}`
+                : item.kind === 'tab' ? `${rowKey(item.summary)}/tab/${item.tabId}`
                 : isAgentRow(item.summary) ? `agent-${agentRowKey(item.summary)}` : rowKey(item.summary)}
           getItemType={(item) => item.kind}
           // FlashList keeps the first visible row in place by default, so a
@@ -566,6 +568,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 <Text variant="caption" mono color="secondary">{row.count}</Text>
               </View>
             );
+            if (row.kind === 'tab') return <TabDivider summary={row.summary} tabId={row.tabId} label={row.label} first={row.first} />;
             if (row.kind === 'terminal') {
               const { summary, terminal } = row;
               return (

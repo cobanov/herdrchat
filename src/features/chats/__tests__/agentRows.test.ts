@@ -120,7 +120,7 @@ describe('agentRows', () => {
 
 describe('agentRows through groupChats', () => {
   const ids = (items: ReturnType<typeof groupChats<AgentRow>>) =>
-    items.map((item) => (item.kind === 'group' ? item.id : item.kind === 'chat' ? item.summary.chatKey : `pane:${item.pane.paneId}`));
+    items.map((item) => (item.kind === 'group' ? item.id : item.kind === 'chat' ? item.summary.chatKey : item.kind === 'tab' ? `tab:${item.tabId}` : `pane:${item.pane.paneId}`));
 
   it('groups each agent by its own state, with no pane rows under any of them', () => {
     expect(ids(groupChats(rows, '', new Map(), agentRowKey))).toEqual([

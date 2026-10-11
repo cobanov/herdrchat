@@ -21,6 +21,18 @@ export type ChatListItem<S extends ChatSummary = ChatSummary> =
      * the workspace card above the first and stops at the last.
      */
     first: boolean; last: boolean;
+  }
+  /**
+   * Where a tab's rows start under a space card whose listed rows sit in two
+   * or more tabs (`withTerminalRows`): a hairline between it and the tab
+   * before, and the tab's label above its rows when the person named it.
+   * The first tab's has no line, and is only there when it has a label.
+   */
+  | {
+    kind: 'tab'; summary: S; tabId: string;
+    /** `tabHeading`: null for a tab herdr only numbered. */
+    label: string | null;
+    first: boolean;
   };
 
 /**

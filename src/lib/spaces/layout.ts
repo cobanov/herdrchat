@@ -147,7 +147,7 @@ function union(rects: readonly { x: number; y: number; width: number; height: nu
 }
 
 /** `w6:t2` → 2: herdr's tab ids end in their number, which orders a tab herdr sent no `tabs` row for. */
-function tabNumber(tabId: string): number | null {
+export function tabNumber(tabId: string): number | null {
   const match = /:t(\d+)$/.exec(tabId);
   return match === null ? null : Number(match[1]);
 }

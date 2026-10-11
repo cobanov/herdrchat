@@ -176,8 +176,10 @@ describe('chatListRows', () => {
 
   it("hangs a workspace's shell pane under its card in Spaces", async () => {
     const rows = chatListRows('spaces', await listed(), '', new Map(), true);
-    const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.terminal.paneId}`]));
-    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'terminal:w6:p4', 'pane:w7:p1', 'terminal:w7:p2']);
+    const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.kind === 'tab' ? `${row.tabId}:${row.label ?? ''}` : row.terminal.paneId}`]));
+    // Without the snapshot's `tabs` (not passed here), w6's dev server is
+    // still set apart by its tab id's number, under a line with no label.
+    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'tab:w6:t2:', 'terminal:w6:p4', 'pane:w7:p1', 'terminal:w7:p2']);
   });
 
   // Android has no terminal: a row would only open the screen saying so.

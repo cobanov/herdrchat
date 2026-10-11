@@ -135,12 +135,31 @@ it("draws w6 as the workspace, its agents and terminals under it", async () => {
 });
 
 // Android has no terminal: its rows would only open the screen saying so.
+// Without them w6's agents share one tab, so there is nothing to divide.
 it('lists no terminal rows where no terminal can open', async () => {
   mockTerminalAvailable = false;
   const screen = await render(<ChatsList />);
   expect(screen.queryAllByTestId(/^terminal-row-/)).toEqual([]);
   expect(screen.getByTestId('pane-row-w6:p1')).toBeOnTheScreen();
   expect(screen.getByTestId('pane-row-w6:p2')).toBeOnTheScreen();
+  expect(screen.queryAllByTestId(/^tab-(header|divider)-w6:/)).toEqual([]);
+});
+
+// "When there are multiple tabs in a space, the space children list should be
+// grouped by tab." w6's dev server is alone in its tab "server": it comes
+// after the first tab's agents and shell, under a line and that name.
+it("groups w6's rows by tab, with a line and the tab's name before the second", async () => {
+  const screen = await render(<ChatsList />);
+  const order = screen.getAllByTestId(/^(pane-row|terminal-row|tab-header|tab-divider)-w6:/).map((node) => node.props.testID as string);
+  expect(order).toEqual([
+    'tab-header-w6:t1', 'pane-row-w6:p1', 'pane-row-w6:p2', 'terminal-row-w6:p3',
+    'tab-divider-w6:t2', 'tab-header-w6:t2', 'terminal-row-w6:p4',
+  ]);
+  expect(screen.getByTestId('tab-header-w6:t1')).toHaveTextContent('api');
+  expect(screen.getByTestId('tab-header-w6:t2')).toHaveTextContent('server');
+  expect(screen.queryByTestId('tab-divider-w6:t1')).toBeNull();
+  // w7 is one tab: nothing to divide.
+  expect(screen.queryAllByTestId(/^tab-(header|divider)-w7:/)).toEqual([]);
 });
 
 it('keeps a workspace of one agent and nothing else as that chat, with no layout button', async () => {

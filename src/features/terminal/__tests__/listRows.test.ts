@@ -1,6 +1,6 @@
 import { groupChats } from '@/features/chats/chatGroups';
 import type { ChatSummary, PaneSummary } from '@/features/chats/useWorkspaces';
-import type { AgentInfo, Pane } from '@/lib/herdr/models';
+import type { AgentInfo, Pane, Tab } from '@/lib/herdr/models';
 import type { TerminalPane } from '@/lib/terminal/rows';
 import { terminalRowParams, withTerminalRows } from '../listRows';
 import { terminalIdParam } from '../navigation';
@@ -26,6 +26,7 @@ const shape = (rows: ReturnType<typeof withTerminalRows>) => rows.map((row) =>
   row.kind === 'group' ? row.id
     : row.kind === 'chat' ? row.summary.workspaceId
       : row.kind === 'pane' ? `pane ${row.pane.paneId}${row.first ? ' first' : ''}${row.last ? ' last' : ''}`
+        : row.kind === 'tab' ? `tab ${row.tabId}${row.label === null ? '' : ` "${row.label}"`}${row.first ? ' first' : ''}`
         : `terminal ${row.terminal.paneId}${row.first ? ' first' : ''}${row.last ? ' last' : ''}`);
 
 // The rail under a card is one line from the card to the last row: the
@@ -56,6 +57,68 @@ it('adds nothing to a workspace with no other panes', () => {
 it('adds no terminal rows where no terminal can open', () => {
   const rows = groupChats([chat('w6', [paneSummary('w6:p1')], [shell('w6:p3')])], '');
   expect(withTerminalRows(rows, false)).toEqual(rows);
+});
+
+describe('grouped by tab', () => {
+  const inTab = <T extends PaneSummary | TerminalPane>(row: T, tabId: string): T =>
+    'agent' in row ? { ...row, agent: { ...row.agent, tabId } } : { ...row, pane: { ...row.pane, tabId } };
+  const tab = (tabId: string, number: number, label: string): Tab => ({
+    tabId, workspaceId: 'w6', number, label, focused: false, paneCount: 1, agentStatus: 'idle',
+  });
+  const w6 = (tabs: Tab[]) => chat(
+    'w6',
+    [inTab(paneSummary('w6:p1'), 'w6:t1'), inTab(paneSummary('w6:p2'), 'w6:t3'), inTab(paneSummary('w6:p5'), 'w6:t1')],
+    [inTab(shell('w6:p3'), 'w6:t3'), inTab(shell('w6:p4'), 'w6:t2')],
+  );
+  const named = [tab('w6:t1', 1, 'agents'), tab('w6:t2', 2, '2'), tab('w6:t3', 3, 'web')];
+
+  // Tabs in number order, each tab's agents then its terminals; a line
+  // before every tab but the first, a label only on a named one ("2" is
+  // herdr numbering a tab nobody named). The rail is still the card's.
+  it("lists a workspace's rows tab by tab, the first labelled tab with no line", () => {
+    expect(shape(withTerminalRows(groupChats([{ ...w6(named), tabs: named }], '')))).toEqual([
+      'idle', 'w6',
+      'tab w6:t1 "agents" first', 'pane w6:p1 first', 'pane w6:p5',
+      'tab w6:t2', 'terminal w6:p4',
+      'tab w6:t3 "web"', 'pane w6:p2', 'terminal w6:p3 last',
+    ]);
+  });
+
+  // An unnamed first tab has nothing to draw: no line goes above the first tab.
+  it('starts an unnamed first tab with no item', () => {
+    const tabs = [tab('w6:t1', 1, '1'), tab('w6:t2', 2, 'server'), tab('w6:t3', 3, '')];
+    expect(shape(withTerminalRows(groupChats([{ ...w6(tabs), tabs }], '')))).toEqual([
+      'idle', 'w6', 'pane w6:p1 first', 'pane w6:p5',
+      'tab w6:t2 "server"', 'terminal w6:p4',
+      'tab w6:t3', 'pane w6:p2', 'terminal w6:p3 last',
+    ]);
+  });
+
+  // A herdr that sends no `tabs`: ordered by the number in the tab id, unlabelled.
+  it('orders by the tab id without the snapshot\'s tabs', () => {
+    expect(shape(withTerminalRows(groupChats([w6([])], '')))).toEqual([
+      'idle', 'w6', 'pane w6:p1 first', 'pane w6:p5',
+      'tab w6:t2', 'terminal w6:p4',
+      'tab w6:t3', 'pane w6:p2', 'terminal w6:p3 last',
+    ]);
+  });
+
+  it('draws nothing for rows all in one tab', () => {
+    const one = chat('w6', [inTab(paneSummary('w6:p1'), 'w6:t2'), inTab(paneSummary('w6:p2'), 'w6:t2')], [inTab(shell('w6:p3'), 'w6:t2')]);
+    const tabs = [tab('w6:t1', 1, 'empty'), tab('w6:t2', 2, 'all')];
+    expect(shape(withTerminalRows(groupChats([{ ...one, tabs }], '')))).toEqual([
+      'idle', 'w6', 'pane w6:p1 first', 'pane w6:p2', 'terminal w6:p3 last',
+    ]);
+  });
+
+  // A search that leaves agents of one tab, and the only shell in it too.
+  it('draws nothing when a search leaves rows in one tab', () => {
+    const searched = chat('w6', [inTab({ ...paneSummary('w6:p1'), agent: { ...agent('w6:p1'), agent: 'codex' } }, 'w6:t1'), inTab(paneSummary('w6:p2'), 'w6:t2')], [inTab(shell('w6:p3'), 'w6:t1')]);
+    const tabs = [tab('w6:t1', 1, 'api'), tab('w6:t2', 2, 'web')];
+    expect(shape(withTerminalRows(groupChats([{ ...searched, tabs }], 'codex')))).toEqual([
+      'idle', 'w6', 'pane w6:p1 first', 'terminal w6:p3 last',
+    ]);
+  });
 });
 
 // A shell pane is attached by its own terminal id, so the row must hand it on;

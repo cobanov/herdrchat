@@ -7,7 +7,9 @@
 # ("notes": one agent, nothing else) stays a chat card, titled by its session,
 # with no layout button. w7 ("site": one agent and one shell, the case that
 # asked for this) is a space card, its agent a row under it that opens the
-# workspace's own chat, then its terminal row.
+# workspace's own chat, then its terminal row. w6's rows are grouped by tab,
+# a line and the tab's name ("server") before the second; w7, one tab, has
+# neither.
 #
 # On iPad the layout is a floating card beside the list instead, shown by a
 # pointer resting on the button; Maestro has no pointer, so that is checked by
@@ -35,6 +37,23 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: terminal-row-w6:p4
     text: 'Terminal in api, npm run dev.*'
+
+# Its rows are grouped by tab: the first tab "api" (both agents and the shell
+# w6:p3), then a line and the second tab's name, "server", over the dev
+# server w6:p4 alone in it.
+- assertVisible:
+    id: tab-header-w6:t2
+    text: server
+- assertVisible:
+    id: terminal-row-w6:p4
+    below:
+      id: tab-header-w6:t2
+- assertVisible:
+    id: tab-header-w6:t2
+    below:
+      id: terminal-row-w6:p3
+- assertNotVisible:
+    id: tab-divider-w6:t1
 
 # The layout, from the card's button: two tabs, every pane a box.
 - scrollUntilVisible:
@@ -120,6 +139,8 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: pane-row-w7:p1
     text: 'Landing page copy, Claude in site, demo/site.*'
+- assertNotVisible:
+    id: tab-header-w7:t1
 - takeScreenshot: space-agent-shell-${APPEARANCE}
 
 # The agent's row is the workspace's chat, as its card used to be.
