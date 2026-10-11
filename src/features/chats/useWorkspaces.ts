@@ -24,6 +24,8 @@ import {
   type AgentStatus,
   type Pane,
   type RestoreError,
+  type Tab,
+  type TabLayout,
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
@@ -94,6 +96,19 @@ export interface ChatSummary {
    * workspace's card in the Spaces view (`src/lib/terminal/rows.ts`).
    */
   shellPanes: TerminalPane[];
+  /**
+   * The workspace's tabs, as the snapshot's `tabs` lists them; empty from a
+   * herdr that does not send them. What its card's layout view titles each
+   * tab by (`spaceLayoutModel`).
+   */
+  tabs: Tab[];
+  /** Each of its tabs' pane geometry, from the snapshot's `layouts`; empty when herdr sent none. */
+  layouts: TabLayout[];
+  /** The tab its workspace shows, which the layout view marks. */
+  activeTabId: string | null;
+  /** herdr's own counts for the workspace, shells included: its card's stats. */
+  tabCount: number;
+  paneCount: number;
   /** The newest of the panes' last messages: what the workspace row shows. */
   preview: ChatPreview | null;
   /**
@@ -303,7 +318,8 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
         previews.current,
         snapshot.restoreErrors,
         snapshot.panes,
-        processNameMap(processNames.current)
+        processNameMap(processNames.current),
+        { tabs: snapshot.tabs, layouts: snapshot.layouts }
       ));
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
@@ -461,7 +477,9 @@ export function buildSummaries(
   previews: Map<string, CachedPreview>,
   restoreErrors: readonly RestoreError[] = [],
   allPanes: readonly Pane[] = [],
-  processNames: ReadonlyMap<string, string> = new Map()
+  processNames: ReadonlyMap<string, string> = new Map(),
+  /** The snapshot's tabs and layouts, for each card's layout view; null where herdr sent none. */
+  geometry: { tabs: readonly Tab[] | null; layouts: readonly TabLayout[] | null } = { tabs: null, layouts: null }
 ): ChatSummary[] {
   const byWorkspace = groupByWorkspace(agents);
 
@@ -488,6 +506,11 @@ export function buildSummaries(
         agents: group,
         panes,
         shellPanes: terminalPanes(allPanes, workspace.workspaceId, processNames),
+        tabs: (geometry.tabs ?? []).filter((tab) => tab.workspaceId === workspace.workspaceId),
+        layouts: (geometry.layouts ?? []).filter((layout) => layout.workspaceId === workspace.workspaceId),
+        activeTabId: workspace.activeTabId,
+        tabCount: workspace.tabCount,
+        paneCount: workspace.paneCount,
         preview: sessionSig === null ? null : newestPreview(electionOrder(panes)),
         sessionSig,
         restoreError:

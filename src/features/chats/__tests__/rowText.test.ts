@@ -1,4 +1,5 @@
-import { paneContext, paneTitle, rowContext, rowTitle, sharedFolder, statusLabel } from '../rowText';
+import { paneContext, paneTitle, rowContext, rowTitle, sharedFolder, spaceStats, spaceTitle, statusLabel } from '../rowText';
+import type { TerminalPane } from '@/lib/terminal/rows';
 import type { AgentInfo } from '@/lib/herdr/models';
 import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
@@ -15,7 +16,7 @@ const workspace = (agents: AgentInfo[]): ChatSummary => {
     panes: conversational.map((agent): PaneSummary => ({
       paneId: agent.paneId, agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: agent.title, agentName: agent.name,
     })),
-    preview: null, sessionSig: null, shellPanes: [], restoreError: null,
+    preview: null, sessionSig: null, shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null,
     sessionTitle: titled?.title ?? null, agentName: titled?.name ?? null,
   };
 };
@@ -133,5 +134,55 @@ describe('rowContext on a machine', () => {
     const agent = agentIn('w6:p2', 'codex', '/home/demo/api/web');
     const pane: PaneSummary = { paneId: 'w6:p2', agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: null, agentName: null };
     expect(paneContext(pane)).toBe('Codex · api/web');
+  });
+});
+
+// A space card says what the workspace holds, not what one agent last said.
+describe('spaceStats', () => {
+  const shell = (paneId: string, cwd: string): TerminalPane => ({
+    paneId, processName: null,
+    pane: { paneId, workspaceId: 'w6', tabId: 't1', terminalId: null, agent: null, agentStatus: 'unknown', cwd, foregroundCwd: null, focused: false, title: null },
+  });
+  const space = (agents: AgentInfo[], states: PaneSummary['status'][], counts: { tabs: number; panes: number }, shells: TerminalPane[] = []): ChatSummary => {
+    const summary = workspace(agents);
+    return {
+      ...summary,
+      panes: summary.panes.map((pane, index) => ({ ...pane, status: states[index] ?? 'idle' })),
+      shellPanes: shells, tabCount: counts.tabs, paneCount: counts.panes,
+    };
+  };
+
+  it('counts the agents by what they are doing', () => {
+    const two = [agentIn('w6:p1', 'claude', '/home/demo/api'), agentIn('w6:p2', 'claude', '/home/demo/api/web')];
+    expect(spaceStats(space(two, ['blocked', 'idle'], { tabs: 2, panes: 4 }))).toBe('2 agents, 1 needs you · 2 tabs · 4 panes · demo/api');
+    expect(spaceStats(space(two, ['blocked', 'blocked'], { tabs: 1, panes: 2 }))).toBe('2 agents, 2 need you · 1 tab · 2 panes · demo/api');
+    expect(spaceStats(space(two, ['blocked', 'working'], { tabs: 1, panes: 2 }))).toBe('2 agents, 1 needs you, 1 working · 1 tab · 2 panes · demo/api');
+    expect(spaceStats(space(two, ['idle', 'done'], { tabs: 3, panes: 7 }))).toBe('2 agents · 3 tabs · 7 panes · demo/api');
+  });
+
+  it('says one agent in a phrase, and no agent when there is none', () => {
+    const one = [agentIn('w6:p1', 'claude', '/home/me/side/herdrchat')];
+    const shells = [shell('w6:p2', '/home/me/side/herdrchat')];
+    expect(spaceStats(space(one, ['working'], { tabs: 1, panes: 2 }, shells))).toBe('1 agent working · 1 tab · 2 panes · side/herdrchat');
+    expect(spaceStats(space(one, ['blocked'], { tabs: 1, panes: 2 }, shells))).toBe('1 agent needs you · 1 tab · 2 panes · side/herdrchat');
+    expect(spaceStats(space(one, ['idle'], { tabs: 1, panes: 2 }, shells))).toBe('1 agent · 1 tab · 2 panes · side/herdrchat');
+    expect(spaceStats(space([], [], { tabs: 1, panes: 1 }, [shell('w6:p1', '/home/demo/logs')]))).toBe('no agent · 1 tab · 1 pane · demo/logs');
+  });
+
+  // An older herdr sends no counts: what the snapshot listed stands in, and
+  // nothing is said that is not known.
+  it('falls back to the panes it knows, and leaves out what it does not', () => {
+    const one = [agentIn('w6:p1', 'claude', '/srv/api')];
+    expect(spaceStats(space(one, ['idle'], { tabs: 0, panes: 0 }, [shell('w6:p2', '/srv')]))).toBe('1 agent · 2 panes · srv');
+    expect(spaceStats(space([], [], { tabs: 0, panes: 0 }))).toBe('no agent');
+  });
+});
+
+describe('spaceTitle', () => {
+  it("is the workspace's label, after its machine's on a machine", () => {
+    const summary = workspace([agentIn('w6:p1', 'claude', '/a', true)]);
+    expect(spaceTitle(summary)).toBe('api');
+    expect(spaceTitle({ ...summary, machine: { id: 'klaw', label: 'klaw' } })).toBe('klaw · api');
+    expect(spaceTitle({ ...summary, title: '' })).toBe('w6');
   });
 });

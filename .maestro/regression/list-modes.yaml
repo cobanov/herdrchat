@@ -119,7 +119,7 @@ appId: dev.herdr.HerdrChat
     centerElement: true
 - assertVisible:
     id: chat-row-w6
-    text: 'api, .*2 agents · Claude.*'
+    text: 'api, 2 agents, 1 working · 2 tabs · 4 panes · demo/api.*'
 - assertVisible:
     id: pane-row-w6:p1
 - assertVisible:

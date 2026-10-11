@@ -193,6 +193,13 @@ function RootStack() {
             sheetCornerRadius: Platform.OS === 'android' ? radius.lg : undefined,
           }}
         />
+        {/* A workspace's layout on a phone, sized to its tabs like the rename
+            sheet. iPad shows the same drawing as a card beside the layout
+            button instead (`SpaceLayoutPopover`). */}
+        <Stack.Screen
+          name="space-layout"
+          options={{ presentation: 'formSheet', sheetAllowedDetents: 'fitToContents' }}
+        />
       </Stack>
       {/* Android's action sheets, above every screen. Renders nothing on iOS,
           whose sheets are the system's. */}

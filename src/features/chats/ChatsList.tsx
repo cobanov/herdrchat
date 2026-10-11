@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Keyboard, Platform, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
@@ -14,9 +14,10 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openChat } from './navigation';
 import { agentPrefRow, agentRowKey, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
-import { paneChats } from './chatGroups';
+import { paneChats, spaceCardMode } from './chatGroups';
 import { isChatUnread, isPaneUnread } from './chatUnread';
 import { PaneRow } from './PaneRow';
+import { paneTarget } from './paneTarget';
 import { paneTitle, rowTitle } from './rowText';
 import { TerminalRow } from './TerminalRow';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
@@ -37,6 +38,7 @@ import { useHostChats } from '@/features/chats/useHostChats';
 import { MachineNotices } from '@/features/chats/MachineNotices';
 import { MachineFeeds } from '@/features/chats/MachineChats';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
+import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { chatKey } from '@/lib/chatKey';
@@ -52,6 +54,7 @@ import {
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
 import { chatOf, useChatSelection } from '@/state/chatSelection';
+import { useSpaceLayoutSheet } from '@/state/spaceLayout';
 import {
   clientFor,
   isDemo,
@@ -213,7 +216,11 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
 
   // Renaming from the persistent sidebar must also update the open header,
   // and so must a session that retitles itself.
-  const selectedPane = selectedSummary?.panes.find((pane) => pane.paneId === selectedPaneId);
+  // The one agent of a space card's workspace is the workspace chat
+  // (`paneTarget`): open without a pane, it is still that agent's title.
+  const selectedPane = selectedSummary?.panes.find((pane) => pane.paneId === selectedPaneId) ??
+    (selectedSummary !== undefined && selectedPaneId === undefined && paneChats(selectedSummary).length === 1
+      ? selectedSummary.panes[0] : undefined);
   const selectedTitle = selectedSummary === undefined ? undefined
     : selectedPane === undefined ? rowTitle(selectedSummary) : paneTitle(selectedSummary, selectedPane);
   useEffect(() => {
@@ -221,6 +228,21 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
       select({ ...selection, title: selectedTitle });
     }
   }, [selectedTitle, selection, select]);
+
+  // A space card's layout: a floating card beside its button on iPad, shown
+  // on hover and pinned by a tap; a sheet on a phone.
+  const peek = useLayoutPeek();
+  const peekSummary = peek.peek === null ? null : summaries.find((item) => rowKey(item) === peek.peek?.key) ?? null;
+  const pointer = Platform.OS === 'ios' && Platform.isPad;
+  const openLayout = (item: ListedChat, anchor: LayoutAnchor) => {
+    Keyboard.dismiss();
+    if (pointer) {
+      peek.show(rowKey(item), anchor, 'pin');
+      return;
+    }
+    useSpaceLayoutSheet.getState().show(item);
+    router.push('/space-layout');
+  };
 
   const editsDirty = useChatEdits((state) => state.dirty);
   const clearEdits = useChatEdits((state) => state.clear);
@@ -576,10 +598,13 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             ] : []);
             if (row.kind === 'pane') {
               const { pane } = row;
+              const target = paneTarget(item, pane);
               // The agent's own pin and mute, as its row in Agents reads and
               // makes them (`agentPrefRow`): acting on the workspace from
-              // here pinned something the other view never showed.
-              const own = agentPrefRow(item, pane);
+              // here pinned something the other view never showed. The one
+              // agent of its workspace is the workspace chat there, so it is
+              // pinned and muted as the workspace here too.
+              const own = target.paneId === undefined ? item : agentPrefRow(item, pane);
               const ownPersonal = own.sessionSig !== null;
               const ownPinned = prefs.isPinned(own);
               const ownMuted = prefs.isMuted(own);
@@ -592,11 +617,11 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                   last={row.last}
                   pinned={ownPinned}
                   muted={ownMuted}
-                  selected={openHere === own.chatKey}
+                  selected={openHere === target.key}
                   unread={isPaneUnread(item, pane, rowReads, openHere)}
                   onPress={() => {
                     Keyboard.dismiss();
-                    openChat(item.connectionId, item.workspaceId, paneTitle(item, pane), pane.paneId);
+                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId);
                   }}
                   onLongPress={() => actions.manageChat(item, ownPersonal ? [
                     { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
@@ -605,6 +630,10 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 />
               );
             }
+            // A workspace card that stands for the workspace rather than one
+            // chat (`spaceCardMode`) shows its layout, and is never the
+            // selection: the agent rows under it are.
+            const space = agent === null && spaceCardMode(item) === 'space';
             return (
               <SwipeableChatRow
                 summary={item}
@@ -613,7 +642,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 muted={muted}
                 onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
                 onToggleMute={mutable ? () => prefs.toggleMute(item) : undefined}
-                selected={openHere === (agent?.chatKey ?? item.workspaceId)}
+                selected={!space && openHere === (agent?.chatKey ?? item.workspaceId)}
                 unread={agent === null ? isChatUnread(item, rowReads, openHere) : isAgentUnread(agent, rowReads, openHere)}
                 onPress={() => {
                   Keyboard.dismiss();
@@ -623,6 +652,11 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 onSwiped={markHintSeen}
                 onRename={() => actions.renameChat(item)}
                 onClose={() => actions.closeChat(item)}
+                space={space ? {
+                  onOpenLayout: (anchor) => openLayout(item, anchor),
+                  onHoverLayout: pointer ? (anchor) => peek.show(rowKey(item), anchor, 'hover') : undefined,
+                  onLeaveLayout: pointer ? () => peek.leaveButton(rowKey(item)) : undefined,
+                } : undefined}
               />
             );
           }}
@@ -645,6 +679,14 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           }
         />
       )}
+      <LayoutPeekOverlay
+        host={peek.host}
+        peek={peek.peek}
+        summary={peekSummary}
+        onClose={peek.close}
+        onPin={peek.pin}
+        onHoverCard={peek.hoverCard}
+      />
     </Screen>
   );
 }

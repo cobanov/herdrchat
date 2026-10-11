@@ -12,7 +12,7 @@ export type ChatGroupId = (typeof CHAT_GROUPS)[number]['id'];
 export type ChatListItem<S extends ChatSummary = ChatSummary> =
   | { kind: 'group'; id: ChatGroupId; title: string; count: number }
   | { kind: 'chat'; summary: S }
-  /** One agent of a workspace that holds several, listed under its workspace's row. */
+  /** One agent of a workspace whose card is a space (`spaceCardMode`), listed under it. */
   | {
     kind: 'pane'; summary: S; pane: S['panes'][number];
     /**
@@ -24,12 +24,29 @@ export type ChatListItem<S extends ChatSummary = ChatSummary> =
   };
 
 /**
- * The agents of a workspace that get rows of their own. One agent is the
- * workspace chat itself, exactly as before; a row for it as well would only
- * repeat the workspace row.
+ * What a workspace's card in Spaces stands for.
+ *
+ * `chat`: the workspace holds one conversational agent and nothing else, so
+ * the card is that agent's chat, titled by its session, and opens it.
+ * `space`: anything more (two agents, or an agent beside a shell, or only
+ * shells): the card is the workspace, titled by its label with its stats
+ * under it, and it opens the workspace's layout; each agent is a row of its
+ * own under it, then each other pane's terminal row. A one-agent workspace
+ * with a shell used to be the agent's card with the terminal row hanging off
+ * it, which read as if the terminal belonged to the agent.
+ */
+export type SpaceCardMode = 'chat' | 'space';
+
+export function spaceCardMode(summary: Pick<ChatSummary, 'panes' | 'shellPanes'>): SpaceCardMode {
+  return summary.panes.length === 1 && summary.shellPanes.length === 0 ? 'chat' : 'space';
+}
+
+/**
+ * The agents of a workspace that get rows of their own: every one of them
+ * under a space card, none under a chat card, whose one agent is the card.
  */
 export function paneChats<S extends ChatSummary>(summary: S): readonly S['panes'][number][] {
-  return summary.panes.length >= 2 ? summary.panes : [];
+  return spaceCardMode(summary) === 'space' ? summary.panes : [];
 }
 
 /**

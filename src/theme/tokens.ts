@@ -50,8 +50,9 @@ export const size = {
   tabletSidebarWidth: 320,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
-  /** Compact provider badge in the grouped chat cards. */
+  /** Compact provider badge in the grouped chat cards, and the glyph in it. */
   chatBadge: 40,
+  chatBadgeGlyph: 22,
   /** The unread / attention dot on an avatar. */
   unreadDot: 14,
   /** The status dot beside a thread's subtitle. */
@@ -328,6 +329,48 @@ export const terminal = {
   keyLabelAdvance: 9,
 } as const;
 
+/**
+ * A workspace's layout view (`src/features/spaces`): each tab a rounded
+ * rectangle with its panes as boxes inside, where they sit on the desktop.
+ *
+ * `cellAspect` is a terminal cell's width over its height. herdr measures
+ * panes in cells, which are about twice as tall as wide, so a tab of 160 × 48
+ * cells is drawn 160 × 48 × 0.5 wide over tall, not 160 × 48. Clamped between
+ * `minAspect` and `maxAspect` so a very wide or very tall terminal still
+ * draws as a shape with room for its labels.
+ */
+export const spaceLayout = {
+  cellAspect: 0.5,
+  minAspect: 0.9,
+  maxAspect: 2.4,
+  /** A tab herdr sent no geometry for: a plain landscape shape. */
+  fallbackAspect: 1.6,
+  /** Between two tabs, across and down. */
+  tabGap: spacing.md,
+  /** Between a tab's title and its shape. */
+  titleGap: spacing.xs,
+  /** From a tab's outline to its pane boxes, and between two boxes. */
+  tabInset: spacing.xs,
+  paneGap: spacing.xs,
+  tabRadius: radius.xs,
+  paneRadius: nestedRadius(radius.xs, spacing.xs),
+  /** The ring round the focused pane. */
+  focusRing: 2,
+  /** A pane's box under a finger. */
+  pressedOpacity: 0.7,
+  /** The mark on a tab zoomed on one pane. */
+  zoomGlyph: 12,
+  /** Tabs side by side from this many, so a four-tab workspace still fits on a phone. */
+  twoColumnsFrom: 2,
+  /** The floating card on iPad, beside the layout button. */
+  popoverWidth: 340,
+  popoverMaxHeight: 520,
+  /** The phone's sheet never covers more of the window than this; past it, the tabs scroll. */
+  sheetMaxWindowFraction: 0.8,
+  /** The layout button's glyph on a space card. */
+  buttonGlyph: 20,
+} as const;
+
 /** System navigation material, continuous through the status-bar safe area. */
 export const glass = {
   chromeIntensity: 100,
@@ -432,6 +475,14 @@ export const motion = {
   enter: { damping: 20, stiffness: 180, mass: 1 },
   fade: 200,
   fadeFast: 120,
+  /**
+   * A pointer resting on a space card's layout button (iPad with a trackpad
+   * or mouse) shows the layout after `hoverIn`, so moving across the list
+   * does not flash a card under every button it passes; leaving hides it
+   * after `hoverOut`, long enough to reach the card itself.
+   */
+  hoverIn: 300,
+  hoverOut: 200,
   /** How long a finger rests on a message before its copy sheet opens. */
   longPress: 400,
   /**

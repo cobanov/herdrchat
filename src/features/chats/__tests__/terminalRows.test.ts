@@ -23,7 +23,7 @@ describe('terminal rows in the chat list', () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     const summaries = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes);
     expect(summaries.map((summary) => [summary.workspaceId, summary.shellPanes.map((row) => row.paneId)])).toEqual([
-      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3']],
+      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']],
     ]);
     // The two agents are still two chats of their own, and the shell is not one.
     expect(summaries[5]?.panes.map((row) => row.paneId)).toEqual(['w6:p1', 'w6:p2']);
@@ -176,7 +176,7 @@ describe('chatListRows', () => {
   it("hangs a workspace's shell pane under its card in Spaces", async () => {
     const rows = chatListRows('spaces', await listed(), '', new Map(), true);
     const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.terminal.paneId}`]));
-    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3']);
+    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'terminal:w6:p4']);
   });
 
   // Android has no terminal: a row would only open the screen saying so.
@@ -186,8 +186,7 @@ describe('chatListRows', () => {
     expect(rows.some((row) => row.kind === 'pane' && row.pane.paneId === 'w6:p2')).toBe(true);
   });
 
-  // Every agent row carries its workspace's `shellPanes`; the view of agents
-  // must still list none of them.
+  // An agent row carries no shells, and the view of agents lists none.
   it('lists no terminal rows in Agents', async () => {
     const rows = chatListRows('agents', await listed(), '', new Map(), true);
     expect(rows.some((row) => row.kind === 'terminal')).toBe(false);

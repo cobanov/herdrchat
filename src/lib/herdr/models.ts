@@ -198,6 +198,12 @@ export interface Snapshot {
   focusedPaneId: string | null;
   focusedTabId: string | null;
   focusedWorkspaceId: string | null;
+  /**
+   * Every tab of every workspace: its label and number, what a layout view
+   * titles each tab by. Null from a herdr whose snapshot does not carry them;
+   * the layouts alone still say which tabs there are.
+   */
+  tabs: Tab[] | null;
   layouts: TabLayout[] | null;
   /** herdr's own version string, e.g. "0.7.3". Null if absent. */
   version: string | null;
@@ -216,6 +222,20 @@ export interface RestoreError {
   paneId: string;
   workspaceId: string;
   message: string;
+}
+
+/** A tab, as the snapshot's `tabs` carries it. */
+export interface Tab {
+  tabId: string;
+  workspaceId: string;
+  /** Its place among its workspace's tabs, from 1. */
+  number: number;
+  /** herdr's label: one the person gave, else the program in front ("zsh"). */
+  label: string;
+  /** The tab the desktop is showing, across every workspace (not its workspace's active tab). */
+  focused: boolean;
+  paneCount: number;
+  agentStatus: AgentStatus;
 }
 
 export interface TabLayout {
@@ -377,6 +397,19 @@ function decodeRect(raw: unknown): Rect {
   return { x: num(value.x), y: num(value.y), width: num(value.width), height: num(value.height) };
 }
 
+export function decodeTab(raw: unknown): Tab {
+  const value = record(raw);
+  return {
+    tabId: str(value.tab_id),
+    workspaceId: str(value.workspace_id),
+    number: num(value.number),
+    label: str(value.label),
+    focused: bool(value.focused),
+    paneCount: num(value.pane_count),
+    agentStatus: toAgentStatus(value.agent_status),
+  };
+}
+
 function decodeTabLayout(raw: unknown): TabLayout {
   const value = record(raw);
   return {
@@ -421,6 +454,8 @@ export function decodeSnapshot(raw: unknown): Snapshot {
     focusedPaneId: optionalStr(value.focused_pane_id),
     focusedTabId: optionalStr(value.focused_tab_id),
     focusedWorkspaceId: optionalStr(value.focused_workspace_id),
+    // Absent stays null, as `workspaces` does: an older herdr, not no tabs.
+    tabs: Array.isArray(value.tabs) ? value.tabs.map(decodeTab) : null,
     layouts,
     version: optionalStr(value.version),
     protocol: typeof value.protocol === 'number' ? value.protocol : null,

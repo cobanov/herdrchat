@@ -29,6 +29,7 @@ where regressions are found.
 | `regression/slash-commands` | the `/` palette from the Demo's catalogue: Built-in and Skills sections, a built-in's hint (`/model [model]`), the hidden built-in left out, narrowing to one headerless ranked list (`/release-notes`, then `/review`), `/review` (optional `[pr]`) sent at once and answered, `/add-dir` filling in with its required `<path>` hint after it until something is typed, `/compact` (it rewrites the conversation) only filled from a fresh `/`, then sent by hand with its note in the thread, the notes folder's own `/notes:summarise` (screenshots `slash-palette-<appearance>`, `slash-filled-<appearance>`: the hint must start right after the caret) |
 | `regression/shell-commands` | a `!` command as one block in the thread: the Demo notes chat's seeded `! git status --short` with its two lines of output, the hint above the composer once `!` is typed in a Claude chat, a sent `! ls` landing as a block with the Demo's three-file listing under it and its echo confirmed rather than "Failed to send" (screenshots `shell-seeded-<appearance>`, `shell-<appearance>`: the output box must read as a terminal, stdout in the label colour) |
 | `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect, no Take over), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
+| `regression/space-layout` | Spaces: w6 "api" as a space card titled by its label with its stats (`2 agents, 1 working · 2 tabs · 4 panes · demo/api`), its two agents' rows and its shells' terminal rows (`w6:p3`, and `w6:p4` "npm run dev") under it; its layout button (`space-layout-w6`) opening the sheet with both tabs and every pane as a box (`layout-pane-w6:p3`), that box closing the sheet and opening the shell's terminal, the card itself opening the same sheet and Done closing it; w2 "notes" (one agent, nothing else) still a chat card titled by its session, with no layout button and no agent row (screenshot `space-layout-<appearance>`: two tabs, the agents side by side with the shell under the first, the dev server alone in the second) |
 
 The shell block against a real Claude Code, checked by hand on a phone
 (Gimel), in light and dark, since the Demo cannot reproduce a real record:
@@ -158,6 +159,38 @@ herdr open on the desktop as well, check each of these and what it should do:
 - **iPad: a link.** There is no documented `herdrchat://` terminal link; if
   one is added, it must land in the column (the route hands over to the
   detail), never as a second screen over the split.
+
+### Spaces cards, by hand on a device
+
+Maestro has no pointer and no real host, so after a build, with the app on
+Gimel, check these on the iPad (with a trackpad or mouse) and on the phone, in
+light and dark:
+
+- **Hover on iPad.** Rest the pointer on the layout button of `herdrchat`'s
+  card: after a moment the layout card appears beside the button, and moving
+  the pointer away (not onto the card) makes it vanish. Moving straight from
+  the button onto the card keeps it. Sweeping the pointer down the list across
+  several buttons does not flash a card under each one.
+- **Pinned on iPad.** Tap the button (or the card): the layout card stays
+  when the pointer leaves. A tap outside it, on the list, closes it; so does
+  its Close, and so does Esc on a hardware keyboard (this needs the native
+  build with `HerdrEscape`; on an older build Esc does nothing and the other
+  two still work).
+- **A box opens its pane.** In the card, tap an agent's box: the card closes
+  and that agent's chat opens beside the list. Tap a shell's box: its
+  terminal opens, attached privately as its terminal row does.
+- **The phone.** The button and the card open the layout as a sheet sized to
+  its tabs; Done closes it; a box closes it and opens its pane.
+- **All tabs.** `play` (four tabs) draws all four, each titled by herdr's tab
+  label, the active one ringed, side by side two to a row.
+- **A machine.** A workspace on klaw draws its one tab, titled `klaw · <label>`
+  on its card.
+- **One agent and nothing else** (a workspace with no shell pane) is still a
+  chat card titled by its session, with no layout button; the same workspace
+  with a shell split beside the agent becomes a space card with the agent as
+  a row under it, then the terminal.
+- **Agents view unchanged.** Switch to Agents: every agent is its own row as
+  before, titled by its session, no terminal rows, no layout buttons.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

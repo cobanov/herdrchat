@@ -24,7 +24,7 @@ const workspace = (
       paneId: agent.paneId, agent, sessionSig: `sig-${agent.paneId}`, preview: null, status: 'idle',
       sessionTitle: agent.title, agentName: agent.name, ...panes[agent.paneId],
     })),
-    preview: null, sessionSig: conversational.map((agent) => `sig-${agent.paneId}`).join(',') || null, shellPanes: [], restoreError: null,
+    preview: null, sessionSig: conversational.map((agent) => `sig-${agent.paneId}`).join(',') || null, shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null,
     sessionTitle: titled?.title ?? null, agentName: titled?.name ?? null,
   };
 };
@@ -202,5 +202,26 @@ describe('isAgentUnread', () => {
     expect(isAgentUnread(solo, new Map())).toBe(true);
     expect(isAgentUnread(solo, new Map([['w2', read('sig-w2:p1', 31)]]))).toBe(false);
     expect(isAgentUnread(solo, new Map(), 'w2')).toBe(false);
+  });
+});
+
+// In Spaces a one-agent workspace with a shell is a space card, titled by its
+// label with the agent as a row under it. In Agents it is still the agent's
+// own chat row, titled by its session: an agent row carries no shells.
+describe('an agent beside a shell', () => {
+  const terminal = { paneId: 'w2:p2', processName: null, pane: { paneId: 'w2:p2', workspaceId: 'w2', tabId: 't1', terminalId: null, agent: null, agentStatus: 'unknown' as const, cwd: '/home/demo/notes', foregroundCwd: null, focused: false, title: null } };
+  const withShell = listChats([{ ...notes, shellPanes: [terminal] }], 'gimel', null);
+
+  it('is the agent\'s chat in Agents, keyed and titled as before', () => {
+    const [row] = agentRows(withShell);
+    expect(row?.chatKey).toBe('w2');
+    expect(row?.shellPanes).toEqual([]);
+    expect(rowTitle(row!)).toBe('Release notes summary');
+    expect(groupChats(agentRows(withShell), '').filter((item) => item.kind === 'pane')).toEqual([]);
+  });
+
+  it('is the workspace, with its agent under it, in Spaces', () => {
+    expect(rowTitle(withShell[0]!)).toBe('notes');
+    expect(groupChats(withShell, '').map((item) => (item.kind === 'pane' ? `pane:${item.pane.paneId}` : item.kind))).toEqual(['group', 'chat', 'pane:w2:p1']);
   });
 });

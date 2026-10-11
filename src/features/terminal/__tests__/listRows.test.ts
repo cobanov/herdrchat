@@ -19,7 +19,7 @@ const shell = (paneId: string): TerminalPane => ({
 });
 const chat = (workspaceId: string, panes: PaneSummary[], shellPanes: TerminalPane[]): ChatSummary => ({
   workspaceId, title: workspaceId, number: 1, status: 'idle', agents: panes.map((pane) => pane.agent), panes,
-  preview: null, sessionSig: 'x', shellPanes, restoreError: null, sessionTitle: null, agentName: null,
+  preview: null, sessionSig: 'x', shellPanes, tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 });
 
 const shape = (rows: ReturnType<typeof withTerminalRows>) => rows.map((row) =>
@@ -40,8 +40,9 @@ it("lists a workspace's terminals after its agents, on one rail", () => {
   expect(shape(rows)).toEqual([
     'idle',
     'w6', 'pane w6:p1 first', 'pane w6:p2', 'terminal w6:p3', 'terminal w6:p4 last',
-    // One agent is the card itself, so the terminal is the first row under it.
-    'w7', 'terminal w7:p2 first last',
+    // One agent beside a shell is a space card too: the agent is a row under
+    // it, then the terminal, so the terminal does not read as the agent's.
+    'w7', 'pane w7:p1 first', 'terminal w7:p2 last',
     'w8',
   ]);
 });

@@ -12,7 +12,7 @@ jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 const pane = { paneId: 'w6:p3', workspaceId: 'w6', tabId: 't1', agent: null, cwd: '/home/demo/api', foregroundCwd: '/home/demo/api/web', focused: false, title: null } as unknown as Pane;
 const api: ChatSummary = {
   workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [], panes: [],
-  preview: null, sessionSig: null, shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+  preview: null, sessionSig: null, shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 };
 
 it('names the program and the folder it is in, and opens on a tap', async () => {

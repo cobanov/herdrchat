@@ -17,7 +17,7 @@ describe("the Demo's shell pane", () => {
   it('is in the snapshot as a pane with no agent, beside the two agents of w6', async () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     const w6 = snapshot.panes.filter((pane) => pane.workspaceId === 'w6');
-    expect(w6.map((pane) => [pane.paneId, pane.agent])).toEqual([['w6:p1', 'claude'], ['w6:p2', 'claude'], ['w6:p3', null]]);
+    expect(w6.map((pane) => [pane.paneId, pane.agent])).toEqual([['w6:p1', 'claude'], ['w6:p2', 'claude'], ['w6:p3', null], ['w6:p4', null]]);
     expect(w6[2]).toMatchObject({ cwd: '/home/demo/api', terminalId: 'term_w6_p3', title: null });
     // The snapshot's terminal id is the fixture's, which its terminal attaches by.
     expect(DEMO_WORKSPACES.find((w) => w.workspaceId === 'w6')?.shellPanes?.[0]?.terminalId).toBe('term_w6_p3');

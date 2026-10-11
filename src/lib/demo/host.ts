@@ -44,8 +44,12 @@ import {
   ompLine,
   DEMO_HOME,
   DEMO_HOST,
+  DEMO_TAB_COLUMNS,
+  DEMO_TAB_ROWS,
   demoPanes,
   demoSessionDir,
+  demoTabId,
+  demoTabs,
   replyFor,
   shellInputLine,
   shellOutputLine,
@@ -581,7 +585,7 @@ export class DemoHost implements HerdrTransport {
         focused: panes.some((pane) => pane.paneId === this.fixtures.focusedPaneId),
         active_tab_id: `${w.workspaceId}:t1`,
         pane_count: panes.length + (w.shellPanes?.length ?? 0),
-        tab_count: 1,
+        tab_count: demoTabs(w).length,
       };
     });
   }
@@ -594,7 +598,7 @@ export class DemoHost implements HerdrTransport {
       foreground_cwd: pane.cwd,
       focused: pane.paneId === this.fixtures.focusedPaneId,
       pane_id: pane.paneId,
-      tab_id: `${w.workspaceId}:t1`,
+      tab_id: demoTabId(w, pane.paneId),
       // The first pane keeps the terminal id it always had.
       terminal_id: index === 0 ? `term_${w.workspaceId}` : `term_${pane.paneId.replace(':', '_')}`,
       workspace_id: w.workspaceId,
@@ -625,11 +629,46 @@ export class DemoHost implements HerdrTransport {
         foreground_cwd: pane.cwd,
         focused: pane.paneId === this.fixtures.focusedPaneId,
         pane_id: pane.paneId,
-        tab_id: `${w.workspaceId}:t1`,
+        tab_id: demoTabId(w, pane.paneId),
         terminal_id: pane.terminalId,
         workspace_id: w.workspaceId,
+        ...(pane.title === undefined ? {} : { title: pane.title, terminal_title_stripped: pane.title }),
       })),
     ]);
+  }
+
+  /**
+   * The snapshot's `tabs`: every demo workspace's, numbered from 1, the
+   * desktop's focus in the first tab of the focused pane's workspace.
+   */
+  private tabRows(): unknown[] {
+    const focused = this.focusedWorkspaceId();
+    return this.fixtures.workspaces.flatMap((w) => demoTabs(w).map((tab, index) => ({
+      tab_id: `${w.workspaceId}:t${index + 1}`,
+      workspace_id: w.workspaceId,
+      number: index + 1,
+      label: tab.label,
+      focused: w.workspaceId === focused && index === 0,
+      pane_count: tab.panes.length,
+      agent_status: workspaceStatus(tab.panes.map((pane) => this.statusOf(pane.paneId))),
+    })));
+  }
+
+  /** The snapshot's `layouts`: each demo tab's panes in cells, as herdr sends them. */
+  private layoutRows(): unknown[] {
+    return this.fixtures.workspaces.flatMap((w) => demoTabs(w).map((tab, index) => {
+      const focusedPaneId = tab.focusedPaneId ?? tab.panes[0]?.paneId ?? null;
+      const rect = ([x, y, width, height]: readonly [number, number, number, number]) => ({ x, y, width, height });
+      return {
+        workspace_id: w.workspaceId,
+        tab_id: `${w.workspaceId}:t${index + 1}`,
+        zoomed: tab.zoomed === true,
+        area: { x: 0, y: 0, width: DEMO_TAB_COLUMNS, height: DEMO_TAB_ROWS },
+        focused_pane_id: focusedPaneId,
+        panes: tab.panes.map((pane) => ({ pane_id: pane.paneId, focused: pane.paneId === focusedPaneId, rect: rect(pane.rect) })),
+        splits: [],
+      };
+    }));
   }
 
   /** `herdr <verb>`. */
@@ -659,6 +698,8 @@ export class DemoHost implements HerdrTransport {
           agents: this.agentRows(),
           panes: this.paneRows(),
           workspaces: this.workspaceRows(),
+          tabs: this.tabRows(),
+          layouts: this.layoutRows(),
           focused_pane_id: this.fixtures.focusedPaneId,
           focused_tab_id: `${this.focusedWorkspaceId()}:t1`,
           focused_workspace_id: this.focusedWorkspaceId(),

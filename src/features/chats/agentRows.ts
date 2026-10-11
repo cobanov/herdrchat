@@ -59,7 +59,10 @@ export function isAgentRow(summary: ListedChat): summary is AgentRow {
  */
 export function agentRows(summaries: readonly ListedChat[]): AgentRow[] {
   return summaries.flatMap((workspace): AgentRow[] => {
-    const one: AgentRow = { ...workspace, chatKey: workspace.workspaceId, pane: null, workspace, inherits: [], ordinal: null };
+    // No shells: an agent's row is shaped as a workspace holding that agent
+    // and nothing else, so it is always a chat card (`spaceCardMode`), titled
+    // by its session. A shell is not an agent, and has no row in this view.
+    const one: AgentRow = { ...workspace, shellPanes: [], chatKey: workspace.workspaceId, pane: null, workspace, inherits: [], ordinal: null };
     // An agent that herdr could not bring back after a restart leaves no
     // pane, but it is the conversation the person most needs to hear about:
     // its row says "Couldn't restore", as its card in Spaces does.
@@ -76,6 +79,7 @@ export function agentRows(summaries: readonly ListedChat[]): AgentRow[] {
       // it, and the row's line names this agent's provider and folder.
       agents: [pane.agent],
       panes: [pane],
+      shellPanes: [],
       // Its session, chat key and inherited prefs: what pins and mutes it.
       ...agentPrefRow(workspace, pane),
       pane,

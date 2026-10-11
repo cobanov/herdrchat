@@ -1,0 +1,104 @@
+# Spaces: a workspace's card is the workspace once it holds more than one
+# agent, or an agent and anything else. The Demo's w6 ("api": two Claude
+# panes and two shells, in two tabs) is a space card, titled by its label with
+# its stats under it, its agents and its terminals as rows below, and a layout
+# button (`space-layout-w6`) that opens a sheet drawing both tabs in basic
+# shapes. A box in it opens its pane: here the shell w6:p3's terminal. w2
+# ("notes": one agent, nothing else) stays a chat card, titled by its session,
+# with no layout button.
+#
+# On iPad the layout is a floating card beside the button instead, shown by a
+# pointer resting on it; Maestro has no pointer, so that is checked by hand
+# ("Spaces cards, by hand on a device" in .maestro/README.md).
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: space-layout-w6
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w6
+    text: 'api, 2 agents, 1 working · 2 tabs · 4 panes · demo/api.*'
+- assertVisible:
+    id: pane-row-w6:p1
+- assertVisible:
+    id: pane-row-w6:p2
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w6:p3
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: terminal-row-w6:p4
+    text: 'Terminal in api, npm run dev.*'
+
+# The layout, from the card's button: two tabs, every pane a box.
+- scrollUntilVisible:
+    element:
+      id: space-layout-w6
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: space-layout-w6
+- extendedWaitUntil:
+    visible:
+      id: layout-tab-w6:t2
+    timeout: 5000
+- assertVisible:
+    id: layout-tab-w6:t1
+- assertVisible:
+    id: layout-pane-w6:p1
+- assertVisible:
+    id: layout-pane-w6:p2
+- assertVisible:
+    id: layout-pane-w6:p4
+- assertVisible:
+    id: layout-pane-w6:p3
+- takeScreenshot: space-layout-${APPEARANCE}
+
+# A box opens its pane, after the sheet closes: the shell's terminal.
+- tapOn:
+    id: layout-pane-w6:p3
+- extendedWaitUntil:
+    visible:
+      id: terminal-status
+      text: '.*Connected.*'
+    timeout: 10000
+- assertNotVisible:
+    id: space-layout-sheet
+- tapOn:
+    id: terminal-back
+- extendedWaitUntil:
+    visible:
+      id: space-layout-w6
+    timeout: 10000
+
+# The card itself opens the same sheet, and Done closes it.
+- tapOn:
+    id: chat-row-w6
+- extendedWaitUntil:
+    visible:
+      id: layout-pane-w6:p3
+    timeout: 5000
+- tapOn:
+    id: space-layout-close
+- extendedWaitUntil:
+    notVisible:
+      id: space-layout-sheet
+    timeout: 5000
+
+# w2 has one agent and nothing else: still its chat, titled by its session.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: UP
+    centerElement: true
+- assertVisible:
+    id: chat-row-w2
+    text: 'Release notes summary, .*'
+- assertNotVisible:
+    id: space-layout-w2
+- assertNotVisible:
+    id: pane-row-w2:p1

@@ -12,7 +12,7 @@ const pane = (paneId: string, sessionSig: string, timestamp: number): PaneSummar
 });
 const workspace = (panes: PaneSummary[]): ChatSummary => ({
   workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: panes.map((item) => item.agent), panes,
-  preview: panes[0]?.preview ?? null, sessionSig: 'group', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+  preview: panes[0]?.preview ?? null, sessionSig: 'group', shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 });
 const read = (sessionSig: string, openedAt: number): ThreadRead => ({ sessionSig, openedAt });
 

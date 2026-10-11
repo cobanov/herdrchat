@@ -1,9 +1,10 @@
-import { groupChats } from '../chatGroups';
-import type { AgentInfo } from '@/lib/herdr/models';
+import { groupChats, paneChats, spaceCardMode } from '../chatGroups';
+import type { TerminalPane } from '@/lib/terminal/rows';
+import type { AgentInfo, Pane } from '@/lib/herdr/models';
 import type { ChatSummary, PaneSummary } from '../useWorkspaces';
 
 const chat = (workspaceId: string, status: ChatSummary['status']): ChatSummary => ({
-  workspaceId, title: workspaceId, status, number: 1, agents: [], panes: [], preview: null, sessionSig: null, shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+  workspaceId, title: workspaceId, status, number: 1, agents: [], panes: [], preview: null, sessionSig: null, shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 });
 const chats = [chat('idle-a', 'idle'), chat('busy', 'working'), chat('approval', 'blocked'), chat('idle-b', 'done'), chat('unknown', 'unknown')];
 const ids = (rows: ReturnType<typeof groupChats>) => rows.map((row) =>
@@ -148,5 +149,38 @@ describe('chats on a host\'s machines', () => {
     expect(ids(groupChats([onHost, onNuku], '', new Map(), key))).toEqual([
       'idle', 'w2', 'pane:host:p1', 'pane:host:p2', 'w2', 'pane:nuku:p1', 'pane:nuku:p2',
     ]);
+  });
+});
+
+// A workspace's card is one chat only when that is all the workspace holds.
+// One agent beside a shell used to be the agent's card with the terminal row
+// under it, which read as if the terminal belonged to the agent.
+describe('space cards', () => {
+  const shell = (paneId: string): TerminalPane => ({
+    paneId, processName: null,
+    pane: { paneId, workspaceId: 'w', tabId: 't1', terminalId: null, agent: null, agentStatus: 'unknown', cwd: '/a', foregroundCwd: null, focused: false, title: null } satisfies Pane,
+  });
+  const one = withAgents(chat('solo', 'idle'), [agentIn('solo', 'solo:p1', 'claude', '/a')]);
+  const two = withAgents(chat('api', 'idle'), [agentIn('api', 'api:p1', 'claude', '/a'), agentIn('api', 'api:p2', 'codex', '/a/b')]);
+  const withShell = { ...withAgents(chat('term', 'idle'), [agentIn('term', 'term:p1', 'claude', '/a')]), shellPanes: [shell('term:p2')] };
+  const shellOnly = { ...chat('logs', 'idle'), shellPanes: [shell('logs:p1')] };
+
+  it('is a chat for one agent and nothing else, and a space otherwise', () => {
+    expect(spaceCardMode(one)).toBe('chat');
+    expect(spaceCardMode(withShell)).toBe('space');
+    expect(spaceCardMode(two)).toBe('space');
+    expect(spaceCardMode(shellOnly)).toBe('space');
+  });
+
+  it("lists every agent of a space under it, and none under a chat", () => {
+    expect(paneChats(one)).toEqual([]);
+    expect(paneChats(withShell).map((pane) => pane.paneId)).toEqual(['term:p1']);
+    expect(paneChats(two).map((pane) => pane.paneId)).toEqual(['api:p1', 'api:p2']);
+    expect(paneChats(shellOnly)).toEqual([]);
+    expect(ids(groupChats([withShell, one], ''))).toEqual(['idle', 'term', 'pane:term:p1', 'solo']);
+  });
+
+  it("still narrows a space's agent rows by a search", () => {
+    expect(ids(groupChats([two], 'codex'))).toEqual(['idle', 'api', 'pane:api:p2']);
   });
 });

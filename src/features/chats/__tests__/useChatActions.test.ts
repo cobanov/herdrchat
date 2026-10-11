@@ -21,7 +21,7 @@ const client = new HerdrClient({
 const db = {} as SQLiteDatabase;
 const summary: ChatSummary = {
   workspaceId: 'w2', title: 'Notes', number: 2, status: 'idle',
-  agents: [], panes: [], preview: null, sessionSig: null, shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+  agents: [], panes: [], preview: null, sessionSig: null, shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 };
 
 afterEach(() => { jest.restoreAllMocks(); jest.clearAllMocks(); });

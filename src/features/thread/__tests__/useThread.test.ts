@@ -103,6 +103,7 @@ const snapshot = (agents: AgentInfo[]): Snapshot => ({
   workspaces: [],
   version: '0.9.0',
   protocol: null,
+  tabs: null,
   layouts: null,
   focusedPaneId: null,
   focusedTabId: null,

@@ -35,7 +35,7 @@ const summary = (agent: string | null): ChatSummary => ({
   panes: [],
   preview: null,
   sessionSig: null,
-  shellPanes: [], restoreError: null,
+  shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null,
   sessionTitle: null,
   agentName: null,
 });

@@ -25,7 +25,7 @@ const host = { id: 'gimel', name: 'Gimel', host: 'gimel', port: 22, username: 'm
 const klawId = 'gimel/m-klaw';
 const w1: ChatSummary = {
   workspaceId: 'w1', title: 'notes', number: 1, status: 'idle', agents: [], panes: [], preview: null,
-  sessionSig: 'sig-host', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+  sessionSig: 'sig-host', shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 };
 const [hostRow] = listChats([w1], host.id, null) as [ListedChat];
 const [klawRow] = listChats([{ ...w1, title: 'kenneth-bot', sessionSig: 'sig-klaw' }], klawId, { id: 'm-klaw', label: 'klaw' }) as [ListedChat];
@@ -84,7 +84,7 @@ describe('an agent\'s own pin and mute', () => {
   const w6: ChatSummary = {
     workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [p1, p2],
     panes: [p1, p2].map((item) => ({ paneId: item.paneId, agent: item, sessionSig: `sig-${item.paneId}`, preview: null, status: 'idle' as const, sessionTitle: null, agentName: null })),
-    preview: null, sessionSig: 'sig-w6:p1,sig-w6:p2', shellPanes: [], restoreError: null, sessionTitle: null, agentName: null,
+    preview: null, sessionSig: 'sig-w6:p1,sig-w6:p2', shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
   };
   const listed = listChats([w6], host.id, null);
   const [api] = listed as [ListedChat];

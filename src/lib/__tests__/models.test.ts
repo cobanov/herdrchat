@@ -3,6 +3,7 @@ import workspaceListFixture from './fixtures/workspace-list.json';
 
 import {
   decodeSnapshot,
+  decodeTab,
   decodeWorkspace,
   hasSessionReference,
   isConversationalAgent,
@@ -296,5 +297,23 @@ describe('agent name', () => {
     expect(['claude', 'codex', 'omp', 'letta'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta']);
     expect(agentName('gemini')).toBe('gemini');
     expect(agentName(null)).toBe('Terminal');
+  });
+});
+
+// The layout view titles each tab by herdr's own label and number. A herdr
+// that sends no `tabs` must still decode, with the layouts alone to go on.
+describe('tabs', () => {
+  it('decodes a tab as herdr sends it', () => {
+    expect(decodeTab({ tab_id: 'w2:t2', workspace_id: 'w2', number: 2, label: 'video', focused: false, pane_count: 2, agent_status: 'done' })).toEqual({
+      tabId: 'w2:t2', workspaceId: 'w2', number: 2, label: 'video', focused: false, paneCount: 2, agentStatus: 'done',
+    });
+    expect(decodeTab({ tab_id: 'w1:t1', agent_status: 'vibing' })).toMatchObject({ label: '', number: 0, paneCount: 0, agentStatus: 'unknown' });
+  });
+
+  it("carries the snapshot's tabs, and null when herdr sent none", () => {
+    const withTabs = decodeSnapshot({ agents: [], tabs: [{ tab_id: 'w1:t1', workspace_id: 'w1', number: 1, label: 'zsh' }] });
+    expect(withTabs.tabs?.map((tab) => [tab.tabId, tab.label])).toEqual([['w1:t1', 'zsh']]);
+    expect(decodeSnapshot({ agents: [] }).tabs).toBeNull();
+    expect(decodeSnapshot({ agents: [], tabs: [] }).tabs).toEqual([]);
   });
 });

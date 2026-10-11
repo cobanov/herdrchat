@@ -37,6 +37,50 @@ export function rowTitle(summary: ChatSummary): string {
   });
 }
 
+/**
+ * A space card's title (`spaceCardMode`): the workspace's label, after its
+ * machine's when it is on one (`klaw · kenneth-bot`), since the card stands
+ * for the workspace and the line under it is its stats.
+ */
+export function spaceTitle(summary: ChatSummary & { machine?: MachineRef | null }): string {
+  const label = chatTitle({ sessionTitle: null, agentName: null, workspaceLabel: summary.title, workspaceId: summary.workspaceId });
+  return [summary.machine?.label ?? '', label].filter(Boolean).join(' · ');
+}
+
+/**
+ * The line under a space card's title: its agents by state, its tabs and
+ * panes, and the folder they share, each only when it says something.
+ * `2 agents, 1 needs you · 2 tabs · 4 panes · demo/api`; `1 agent working ·
+ * 1 tab · 2 panes · side/herdrchat`; `no agent · 1 tab · 1 pane · demo/logs`.
+ *
+ * The counts are herdr's own (`tab_count`, `pane_count`), shells included;
+ * from a herdr that sends none, what the snapshot listed.
+ */
+export function spaceStats(summary: Pick<ChatSummary, 'panes' | 'shellPanes' | 'tabs' | 'layouts' | 'tabCount' | 'paneCount'>): string {
+  const agents = summary.panes.length;
+  const waiting = summary.panes.filter((pane) => pane.status === 'blocked').length;
+  const working = summary.panes.filter((pane) => pane.status === 'working').length;
+  const states = [
+    waiting > 0 ? `${waiting} ${waiting === 1 ? 'needs' : 'need'} you` : '',
+    working > 0 ? `${working} working` : '',
+  ].filter(Boolean);
+  const who = agents === 0 ? 'no agent'
+    : agents === 1 ? `1 agent${waiting > 0 ? ' needs you' : working > 0 ? ' working' : ''}`
+      : [`${agents} agents`, ...states].join(', ');
+  const tabs = summary.tabCount > 0 ? summary.tabCount : Math.max(summary.tabs.length, summary.layouts.length);
+  const panes = summary.paneCount > 0 ? summary.paneCount : agents + summary.shellPanes.length;
+  const folder = sharedFolder([
+    ...summary.panes.map((pane) => pane.agent.cwd),
+    ...summary.shellPanes.map((shell) => shell.pane.cwd),
+  ]).split('/').filter(Boolean).slice(-2).join('/');
+  return [
+    who,
+    tabs > 0 ? `${tabs} ${tabs === 1 ? 'tab' : 'tabs'}` : '',
+    panes > 0 ? `${panes} ${panes === 1 ? 'pane' : 'panes'}` : '',
+    folder,
+  ].filter(Boolean).join(' · ');
+}
+
 /** One agent's row title, and its thread's: that agent's session, as `chatTitle` ranks them. */
 export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
   return chatTitle({

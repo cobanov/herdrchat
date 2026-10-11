@@ -11,7 +11,9 @@ import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/tokens';
+import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { ChatRow } from './ChatRow';
+import { SpaceCard } from './SpaceCard';
 import { rowTestKey, type MachineRef } from './listedChat';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -46,6 +48,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onTogglePin,
   onToggleMute,
   onSwiped,
+  space,
 }: {
   summary: ChatSummary & { machine?: MachineRef | null };
   /** What the row's testIDs are built from, when not its workspace's (`ChatRow`). */
@@ -67,6 +70,15 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
    * hinting at it would be nagging about something they just did.
    */
   onSwiped: () => void;
+  /**
+   * Draw the workspace's space card instead of a chat (`spaceCardMode`):
+   * tapping it shows its layout, `onPress` is unused. The swipe is the same.
+   */
+  space?: {
+    onOpenLayout: (anchor: LayoutAnchor) => void;
+    onHoverLayout?: (anchor: LayoutAnchor) => void;
+    onLeaveLayout?: () => void;
+  };
 }) {
   const swipeable = useRef<SwipeableMethods>(null);
 
@@ -182,17 +194,32 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
       testID={`chat-swipe-${key}`}
       renderRightActions={renderRightActions}
       renderLeftActions={leading ? renderLeftActions : undefined}>
-      <ChatRow
-        summary={summary}
-        testKey={key}
-        unread={unread}
-        selected={selected}
-        onPress={onPress}
-        onLongPress={onLongPress}
-        pinned={pinned}
-        muted={muted}
-        actions={rowActions}
-      />
+      {space === undefined ? (
+        <ChatRow
+          summary={summary}
+          testKey={key}
+          unread={unread}
+          selected={selected}
+          onPress={onPress}
+          onLongPress={onLongPress}
+          pinned={pinned}
+          muted={muted}
+          actions={rowActions}
+        />
+      ) : (
+        <SpaceCard
+          summary={summary}
+          testKey={key}
+          unread={unread}
+          onOpenLayout={space.onOpenLayout}
+          onHoverLayout={space.onHoverLayout}
+          onLeaveLayout={space.onLeaveLayout}
+          onLongPress={onLongPress}
+          pinned={pinned}
+          muted={muted}
+          actions={rowActions}
+        />
+      )}
     </ReanimatedSwipeable>
   );
 });
