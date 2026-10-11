@@ -84,6 +84,15 @@ appId: dev.herdr.HerdrChat
     id: layout-pane-w6:p4
 - assertVisible:
     id: layout-pane-w6:p3
+# The boxes sit under the title row, not over it: the sheet once moved its
+# scroll view to its own top, covering the title and all but "ne" of Done.
+- assertVisible:
+    id: space-layout-close
+    text: Done
+- assertVisible:
+    id: layout-tab-w6:t1
+    below:
+      id: space-layout-close
 - takeScreenshot: space-layout-${APPEARANCE}
 
 # A box opens its pane after the sheet closes: the sheet hands the pane to

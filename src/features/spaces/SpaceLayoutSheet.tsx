@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
@@ -28,23 +28,48 @@ export default function SpaceLayoutSheet() {
     router.back();
   };
 
+  const header = (
+    // `collapsable={false}`: the sheet must see the title as a view of its
+    // own, the header before the scroll view (see below).
+    <View collapsable={false} style={{ paddingHorizontal: screenPadding, paddingTop: screenPadding, paddingBottom: spacing.md }}>
+      <SpaceLayoutTitle
+        title={summary === null ? 'Layout' : spaceTitle(summary)}
+        stats={summary === null ? null : spaceStats(summary)}
+        onClose={close}
+        closeLabel="Done"
+      />
+    </View>
+  );
+  const boxes = (
+    // "handled": a box's first tap opens it, even with a field focused.
+    <ScrollView
+      style={{ maxHeight: height * spaceLayout.sheetMaxWindowFraction }}
+      contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: screenPadding }}
+      keyboardShouldPersistTaps="handled"
+      testID="space-layout-sheet">
+      {summary !== null && <SpaceLayout summary={summary} onOpen={open} />}
+    </ScrollView>
+  );
+
+  // iOS: the title and the scroll view are the sheet's own two children, not
+  // wrapped in `Screen`. A form sheet (react-native-screens) finds the scroll
+  // view in it and sets that view's frame itself, to the sheet's size: as the
+  // sheet's second child after a header it goes below the header, sized to
+  // what is left; anywhere else it is moved to the sheet's top at full size,
+  // which drew the boxes over the title and swallowed taps on Done. The
+  // sheet's colour comes from the stack's `contentStyle`.
+  if (Platform.OS === 'ios') {
+    return (
+      <>
+        {header}
+        {boxes}
+      </>
+    );
+  }
   return (
     <Screen presentation="sheet">
-      <View style={{ padding: screenPadding, gap: spacing.md }}>
-        <SpaceLayoutTitle
-          title={summary === null ? 'Layout' : spaceTitle(summary)}
-          stats={summary === null ? null : spaceStats(summary)}
-          onClose={close}
-          closeLabel="Done"
-        />
-        {/* "handled": a box's first tap opens it, even with a field focused. */}
-        <ScrollView
-          style={{ maxHeight: height * spaceLayout.sheetMaxWindowFraction }}
-          keyboardShouldPersistTaps="handled"
-          testID="space-layout-sheet">
-          {summary !== null && <SpaceLayout summary={summary} onOpen={open} />}
-        </ScrollView>
-      </View>
+      {header}
+      {boxes}
     </Screen>
   );
 }
