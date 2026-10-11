@@ -29,19 +29,31 @@ appId: dev.herdr.HerdrChat
     id: pane-row-w6:p1
 - assertVisible:
     id: pane-row-w6:p2
+# The first tab's name over the agents, checked while the card is in the
+# middle: once the shell rows are, it is under the search field.
+- assertVisible:
+    id: tab-header-w6:t1
+    text: api
+- assertVisible:
+    id: pane-row-w6:p1
+    below:
+      id: tab-header-w6:t1
 - scrollUntilVisible:
     element:
       id: terminal-row-w6:p3
     direction: DOWN
     centerElement: true
+    speed: 10
 - assertVisible:
     id: terminal-row-w6:p4
     text: 'Terminal in api, npm run dev.*'
 
 # Its rows are grouped by tab: the first tab's name "api" over both agents
-# and the shell w6:p3 (no line above it, the card is right there), then a
-# line and the second tab's name, "server", over the dev server w6:p4 alone
-# in it.
+# and the shell w6:p3 (no line above it, the card is right there; checked
+# above), then a line and the second tab's name, "server", over the dev
+# server w6:p4 alone in it. The scrolls that bring the shell rows up are slow
+# (`speed: 10`): at the default a swipe flung the list on past them, under the
+# search field, where a tap lands in the search instead.
 - assertVisible:
     id: tab-header-w6:t2
     text: server
@@ -53,13 +65,6 @@ appId: dev.herdr.HerdrChat
     id: tab-header-w6:t2
     below:
       id: terminal-row-w6:p3
-- assertVisible:
-    id: tab-header-w6:t1
-    text: api
-- assertVisible:
-    id: pane-row-w6:p1
-    below:
-      id: tab-header-w6:t1
 - takeScreenshot: space-tab-groups-${APPEARANCE}
 
 # The layout, from the card's button: two tabs, every pane a box.

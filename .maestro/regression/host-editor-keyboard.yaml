@@ -3,6 +3,13 @@
 # form that fit the sheet had nothing to scroll and the key sat under the keys.
 # Maestro does not know what the keyboard covers, so open the screenshot: the
 # key field must sit above the keyboard with its first line readable.
+#
+# The key field is found by its label and placeholder ("OpenSSH private key"
+# then the placeholder), not by `field-secret`: the multiline input
+# (iOS 26.4 simulator, Release build) reaches the accessibility tree with its
+# label but without its identifier, while the one-line fields keep theirs.
+# The bare label above it is the same words alone, so `.+` after a space
+# leaves it out (`(?s)`: the placeholder runs over two lines).
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -21,14 +28,13 @@ appId: dev.herdr.HerdrChat
 - tapOn: Private key
 - scrollUntilVisible:
     element:
-      id: field-secret
+      text: '(?s)OpenSSH private key .+'
     direction: DOWN
-- tapOn:
-    id: field-secret
+- tapOn: '(?s)OpenSSH private key .+'
 - inputText: "-----BEGIN OPENSSH PRIVATE KEY-----"
 - waitForAnimationToEnd
-- assertVisible:
-    id: field-secret
+# Typed into, the field holds the key (its label is then the bare words, its
+# text what was typed), so the key's text is what finds it now.
 - assertVisible: .*BEGIN OPENSSH PRIVATE KEY.*
 - takeScreenshot: host-editor-key-${APPEARANCE}
 - tapOn:

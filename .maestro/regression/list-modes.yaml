@@ -5,7 +5,9 @@
 # workspace's testID) and w6's agents as `chat-row-w6:p1` and
 # `chat-row-w6:p2` (`agentTestKey`: the pane's id, since the two share their
 # workspace's). The picker is the system sheet, so its rows are matched by
-# text; the current view's row carries a tick ("Spaces ✓").
+# text; the current view's row carries a tick ("Spaces ✓"). While it is up the
+# list under it is out of the accessibility tree, so the text alone finds the
+# row (a `below: chats-view` finds nothing to be below).
 #
 # The choice is saved, so this flow ends on Spaces, as every other flow
 # expects; scripts/e2e.sh also clears it before and after this flow, in case
@@ -26,8 +28,6 @@ appId: dev.herdr.HerdrChat
 - assertVisible: Spaces ✓
 - tapOn:
     text: Agents
-    below:
-      id: chats-view
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
@@ -104,17 +104,17 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 - tapOn:
     text: Spaces
-    below:
-      id: chats-view
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
       id: chats-view
       text: Showing Spaces\. Change view\.
     timeout: 5000
+# The card to the middle, its two agents' rows below it: scrolled to p2, the
+# list's swipe flung the card off the top behind the search field.
 - scrollUntilVisible:
     element:
-      id: pane-row-w6:p2
+      id: chat-row-w6
     direction: DOWN
     centerElement: true
 - assertVisible:
@@ -132,6 +132,7 @@ appId: dev.herdr.HerdrChat
       id: terminal-row-w6:p3
     direction: DOWN
     centerElement: true
+    speed: 10
 # Back to the top (w1 needs you, so it leads the list) for the screenshot.
 - scrollUntilVisible:
     element:

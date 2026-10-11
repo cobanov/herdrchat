@@ -48,6 +48,13 @@ reset_list_mode() {
   return 0
 }
 
+# chat-list pins and mutes a Demo chat and undoes it; a run that failed in
+# between left it pinned, and the next run's Pinned group was already there.
+reset_demo_prefs() {
+  [ -f "$DB" ] && sqlite3 "$DB" "delete from chat_prefs where connection_id='demo'" 2>/dev/null
+  return 0
+}
+
 failed=""
 passed=0
 for appearance in $APPEARANCES; do
@@ -56,6 +63,7 @@ for appearance in $APPEARANCES; do
     [ "$flow" = "tool-activity" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_tool_setting; }
     [ "$flow" = "regression/composer-keys" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_return_setting; }
     [ "$flow" = "regression/list-modes" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_list_mode; }
+    [ "$flow" = "regression/chat-list" ] && { xcrun simctl terminate "$DEVICE" dev.herdr.HerdrChat >/dev/null 2>&1; reset_demo_prefs; }
     printf '%-40s ' "$name"
     if maestro --device "$DEVICE" test -e APPEARANCE="$appearance" --test-output-dir "$OUT/$name" ".maestro/$flow.yaml" >"$OUT/$name.log" 2>&1; then
       echo pass

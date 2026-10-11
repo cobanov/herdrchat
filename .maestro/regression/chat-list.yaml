@@ -4,10 +4,15 @@ appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
 
-# Leading swipe: Pin and Mute.
+# Leading swipe: Pin and Mute, on w1, the chat that needs you at the top of
+# the list. The space cards (w6's agents and terminals, by tab) now push w2 to
+# the bottom edge, where the action is under the home indicator and its tap is
+# lost; and scrolled down to w2, a Pinned group appearing at the top is above
+# the screen by design, which is not what #138 is about (at a scroll of zero
+# it must be on screen).
 - swipe:
     from:
-      id: chat-row-w2
+      id: chat-row-w1
     direction: RIGHT
 - waitForAnimationToEnd
 - assertVisible:
@@ -23,20 +28,20 @@ appId: dev.herdr.HerdrChat
       id: chat-group-pinned
     timeout: 5000
 - assertVisible:
-    id: chat-row-w2
+    id: chat-row-w1
 
 # Long press: the same choices, now reading Unpin, and Mute.
 - longPressOn:
-    id: chat-row-w2
+    id: chat-row-w1
 - tapOn: Mute notifications
 - longPressOn:
-    id: chat-row-w2
+    id: chat-row-w1
 - assertVisible: Unpin
 - assertVisible: Unmute notifications
 - takeScreenshot: chat-list-menu-${APPEARANCE}
 - tapOn: Unmute notifications
 - longPressOn:
-    id: chat-row-w2
+    id: chat-row-w1
 - tapOn: Unpin
 - assertNotVisible:
     id: chat-group-pinned

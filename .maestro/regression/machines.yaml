@@ -40,6 +40,14 @@ appId: dev.herdr.HerdrChat
     id: chat-row-w1
     text: '.*(nuku|Nightly digest).*'
 
+# Back down to the machine's row: the space cards between them leave the two
+# w1s more than a screen apart.
+- scrollUntilVisible:
+    element:
+      id: chat-row-demo-nuku-w1
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
 - tapOn:
     id: chat-row-demo-nuku-w1
 - extendedWaitUntil:
