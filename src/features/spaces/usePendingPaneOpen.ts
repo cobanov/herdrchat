@@ -6,10 +6,16 @@ import { applyPaneOpen } from './openPane';
 
 /**
  * Opens the pane a box in the phone's layout sheet asked for, on the chats
- * root, once the sheet has gone and the root has focus again. The sheet only
- * records the pane and closes (`useSpaceLayoutSheet`); opening it from here
- * means the push starts from the root, after the sheet has left the stack,
- * rather than racing its dismissal. Taken once: a later focus opens nothing.
+ * root's next focus. The sheet only records the pane and closes
+ * (`useSpaceLayoutSheet`); opening it from here means the push is a separate
+ * commit from the pop, made by the root, rather than the same batch as the
+ * sheet's `router.back()`.
+ *
+ * Focus is JS state, not a native event: expo-router emits it from an effect
+ * as soon as the state after the pop commits, so the native formSheet may
+ * still be animating its dismissal when the push starts. If a device ever
+ * shows the push fighting that animation, wait for the native stack's
+ * `transitionEnd` on the root instead. Taken once: a later focus opens nothing.
  */
 export function usePendingPaneOpen(): void {
   useFocusEffect(

@@ -9,8 +9,8 @@ import type { LayoutPane } from '@/lib/spaces/layout';
  * What a box in a layout view opens, as data: an agent's chat (`paneTarget`),
  * or any other pane's terminal, attached exactly as its terminal row attaches
  * it. Data rather than a call, so the phone's sheet can hand it to the list
- * underneath and have it opened there once the sheet is gone
- * (`useSpaceLayoutSheet`), instead of navigating during its own dismissal.
+ * underneath and have it opened there on the list's next focus
+ * (`useSpaceLayoutSheet`), instead of in the same batch as the sheet's pop.
  */
 export type PaneOpen =
   | { kind: 'chat'; connectionId: string; workspaceId: string; title: string; paneId: string | undefined }

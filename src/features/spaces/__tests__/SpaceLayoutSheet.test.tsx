@@ -62,7 +62,7 @@ beforeEach(() => {
 
 // The sheet never navigates after its own `back()`: it records the pane and
 // closes, and the root opens it once it has focus again.
-it('hands a box back to the root, which opens it once the sheet has gone', async () => {
+it('hands a box back to the root, which opens it on its next focus', async () => {
   const view = await sheet();
   await fireEvent.press(view.getByTestId('layout-pane-w6:p3'));
   expect(mockCalls).toEqual(['back']);

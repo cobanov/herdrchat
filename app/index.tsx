@@ -24,7 +24,7 @@ import { isUnderHost } from '@/lib/herdr/machines';
  */
 export default function ChatsScreen() {
   useWelcomeGate();
-  // A pane picked in the phone's layout sheet, opened once the sheet is gone.
+  // A pane picked in the phone's layout sheet, opened on this screen's next focus.
   usePendingPaneOpen();
   const wide = useTabletLayout();
   const connection = useSelectedConnection();

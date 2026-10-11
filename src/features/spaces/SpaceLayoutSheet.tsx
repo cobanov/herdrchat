@@ -13,9 +13,10 @@ import { SpaceLayout } from './SpaceLayout';
  * A workspace's layout on a phone: a sheet sized to its tabs, opened from a
  * space card or its layout button. The workspace is the one the list handed
  * over (`useSpaceLayoutSheet`). A box hands its pane back through the same
- * store and closes the sheet; the chats underneath open it once they have
- * focus again (`usePendingPaneOpen`). Never navigate from here right after
- * `router.back()`: the push races the sheet's dismissal on the native stack.
+ * store and closes the sheet; the chats underneath open it on their next
+ * focus (`usePendingPaneOpen`), a commit after the pop, though the native
+ * dismissal may still be animating. Never navigate from here right after
+ * `router.back()`: the push would land in the same batch as the pop.
  */
 export default function SpaceLayoutSheet() {
   const router = useRouter();
