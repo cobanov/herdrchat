@@ -1,0 +1,155 @@
+# The README's iPad screenshots, on an iPad simulator with the Demo host:
+#   maestro --device <ipad udid> test -e APPEARANCE=Dark --test-output-dir <out> .maestro/screenshots-ipad.yaml
+# (then APPEARANCE=Light). Not in scripts/e2e.sh's FLOWS: the regression
+# flows assume a phone's push and back, and this one is a set of pictures more
+# than a check. It still waits for each state before the shot, so a picture is
+# never of a half-drawn screen; open them before using any.
+#   ipad-split-*     the list beside a conversation with a subagent card
+#   ipad-layout-*    w6's layout, the floating card pinned beside the list
+#   ipad-terminal-*  the shell w6:p3's terminal beside the list
+#   ipad-agents-*    the list switched to Agents, beside the terminal
+# Taken in landscape, they are saved on their side with an EXIF orientation
+# tag; .maestro/README.md ("The README's screenshots") turns them upright.
+appId: dev.herdr.HerdrChat
+---
+# regression/_start.yaml's own start, with Settings' iPad sidebar: the
+# appearance is under its Appearance section.
+- stopApp
+- setOrientation: LANDSCAPE_LEFT
+- launchApp
+- runFlow: regression/_skip-welcome.yaml
+- extendedWaitUntil:
+    visible:
+      id: server-switcher
+    timeout: 15000
+- tapOn:
+    id: server-switcher
+- extendedWaitUntil:
+    visible:
+      id: server-demo
+    timeout: 10000
+- tapOn:
+    id: server-demo
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
+- tapOn:
+    id: settings-section-appearance
+- tapOn: '${APPEARANCE}'
+- tapOn:
+    id: header-close
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+    timeout: 10000
+
+# A chat: the list on the left, the thread on the right, with an agent call
+# running ("delegate the review", src/lib/demo/scenarios.ts).
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- assertVisible:
+    id: tablet-sidebar
+- tapOn:
+    id: composer-input
+- inputText: delegate the review
+- runFlow: regression/_send.yaml
+- extendedWaitUntil:
+    visible: 'Agent: Review the release notes wording, done.*'
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: ipad-split-${APPEARANCE}
+
+# w6's layout, from its button: on iPad a floating card beside the list,
+# pinned by the tap.
+- scrollUntilVisible:
+    element:
+      id: space-layout-w6
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: space-layout-w6
+- extendedWaitUntil:
+    visible:
+      id: layout-pane-w6:p4
+    timeout: 5000
+- assertVisible:
+    id: space-layout-card
+- assertVisible:
+    id: layout-pane-w6:p3
+- waitForAnimationToEnd
+- takeScreenshot: ipad-layout-${APPEARANCE}
+- tapOn:
+    id: space-layout-close
+- extendedWaitUntil:
+    notVisible:
+      id: space-layout-card
+    timeout: 5000
+
+# The shell pane's terminal, beside the list.
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w6:p3
+    direction: DOWN
+    centerElement: true
+    speed: 10
+- tapOn:
+    id: terminal-row-w6:p3
+- extendedWaitUntil:
+    visible:
+      id: terminal-status
+      text: '.*Connected.*'
+    timeout: 10000
+- assertVisible:
+    id: tablet-sidebar
+# The terminal takes the keyboard as it opens; the picture is of the screen,
+# so the bar's own control puts it away (Maestro's hideKeyboard cannot on an
+# iPad).
+- runFlow:
+    when:
+      visible:
+        id: terminal-keyboard
+        text: Hide keyboard
+    commands:
+      - tapOn:
+          id: terminal-keyboard
+- waitForAnimationToEnd
+- takeScreenshot: ipad-terminal-${APPEARANCE}
+
+# Agents: every agent a row of its own, flat. Then back to Spaces, the
+# view every other flow expects.
+- scrollUntilVisible:
+    element:
+      id: chats-view
+    direction: UP
+- tapOn:
+    id: chats-view
+- extendedWaitUntil:
+    visible: Agents
+    timeout: 5000
+- tapOn: Agents
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+      text: Showing Agents\. Change view\.
+    timeout: 5000
+- assertVisible:
+    id: chat-row-w6:p2
+- waitForAnimationToEnd
+- takeScreenshot: ipad-agents-${APPEARANCE}
+- tapOn:
+    id: chats-view
+- extendedWaitUntil:
+    visible: Spaces
+    timeout: 5000
+- tapOn: Spaces
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+      text: Showing Spaces\. Change view\.
+    timeout: 5000
+- setOrientation: PORTRAIT

@@ -21,16 +21,23 @@ Your agents keep running on your computer. HerdrChat turns their
 connected directly over SSH. No HerdrChat account. No relay server.
 
 <p align="center">
-  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode agent cards grouped by status, with chat search" width="280"></a>
-  <a href="docs/screenshots/thread-blocked-dark.png"><img src="docs/screenshots/thread-blocked-dark.png" alt="Dark-mode conversation with a tool call and tappable approval choices" width="280"></a>
+  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode Spaces list: a chat that needs you, then the api space with its two agents and two terminals grouped under its tabs" width="280"></a>
+  <a href="docs/screenshots/thread-subagents-dark.png"><img src="docs/screenshots/thread-subagents-dark.png" alt="Dark-mode conversation with a subagent card, a workflow card, a link and a git status shell block" width="280"></a>
   <br>
-  <sub>Demo conversations, captured in the iOS simulator. Tap a screenshot to zoom.</sub>
+  <sub>Demo conversations, captured in the iOS simulator on iPhone. Tap a screenshot to zoom.</sub>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/ipad-split-dark.png"><img src="docs/screenshots/ipad-split-dark.png" alt="Dark-mode iPad: the Spaces list beside a conversation with subagent cards" width="420"></a>
+  <a href="docs/screenshots/ipad-terminal-dark.png"><img src="docs/screenshots/ipad-terminal-dark.png" alt="Dark-mode iPad: the Spaces list beside a shell pane's terminal" width="420"></a>
+  <br>
+  <sub>And on iPad, the list beside the conversation or the terminal.</sub>
 </p>
 
 ## Less terminal. More conversation.
 
 - **Pick up where you left off.** Read Claude Code, Codex and OMP history, including replies started at your desk.
-- **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
+- **See what needs you.** Search chats grouped by Needs you, Working and Idle. The title switches between **Spaces**, a card per herdr workspace that lists its agents and its terminals grouped by tab, and **Agents**, every agent a row of its own. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Watch the agents it hands work to.** When Claude Code starts a subagent or a workflow, it shows in the chat as a card that says what it was asked and where it stands, then what it handed back. Open a subagent to read its own conversation as it works, or a workflow to see each phase and each agent in it.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
@@ -38,6 +45,20 @@ connected directly over SSH. No HerdrChat account. No relay server.
 - **Show it, don't describe it.** Add a screenshot or photo to a message; it goes to your machine over SSH and the agent opens it there.
 - **Type like on a Mac.** With an iPad keyboard, Return sends, Shift-Return starts a new line, Command-Return sends either way, and Command-V attaches a copied picture. Settings > Conversations > Return sends turns Return back into a new line.
 - **Keep your machine yours.** Connect over SSH, usually through Tailscale. Credentials stay in the iOS Keychain; host keys are pinned.
+
+## Spaces
+
+A space card says what the workspace holds (agents, how many are working,
+tabs, panes) and lists it underneath. The layout button on the card draws the
+workspace's tabs and panes as herdr arranges them, in a sheet on a phone; tap
+a pane to open its chat or its terminal. On iPad the layout floats beside the list: a pointer resting
+on the button shows it, a tap keeps it up.
+
+<p align="center">
+  <a href="docs/screenshots/ipad-layout-dark.png"><img src="docs/screenshots/ipad-layout-dark.png" alt="Dark-mode iPad: the api space's layout floating beside the list, two tabs, its two agents and a shell in the first, the dev server alone in the second" width="220"></a>
+  <a href="docs/screenshots/agents-dark.png"><img src="docs/screenshots/agents-dark.png" alt="Dark-mode Agents view: every agent a row of its own, grouped by status" width="220"></a>
+  <a href="docs/screenshots/slash-palette-dark.png"><img src="docs/screenshots/slash-palette-dark.png" alt="Dark-mode / palette over the composer, with built-in commands and skills and what each takes" width="220"></a>
+</p>
 
 ## Try it
 
@@ -80,12 +101,16 @@ into `~/.local/bin`.
 
 ## Terminal
 
+<p align="center">
+  <a href="docs/screenshots/ipad-terminal-dark.png"><img src="docs/screenshots/ipad-terminal-dark.png" alt="Dark-mode iPad terminal on a shell pane beside the Spaces list: ls and a coloured git status, with Esc, Tab, Ctrl and the arrows in the bar" width="560"></a>
+</p>
+
 Every herdr pane has a terminal, not only the ones running an agent you can
 chat with. A pane with a shell, a build, `vim` or `htop` in it is listed under
 its workspace as a **Terminal** row, with the program herdr reports and its
 folder; an agent's chat opens its own pane from **Terminal** in its header,
 for whatever the chat cannot show (a panel, a login prompt, a full-screen
-tool). It is a real emulator ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)):
+tool). On iPad it opens beside the chats, like a conversation. It is a real emulator ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)):
 colours, cursor, mouse, selection, a swipe that scrolls back through the
 pane's history (herdr's own), pinch to change the size, a
 hardware keyboard with Ctrl and Option, and a bar over the software keyboard

@@ -260,11 +260,41 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
 | `codex-thread` | exact Codex history, same-folder isolation, reload and phone delivery | **yes**, two disposable Codex sessions |
 | `tablet-demo` | iPad split chats/settings, rotation, composer, reply and action sheets (cancelled) | no, selects Demo explicitly |
+| `screenshots-ipad` | the README's iPad screenshots, in landscape on the Demo: the list beside a chat with a subagent card (`ipad-split`), `w6`'s layout as the floating card (`ipad-layout`), the shell `w6:p3`'s terminal beside the list (`ipad-terminal`), the list on Agents (`ipad-agents`) | no, selects Demo explicitly |
 
 Run `tablet-demo` on an iPad simulator with `-e APPEARANCE=Dark`, then `Light`.
 Use `--test-output-dir` outside the repository and open its screenshots: the
 keyboard must not cover the composer or final reply, and content must stay
 readable in portrait and landscape. This is demo acceptance, not an SSH test.
+
+### The README's screenshots
+
+`docs/screenshots/` holds the pictures the top-level README shows, copied
+from a suite run on an iPhone 17 Pro simulator and from `screenshots-ipad` on
+an iPad Pro 13-inch simulator, in dark:
+
+```bash
+E2E_DEVICE=<iphone udid> E2E_OUT=<out> npm run e2e
+maestro --device <ipad udid> test -e APPEARANCE=Dark --test-output-dir <out> .maestro/screenshots-ipad.yaml
+# Landscape is saved on its side with an EXIF orientation tag; turn the pixels
+# upright and drop the tag, so every viewer shows it the same way:
+ffmpeg -noautorotate -i <out>/.../ipad-split-Dark.png -vf transpose=2 docs/screenshots/ipad-split-dark.png
+exiftool -overwrite_original -all= docs/screenshots/ipad-split-dark.png
+# ipad-layout-dark.png is the left of its shot: -vf transpose=2,crop=1380:2064:0:0
+```
+
+| README image | Flow | Its screenshot |
+|--------------|------|----------------|
+| `chats-dark.png` | `regression/list-modes` | `list-spaces-Dark` |
+| `thread-subagents-dark.png` | `regression/shell-commands` | `shell-seeded-Dark` |
+| `ipad-split-dark.png` | `screenshots-ipad` | `ipad-split-Dark`, rotated |
+| `ipad-terminal-dark.png` (also in Terminal) | `screenshots-ipad` | `ipad-terminal-Dark`, rotated |
+| `ipad-layout-dark.png` | `screenshots-ipad` | `ipad-layout-Dark`, rotated, its left 1380 px |
+| `agents-dark.png` | `regression/list-modes` | `list-agents-Dark` |
+| `slash-palette-dark.png` | `regression/slash-commands` | `slash-palette-Dark` |
+
+Open each before copying it: a flow that passes can still have caught the
+screen mid-animation.
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
 without a host, that is those flows doing their job, not a broken suite.
