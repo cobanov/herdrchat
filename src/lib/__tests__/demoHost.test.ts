@@ -88,6 +88,26 @@ describe('DemoHost as a herdr host', () => {
 });
 
 describe('DemoHost as a filesystem', () => {
+  // The chat list's last-message line. The Demo used to answer the batch with
+  // nothing, so every row read its status and a reply never reached its row
+  // (regression/multi-agent and regression/machines could not pass).
+  it("answers the chat list's preview batch, one last message per agent", async () => {
+    const host = new DemoHost();
+    const agents = (await new HerdrClient(host).snapshot()).agents.filter((agent) => agent.agentSession !== null);
+    const previews = await new TranscriptStore(host).latestMessages(
+      agents.map((agent) => ({
+        workspaceId: agent.workspaceId,
+        key: agent.paneId,
+        cwd: agent.cwd,
+        sessionId: agent.agentSession!.value,
+        sessionKind: agent.agentSession!.kind,
+        agent: agent.agent ?? undefined,
+      }))
+    );
+    expect([...previews.keys()].sort()).toEqual(agents.map((agent) => agent.paneId).sort());
+    expect(displayText(previews.get('w6:p1')!)).toMatch(/archived_at/);
+  });
+
   it('reports a home directory, so transcript paths can be built', async () => {
     const store = new TranscriptStore(new DemoHost());
     await expect(store.homeDirectory()).resolves.toBe('/home/demo');

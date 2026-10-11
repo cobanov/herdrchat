@@ -510,6 +510,9 @@ export class DemoHost implements HerdrTransport {
       return contents === null ? exit(1) : out(`${contents.split('\n').slice(0, Number(head[1])).join('\n')}\n`);
     }
 
+    const previews = this.previewBatch(body);
+    if (previews !== null) return previews;
+
     const last = /^tail -c (\d+) '(.+?)' 2>\/dev\/null$/.exec(body);
     if (last !== null) {
       const contents = this.read(last[2]!);
@@ -517,6 +520,36 @@ export class DemoHost implements HerdrTransport {
     }
 
     return null;
+  }
+
+  /**
+   * The chat list's preview batch (`TranscriptStore.latestMessages`): for each
+   * agent, its transcript (`f=...`), a marker line naming the row, and the
+   * transcript's last bytes. Without it every Demo row read its status line
+   * and never a last message, and a reply never reached its row. A Claude
+   * session missing from its folder is looked for by id in every project
+   * folder, as the real script does; an OMP request also prints its header.
+   */
+  private previewBatch(body: string): ExecResult | null {
+    if (!body.endsWith('true') || !body.includes('[ -n "$f" ] && tail -c ')) return null;
+    const claudeDir = `${DEMO_HOME}/.claude`;
+    const step =
+      /f=(?:"([^"]*)"|'([^']*)'); (?:\[ -f "\$f" \] \|\| for g in "[^"]*"\/projects\/\*\/([A-Za-z0-9-]+)\.jsonl; do [^;]*; done; )?printf '\\n(\S+) %s\\n' '([A-Za-z0-9:_-]+)'; (head -n 2 "\$f" 2>\/dev\/null; printf '\\n'; )?\[ -n "\$f" \] && tail -c (\d+) "\$f" 2>\/dev\/null; /g;
+    let stdout = '';
+    for (const match of body.matchAll(step)) {
+      const [, doubleQuoted, singleQuoted, anyFolderId, marker, key, header, bytes] = match;
+      let path = singleQuoted ?? (doubleQuoted ?? '').replaceAll('${CLAUDE_CONFIG_DIR:-$HOME/.claude}', claudeDir);
+      if (this.read(path) === null && anyFolderId !== undefined) {
+        path = [...this.paths.keys(), ...this.files.keys()].find(
+          (candidate) => candidate.startsWith(`${claudeDir}/projects/`) && candidate.endsWith(`/${anyFolderId}.jsonl`)
+        ) ?? path;
+      }
+      const contents = this.read(path);
+      stdout += `\n${marker!} ${key!}\n`;
+      if (header !== undefined) stdout += `${contents === null ? '' : contents.split('\n').slice(0, 2).join('\n')}\n\n`;
+      if (contents !== null) stdout += sliceLastBytes(contents, Number(bytes));
+    }
+    return out(stdout);
   }
 
   // MARK: - ~/.herdrchat (src/lib/theme)
