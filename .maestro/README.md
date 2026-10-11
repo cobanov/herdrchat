@@ -185,11 +185,18 @@ light and dark:
   typing goes on without tapping the field.
 - **Narrow iPad window** (Split View, the list alone): the card hangs under
   or over the button inside the list instead.
-- **A box opens its pane.** In the card, tap an agent's box: the card closes
-  and that agent's chat opens beside the list. Tap a shell's box: its
-  terminal opens, attached privately as its terminal row does.
+- **A box opens its pane.** In the card, tap an agent's box: the box dims
+  under the finger, the card closes and that agent's chat opens beside the
+  list. Tap a shell's box: its terminal opens, attached privately as its
+  terminal row does. Then the cases that used to swallow the tap: with the
+  composer focused and typing, show the card by hover and click a box (one
+  click opens it, it does not just put the keyboard away); and hold a click
+  on a box of a hovered, unpinned card for a second before letting go (the
+  card stays and the pane opens).
 - **The phone.** The button and the card open the layout as a sheet sized to
-  its tabs; Done closes it; a box closes it and opens its pane.
+  its tabs; Done closes it; a box dims under the finger, the sheet slides
+  away and then its pane opens, every time, for an agent's box and a
+  shell's.
 - **All tabs.** `play` (four tabs) draws all four, each titled by herdr's tab
   label, the active one ringed, side by side two to a row.
 - **A machine.** A workspace on klaw draws its one tab, titled `klaw · <label>`

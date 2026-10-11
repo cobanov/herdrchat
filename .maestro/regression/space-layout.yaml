@@ -86,7 +86,9 @@ appId: dev.herdr.HerdrChat
     id: layout-pane-w6:p3
 - takeScreenshot: space-layout-${APPEARANCE}
 
-# A box opens its pane, after the sheet closes: the shell's terminal.
+# A box opens its pane after the sheet closes: the sheet hands the pane to
+# the chats underneath and goes, and the chats open it once they have focus
+# again. Here the shell's terminal, with the sheet gone.
 - tapOn:
     id: layout-pane-w6:p3
 - extendedWaitUntil:

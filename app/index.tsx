@@ -4,6 +4,7 @@ import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import ChatsList from '@/features/chats/ChatsList';
+import { usePendingPaneOpen } from '@/features/spaces/usePendingPaneOpen';
 import { terminalBackControl } from '@/features/terminal/backControl';
 import TerminalScreen from '@/features/terminal/TerminalScreen';
 import ThreadScreen from '@/features/thread/ThreadScreen';
@@ -23,6 +24,8 @@ import { isUnderHost } from '@/lib/herdr/machines';
  */
 export default function ChatsScreen() {
   useWelcomeGate();
+  // A pane picked in the phone's layout sheet, opened once the sheet is gone.
+  usePendingPaneOpen();
   const wide = useTabletLayout();
   const connection = useSelectedConnection();
   const detail = useChatSelection((state) => state.detail);

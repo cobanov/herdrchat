@@ -10,6 +10,7 @@ import { spaceStats, spaceTitle } from '@/features/chats/rowText';
 import { peekReducer, type Peek } from '@/lib/spaces/peek';
 import { popoverPlacement } from '@/lib/spaces/popover';
 import { motion, radius, screenPadding, spaceLayout, spacing } from '@/theme/tokens';
+import { applyPaneOpen, type PaneOpen } from './openPane';
 import { SpaceLayout } from './SpaceLayout';
 import { SpaceLayoutTitle } from './SpaceLayoutSheet';
 import { useHoverIntent } from './useHoverIntent';
@@ -135,22 +136,35 @@ function LayoutCard({ peek, summary, onClose, onPin, onHoverCard }: {
   });
   // On at once, off after a beat: long enough to cross back to the button.
   const hover = useHoverIntent({ onIn: () => onHoverCard(true), onOut: () => onHoverCard(false), delayOut: motion.hoverOut });
+  // A box closes the card, then opens its pane: the card is an overlay, not
+  // a route, so there is no dismissal for the navigation to race.
+  const open = (pane: PaneOpen) => {
+    onClose();
+    applyPaneOpen(pane);
+  };
   return (
     <EscapeKeyView
       active={peek.pinned}
       onEscape={onClose}
       style={{ position: 'absolute', left: place.left, top: place.top, bottom: place.bottom, width: place.width }}>
       <HoverView onHoverChange={hover}>
-        {/* A tap on the card pins it. Not an accessibility element itself,
-            so its boxes stay reachable. */}
-        <Pressable accessible={false} onPress={onPin} testID="space-layout-card">
+        {/* A finger or a click landing anywhere on the card pins it, on touch
+            start rather than on press: a box is the responder for its own
+            tap, so the card would never hear the press, and a trackpad click
+            ends the hover that was keeping an unpinned card up, which could
+            take the card, and the box under the pointer, away before the
+            click lifts. Touch events reach every ancestor whoever responds. */}
+        <View onTouchStart={peek.pinned ? undefined : onPin} testID="space-layout-card">
           <Glass style={{ borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm, maxHeight: place.maxHeight }}>
             <SpaceLayoutTitle title={spaceTitle(summary)} stats={spaceStats(summary)} onClose={onClose} closeLabel="Close" />
-            <ScrollView style={{ flexShrink: 1 }}>
-              <SpaceLayout summary={summary} onClose={onClose} />
+            {/* "handled": with the composer beside the list still focused, a
+                ScrollView's default takes the first tap to dismiss the
+                keyboard, and the box never hears it. */}
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" testID="space-layout-card-scroll">
+              <SpaceLayout summary={summary} onOpen={open} />
             </ScrollView>
           </Glass>
-        </Pressable>
+        </View>
       </HoverView>
     </EscapeKeyView>
   );

@@ -30,8 +30,8 @@ async function demo(): Promise<ListedChat[]> {
   return listChats(buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes, new Map(), snapshot), 'demo', null);
 }
 
-async function drawn(summary: ListedChat, onClose = jest.fn()) {
-  const screen = await render(<SpaceLayout summary={summary} onClose={onClose} />);
+async function drawn(summary: ListedChat, onOpen = jest.fn()) {
+  const screen = await render(<SpaceLayout summary={summary} onOpen={onOpen} />);
   // The tabs are sized to the width the view is given.
   await fireEvent(screen.getByTestId(`layout-${summary.workspaceId}`), 'layout', { nativeEvent: { layout: { width: 320, height: 200 } } });
   return screen;
@@ -59,39 +59,66 @@ it("draws each of w6's tabs with its panes as boxes", async () => {
   expect(top('w6:p3')).toBeGreaterThan(top('w6:p1'));
 });
 
-it("opens an agent's box as its chat, after closing the view", async () => {
-  const onClose = jest.fn();
+// A box hands what it opens to its holder, which closes itself and opens it
+// in the order its presentation needs; the view itself navigates nowhere.
+it("hands an agent's box over as its chat, once, navigating nowhere itself", async () => {
+  const onOpen = jest.fn();
   const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
-  const screen = await drawn(w6, onClose);
+  const screen = await drawn(w6, onOpen);
   await fireEvent.press(screen.getByTestId('layout-pane-w6:p2'));
-  expect(onClose).toHaveBeenCalledTimes(1);
-  expect(mockOpenChat).toHaveBeenCalledWith('demo', 'w6', 'Save button wrap', 'w6:p2');
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  expect(onOpen).toHaveBeenCalledWith({ kind: 'chat', connectionId: 'demo', workspaceId: 'w6', title: 'Save button wrap', paneId: 'w6:p2' });
+  expect(mockOpenChat).not.toHaveBeenCalled();
   expect(mockOpenTerminal).not.toHaveBeenCalled();
 });
 
-it("opens a shell's box as its terminal, by its terminal id", async () => {
-  const onClose = jest.fn();
+it("hands a shell's box over as its terminal, by its terminal id", async () => {
+  const onOpen = jest.fn();
   const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
-  const screen = await drawn(w6, onClose);
+  const screen = await drawn(w6, onOpen);
   await fireEvent.press(screen.getByTestId('layout-pane-w6:p3'));
-  expect(onClose).toHaveBeenCalledTimes(1);
-  expect(mockOpenTerminal).toHaveBeenCalledWith(expect.objectContaining({ connectionId: 'demo', paneId: 'w6:p3', kind: 'shell', terminalId: 'term_w6_p3' }));
-  expect(mockOpenChat).not.toHaveBeenCalled();
+  expect(onOpen).toHaveBeenCalledWith({
+    kind: 'terminal',
+    params: expect.objectContaining({ connectionId: 'demo', paneId: 'w6:p3', kind: 'shell', terminalId: 'term_w6_p3' }),
+  });
+});
+
+// Every pane the layout draws that the summary knows is a live button.
+it('makes every drawn box of a known pane pressable', async () => {
+  const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
+  const screen = await drawn(w6);
+  for (const paneId of ['w6:p1', 'w6:p2', 'w6:p3', 'w6:p4']) {
+    expect(screen.getByTestId(`layout-pane-${paneId}`)).not.toBeDisabled();
+  }
+});
+
+// A pane the layout lists but the summary does not: drawn, but disabled, and
+// it says why rather than offering to open something.
+it('disables a box with nothing to open, and says so', async () => {
+  const onOpen = jest.fn();
+  const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
+  const screen = await drawn({ ...w6, shellPanes: w6.shellPanes.filter((pane) => pane.paneId !== 'w6:p3') }, onOpen);
+  const box = screen.getByTestId('layout-pane-w6:p3');
+  expect(box).toBeDisabled();
+  expect(box).toHaveProp('accessibilityHint', 'Nothing to open for this pane');
+  await fireEvent.press(box);
+  expect(onOpen).not.toHaveBeenCalled();
 });
 
 // One agent beside a shell is the workspace chat, as its card used to open
 // it and as its row in Agents does.
 it('opens the one agent of a workspace as the workspace chat', async () => {
+  const onOpen = jest.fn();
   const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
   const solo: ListedChat = { ...w6, panes: w6.panes.slice(0, 1) };
-  const screen = await drawn(solo);
+  const screen = await drawn(solo, onOpen);
   await fireEvent.press(screen.getByTestId('layout-pane-w6:p1'));
-  expect(mockOpenChat).toHaveBeenCalledWith('demo', 'w6', 'Archived projects migration', undefined);
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'chat', title: 'Archived projects migration', paneId: undefined }));
 });
 
 it('says so when herdr reports no layout', async () => {
   const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
-  const screen = await render(<SpaceLayout summary={{ ...w6, tabs: [], layouts: [] }} onClose={jest.fn()} />);
+  const screen = await render(<SpaceLayout summary={{ ...w6, tabs: [], layouts: [] }} onOpen={jest.fn()} />);
   expect(screen.getByTestId('layout-empty')).toBeOnTheScreen();
 });
 

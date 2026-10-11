@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -13,7 +13,7 @@ import {
 } from '@/lib/spaces/layout';
 import { useTheme } from '@/theme/ThemeProvider';
 import { avatarColor, spaceLayout } from '@/theme/tokens';
-import { canOpenPane, openPane } from './openPane';
+import { paneOpen, type PaneOpen } from './openPane';
 
 /**
  * A workspace's layout in basic shapes: each tab a rounded rectangle, titled,
@@ -22,13 +22,16 @@ import { canOpenPane, openPane } from './openPane';
  * you), a shell's in a neutral fill; the focused pane is ringed in the tint.
  * A tab zoomed on one pane draws that pane alone, with a zoom mark.
  *
- * Tapping a box closes the view (`onClose`) and opens the pane: an agent's
- * chat, or any other pane's terminal.
+ * Tapping a box hands what it opens to `onOpen` (`paneOpen`: an agent's
+ * chat, or any other pane's terminal), and the holder closes itself and opens
+ * it in the order its presentation needs: the iPad's card closes and opens at
+ * once, the phone's sheet hands the pane to the list under it. A box with
+ * nothing to open is drawn, disabled, and says so.
  *
  * Shared by the phone's sheet and the iPad's floating card, which differ only
  * in what holds it.
  */
-export function SpaceLayout({ summary, onClose }: { summary: ListedChat; onClose: () => void }) {
+export function SpaceLayout({ summary, onOpen }: { summary: ListedChat; onOpen: (open: PaneOpen) => void }) {
   const tabs = useMemo(() => spaceLayoutModel(summary), [summary]);
   // Measured, not the window's: the card and the sheet are narrower.
   const [width, setWidth] = useState(0);
@@ -48,17 +51,17 @@ export function SpaceLayout({ summary, onClose }: { summary: ListedChat; onClose
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spaceLayout.tabGap }}>
       {width > 0 && tabs.map((tab) => (
-        <TabShape key={tab.tabId} tab={tab} width={tabWidth} summary={summary} onClose={onClose} />
+        <TabShape key={tab.tabId} tab={tab} width={tabWidth} summary={summary} onOpen={onOpen} />
       ))}
     </View>
   );
 }
 
-function TabShape({ tab, width, summary, onClose }: {
+function TabShape({ tab, width, summary, onOpen }: {
   tab: LayoutTab;
   width: number;
   summary: ListedChat;
-  onClose: () => void;
+  onOpen: (open: PaneOpen) => void;
 }) {
   const { colors } = useTheme();
   // herdr measures in cells, which are taller than wide (`cellAspect`).
@@ -100,7 +103,7 @@ function TabShape({ tab, width, summary, onClose }: {
             width={Math.max(0, pane.width * innerWidth - spaceLayout.paneGap)}
             height={Math.max(0, pane.height * innerHeight - spaceLayout.paneGap)}
             summary={summary}
-            onClose={onClose}
+            onOpen={onOpen}
           />
         ))}
       </View>
@@ -108,29 +111,33 @@ function TabShape({ tab, width, summary, onClose }: {
   );
 }
 
-function PaneBox({ pane, left, top, width, height, summary, onClose }: {
+function PaneBox({ pane, left, top, width, height, summary, onOpen }: {
   pane: LayoutPane;
   left: number;
   top: number;
   width: number;
   height: number;
   summary: ListedChat;
-  onClose: () => void;
+  onOpen: (open: PaneOpen) => void;
 }) {
   const { colors, avatarPalette } = useTheme();
   const agent = pane.kind === 'agent';
   const fill = !agent ? colors.fillSubtle
     : pane.status === 'blocked' ? colors.attention : avatarColor(pane.agent ?? pane.label, avatarPalette);
-  const openable = canOpenPane(summary, pane);
+  const open = paneOpen(summary, pane);
   return (
     <Pressable
       testID={`layout-pane-${pane.paneId}`}
-      onPress={() => openPane(summary, pane, onClose)}
-      disabled={!openable}
+      onPress={() => {
+        if (open === null) return;
+        Keyboard.dismiss();
+        onOpen(open);
+      }}
+      disabled={open === null}
       accessibilityRole="button"
       accessibilityLabel={paneAccessibilityLabel(pane)}
-      accessibilityHint={agent ? 'Opens its chat' : "Opens the pane's terminal"}
-      accessibilityState={{ disabled: !openable, selected: pane.focused }}
+      accessibilityHint={open === null ? 'Nothing to open for this pane' : open.kind === 'chat' ? 'Opens its chat' : "Opens the pane's terminal"}
+      accessibilityState={{ disabled: open === null, selected: pane.focused }}
       style={({ pressed }) => ({
         position: 'absolute', left, top, width, height,
         overflow: 'hidden',
