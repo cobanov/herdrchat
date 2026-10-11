@@ -802,7 +802,13 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                       onPress={() => {
                         haptics.selection();
                         Keyboard.dismiss();
-                        openTerminal({ connectionId: connection.id, paneId: terminalPane, kind: 'agent', title: heading });
+                        openTerminal({
+                          connectionId: connection.id,
+                          paneId: terminalPane,
+                          kind: 'agent',
+                          terminalId: thread.agents.find((agent) => agent.paneId === terminalPane)?.terminalId ?? '',
+                          title: heading,
+                        });
                       }}
                       accessibilityRole="button"
                       accessibilityLabel="Terminal"

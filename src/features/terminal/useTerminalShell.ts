@@ -10,19 +10,9 @@ import {
 } from '../../../modules/herdr-ssh/src';
 import { feed, type TerminalSize } from '../../../modules/herdr-terminal/src';
 import { demoTerminalScreen } from '@/lib/demo/terminal';
-import type { HerdrClient } from '@/lib/herdr/client';
-import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
-import { leaveShellPane, zoomedOn, type PaneViewBefore, type TerminalPaneKind } from '@/lib/terminal/command';
 import { isDemo, transportFor, type Connection } from '@/state/connections';
 import type { TerminalPhase } from './status';
-import { terminalLaunch } from './target';
-
-/** What leaving the screen has to put back on the host: the zoom and focus a shell pane's attach moved. */
-interface Leave {
-  client: HerdrClient;
-  paneId: string;
-  before: PaneViewBefore;
-}
+import { noLaunchMessage, terminalLaunch, type TerminalPaneRef } from './target';
 
 /**
  * One pane's terminal shell, for as long as the screen is up.
@@ -35,20 +25,25 @@ interface Leave {
  *   same view shows under the scrollback of the last one.
  * - Leaving the screen hangs it up. Nothing runs on after the screen.
  *
- * A shell pane's attach zooms the pane in herdr first, so it fills the view,
- * and zoom and focus are herdr's SHARED state: the desktop's client zooms
- * too. Leaving undoes what the app did (`leaveShellPane`): the zoom unless
- * the pane was zoomed already, and the focus back to the pane that had it.
+ * Every attach is private to this screen (`attachCommand`): nothing on the
+ * host moves, so there is nothing to put back on leaving. `takeOver` is the
+ * one way to take a pane another client holds, and only the person calls it:
+ * the first open and every reconnect ask without it.
  */
-export function useTerminalShell({ connection, client, paneId, kind, onOpened }: {
+export function useTerminalShell({ connection, pane, onOpened }: {
   connection: Connection | null;
-  client: HerdrClient | null;
-  paneId: string;
-  kind: TerminalPaneKind;
+  pane: TerminalPaneRef;
   /** The shell is open and taking input. */
   onOpened?: () => void;
 }) {
-  const launch = useMemo(() => (connection === null ? null : terminalLaunch(connection, paneId, kind)), [connection, paneId, kind]);
+  const { paneId, kind, terminalId } = pane;
+  /** The pane's launch, and the same with `--takeover` for the person's Take over. */
+  const launches = useMemo(() => {
+    if (connection === null) return null;
+    const plain = terminalLaunch(connection, { paneId, kind, terminalId });
+    const takeover = terminalLaunch(connection, { paneId, kind, terminalId }, true);
+    return plain === null || takeover === null ? null : { plain, takeover };
+  }, [connection, paneId, kind, terminalId]);
   const [phase, setPhase] = useState<TerminalPhase>({ kind: 'waiting' });
   const [shellId, setShellId] = useState<string | null>(null);
   /** The view's size in cells, once it has one. */
@@ -58,11 +53,11 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
   /** An open is under way: a second size report must not start another. */
   const starting = useRef(false);
   const mounted = useRef(true);
-  const leave = useRef<Leave | null>(null);
 
-  const open = useCallback(async () => {
+  const open = useCallback(async (takeover = false) => {
     const cells = size.current;
-    if (cells === null || launch === null || starting.current) return;
+    if (cells === null || launches === null || starting.current) return;
+    const launch = takeover ? launches.takeover : launches.plain;
     starting.current = true;
     setPhase({ kind: 'opening' });
     try {
@@ -78,24 +73,10 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
           return;
         }
         const up = await transport.open();
-        // Left while dialling: this open zoomed nothing, but a reconnect's
-        // earlier shell did, and the cleanup left that to this open.
-        if (!mounted.current) {
-          putBack(leave);
-          return;
-        }
+        if (!mounted.current) return;
         if (!up.ok) {
           setPhase({ kind: 'failed', message: up.message });
           return;
-        }
-        if (kind === 'shell' && client !== null && leave.current === null) {
-          // As herdr had it before the app zoomed anything, read once: a
-          // reconnect zooms again, and must not take its own zoom for the
-          // person's.
-          const before = await viewBefore(client, paneId);
-          // Left while reading it: the launch line (the zoom) is never sent.
-          if (!mounted.current) return;
-          leave.current = { client, paneId, before };
         }
       }
       /**
@@ -122,11 +103,8 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
         },
       });
       if (!mounted.current) {
-        // Left while it opened. The cleanup left the zoom to this branch: the
-        // launch line may have zoomed the pane after the cleanup ran, so it is
-        // put back only once the channel is hung up.
+        // Left while it opened: hang it up, as leaving does.
         if (result.ok) await closeShell(result.shellId);
-        putBack(leave);
         return;
       }
       if (!result.ok) {
@@ -155,7 +133,7 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
     } finally {
       starting.current = false;
     }
-  }, [launch, client, paneId, kind, onOpened]);
+  }, [launches, onOpened]);
 
   const onSizeChange = useCallback((next: TerminalSize) => {
     const first = size.current === null;
@@ -163,12 +141,15 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
     if (first) void open();
   }, [open]);
 
-  const reconnect = useCallback(() => {
+  /** A new shell after the last ended; `takeover` only from the person's Take over. */
+  const reopen = useCallback((takeover: boolean) => {
     const previous = live.current;
     live.current = null;
     if (previous !== null) void closeShell(previous);
-    void open();
+    void open(takeover);
   }, [open]);
+  const reconnect = useCallback(() => reopen(false), [reopen]);
+  const takeOver = useCallback(() => reopen(true), [reopen]);
 
   /** Bytes from the accessory bar, to the shell that is open; nothing while none is. */
   const send = useCallback((text: string) => {
@@ -183,55 +164,16 @@ export function useTerminalShell({ connection, client, paneId, kind, onOpened }:
       const id = live.current;
       live.current = null;
       if (id !== null) void closeShell(id);
-      // An open still under way puts the zoom back itself, after it hangs
-      // up (see `open`): restoring here could run before its launch line.
-      if (!starting.current) putBack(leave);
     };
   }, []);
 
   // A pane no command can be written for never opens; said as a failure.
-  const shown: TerminalPhase = connection !== null && launch === null
-    ? { kind: 'failed', message: "This pane's id can't be passed to herdr safely." }
+  const shown: TerminalPhase = connection !== null && launches === null
+    ? { kind: 'failed', message: noLaunchMessage({ kind, terminalId }) }
     : phase;
-  return { phase: shown, shellId, onSizeChange, reconnect, send };
-}
-
-/** Undo what the app moved on the host, once: the ref is emptied. */
-function putBack(leave: { current: Leave | null }): void {
-  const left = leave.current;
-  leave.current = null;
-  if (left !== null) void restore(left);
+  return { phase: shown, shellId, onSizeChange, reconnect, takeOver, send };
 }
 
 function closedPhase(event: ShellClosedEvent): TerminalPhase {
   return { kind: 'closed', reason: event.reason, exitCode: event.exitCode ?? null, message: event.message ?? null };
-}
-
-async function viewBefore(client: HerdrClient, paneId: string): Promise<PaneViewBefore> {
-  try {
-    const snapshot = await client.snapshot();
-    return { zoomed: zoomedOn(snapshot.layouts, paneId), focusedPaneId: snapshot.focusedPaneId };
-  } catch {
-    // Unknown: unzoom on leaving (the app zoomed it), and leave focus alone.
-    return { zoomed: false, focusedPaneId: null };
-  }
-}
-
-/** Best-effort, both halves: an older herdr without zoom or `pane.focus` changes nothing. */
-async function restore({ client, paneId, before }: Leave): Promise<void> {
-  const { unzoom, refocus } = leaveShellPane(paneId, before);
-  if (unzoom !== null) {
-    try {
-      await client.transport.exec(unzoom, SEND_TIMEOUT_MS);
-    } catch {
-      // Nothing to tell anyone: the screen is gone.
-    }
-  }
-  if (refocus !== null) {
-    try {
-      await client.socket.call(refocus.method, refocus.params, SEND_TIMEOUT_MS);
-    } catch {
-      // As above.
-    }
-  }
 }

@@ -1,6 +1,6 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
-import { DEMO_HOST } from '../demo/fixtures';
+import { DEMO_HOST, DEMO_WORKSPACES } from '../demo/fixtures';
 import {
   DEMO_SHELL_PROMPT,
   DEMO_SHELL_PROMPT_TEXT,
@@ -19,6 +19,8 @@ describe("the Demo's shell pane", () => {
     const w6 = snapshot.panes.filter((pane) => pane.workspaceId === 'w6');
     expect(w6.map((pane) => [pane.paneId, pane.agent])).toEqual([['w6:p1', 'claude'], ['w6:p2', 'claude'], ['w6:p3', null]]);
     expect(w6[2]).toMatchObject({ cwd: '/home/demo/api', terminalId: 'term_w6_p3', title: null });
+    // The snapshot's terminal id is the fixture's, which its terminal attaches by.
+    expect(DEMO_WORKSPACES.find((w) => w.workspaceId === 'w6')?.shellPanes?.[0]?.terminalId).toBe('term_w6_p3');
     // Not an agent: the chats and the event stream never see it.
     expect(snapshot.agents.some((agent) => agent.paneId === 'w6:p3')).toBe(false);
   });
@@ -27,9 +29,13 @@ describe("the Demo's shell pane", () => {
 describe('demoTerminalScreen', () => {
   const host = { herdrPath: 'herdr', session: '' };
 
-  it("answers the shell pane's attach command with the recorded zsh session", () => {
-    const command = attachCommand({ paneId: 'w6:p3', kind: 'shell', ...host })!;
+  it("answers the shell pane's private attach, by its terminal id, with the recorded zsh session", () => {
+    const command = attachCommand({ paneId: 'w6:p3', kind: 'shell', terminalId: 'term_w6_p3', ...host })!;
+    expect(command).toContain("'terminal' 'attach' 'term_w6_p3'");
     expect(demoTerminalScreen(command, host)).toBe(DEMO_SHELL_SCREEN);
+    // A Take over reopens the same pane.
+    expect(demoTerminalScreen(attachCommand({ paneId: 'w6:p3', kind: 'shell', terminalId: 'term_w6_p3', takeover: true, ...host })!, host))
+      .toBe(DEMO_SHELL_SCREEN);
   });
 
   it('shows a prompt in /home/demo/api, an ls and a coloured git status, ending at the prompt', () => {
@@ -45,7 +51,7 @@ describe('demoTerminalScreen', () => {
   });
 
   it("answers an agent pane's attach (the chat's Terminal action) with its input box", () => {
-    const command = attachCommand({ paneId: 'w2:p1', kind: 'agent', ...host })!;
+    const command = attachCommand({ paneId: 'w2:p1', kind: 'agent', terminalId: null, ...host })!;
     expect(demoTerminalScreen(command, host)).toBe(demoAgentScreen('claude', '/home/demo/notes'));
     expect(visible(demoAgentScreen('claude', '/home/demo/notes'))).toContain('Claude');
   });
@@ -53,15 +59,15 @@ describe('demoTerminalScreen', () => {
   it("answers a machine's pane through the jump, with the machine's session", () => {
     const machine = DEMO_HOST.machines[0]!;
     const command = attachCommand({
-      paneId: 'w1:p1', kind: 'agent', herdrPath: 'herdr', session: machine.session, machine: { target: machine.target },
+      paneId: 'w1:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: machine.session, machine: { target: machine.target },
     })!;
     expect(demoTerminalScreen(command, host)).toBe(demoAgentScreen('claude', '/home/demo/kenneth-bot'));
   });
 
   it('answers nothing for a command no Demo pane is attached by', () => {
-    expect(demoTerminalScreen(attachCommand({ paneId: 'w9:p9', kind: 'shell', ...host })!, host)).toBeNull();
+    expect(demoTerminalScreen(attachCommand({ paneId: 'w9:p9', kind: 'shell', terminalId: 'term_w9_p9', ...host })!, host)).toBeNull();
     // The shell pane attached as an agent is not its command: herdr would refuse it.
-    expect(demoTerminalScreen(attachCommand({ paneId: 'w6:p3', kind: 'agent', ...host })!, host)).toBeNull();
+    expect(demoTerminalScreen(attachCommand({ paneId: 'w6:p3', kind: 'agent', terminalId: null, ...host })!, host)).toBeNull();
     expect(demoTerminalScreen('ls', host)).toBeNull();
   });
 });

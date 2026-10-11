@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import type { TerminalPaneKind } from '@/lib/terminal/command';
 import { terminalTheme } from '@/lib/terminal/theme';
-import { clientFor, isMachineConnection, useConnectionFor, useConnections } from '@/state/connections';
+import { isMachineConnection, useConnectionFor, useConnections } from '@/state/connections';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, terminal } from '@/theme/tokens';
 import { AccessoryBar, type StickyModifiers } from './AccessoryBar';
@@ -25,11 +25,13 @@ import { useTerminalShell } from './useTerminalShell';
  * For a pane no chat can show (a shell, a build, `vim`), and for an agent's
  * own screen when the chat cannot show what it is asking.
  */
-export default function TerminalScreen({ connectionId, paneId, kind, title, onBack }: {
+export default function TerminalScreen({ connectionId, paneId, kind, terminalId, title, onBack }: {
   /** The chat's connection: a host, or one of its machines. */
   connectionId: string;
   paneId: string;
   kind: TerminalPaneKind;
+  /** The pane's terminal (the snapshot's `terminal_id`), which a shell pane attaches by. */
+  terminalId: string | null;
   title: string;
   onBack: () => void;
 }) {
@@ -37,7 +39,6 @@ export default function TerminalScreen({ connectionId, paneId, kind, title, onBa
   const insets = useSafeAreaInsets();
   const connection = useConnectionFor(connectionId);
   const hydrated = useConnections((state) => state.hydrated);
-  const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
   const view = useRef<TerminalViewHandle>(null);
   // An iPad's hardware keyboard reaches the pane only once the terminal is
   // first responder: without this, Ctrl-C and the arrows went nowhere until a
@@ -46,7 +47,8 @@ export default function TerminalScreen({ connectionId, paneId, kind, title, onBa
   const onOpened = useCallback(() => {
     if (Platform.OS === 'ios' && Platform.isPad) void view.current?.focus();
   }, []);
-  const shell = useTerminalShell({ connection, client, paneId, kind, onOpened });
+  const pane = useMemo(() => ({ paneId, kind, terminalId }), [paneId, kind, terminalId]);
+  const shell = useTerminalShell({ connection, pane, onOpened });
   const theme = useMemo(() => terminalTheme(colors, scheme === 'dark'), [colors, scheme]);
   const fontSize = useTerminalFont((state) => state.size);
   const setFontSize = useTerminalFont((state) => state.set);
@@ -55,7 +57,14 @@ export default function TerminalScreen({ connectionId, paneId, kind, title, onBa
   const place = connection !== null && isMachineConnection(connection) ? connection.name : null;
 
   const header = (
-    <TerminalHeader title={title} place={place} phase={shell.phase} onBack={onBack} onReconnect={shell.reconnect} />
+    <TerminalHeader
+      title={title}
+      place={place}
+      phase={shell.phase}
+      onBack={onBack}
+      onReconnect={shell.reconnect}
+      onTakeOver={shell.takeOver}
+    />
   );
 
   if (!isTerminalAvailable || (hydrated && connection === null)) {

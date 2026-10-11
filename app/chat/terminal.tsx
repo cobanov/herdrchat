@@ -13,12 +13,14 @@ export default function TerminalRoute() {
   const router = useRouter();
   const connectionId = params.connectionId ?? '';
   const paneId = params.paneId ?? '';
+  const terminalId = params.terminalId !== undefined && params.terminalId !== '' ? params.terminalId : null;
   return (
     <TerminalScreen
-      key={`${connectionId}:${paneId}`}
+      key={`${connectionId}:${paneId}:${terminalId ?? ''}`}
       connectionId={connectionId}
       paneId={paneId}
       kind={params.kind === 'agent' ? 'agent' : 'shell'}
+      terminalId={terminalId}
       title={params.title !== undefined && params.title !== '' ? params.title : 'Terminal'}
       onBack={() => router.back()}
     />

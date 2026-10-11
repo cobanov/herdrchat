@@ -55,22 +55,11 @@ jest.mock('@/theme/ThemeProvider', () => ({
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 
-const mockExec = jest.fn(async (_command: string, _timeout: number) => ({ ok: true, stdout: '', stderr: '', exitCode: 0 }));
-const mockSocketCall = jest.fn(async (_method: string, _params: unknown, _timeout: number) => ({}));
-const mockClient = {
-  snapshot: async () => ({
-    focusedPaneId: 'w6:p1',
-    layouts: [{ focusedPaneId: 'w6:p1', zoomed: false, panes: [{ paneId: 'w6:p1' }, { paneId: 'w6:p3' }] }],
-  }),
-  transport: { exec: (command: string, timeout: number) => mockExec(command, timeout) },
-  socket: { call: (method: string, params: unknown, timeout: number) => mockSocketCall(method, params, timeout) },
-};
 const mockTransportOpen = jest.fn(async () => ({ ok: true, fingerprint: 'SHA256:x' }));
 let mockConnection: Record<string, unknown> | null = null;
 jest.mock('@/state/connections', () => ({
   useConnectionFor: () => mockConnection,
   useConnections: (select: (state: { hydrated: boolean }) => unknown) => select({ hydrated: true }),
-  clientFor: () => mockClient,
   isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
   isDemo: (id: string) => id === 'demo',
   transportFor: () => ({ open: mockTransportOpen }),
@@ -96,10 +85,10 @@ beforeEach(() => {
 
 it("opens the Demo's shell pane at the view's size, shows its recording, and hangs up on leaving", async () => {
   mockConnection = demo;
-  const screen = await render(<TerminalScreen connectionId="demo" paneId="w6:p3" kind="shell" title="zsh · demo/api" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="demo" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="zsh · demo/api" onBack={jest.fn()} />);
   await settle();
   expect(mockOpenShell).toHaveBeenCalledWith('demo', expect.objectContaining({ cols: 80, rows: 24 }));
-  // No SSH under the Demo: nothing to dial, nothing to zoom or put back.
+  // No SSH under the Demo: nothing to dial.
   expect(mockTransportOpen).not.toHaveBeenCalled();
   const shellId = mockOpenShell.mock.results[0] === undefined ? '' : (await mockOpenShell.mock.results[0].value).shellId;
   expect(mockFeed).toHaveBeenCalledWith(shellId, Buffer.from(DEMO_SHELL_SCREEN, 'utf8').toString('base64'));
@@ -108,12 +97,11 @@ it("opens the Demo's shell pane at the view's size, shows its recording, and han
   expect(screen.queryByTestId('terminal-reconnect')).toBeNull();
   await screen.unmount();
   expect(mockCloseShell).toHaveBeenCalledWith(shellId);
-  expect(mockExec).not.toHaveBeenCalled();
 });
 
 it('sends the bar\'s keys as a terminal does, with Ctrl held for one key', async () => {
   mockConnection = demo;
-  const screen = await render(<TerminalScreen connectionId="demo" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="demo" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
   await settle();
   await fireEvent.press(screen.getByTestId('terminal-key-esc'));
   expect(mockWrite).toHaveBeenLastCalledWith(expect.any(String), '\u001b');
@@ -136,13 +124,16 @@ it('sends the bar\'s keys as a terminal does, with Ctrl held for one key', async
 
 // A route change takes the connection, and the shell with it. The screen says
 // so and offers one tap back; the new shell goes to the same view.
-it('says the connection dropped, reconnects on a tap, and on leaving puts back the zoom and focus it moved', async () => {
+it('attaches a shell pane privately, says the connection dropped, and reconnects on a tap without taking over', async () => {
   mockConnection = host;
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
   await settle();
   expect(mockTransportOpen).toHaveBeenCalledTimes(1);
   const first = (await mockOpenShell.mock.results[0]?.value).shellId as string;
-  expect(mockOpenShell.mock.calls[0]?.[1].command).toContain("'session' 'attach' 'default'");
+  const command = mockOpenShell.mock.calls[0]?.[1].command as string;
+  expect(command).toContain("'terminal' 'attach' 'term_w6_p3'");
+  // Nothing shared: no zoom, no session attach, no takeover.
+  expect(command).not.toMatch(/zoom|session|--takeover/);
   await act(async () => mockClosed?.({ shellId: first, reason: 'connection_lost' }));
   expect(screen.getByTestId('terminal-status')).toHaveTextContent('Connection lost');
   expect(screen.getByTestId('error-banner')).toHaveTextContent(/dropped/);
@@ -151,21 +142,19 @@ it('says the connection dropped, reconnects on a tap, and on leaving puts back t
   await fireEvent.press(screen.getByTestId('terminal-reconnect'));
   await settle();
   expect(mockOpenShell).toHaveBeenCalledTimes(2);
+  expect(mockOpenShell.mock.calls[1]?.[1].command).not.toContain('--takeover');
   const second = (await mockOpenShell.mock.results[1]?.value).shellId as string;
   expect(screen.getByTestId('terminal-view')).toHaveProp('accessibilityValue', { text: second });
   expect(screen.getByTestId('terminal-status')).toHaveTextContent('Connected');
   await screen.unmount();
   await settle();
   expect(mockCloseShell).toHaveBeenCalledWith(second);
-  // The app zoomed the pane (it was not before) and herdr's focus was on p1.
-  expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("'zoom' '--pane' 'w6:p3' '--off'"), expect.any(Number));
-  expect(mockSocketCall).toHaveBeenCalledWith('pane.focus', { pane_id: 'w6:p1' }, expect.any(Number));
 });
 
 it('says why the shell did not open, and tries again on Reconnect', async () => {
   mockConnection = host;
   mockOpenShell.mockResolvedValueOnce({ ok: false, code: 'not_connected', message: 'No live connection for this server.' });
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p1" kind="agent" title="api" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p1" kind="agent" terminalId={null} title="api" onBack={jest.fn()} />);
   await settle();
   expect(screen.getByTestId('terminal-status')).toHaveTextContent('Not connected');
   expect(screen.getByTestId('error-banner')).toHaveTextContent('No live connection for this server.');
@@ -173,15 +162,12 @@ it('says why the shell did not open, and tries again on Reconnect', async () => 
   await settle();
   expect(screen.getByTestId('terminal-status')).toHaveTextContent('Connected');
   await screen.unmount();
-  // An agent pane's attach zooms nothing, so leaving puts nothing back.
-  expect(mockExec).not.toHaveBeenCalled();
-  expect(mockSocketCall).not.toHaveBeenCalled();
 });
 
 it('says so where this build has no terminal, rather than a blank screen', async () => {
   mockConnection = host;
   mockAvailable = false;
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
   await settle();
   expect(screen.getByText('No terminal here')).toBeOnTheScreen();
   expect(mockOpenShell).not.toHaveBeenCalled();
@@ -197,7 +183,7 @@ it('shows a shell that ended before its open resolved as ended, with Reconnect',
     options.onClosed?.({ shellId: 't-early', reason: 'exited', exitCode: 127 });
     return { ok: true, shellId: 't-early' };
   });
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p1" kind="agent" title="api" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p1" kind="agent" terminalId={null} title="api" onBack={jest.fn()} />);
   await settle();
   expect(screen.getByTestId('terminal-status')).toHaveTextContent('Ended with exit 127');
   expect(screen.getByTestId('error-banner')).toHaveTextContent(/isn't installed/);
@@ -206,35 +192,59 @@ it('shows a shell that ended before its open resolved as ended, with Reconnect',
   await screen.unmount();
 });
 
-// Zoom is herdr's shared state: the desktop sees it too. Leaving while the
-// terminal was still connecting used to zoom the pane after the screen was
-// gone, with nothing left to undo it.
-it('zooms nothing when left while still dialling the host', async () => {
+// herdr refuses a second attach on a pane (exit 1). Reconnect asks again,
+// politely; only the person's Take over passes --takeover, which detaches the
+// other client.
+it('offers Take over when herdr refused the attach, and takes over only on that tap', async () => {
   mockConnection = host;
-  let dialled: (value: { ok: true; fingerprint: string }) => void = () => undefined;
-  mockTransportOpen.mockImplementationOnce(() => new Promise((resolve) => { dialled = resolve; }));
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  mockOpenShell.mockImplementationOnce(async (_id: string, options: { onClosed?: Closed }) => {
+    options.onClosed?.({ shellId: 't-held', reason: 'exited', exitCode: 1 });
+    return { ok: true, shellId: 't-held' };
+  });
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
   await settle();
+  expect(screen.getByTestId('error-banner')).toHaveTextContent('herdr could not attach. Another client may be attached to this pane, or it may have closed.');
+  expect(screen.getByTestId('terminal-takeover')).toBeOnTheScreen();
+  expect(screen.getByTestId('terminal-reconnect')).toBeOnTheScreen();
+  expect(mockOpenShell.mock.calls[0]?.[1].command).not.toContain('--takeover');
+  // Reconnect is refused again: still no takeover.
+  mockOpenShell.mockImplementationOnce(async (_id: string, options: { onClosed?: Closed }) => {
+    options.onClosed?.({ shellId: 't-held-2', reason: 'exited', exitCode: 1 });
+    return { ok: true, shellId: 't-held-2' };
+  });
+  await fireEvent.press(screen.getByTestId('terminal-reconnect'));
+  await settle();
+  expect(mockOpenShell.mock.calls[1]?.[1].command).not.toContain('--takeover');
+  expect(screen.getByTestId('terminal-takeover')).toBeOnTheScreen();
+  await fireEvent.press(screen.getByTestId('terminal-takeover'));
+  await settle();
+  expect(mockOpenShell.mock.calls[2]?.[1].command).toMatch(/'terminal' 'attach' 'term_w6_p3' '--takeover'$/);
+  expect(screen.getByTestId('terminal-status')).toHaveTextContent('Connected');
+  expect(screen.queryByTestId('terminal-takeover')).toBeNull();
   await screen.unmount();
-  await act(async () => dialled({ ok: true, fingerprint: 'SHA256:x' }));
-  await settle();
-  expect(mockOpenShell).not.toHaveBeenCalled();
-  expect(mockExec).not.toHaveBeenCalled();
 });
 
-it('hangs up and then puts the zoom back when left while the shell was opening', async () => {
+// An older herdr's snapshot has no terminal id: there is no private attach,
+// and the shared session view is never put in its place.
+it("says a shell pane needs a newer herdr when it has no terminal id, and opens nothing", async () => {
+  mockConnection = host;
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId={null} title="Terminal" onBack={jest.fn()} />);
+  await settle();
+  expect(screen.getByTestId('error-banner')).toHaveTextContent("This pane can't be opened on this herdr. It needs herdr 0.9 or newer.");
+  expect(screen.queryByTestId('terminal-takeover')).toBeNull();
+  expect(mockOpenShell).not.toHaveBeenCalled();
+  await screen.unmount();
+});
+
+it('hangs up a shell that opened after the screen was left', async () => {
   mockConnection = host;
   let opened: (value: { ok: true; shellId: string }) => void = () => undefined;
   mockOpenShell.mockImplementationOnce(() => new Promise((resolve) => { opened = resolve; }));
-  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" title="Terminal" onBack={jest.fn()} />);
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
   await settle();
   expect(mockOpenShell).toHaveBeenCalledTimes(1);
   await screen.unmount();
-  // Not yet: the launch line may still zoom after this.
-  expect(mockExec).not.toHaveBeenCalled();
   await act(async () => opened({ ok: true, shellId: 't-late' }));
   await settle();
   expect(mockCloseShell).toHaveBeenCalledWith('t-late');
-  expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("'zoom' '--pane' 'w6:p3' '--off'"), expect.any(Number));
-  expect(mockCloseShell.mock.invocationCallOrder[0]).toBeLessThan(mockExec.mock.invocationCallOrder[0] ?? 0);
 });

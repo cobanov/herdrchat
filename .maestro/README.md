@@ -27,7 +27,7 @@ where regressions are found.
 | `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
 | `regression/subagents` | a subagent's card in the thread running, then done; its chevron opening the agent's own transcript, read only, with its type and its answer; the review workflow's card opening its run with both phases and an agent still running; a workflow agent opening its transcript (screenshots `subagent-running`, `subagent-thread`, `workflow`) |
 | `regression/slash-commands` | the `/` palette from the Demo's catalogue: Built-in and Skills sections, a built-in's hint (`/model [model]`), the hidden built-in left out, narrowing to one headerless ranked list (`/release-notes`, then `/review`), `/review` (optional `[pr]`) sent at once and answered, `/add-dir` filling in with its required `<path>` hint after it until something is typed, `/compact` (it rewrites the conversation) only filled from a fresh `/`, then sent by hand with its note in the thread, the notes folder's own `/notes:summarise` (screenshots `slash-palette-<appearance>`, `slash-filled-<appearance>`: the hint must start right after the caret) |
-| `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
+| `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect, no Take over), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
 
 Maestro cannot press hardware-keyboard key commands, so these are checked by
 hand on an iPad with a keyboard, after a native build:
@@ -60,29 +60,33 @@ The Demo's terminal is an echo shell fed a recording, so the flow above proves
 the screen, not the attach. After a native build, on a real host (Gimel), with
 herdr open on the desktop as well, check each of these and what it should do:
 
-- **Zoom and focus, before, during and after.** Note which workspace, tab and
-  pane the desktop shows. Open a shell pane's Terminal row: the desktop
-  switches to that pane's workspace and tab and zooms the pane (herdr's zoom
-  and focus are shared by every client). Back out: the zoom is gone (unless
-  the pane was zoomed before) and focus is on the pane that had it. Known gap:
-  that workspace's active tab stays the pane's tab.
-- **Leaving while connecting.** Tap a shell pane's row and press Back while the
-  header still says Connecting…: the desktop's zoom and focus end as they
-  were, not zoomed.
-- **The app backgrounded or killed while attached.** The channel drops and no
-  unzoom runs: the pane stays zoomed on the desktop. Undo it there with herdr's
-  zoom key, or `herdr pane zoom --pane <id> --off`. Say if this happens to
-  you in practice.
+- **Nothing moves on the desktop.** On Gimel, note which workspace, tab and
+  pane the desktop shows, and its sidebar. Open a shell pane's Terminal row
+  from the iPad: the iPad shows that pane alone (no herdr sidebar, no
+  header), and on the desktop nothing zoomed, focus did not move and the
+  sidebar did not change. Type in it and back out: still nothing moved on the
+  desktop. The pane's size follows the iPad while attached and comes back on
+  leaving; that is the only shared effect.
+- **Two of our clients on one pane.** While the iPad holds a shell pane's
+  terminal, open the same pane from the phone: the phone's banner says "herdr
+  could not attach. Another client may be attached to this pane, or it may
+  have closed." with Take over beside Reconnect, and the iPad is untouched.
+  Reconnect on the phone is refused the same way. Tap Take over: the phone
+  shows the pane, and the iPad's terminal ends; record what its header says
+  (expected "Ended", or "Ended with exit N"). Reconnect on the iPad is then
+  refused, with Take over offered, until the phone leaves; after that it
+  attaches again.
+- **Leaving while connecting, or the app killed while attached.** Nothing to
+  undo on the host: the desktop shows what it showed before.
 - **An agent pane through a chat's header Terminal.** Watch the desktop: does
   the agent's pane shrink to the phone's size while the phone is attached
   (`agent attach` draws it at the client's size), and get its size back on
-  leaving? Does the desktop's own client need `--takeover`, or reflow?
-- **Phone upright.** herdr draws its mobile layout (64 columns or fewer): a
-  two-line header over the pane, no sidebar. On its side, or on an iPad, the
-  sidebar shows beside the pane; herdr's prefix then `b` hides it.
+  leaving? Nothing else on the desktop should move.
+- **Phone upright, on its side, and the iPad.** The pane alone at every
+  width: no herdr sidebar or header, whatever the size.
 - **Scrolling.** After `git log` (or in an agent's pane), a one-finger swipe up
   scrolls herdr's history of the pane, a swipe down comes back; it does not
-  select text or drag a split. A tap still clicks (a sidebar row). A pinch
+  select text or drag a split. A tap still clicks. A pinch
   changes the font size and moves nothing in herdr.
 - **Programs.** `htop` (colours, live, `q` quits), `vim` (arrows, Esc from the
   bar, `:q`), a `git log` with colours, the agent's own `/model` panel through
@@ -92,10 +96,11 @@ herdr open on the desktop as well, check each of these and what it should do:
   scrollback. Ctrl-B is herdr's prefix and does not reach the program.
 - **Rotation.** Rotate the iPad: the pane redraws at the new size, nothing
   left over from the old one.
-- **Light and dark.** Screenshot herdr's chrome (its header or sidebar) in
-  both: it should sit on the app's terminal background, not clash with it.
+- **Light and dark.** Screenshot a shell pane and an agent pane in both: what
+  herdr draws should sit on the app's terminal background, not clash with it.
 - **klaw through the machine jump.** Open a shell pane on klaw: the same
-  attach, through the host, with the header naming klaw.
+  private attach, through the host, with the header naming klaw (klaw's herdr
+  must be 0.9 or newer, or the screen says so).
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

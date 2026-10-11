@@ -11,7 +11,8 @@
  * built, by building it again for every pane the Demo has and comparing, the
  * way the Demo unwraps a machine jump. A change to the builder then cannot
  * leave the Demo answering a command the app no longer sends: it answers
- * nothing, and the flow that opens the terminal fails.
+ * nothing, and the flow that opens the terminal fails. A Take over's command
+ * (`--takeover`) gets the same screen.
  */
 import { agentName } from '../herdr/models';
 import { attachCommand, paneKind } from '../terminal/command';
@@ -86,15 +87,17 @@ export function demoTerminalScreen(
   host: DemoTerminalHost = { herdrPath: 'herdr', session: null },
   fixtures: DemoFixtures = DEMO_HOST
 ): string | null {
-  const own = screenOn(command, fixtures, (paneId, kind) =>
-    attachCommand({ paneId, kind, herdrPath: host.herdrPath, session: host.session })
-  );
-  if (own !== null) return own;
-  for (const machine of fixtures.machines) {
-    const screen = screenOn(command, machine.fixtures, (paneId, kind) =>
-      attachCommand({ paneId, kind, herdrPath: 'herdr', session: machine.session, machine: { target: machine.target } })
+  for (const takeover of [false, true]) {
+    const own = screenOn(command, fixtures, (pane) =>
+      attachCommand({ ...pane, takeover, herdrPath: host.herdrPath, session: host.session })
     );
-    if (screen !== null) return screen;
+    if (own !== null) return own;
+    for (const machine of fixtures.machines) {
+      const screen = screenOn(command, machine.fixtures, (pane) =>
+        attachCommand({ ...pane, takeover, herdrPath: 'herdr', session: machine.session, machine: { target: machine.target } })
+      );
+      if (screen !== null) return screen;
+    }
   }
   return null;
 }
@@ -102,15 +105,16 @@ export function demoTerminalScreen(
 function screenOn(
   command: string,
   fixtures: DemoFixtures,
-  build: (paneId: string, kind: 'agent' | 'shell') => string | null
+  build: (pane: { paneId: string; kind: 'agent' | 'shell'; terminalId: string | null }) => string | null
 ): string | null {
   for (const workspace of fixtures.workspaces) {
     for (const pane of demoPanes(workspace)) {
       const agent = pane.agent ?? 'claude';
-      if (build(pane.paneId, paneKind(agent)) === command) return demoAgentScreen(agent, pane.cwd);
+      // An agent pane is attached by its pane id; its terminal id plays no part.
+      if (build({ paneId: pane.paneId, kind: paneKind(agent), terminalId: null }) === command) return demoAgentScreen(agent, pane.cwd);
     }
     for (const pane of workspace.shellPanes ?? []) {
-      if (build(pane.paneId, 'shell') === command) return DEMO_SHELL_SCREEN;
+      if (build({ paneId: pane.paneId, kind: 'shell', terminalId: pane.terminalId }) === command) return DEMO_SHELL_SCREEN;
     }
   }
   return null;

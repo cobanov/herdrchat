@@ -620,7 +620,7 @@ export class DemoHost implements HerdrTransport {
         focused: pane.paneId === this.fixtures.focusedPaneId,
         pane_id: pane.paneId,
         tab_id: `${w.workspaceId}:t1`,
-        terminal_id: `term_${pane.paneId.replace(':', '_')}`,
+        terminal_id: pane.terminalId,
         workspace_id: w.workspaceId,
       })),
     ]);

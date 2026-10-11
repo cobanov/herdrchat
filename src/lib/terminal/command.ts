@@ -1,47 +1,48 @@
 import { sshJump } from '../herdr/machine';
-import { DEFAULT_SESSION, isNamedSession } from '../herdr/session';
-import { commandWord, shellCommand, shellQuote, withPath } from '../herdr/shell';
+import { isNamedSession } from '../herdr/session';
+import { shellCommand, shellQuote, withPath } from '../herdr/shell';
 import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/timeouts';
 
 /**
  * The command a terminal runs on the host to show one herdr pane.
  *
- * Measured on herdr 0.9 over a real SSH PTY (2026-10-11):
+ * Every pane attaches PRIVATELY: herdr draws that one pane to this client and
+ * nothing on the host moves. Measured on herdr 0.9.3 over a PTY (2026-10-11):
  *
- * - `herdr agent attach <pane>` attaches to an AGENT pane only. It draws the
- *   pane at the client's PTY size, and gives the pane its own size back when
- *   the channel hangs up. A shell pane answers `agent_not_found`, by pane id
- *   and by terminal id alike.
- * - `herdr session attach <name>` attaches to the whole multiplexer, from an
- *   SSH PTY (not nested inside herdr, so it is allowed). Zooming the pane
- *   first makes it fill the view.
- *
- * So an agent pane gets `agent attach`, and a shell pane gets `pane zoom` and
- * `session attach`. The third way, polling `pane read` into the emulator, was
- * not needed and is not built.
- *
- * What a shell pane's attach shows, measured on herdr 0.9.3 against a
- * throwaway session over a PTY (2026-10-11):
- *
- * - `pane zoom --on` on a pane in a tab that is not active, in a workspace
- *   that is not focused, makes that workspace focused and that tab active, and
- *   focuses the pane. A client that attaches after it opens on that pane, so
- *   no separate workspace or tab focus is needed first.
- * - At 64 columns or fewer (a phone held upright) herdr draws its mobile
- *   layout: a two-line header over the pane, no sidebar. Wider (an iPad, a
- *   phone on its side) it draws its sidebar, about 25 columns, beside the
- *   pane; herdr's prefix then `b` hides it.
+ * - `herdr agent attach <pane>` is, in herdr's source, "find the agent's
+ *   terminal" followed by the same terminal attach that
+ *   `herdr terminal attach <terminal_id> [--takeover]` runs (added in herdr
+ *   0.9.0). The second takes ANY pane's terminal id, a shell pane's included,
+ *   and refuses a pane id (`terminal w4:pB not found`): the id comes from the
+ *   snapshot's `terminal_id`.
+ * - `terminal attach` on a shell pane draws the pane alone, with no sidebar
+ *   and no header; typing reaches it; herdr's prefix (Ctrl-B) then `q`
+ *   detaches and the command exits 0. herdr's focused pane was the same
+ *   before, during and after: no zoom, no focus, no sidebar moved.
+ * - A second attach on a terminal that already has one exits 1, with
+ *   "terminal term_… already has an attached client; retry with --takeover"
+ *   on the screen, and the first stays up. `--takeover` takes the pane and
+ *   detaches the first. A desktop's herdr on the session is not such a
+ *   client: the first attach needs no `--takeover` while it is up.
+ * - What stays shared, as in any PTY two clients share (tmux too): while
+ *   attached, the pane is drawn at this client's size, and gets its own back
+ *   on detach.
  * - herdr's prefix key (Ctrl-B by default) is herdr's, not the pane's: Ctrl-B
- *   typed for the program (vim's page up, readline's back a character) is
- *   taken by herdr and does not reach it.
- * - `pane zoom --off` focuses the pane too, which is why leaving unzooms
- *   first and only then gives the focus back.
+ *   typed for the program (vim's page up) is taken by herdr.
+ * - Without a TTY it fails (`Inappropriate ioctl for device`); the app always
+ *   gives it a PTY.
  *
- * ZOOM AND FOCUS ARE SHARED STATE. `pane zoom --on` zooms the pane for every
- * client attached to the session, the desktop's too, and moves herdr's focus
- * to it. Leaving the terminal undoes the zoom (`leaveShellPane`) when the app
- * was the one that zoomed it; the focus goes back through the socket API's
- * `pane.focus`, since the CLI only focuses a pane by direction.
+ * So an agent pane gets `agent attach` (it needs no terminal id), and a shell
+ * pane `terminal attach`. The shell pane's earlier path, `pane zoom --on` and
+ * then `session attach`, is gone: zoom, focus and the sidebar are herdr's
+ * SHARED state, so the desktop zoomed with the phone and the sidebar on an
+ * iPad moved the desktop along. "Affecting the state of other viewers or
+ * clients is unacceptable" (Kenneth). A herdr too old to send a terminal id
+ * gets no terminal for a shell pane rather than that.
+ *
+ * `--takeover` is only ever the person's choice (the screen's Take over): a
+ * reconnect that silently kicked another client off the pane would be the
+ * same kind of harm.
  *
  * Everything here is ONE string for the native PTY (`openShell` in
  * herdr-ssh), which types ` exec /bin/sh -c '<marker>; <command>'` into the
@@ -66,6 +67,14 @@ export function paneKind(agent: string | null): TerminalPaneKind {
 export interface TerminalTarget {
   paneId: string;
   kind: TerminalPaneKind;
+  /**
+   * The pane's terminal (the snapshot's `terminal_id`), which a shell pane is
+   * attached by. Null from a herdr older than 0.9, where a shell pane has no
+   * private attach and so no terminal.
+   */
+  terminalId: string | null;
+  /** Take the pane from another attached client. Only ever the person's choice. */
+  takeover?: boolean;
   /** The host's `herdr` path (`Connection.herdrPath`); `herdr` on a machine. */
   herdrPath: string;
   /** The herdr session the pane lives in: the host's, or the machine's. */
@@ -83,9 +92,10 @@ export interface TerminalTarget {
 const LOCALE = 'export LANG="${LANG:-en_US.UTF-8}"';
 
 /**
- * The command to run on the host, or null when it cannot be written without a
- * backslash (a pane id, path, session or machine target with a `\` in it, none
- * of which herdr or ssh produce).
+ * The command to run on the host, or null when there is none: a shell pane
+ * without a terminal id (`needsNewerHerdr`), or a part that cannot be written
+ * without a backslash (a pane id, terminal id, path, session or machine target
+ * with a `\` in it, none of which herdr or ssh produce).
  */
 export function attachCommand(target: TerminalTarget): string | null {
   const inner = paneCommand(target, target.machine === undefined || target.machine === null ? target.herdrPath : 'herdr');
@@ -98,21 +108,25 @@ export function attachCommand(target: TerminalTarget): string | null {
 /** The command on the computer the pane is on, with its PATH, locale and session. */
 function paneCommand(target: TerminalTarget, herdrPath: string): string | null {
   const session = isNamedSession(target.session) ? target.session.trim() : null;
-  if ([target.paneId, herdrPath, session ?? ''].some((part) => part.includes('\\'))) return null;
-  const herdr = commandWord(herdrPath);
+  if (needsNewerHerdr(target)) return null;
+  const attach = target.kind === 'agent'
+    ? [herdrPath, 'agent', 'attach', target.paneId]
+    : [herdrPath, 'terminal', 'attach', target.terminalId ?? ''];
+  if (target.takeover === true) attach.push('--takeover');
+  if ([...attach, session ?? ''].some((part) => part.includes('\\'))) return null;
   const parts = [LOCALE];
   if (session !== null) parts.push(`export HERDR_SESSION=${shellQuote(session)}`);
-  if (target.kind === 'agent') {
-    parts.push(`exec ${shellCommand([herdrPath, 'agent', 'attach', target.paneId])}`);
-  } else {
-    // Zoom first, so the pane fills the view the attach draws. A herdr
-    // without zoom still attaches, to the whole session, rather than failing.
-    // Its JSON reply would land on the screen after the launch marker, so it
-    // goes nowhere.
-    parts.push(`${herdr} pane zoom --pane ${shellQuote(target.paneId)} --on >/dev/null 2>&1`);
-    parts.push(`exec ${shellCommand([herdrPath, 'session', 'attach', session ?? DEFAULT_SESSION])}`);
-  }
+  parts.push(`exec ${shellCommand(attach)}`);
   return noBackslashes(withPath(parts.join('; ')));
+}
+
+/**
+ * Whether the pane cannot be attached on this herdr at all: a shell pane whose
+ * snapshot carried no terminal id, from a herdr older than 0.9. Said as such,
+ * never answered with the shared session view.
+ */
+export function needsNewerHerdr(target: Pick<TerminalTarget, 'kind' | 'terminalId'>): boolean {
+  return target.kind === 'shell' && (target.terminalId === null || target.terminalId === '');
 }
 
 /**
@@ -146,62 +160,4 @@ export function noBackslashes(command: string): string {
 /** How long opening the terminal may take: the jump's connect time on top for a machine. */
 export function terminalStartTimeout(target: Pick<TerminalTarget, 'machine'>): number {
   return TERMINAL_START_TIMEOUT_MS + (target.machine === undefined || target.machine === null ? 0 : JUMP_CONNECT_TIMEOUT_MS);
-}
-
-/**
- * What to undo when a shell pane's terminal closes: herdr's zoom, unless the
- * pane was already zoomed before the app zoomed it, and the focus, back to
- * the pane that had it.
- *
- * The zoom goes through the CLI (`unzoomCommand`, run through the same
- * transport as everything else, so a machine's goes to the machine), and the
- * focus through the socket's `pane.focus`, which is the only direct focus
- * herdr has. Either may fail on an old herdr; both are best-effort.
- */
-export interface ShellPaneLeave {
-  /** Null when the zoom was there before: undoing it would undo the person's own. */
-  unzoom: string | null;
-  /** The socket request that gives focus back, or null when nothing moved it. */
-  refocus: { method: 'pane.focus'; params: { pane_id: string } } | null;
-}
-
-/** Zoom and focus as they were before the terminal opened, from the last snapshot. */
-export interface PaneViewBefore {
-  /** The tab's `zoomed`, when its focused pane was this one. */
-  zoomed: boolean;
-  /** herdr's focused pane (`focused_pane_id`), when the snapshot had one. */
-  focusedPaneId: string | null;
-}
-
-export function leaveShellPane(paneId: string, before: PaneViewBefore): ShellPaneLeave {
-  return {
-    unzoom: before.zoomed ? null : unzoomCommand(paneId),
-    refocus:
-      before.focusedPaneId === null || before.focusedPaneId === paneId
-        ? null
-        : { method: 'pane.focus', params: { pane_id: before.focusedPaneId } },
-  };
-}
-
-/**
- * `herdr pane zoom --pane <id> --off`, for the client's transport (which adds
- * the PATH, the session and the machine jump). `herdr` by name: the client's
- * own path is private to it, and the transport's `withPath` covers the usual
- * install places. The pane must be passed as `--pane`; positionally herdr
- * answers "unknown option".
- */
-export function unzoomCommand(paneId: string, herdrPath = 'herdr'): string {
-  return withPath(shellCommand([herdrPath, 'pane', 'zoom', '--pane', paneId, '--off']));
-}
-
-/**
- * Whether the pane's tab was already zoomed on it, from the snapshot's layouts.
- * Only that pane's tab counts: a zoom on another tab is not this terminal's.
- */
-export function zoomedOn(
-  layouts: readonly { focusedPaneId: string | null; zoomed: boolean; panes: readonly { paneId: string }[] }[] | null,
-  paneId: string
-): boolean {
-  const tab = layouts?.find((layout) => layout.panes.some((pane) => pane.paneId === paneId));
-  return tab !== undefined && tab.zoomed && tab.focusedPaneId === paneId;
 }

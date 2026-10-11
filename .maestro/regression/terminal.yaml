@@ -5,6 +5,13 @@
 # a coloured `git status`. Then the chat w2's header opens the same terminal
 # on its agent's pane.
 #
+# Every attach is private (`herdr terminal attach` by the pane's terminal id,
+# `herdr agent attach` for an agent): nothing on the host zooms or moves. That
+# needs a host, so it is checked by hand on a device ("Terminal, by hand on a
+# device" in .maestro/README.md: nothing moves on the desktop; two clients on
+# one pane, and Take over). Here: the Demo's shell pane opens by its terminal
+# id, and Take over is not offered on a pane nobody else holds.
+#
 # What SwiftTerm draws is not reliably in the accessibility tree, so the
 # prompt and the echo are checked in the screenshots, which must be opened:
 # `terminal-<appearance>` must show the coloured prompt, the listing and
@@ -32,6 +39,8 @@ appId: dev.herdr.HerdrChat
     id: terminal-view
 - assertNotVisible:
     id: terminal-reconnect
+- assertNotVisible:
+    id: terminal-takeover
 # The bar's keys go to the shell; the echo shell takes them without a crash.
 - tapOn:
     id: terminal-key-tab

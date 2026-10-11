@@ -69,8 +69,9 @@ feed(shellId, base64);         // the Demo's recorded screens, into an echo shel
   herdr scrolls the pane's history with. Taps are still clicks. With the mouse
   off, the swipe scrolls SwiftTerm's own scrollback.
 - herdr's prefix (Ctrl-B by default) is herdr's: typed in the terminal, it
-  never reaches the pane's program. At 64 columns or fewer herdr draws its
-  mobile layout (no sidebar); wider, its sidebar shows beside the pane.
+  never reaches the pane's program (prefix then `q` detaches). Both attaches
+  (`agent attach`, `terminal attach`) draw the one pane alone, with no herdr
+  sidebar or header.
 
 What to check by hand on a device is listed in `.maestro/README.md`
 ("Terminal, by hand on a device").

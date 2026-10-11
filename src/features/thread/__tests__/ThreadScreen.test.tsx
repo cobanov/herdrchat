@@ -54,7 +54,7 @@ let mockAgentName: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
 let mockWorkingDirName = 'project-with-a-long-folder-name';
-let mockAgents: { agent: string | null; paneId: string; agentSession: null; focused?: boolean; cwd?: string }[] = [];
+let mockAgents: { agent: string | null; paneId: string; agentSession: null; focused?: boolean; cwd?: string; terminalId?: string }[] = [];
 const mockSend = jest.fn(async (_text: string) => true);
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
@@ -271,16 +271,17 @@ it('opens the agent\'s terminal from the header, on this chat\'s pane or its foc
   mockWorkspaceLabel = null;
   mockHostConnection = { id: 'srv-1' };
   mockAgents = [
-    { agent: 'claude', paneId: 'w6:p1', agentSession: null, focused: false },
-    { agent: 'codex', paneId: 'w6:p2', agentSession: null, focused: true },
+    { agent: 'claude', paneId: 'w6:p1', terminalId: 'term_w6_p1', agentSession: null, focused: false },
+    { agent: 'codex', paneId: 'w6:p2', terminalId: 'term_w6_p2', agentSession: null, focused: true },
   ];
   const workspace = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
   await fireEvent.press(workspace.getByRole('button', { name: 'Terminal' }));
-  expect(mockOpenTerminal).toHaveBeenLastCalledWith({ connectionId: 'srv-1', paneId: 'w6:p2', kind: 'agent', title: 'api' });
+  // The agent's terminal id travels with it.
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith({ connectionId: 'srv-1', paneId: 'w6:p2', kind: 'agent', terminalId: 'term_w6_p2', title: 'api' });
   await workspace.unmount();
   const pane = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" paneId="w6:p1" title="api" />);
   await fireEvent.press(pane.getByTestId('thread-terminal'));
-  expect(mockOpenTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ paneId: 'w6:p1', kind: 'agent' }));
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ paneId: 'w6:p1', kind: 'agent', terminalId: 'term_w6_p1' }));
   await pane.unmount();
   // No agent bound yet: nothing to attach to, so no button.
   mockAgents = [];

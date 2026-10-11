@@ -7,8 +7,10 @@ export interface TerminalRouteParams {
   /** The pane's connection: a host, or one of its machines (`${hostId}/${machineId}`). */
   connectionId: string;
   paneId: string;
-  /** Which attach it takes (`paneKind`): an agent pane's own, or the session's zoomed on a shell pane. */
+  /** Which attach it takes (`paneKind`): `agent attach` by pane id, or `terminal attach` by terminal id. */
   kind: TerminalPaneKind;
+  /** The pane's terminal (the snapshot's `terminal_id`); `''` when the snapshot had none. */
+  terminalId: string;
   title: string;
 }
 

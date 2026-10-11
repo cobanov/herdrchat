@@ -1,15 +1,6 @@
 import { sshJump } from '../../herdr/machine';
 import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../../herdr/timeouts';
-import {
-  attachCommand,
-  leaveShellPane,
-  noBackslashes,
-  paneKind,
-  ptyJump,
-  terminalStartTimeout,
-  unzoomCommand,
-  zoomedOn,
-} from '../command';
+import { attachCommand, needsNewerHerdr, noBackslashes, paneKind, ptyJump, terminalStartTimeout } from '../command';
 
 const { execFileSync } = jest.requireActual<typeof import('node:child_process')>('node:child_process');
 const { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } =
@@ -29,52 +20,79 @@ describe('paneKind', () => {
 
 describe('attachCommand', () => {
   it('attaches an agent pane on the host with herdr agent attach', () => {
-    expect(attachCommand({ paneId: 'w2:p1', kind: 'agent', herdrPath: 'herdr', session: '' })).toBe(
+    expect(attachCommand({ paneId: 'w2:p1', kind: 'agent', terminalId: 'term_a', herdrPath: 'herdr', session: '' })).toBe(
+      `${PATH_PREFIX}${LOCALE}; exec 'herdr' 'agent' 'attach' 'w2:p1'`
+    );
+    // The terminal id is not needed for an agent pane.
+    expect(attachCommand({ paneId: 'w2:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: '' })).toBe(
       `${PATH_PREFIX}${LOCALE}; exec 'herdr' 'agent' 'attach' 'w2:p1'`
     );
   });
 
-  it('zooms a shell pane and attaches its session, the default one when none is named', () => {
-    expect(attachCommand({ paneId: 'w6:p2', kind: 'shell', herdrPath: 'herdr', session: 'default' })).toBe(
-      `${PATH_PREFIX}${LOCALE}; 'herdr' pane zoom --pane 'w6:p2' --on >/dev/null 2>&1; exec 'herdr' 'session' 'attach' 'default'`
-    );
+  // Privately: no zoom, no session attach, nothing another client sees.
+  it('attaches a shell pane by its terminal id, alone, without zooming or attaching the session', () => {
+    const command = attachCommand({ paneId: 'w6:p2', kind: 'shell', terminalId: 'term_65d8', herdrPath: 'herdr', session: 'default' });
+    expect(command).toBe(`${PATH_PREFIX}${LOCALE}; exec 'herdr' 'terminal' 'attach' 'term_65d8'`);
+    expect(command).not.toContain('zoom');
+    expect(command).not.toContain('session');
   });
 
-  it('exports a named session for both the zoom and the attach', () => {
-    const command = attachCommand({ paneId: 'w6:p2', kind: 'shell', herdrPath: '~/.local/bin/herdr', session: ' work ' });
+  it('takes over only when asked, on either attach', () => {
+    const shell = { paneId: 'w6:p2', kind: 'shell', terminalId: 'term_65d8', herdrPath: 'herdr', session: '' } as const;
+    expect(attachCommand(shell)).not.toContain('--takeover');
+    expect(attachCommand({ ...shell, takeover: false })).not.toContain('--takeover');
+    expect(attachCommand({ ...shell, takeover: true })).toBe(`${PATH_PREFIX}${LOCALE}; exec 'herdr' 'terminal' 'attach' 'term_65d8' '--takeover'`);
+    expect(attachCommand({ ...shell, kind: 'agent', takeover: true })).toBe(`${PATH_PREFIX}${LOCALE}; exec 'herdr' 'agent' 'attach' 'w6:p2' '--takeover'`);
+  });
+
+  // An older herdr's snapshot: no private attach exists, and nothing shared
+  // is put in its place.
+  it('has no command for a shell pane without a terminal id', () => {
+    expect(attachCommand({ paneId: 'w6:p2', kind: 'shell', terminalId: null, herdrPath: 'herdr', session: '' })).toBeNull();
+    expect(attachCommand({ paneId: 'w6:p2', kind: 'shell', terminalId: '', herdrPath: 'herdr', session: '' })).toBeNull();
+    expect(needsNewerHerdr({ kind: 'shell', terminalId: null })).toBe(true);
+    expect(needsNewerHerdr({ kind: 'shell', terminalId: 'term_1' })).toBe(false);
+    expect(needsNewerHerdr({ kind: 'agent', terminalId: null })).toBe(false);
+  });
+
+  it('exports a named session for the attach', () => {
+    const command = attachCommand({ paneId: 'w6:p2', kind: 'shell', terminalId: 'term_1', herdrPath: '~/.local/bin/herdr', session: ' work ' });
     expect(command).toContain(`export HERDR_SESSION='work'; `);
-    expect(command).toContain(`"$HOME"/'.local/bin/herdr' pane zoom`);
-    expect(command).toMatch(/exec "\$HOME"\/'\.local\/bin\/herdr' 'session' 'attach' 'work'$/);
+    expect(command).toMatch(/exec "\$HOME"\/'\.local\/bin\/herdr' 'terminal' 'attach' 'term_1'$/);
   });
 
   it('never writes a backslash, even for a quote in the session', () => {
-    const command = attachCommand({ paneId: 'w1:p1', kind: 'shell', herdrPath: 'herdr', session: "kenneth's" });
+    const command = attachCommand({ paneId: 'w1:p1', kind: 'shell', terminalId: 'term_1', herdrPath: 'herdr', session: "kenneth's" });
     expect(command).not.toContain('\\');
     expect(command).toContain(`export HERDR_SESSION='kenneth'"'"'s'`);
   });
 
   it('refuses what it cannot write without a backslash', () => {
-    expect(attachCommand({ paneId: 'w1:p1', kind: 'agent', herdrPath: 'herdr', session: 'a\\b' })).toBeNull();
-    expect(attachCommand({ paneId: 'w1\\p1', kind: 'agent', herdrPath: 'herdr', session: null })).toBeNull();
+    expect(attachCommand({ paneId: 'w1:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: 'a\\b' })).toBeNull();
+    expect(attachCommand({ paneId: 'w1\\p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: null })).toBeNull();
+    expect(attachCommand({ paneId: 'w1:p1', kind: 'shell', terminalId: 'term\\1', herdrPath: 'herdr', session: null })).toBeNull();
     expect(
-      attachCommand({ paneId: 'w1:p1', kind: 'agent', herdrPath: 'herdr', session: null, machine: { target: 'a\\b' } })
+      attachCommand({ paneId: 'w1:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: null, machine: { target: 'a\\b' } })
     ).toBeNull();
   });
 
   it('jumps a machine pane through the host with a terminal and no escape character', () => {
-    const command = attachCommand({
-      paneId: 'w1:p1',
-      kind: 'agent',
-      herdrPath: '/opt/herdr',
-      session: 'bots',
-      machine: { target: 'klaw' },
-    });
-    expect(command).not.toBeNull();
-    expect(command!.startsWith(`${PATH_PREFIX}ssh -t -e none -o BatchMode=yes `)).toBe(true);
-    expect(command).toContain(` -- 'klaw' '`);
-    // The machine's herdr is found by name there; the host's path is the host's.
-    expect(command).not.toContain('/opt/herdr');
-    expect(command).not.toContain('\\');
+    for (const kind of ['agent', 'shell'] as const) {
+      const command = attachCommand({
+        paneId: 'w1:p1',
+        kind,
+        terminalId: 'term_1',
+        herdrPath: '/opt/herdr',
+        session: 'bots',
+        machine: { target: 'klaw' },
+      });
+      expect(command).not.toBeNull();
+      expect(command!.startsWith(`${PATH_PREFIX}ssh -t -e none -o BatchMode=yes `)).toBe(true);
+      expect(command).toContain(` -- 'klaw' '`);
+      // The machine's herdr is found by name there; the host's path is the host's.
+      expect(command).not.toContain('/opt/herdr');
+      expect(command).not.toContain('\\');
+    }
   });
 });
 
@@ -94,35 +112,6 @@ describe('terminalStartTimeout', () => {
   it('adds the jump connect time for a machine', () => {
     expect(terminalStartTimeout({})).toBe(TERMINAL_START_TIMEOUT_MS);
     expect(terminalStartTimeout({ machine: { target: 'klaw' } })).toBe(TERMINAL_START_TIMEOUT_MS + JUMP_CONNECT_TIMEOUT_MS);
-  });
-});
-
-describe('leaving a shell pane', () => {
-  it('undoes the zoom the app made and gives focus back', () => {
-    expect(leaveShellPane('w6:p2', { zoomed: false, focusedPaneId: 'w6:p1' })).toEqual({
-      unzoom: unzoomCommand('w6:p2'),
-      refocus: { method: 'pane.focus', params: { pane_id: 'w6:p1' } },
-    });
-  });
-
-  it("keeps a zoom the person had, and a focus that never moved", () => {
-    expect(leaveShellPane('w6:p2', { zoomed: true, focusedPaneId: 'w6:p2' })).toEqual({ unzoom: null, refocus: null });
-    expect(leaveShellPane('w6:p2', { zoomed: false, focusedPaneId: null }).refocus).toBeNull();
-  });
-
-  it('passes the pane as --pane, which herdr requires', () => {
-    expect(unzoomCommand('w6:p2')).toBe(`${PATH_PREFIX}'herdr' 'pane' 'zoom' '--pane' 'w6:p2' '--off'`);
-  });
-
-  it('reads a zoom from the tab holding the pane, focused on it', () => {
-    const layouts = [
-      { focusedPaneId: 'w1:p1', zoomed: true, panes: [{ paneId: 'w1:p1' }, { paneId: 'w1:p2' }] },
-      { focusedPaneId: 'w6:p2', zoomed: false, panes: [{ paneId: 'w6:p2' }] },
-    ];
-    expect(zoomedOn(layouts, 'w1:p1')).toBe(true);
-    expect(zoomedOn(layouts, 'w1:p2')).toBe(false);
-    expect(zoomedOn(layouts, 'w6:p2')).toBe(false);
-    expect(zoomedOn(null, 'w6:p2')).toBe(false);
   });
 });
 
@@ -169,19 +158,18 @@ describe('under real login shells', () => {
   const log = (name: string) => readFileSync(`${home}/${name}`, 'utf8').trimEnd().split('\n');
 
   for (const shell of ['/bin/zsh', '/bin/bash', '/bin/dash'].filter((path) => existsSync(path))) {
-    it(`attaches a shell pane under ${shell}, with the session and the locale`, () => {
-      const output = run(shell, attachCommand({ paneId: 'w6:p2', kind: 'shell', herdrPath: 'herdr', session: "it's" })!);
-      // The marker, then the attach's own drawing: zoom's reply goes nowhere.
+    it(`attaches a shell pane under ${shell}, with the session and the locale, and runs nothing else`, () => {
+      const output = run(shell, attachCommand({
+        paneId: 'w6:p2', kind: 'shell', terminalId: 'term_65d8', herdrPath: 'herdr', session: "it's", takeover: true,
+      })!);
+      // The marker, then the attach's own drawing.
       expect(output).toBe('HERDRCHAT_SHELL_ab12\n{"result":{}}\n');
-      expect(log('herdr.log')).toEqual([
-        "session=it's", 'lang=en_US.UTF-8', 'pane', 'zoom', '--pane', 'w6:p2', '--on',
-        "session=it's", 'lang=en_US.UTF-8', 'session', 'attach', "it's",
-      ]);
+      expect(log('herdr.log')).toEqual(["session=it's", 'lang=en_US.UTF-8', 'terminal', 'attach', 'term_65d8', '--takeover']);
     });
 
     it(`attaches a machine's agent pane through the host's ssh under ${shell}`, () => {
       run(shell, attachCommand({
-        paneId: 'w1:p1', kind: 'agent', herdrPath: 'herdr', session: "o'k", machine: { target: 'klaw' },
+        paneId: 'w1:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: "o'k", machine: { target: 'klaw' },
       })!);
       const ssh = log('ssh.log');
       expect(ssh.slice(0, 3)).toEqual(['-t', '-e', 'none']);

@@ -91,11 +91,13 @@ pane's history (herdr's own), pinch to change the size, a
 hardware keyboard with Ctrl and Option, and a bar over the software keyboard
 with Esc, Tab, sticky Ctrl and Alt, the arrows, Home and End, and Paste. It
 runs on the host's SSH connection: an agent pane through `herdr agent attach`,
-a shell pane through `herdr session attach` with the pane zoomed to fill the
-screen. That zoom is herdr's own, so a desktop attached to the same session
-zooms too while the phone has the pane open; leaving the terminal puts the
-zoom and herdr's focus back (not if the app is killed while attached: then
-unzoom it on the desktop). Leaving also hangs up: nothing keeps running.
+any other pane through `herdr terminal attach` (herdr 0.9 or newer). Both draw
+that one pane to the phone alone: no zoom, focus or sidebar moves on the host,
+so a desktop on the same session carries on as it was. The one thing shared is
+the pane's size, which follows the phone while it is attached and comes back on
+leaving. A pane another phone or terminal is already attached to is refused;
+**Take over** then takes it, and only when you tap it. Leaving hangs up:
+nothing keeps running.
 iPhone and iPad only for now.
 
 ## Theming
