@@ -41,15 +41,6 @@ appId: dev.herdr.HerdrChat
     id: terminal-reconnect
 - assertNotVisible:
     id: terminal-takeover
-# The bar's keys go to the shell; the echo shell takes them without a crash.
-- tapOn:
-    id: terminal-key-tab
-- tapOn:
-    id: terminal-key-esc
-- tapOn:
-    id: terminal-key-ctrl
-- tapOn:
-    id: terminal-key-ctrl
 # The keyboard, from the bar's own control, then typing into the terminal.
 - tapOn:
     id: terminal-keyboard
@@ -59,6 +50,21 @@ appId: dev.herdr.HerdrChat
     id: terminal-status
     text: '.*Connected.*'
 - takeScreenshot: terminal-${APPEARANCE}
+# The bar's keys go to the shell; the echo shell takes them without a crash.
+# After the screenshot, not before the typing: the echo shell sends Esc back
+# to the terminal, which reads it and the next character as one escape
+# sequence, so a typed `ls` after Esc drew as `s` (behind Tab's indent).
+- tapOn:
+    id: terminal-key-tab
+- tapOn:
+    id: terminal-key-esc
+- tapOn:
+    id: terminal-key-ctrl
+- tapOn:
+    id: terminal-key-ctrl
+- assertVisible:
+    id: terminal-status
+    text: '.*Connected.*'
 - tapOn:
     id: terminal-back
 - extendedWaitUntil:
