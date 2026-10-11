@@ -4,6 +4,7 @@ import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import ChatsList from '@/features/chats/ChatsList';
+import { terminalBackControl } from '@/features/terminal/backControl';
 import TerminalScreen from '@/features/terminal/TerminalScreen';
 import ThreadScreen from '@/features/thread/ThreadScreen';
 import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
@@ -57,7 +58,8 @@ export default function ChatsScreen() {
       ) : terminal !== null ? (
         // Keyed as the phone's route keys it: another pane is another shell,
         // and the old one hangs up as it unmounts. Back is where it came from,
-        // the chat whose Terminal opened it or nothing, at any width.
+        // the chat whose Terminal opened it or nothing, at any width. Beside
+        // the chats it says which: a chat there has no back control at all.
         <TerminalScreen
           key={`terminal:${terminal.connectionId}:${terminal.paneId}:${terminal.terminalId ?? ''}`}
           connectionId={terminal.connectionId}
@@ -65,6 +67,7 @@ export default function ChatsScreen() {
           kind={terminal.paneKind}
           terminalId={terminal.terminalId}
           title={terminal.title}
+          back={terminalBackControl(wide, terminal.from)}
           onBack={() => select(terminal.from)}
         />
       ) : wide ? (

@@ -13,6 +13,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, terminal } from '@/theme/tokens';
 import { AccessoryBar, type StickyModifiers } from './AccessoryBar';
 import { useTerminalFont } from './fontSize';
+import type { TerminalBackControl } from './backControl';
 import { TerminalHeader } from './TerminalHeader';
 import { useTerminalShell } from './useTerminalShell';
 
@@ -25,7 +26,7 @@ import { useTerminalShell } from './useTerminalShell';
  * For a pane no chat can show (a shell, a build, `vim`), and for an agent's
  * own screen when the chat cannot show what it is asking.
  */
-export default function TerminalScreen({ connectionId, paneId, kind, terminalId, title, onBack }: {
+export default function TerminalScreen({ connectionId, paneId, kind, terminalId, title, back, onBack }: {
   /** The chat's connection: a host, or one of its machines. */
   connectionId: string;
   paneId: string;
@@ -33,6 +34,8 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
   /** The pane's terminal (the snapshot's `terminal_id`), which a shell pane attaches by. */
   terminalId: string | null;
   title: string;
+  /** How the header's leading control draws; Back when absent. */
+  back?: TerminalBackControl;
   onBack: () => void;
 }) {
   const { colors, scheme } = useTheme();
@@ -61,6 +64,7 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
       title={title}
       place={place}
       phase={shell.phase}
+      back={back}
       onBack={onBack}
       onReconnect={shell.reconnect}
       onTakeOver={shell.takeOver}

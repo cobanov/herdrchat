@@ -114,6 +114,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   // keep in step and no pane chat to light.
   const selection = useChatSelection((state) => chatOf(state.detail));
   const select = useChatSelection((state) => state.select);
+  const workspaceClosed = useChatSelection((state) => state.workspaceClosed);
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const connection = useSelectedConnection();
@@ -198,9 +199,15 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     targetOf: chats.targetOf,
     db,
     refresh,
+    // The open chat, or a terminal on one of the closed workspace's panes,
+    // goes with it. Not by `selectedWorkspaceId`: with a terminal open no
+    // workspace is selected, and the terminal stayed on a pane that was gone.
     onClosed: useCallback((workspaceId: string, closedOn: string) => {
-      if (workspaceId === selectedWorkspaceId && closedOn === openConnectionId) select(null);
-    }, [selectedWorkspaceId, openConnectionId, select]),
+      const closed = summaries.find((item) => item.workspaceId === workspaceId && item.connectionId === closedOn);
+      const paneIds = closed === undefined ? []
+        : [...closed.panes.map((pane) => pane.paneId), ...closed.shellPanes.map((pane) => pane.paneId)];
+      workspaceClosed({ connectionId: closedOn, workspaceId, paneIds });
+    }, [summaries, workspaceClosed]),
   });
 
   // Renaming from the persistent sidebar must also update the open header,

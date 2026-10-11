@@ -7,6 +7,7 @@ import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { TERMINAL_BACK, type TerminalBackControl } from './backControl';
 import { canReconnect, canTakeOver, phaseLabel, phaseMessage, type TerminalPhase } from './status';
 
 /**
@@ -19,11 +20,13 @@ import { canReconnect, canTakeOver, phaseLabel, phaseMessage, type TerminalPhase
  * terminal's top rows are its screen, and a header over them would hide the
  * one line `htop` or `vim` puts its title on.
  */
-export function TerminalHeader({ title, place, phase, onBack, onReconnect, onTakeOver }: {
+export function TerminalHeader({ title, place, phase, back = TERMINAL_BACK, onBack, onReconnect, onTakeOver }: {
   title: string;
   /** The machine's label, for a pane on one of the host's machines. */
   place: string | null;
   phase: TerminalPhase;
+  /** How the leading control draws: Back, unless the iPad's column says otherwise (`terminalBackControl`). */
+  back?: TerminalBackControl;
   onBack: () => void;
   onReconnect: () => void;
   onTakeOver: () => void;
@@ -41,10 +44,10 @@ export function TerminalHeader({ title, place, phase, onBack, onReconnect, onTak
           <Pressable
             onPress={onBack}
             accessibilityRole="button"
-            accessibilityLabel="Back"
+            accessibilityLabel={back.label}
             testID="terminal-back"
             style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="chevron.left" size={size.headerGlyph} tintColor={colors.label} fallback={<Text>‹</Text>} />
+            <Icon name={back.symbol} size={size.headerGlyph} tintColor={colors.label} fallback={<Text>{back.symbol === 'xmark' ? '✕' : '‹'}</Text>} />
           </Pressable>
         </Glass>
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>

@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Platform } from 'react-native';
 
 import type { TerminalPaneKind } from '@/lib/terminal/command';
-import { chatSelectionOf, useChatSelection } from '@/state/chatSelection';
+import { chatSelectionOf, terminalOf, useChatSelection } from '@/state/chatSelection';
 
 /** What `app/chat/terminal` is opened with. */
 export interface TerminalRouteParams {
@@ -20,7 +20,10 @@ export interface TerminalRouteParams {
  * Opens a pane's terminal. On a phone it is pushed over what opened it: a
  * chat, or the chats. On iPad it is the detail beside the chats, as a chat is
  * (`openChat`), even in a narrow window: it replaces whatever detail was open,
- * and remembers the chat it replaced so its Back brings that chat back. Read
+ * and remembers the chat it replaced so its Back brings that chat back. A
+ * terminal that replaces a terminal (its own row tapped again, or another
+ * pane's) carries that one's chat forward: a tap that changes nothing on
+ * screen must not erase where Back goes. Read
  * from the store here, so a caller (a row, a chat's header) need not know.
  */
 export function openTerminal(params: TerminalRouteParams) {
@@ -32,7 +35,7 @@ export function openTerminal(params: TerminalRouteParams) {
       terminalId: terminalIdParam(params.terminalId),
       paneKind: params.kind,
       title: params.title,
-      from: chatSelectionOf(selection.detail),
+      from: terminalOf(selection.detail)?.from ?? chatSelectionOf(selection.detail),
     });
     // Also dismiss a sheet or a deep-linked screen above the root chats.
     router.dismissTo('/');

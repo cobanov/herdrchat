@@ -4,8 +4,9 @@ import * as Native from 'react-native';
 import ChatsScreen from '../../../../app/index';
 import TerminalRoute from '../../../../app/chat/terminal';
 import { openChat } from '@/features/chats/navigation';
+import { terminalBackControl } from '../backControl';
 import { openTerminal, type TerminalRouteParams } from '../navigation';
-import { useChatSelection } from '@/state/chatSelection';
+import { detailAfterClose, useChatSelection } from '@/state/chatSelection';
 
 let mockConnectionId = 'host-a';
 let mockHydrated = true;
@@ -52,11 +53,11 @@ jest.mock('@/features/thread/ThreadScreen', () => ({
 }));
 jest.mock('../TerminalScreen', () => ({
   __esModule: true,
-  default: ({ paneId, kind, terminalId, onBack }: { paneId: string; kind: string; terminalId: string | null; onBack: () => void }) => {
+  default: ({ paneId, kind, terminalId, back, onBack }: { paneId: string; kind: string; terminalId: string | null; back?: { symbol: string; label: string }; onBack: () => void }) => {
     const { Button, View } = jest.requireActual<typeof import('react-native')>('react-native');
     return (
       <View testID="terminal-view" accessibilityLabel={`${paneId} ${kind} ${terminalId ?? 'none'}`}>
-        <Button title="Back" onPress={onBack} />
+        <Button testID={`terminal-back-${back?.symbol ?? 'default'}`} title={back?.label ?? 'Back'} onPress={onBack} />
       </View>
     );
   },
@@ -106,11 +107,22 @@ describe('openTerminal', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('remembers nothing when no chat was open, or when it replaces another terminal', () => {
+  it('remembers nothing when no chat was open', () => {
     openTerminal(shellPane);
     expect(useChatSelection.getState().detail).toEqual(expect.objectContaining({ kind: 'terminal', terminalId: 'term_w6_p3', from: null }));
     openTerminal(agentPane);
     expect(useChatSelection.getState().detail).toEqual(expect.objectContaining({ kind: 'terminal', paneId: 'w2:p1', from: null }));
+  });
+
+  // Tapping the lit terminal row again changes nothing on screen, so it must
+  // not change where Back goes either; nor must opening another pane's.
+  it('carries the chat forward when it replaces another terminal', () => {
+    useChatSelection.getState().select(notes);
+    openTerminal(shellPane);
+    openTerminal(shellPane);
+    expect(useChatSelection.getState().detail).toEqual(expect.objectContaining({ paneId: 'w6:p3', from: notes }));
+    openTerminal(agentPane);
+    expect(useChatSelection.getState().detail).toEqual(expect.objectContaining({ paneId: 'w2:p1', from: notes }));
   });
 
   it('does the same in a narrow iPad window', () => {
@@ -141,7 +153,8 @@ describe('the root on iPad', () => {
     expect(lastListProps()).toEqual(expect.objectContaining({
       selectedWorkspaceId: undefined, selectedTerminal: { connectionId: 'host-a', paneId: 'w2:p1' },
     }));
-    await fireEvent.press(screen.getByText('Back'));
+    expect(screen.getByTestId('terminal-back-chevron.left')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByText('Back to Notes'));
     expect(screen.getByTestId('thread')).toHaveProp('accessibilityLabel', 'w2');
     expect(lastListProps()).toEqual(expect.objectContaining({ selectedWorkspaceId: 'w2', selectedTerminal: undefined }));
   });
@@ -167,6 +180,43 @@ describe('the root on iPad', () => {
     mockConnectionId = 'host-a';
     await act(() => openTerminal({ ...shellPane, connectionId: 'host-a/nuku' }));
     expect(screen.getByTestId('terminal-view')).toBeOnTheScreen();
+  });
+});
+
+describe('the terminal\'s leading control', () => {
+  it('is Back alone on the screen, and beside the chats says where it goes, or Close', () => {
+    expect(terminalBackControl(false, null)).toEqual({ symbol: 'chevron.left', label: 'Back' });
+    expect(terminalBackControl(false, notes)).toEqual({ symbol: 'chevron.left', label: 'Back' });
+    expect(terminalBackControl(true, notes)).toEqual({ symbol: 'chevron.left', label: 'Back to Notes' });
+    expect(terminalBackControl(true, null)).toEqual({ symbol: 'xmark', label: 'Close' });
+  });
+
+  it('closes a terminal opened beside the chats with nothing open', async () => {
+    openTerminal(shellPane);
+    const screen = await render(<ChatsScreen />);
+    expect(screen.getByTestId('terminal-back-xmark')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByText('Close'));
+    expect(useChatSelection.getState().detail).toBeNull();
+  });
+});
+
+describe('closing a workspace', () => {
+  const closed = { connectionId: 'host-a', workspaceId: 'w6', paneIds: ['w6:p1', 'w6:p3'] };
+  const terminalOn = (paneId: string, connectionId = 'host-a', from: typeof notes | null = null) =>
+    ({ kind: 'terminal' as const, connectionId, paneId, terminalId: null, paneKind: 'shell' as const, title: 'sh', from });
+
+  it('drops its chat, and a terminal on one of its panes', () => {
+    expect(detailAfterClose({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w6', title: 'api' }, closed)).toBeNull();
+    expect(detailAfterClose(terminalOn('w6:p3'), closed)).toBeNull();
+  });
+
+  it('keeps a terminal elsewhere, by pane and by connection, but forgets a way back to the closed chat', () => {
+    expect(detailAfterClose(terminalOn('w2:p1'), closed)).toEqual(terminalOn('w2:p1'));
+    expect(detailAfterClose(terminalOn('w6:p3', 'host-a/nuku'), closed)).toEqual(terminalOn('w6:p3', 'host-a/nuku'));
+    const fromClosed = { connectionId: 'host-a', workspaceId: 'w6', title: 'api' };
+    expect(detailAfterClose(terminalOn('w2:p1', 'host-a', fromClosed), closed)).toEqual(terminalOn('w2:p1'));
+    expect(detailAfterClose(terminalOn('w2:p1', 'host-a', notes), closed)).toEqual(terminalOn('w2:p1', 'host-a', notes));
+    expect(detailAfterClose({ kind: 'chat', ...notes }, closed)).toEqual({ kind: 'chat', ...notes });
   });
 });
 

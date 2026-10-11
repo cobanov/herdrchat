@@ -49,3 +49,12 @@ it('never draws a key under its touch target, and widens one for a long label', 
   expect(keyWidth(byId('slash'), bar)).toBe(minTouchTarget);
   expect(keyWidth(byId('home'), bar)).toBeGreaterThan(minTouchTarget);
 });
+
+// The rule's limit, written down. A narrow iPad window is one column, the
+// terminal alone in it: at Split View's one third (320pt) Alt scrolls in, as
+// it does on a 320pt phone. From a 375pt window up the four fit.
+it('fits the essentials from a 375pt window, and scrolls Alt in at 320pt', () => {
+  expect(essentialsInView(375, ACCESSORY_KEYS, bar)).toBe(true);
+  expect(essentialsInView(320, ACCESSORY_KEYS, bar)).toBe(false);
+  expect(keysInView(320, ACCESSORY_KEYS, bar)).toBe(3);
+});

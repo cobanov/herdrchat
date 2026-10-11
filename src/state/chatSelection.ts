@@ -52,6 +52,30 @@ export function chatSelectionOf(detail: Detail | null): ChatSelection | null {
   };
 }
 
+/** A workspace just closed from the list: where it was, and every pane it had. */
+export interface ClosedWorkspace {
+  connectionId: string;
+  workspaceId: string;
+  /** Its chats' panes and its terminal rows' panes, as the list last had them. */
+  paneIds: readonly string[];
+}
+
+/**
+ * The detail once a workspace has closed. Its chat goes, and so does a
+ * terminal on one of its panes, which would otherwise stay in the column
+ * pointing at a pane that no longer exists. A terminal on another workspace
+ * stays, but forgets a way back to the closed chat, so Back cannot bring it
+ * back. By the list's panes, not by reading herdr's pane id format.
+ */
+export function detailAfterClose(detail: Detail | null, closed: ClosedWorkspace): Detail | null {
+  if (detail === null) return null;
+  const isClosed = (chat: ChatSelection | null) =>
+    chat !== null && chat.connectionId === closed.connectionId && chat.workspaceId === closed.workspaceId;
+  if (detail.kind === 'chat') return isClosed(detail) ? null : detail;
+  if (detail.connectionId === closed.connectionId && closed.paneIds.includes(detail.paneId)) return null;
+  return isClosed(detail.from) ? { ...detail, from: null } : detail;
+}
+
 // Keep the tablet selection outside the URL, bound to its host, so opening and
 // closing Hosts or Settings over the chats does not discard the open detail.
 // (It moved here when native tab presses reset route params; the tabs are gone,
@@ -65,8 +89,11 @@ export const useChatSelection = create<{
   select: (selection: ChatSelection | null) => void;
   /** Shows a pane's terminal in place of whatever was there. */
   showTerminal: (terminal: Omit<TerminalDetail, 'kind'>) => void;
+  /** Drops whatever in the detail belongs to a workspace just closed (`detailAfterClose`). */
+  workspaceClosed: (closed: ClosedWorkspace) => void;
 }>((set) => ({
   detail: null,
   select: (selection) => set({ detail: selection === null ? null : { kind: 'chat', ...selection } }),
   showTerminal: (terminal) => set({ detail: { kind: 'terminal', ...terminal } }),
+  workspaceClosed: (closed) => set((state) => ({ detail: detailAfterClose(state.detail, closed) })),
 }));
