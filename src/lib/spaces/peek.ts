@@ -10,16 +10,17 @@ import type { Frame } from './popover';
 export interface Peek {
   /** The workspace's row key. */
   key: string;
-  /** The button it hangs from, and the list it is drawn over, in window points. */
+  /** The button it hangs from, the column of chats it came from, and the window, in window points. */
   anchor: Frame;
-  host: Frame;
+  column: Frame;
+  window: Frame;
   pinned: boolean;
   overButton: boolean;
   overCard: boolean;
 }
 
 export type PeekEvent =
-  | { type: 'show'; key: string; anchor: Frame; host: Frame; how: 'hover' | 'pin' }
+  | { type: 'show'; key: string; anchor: Frame; column: Frame; window: Frame; how: 'hover' | 'pin' }
   | { type: 'leave-button'; key: string }
   | { type: 'card'; over: boolean }
   | { type: 'pin' }
@@ -32,7 +33,8 @@ export function peekReducer(peek: Peek | null, event: PeekEvent): Peek | null {
       return {
         key: event.key,
         anchor: event.anchor,
-        host: event.host,
+        column: event.column,
+        window: event.window,
         pinned: event.how === 'pin' || (same && peek.pinned),
         overButton: event.how === 'hover' || (same && peek.overButton),
         overCard: same && peek.overCard,

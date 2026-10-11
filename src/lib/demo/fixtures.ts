@@ -150,6 +150,24 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
       { label: 'server', panes: [{ paneId: 'w6:p4', rect: [0, 0, 160, 48] }] },
     ],
   },
+  {
+    // One agent beside a shell: a space card titled by the workspace, with
+    // the agent (still the workspace's chat) and then the terminal under it,
+    // not the agent's own card with the terminal hanging off it.
+    workspaceId: 'w7',
+    label: 'site',
+    number: 7,
+    paneId: 'w7:p1',
+    cwd: '/home/demo/site',
+    agentStatus: 'idle',
+    title: 'Landing page copy',
+    shellPanes: [{ paneId: 'w7:p2', terminalId: 'term_w7_p2', cwd: '/home/demo/site' }],
+    // The agent above, the shell in a strip below it.
+    tabs: [{
+      label: 'site',
+      panes: [{ paneId: 'w7:p1', rect: [0, 0, 160, 32] }, { paneId: 'w7:p2', rect: [0, 32, 160, 16] }],
+    }],
+  },
 ];
 
 /**
@@ -196,6 +214,7 @@ export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
   'w5:p1': '55555555-5555-4555-8555-555555555555',
   'w6:p1': '66666666-6666-4666-8666-666666666661',
   'w6:p2': '66666666-6666-4666-8666-666666666662',
+  'w7:p1': '88888888-8888-4888-8888-888888888888',
 };
 
 export const DEMO_HOME = '/home/demo';
@@ -357,6 +376,26 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
         {
           type: 'text',
           text: 'The label sits in a flex row with no `white-space: nowrap`, so the toolbar squeezes it. Fixing the CSS in `web/toolbar.css` now.',
+        },
+      ],
+    }),
+  ],
+  'w7:p1': [
+    line({
+      type: 'user',
+      uuid: 'd7-1',
+      timestamp: '2026-08-19T11:00:00.000Z',
+      content: 'tighten the landing page headline, it runs to three lines on a phone',
+    }),
+    line({
+      type: 'assistant',
+      uuid: 'd7-2',
+      timestamp: '2026-08-19T11:00:18.000Z',
+      model: MODEL,
+      content: [
+        {
+          type: 'text',
+          text: 'Cut it to "Your agents, in your pocket" and moved the rest into the subhead. It fits on two lines at 320pt; the dev server below is serving it.',
         },
       ],
     }),

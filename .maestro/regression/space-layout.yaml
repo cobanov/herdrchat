@@ -5,11 +5,13 @@
 # button (`space-layout-w6`) that opens a sheet drawing both tabs in basic
 # shapes. A box in it opens its pane: here the shell w6:p3's terminal. w2
 # ("notes": one agent, nothing else) stays a chat card, titled by its session,
-# with no layout button.
+# with no layout button. w7 ("site": one agent and one shell, the case that
+# asked for this) is a space card, its agent a row under it that opens the
+# workspace's own chat, then its terminal row.
 #
-# On iPad the layout is a floating card beside the button instead, shown by a
-# pointer resting on it; Maestro has no pointer, so that is checked by hand
-# ("Spaces cards, by hand on a device" in .maestro/README.md).
+# On iPad the layout is a floating card beside the list instead, shown by a
+# pointer resting on the button; Maestro has no pointer, so that is checked by
+# hand ("Spaces cards, by hand on a device" in .maestro/README.md).
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -102,3 +104,54 @@ appId: dev.herdr.HerdrChat
     id: space-layout-w2
 - assertNotVisible:
     id: pane-row-w2:p1
+
+# w7 has one agent and a shell: a space, not the agent's card with the
+# terminal hanging off it. Its agent is a row under it, then the terminal.
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w7:p2
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w7
+    text: 'site, 1 agent · 1 tab · 2 panes · demo/site.*'
+- assertVisible:
+    id: space-layout-w7
+- assertVisible:
+    id: pane-row-w7:p1
+    text: 'Landing page copy, Claude in site, demo/site.*'
+- takeScreenshot: space-agent-shell-${APPEARANCE}
+
+# The agent's row is the workspace's chat, as its card used to be.
+- tapOn:
+    id: pane-row-w7:p1
+- extendedWaitUntil:
+    visible: .*landing page headline.*
+    timeout: 15000
+- assertVisible:
+    id: thread-title
+    text: Landing page copy
+- tapOn:
+    id: thread-back
+- extendedWaitUntil:
+    visible:
+      id: pane-row-w7:p1
+    timeout: 10000
+
+# Its layout: the agent above, the shell below, in one tab.
+- tapOn:
+    id: space-layout-w7
+- extendedWaitUntil:
+    visible:
+      id: layout-tab-w7:t1
+    timeout: 5000
+- assertVisible:
+    id: layout-pane-w7:p1
+- assertVisible:
+    id: layout-pane-w7:p2
+- tapOn:
+    id: space-layout-close
+- extendedWaitUntil:
+    notVisible:
+      id: space-layout-sheet
+    timeout: 5000

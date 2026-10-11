@@ -169,9 +169,13 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const [reads, setReads] = useState<ReadsByConnection>(new Map());
   // The selection names the pane too; the prop only says which workspace, and
   // a pane row and its workspace's row are never selected together. A pane
-  // whose row is gone (its workspace is back to one agent, or it closed) is
-  // the workspace chat to the list: otherwise nothing was highlighted, and the
-  // thread being read lit its own workspace's dot and badge.
+  // that is not a chat of its own is the workspace chat to the list: its row
+  // is gone (its workspace is back to one agent, or it closed), or it is the
+  // one agent of a space card, whose row is the workspace chat (`paneTarget`).
+  // Otherwise nothing was highlighted, and the thread being read lit its own
+  // workspace's dot and badge: an agent opened as `w6/w6:p2` while w6 held
+  // two, left alone beside a shell when the other exited, kept that key while
+  // its row was keyed `w6`.
   //
   // By connection too: a machine's `w1` is not the host's `w1`.
   const openConnectionId = selectedConnectionId ?? connection?.id ?? null;
@@ -179,7 +183,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     item.workspaceId === selectedWorkspaceId && item.connectionId === openConnectionId);
   const selectedPaneId = selectedWorkspaceId !== undefined && selection?.workspaceId === selectedWorkspaceId &&
     selection.connectionId === openConnectionId &&
-    selectedSummary !== undefined && paneChats(selectedSummary).some((pane) => pane.paneId === selection.paneId)
+    selectedSummary !== undefined &&
+    paneChats(selectedSummary).some((pane) => pane.paneId === selection.paneId && paneTarget(selectedSummary, pane).paneId !== undefined)
     ? selection.paneId : undefined;
   const openKey = selectedWorkspaceId === undefined ? null : chatKey({ workspaceId: selectedWorkspaceId, paneId: selectedPaneId });
   const open = useMemo((): OpenChat | null =>
@@ -229,8 +234,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     }
   }, [selectedTitle, selection, select]);
 
-  // A space card's layout: a floating card beside its button on iPad, shown
-  // on hover and pinned by a tap; a sheet on a phone.
+  // A space card's layout: on iPad a floating card beside the list, level
+  // with its button, shown on hover and pinned by a tap; a sheet on a phone.
   const peek = useLayoutPeek();
   const peekSummary = peek.peek === null ? null : summaries.find((item) => rowKey(item) === peek.peek?.key) ?? null;
   const pointer = Platform.OS === 'ios' && Platform.isPad;
@@ -609,14 +614,18 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
               const ownPinned = prefs.isPinned(own);
               const ownMuted = prefs.isMuted(own);
               const ownMutable = ownPersonal && prefs.canMute(own);
+              // That workspace pin is drawn once, on the card above: the same
+              // pin on both rows read as two. Pin and Mute stay in this
+              // row's long-press sheet.
+              const sharesCard = target.paneId === undefined;
               return (
                 <PaneRow
                   summary={item}
                   pane={pane}
                   first={row.first}
                   last={row.last}
-                  pinned={ownPinned}
-                  muted={ownMuted}
+                  pinned={ownPinned && !sharesCard}
+                  muted={ownMuted && !sharesCard}
                   selected={openHere === target.key}
                   unread={isPaneUnread(item, pane, rowReads, openHere)}
                   onPress={() => {
@@ -680,7 +689,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
         />
       )}
       <LayoutPeekOverlay
-        host={peek.host}
+        column={peek.column}
         peek={peek.peek}
         summary={peekSummary}
         onClose={peek.close}

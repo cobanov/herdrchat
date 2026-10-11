@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import { View as MockView } from 'react-native';
 
 import { buildSummaries } from '@/features/chats/useWorkspaces';
 import { listChats, type ListedChat } from '@/features/chats/listedChat';
@@ -21,7 +22,7 @@ jest.mock('@/features/terminal/navigation', () => ({ openTerminal: (...args: unk
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, avatarPalette: jest.requireActual('@/theme/tokens').avatarPalette }),
 }));
-jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+jest.mock('@/components/Icon', () => ({ Icon: ({ name }: { name: string }) => <MockView testID={`icon-${name}`} /> }));
 
 /** The Demo's workspaces, as the list holds them. */
 async function demo(): Promise<ListedChat[]> {
@@ -92,4 +93,17 @@ it('says so when herdr reports no layout', async () => {
   const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
   const screen = await render(<SpaceLayout summary={{ ...w6, tabs: [], layouts: [] }} onClose={jest.fn()} />);
   expect(screen.getByTestId('layout-empty')).toBeOnTheScreen();
+});
+
+// A tab zoomed on one pane is drawn as that pane alone, with the zoom mark.
+it('draws a zoomed tab as its focused pane alone, marked', async () => {
+  const w6 = (await demo()).find((summary) => summary.workspaceId === 'w6')!;
+  const zoomed: ListedChat = { ...w6, layouts: w6.layouts.map((layout) => layout.tabId === 'w6:t1' ? { ...layout, zoomed: true } : layout) };
+  const screen = await drawn(zoomed);
+  expect(screen.getByTestId('layout-pane-w6:p2')).toBeOnTheScreen();
+  expect(screen.queryByTestId('layout-pane-w6:p1')).toBeNull();
+  expect(screen.queryByTestId('layout-pane-w6:p3')).toBeNull();
+  expect(screen.getAllByTestId('icon-arrow.up.left.and.arrow.down.right')).toHaveLength(1);
+  // The other tab is drawn as before, unmarked.
+  expect(screen.getByTestId('layout-pane-w6:p4')).toBeOnTheScreen();
 });

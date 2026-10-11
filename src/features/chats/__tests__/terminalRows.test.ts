@@ -19,11 +19,11 @@ const pane = (paneId: string, overrides: Record<string, unknown> = {}): Pane =>
   decodePane({ pane_id: paneId, workspace_id: paneId.split(':')[0], terminal_id: `term_${paneId}`, cwd: '/home/demo/api', ...overrides });
 
 describe('terminal rows in the chat list', () => {
-  it("puts the Demo's shell pane under w6, and nowhere else", async () => {
+  it("puts the Demo's shell panes under w6 and w7, and nowhere else", async () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     const summaries = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes);
     expect(summaries.map((summary) => [summary.workspaceId, summary.shellPanes.map((row) => row.paneId)])).toEqual([
-      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']],
+      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']], ['w7', ['w7:p2']],
     ]);
     // The two agents are still two chats of their own, and the shell is not one.
     expect(summaries[5]?.panes.map((row) => row.paneId)).toEqual(['w6:p1', 'w6:p2']);
@@ -167,7 +167,8 @@ describe('terminalContext', () => {
 });
 
 describe('chatListRows', () => {
-  // The Demo: w6 has two agents and the shell pane w6:p3.
+  // The Demo: w6 has two agents and the shell panes w6:p3 and w6:p4; w7 one
+  // agent and the shell w7:p2, so its agent is a row under its card too.
   const listed = async () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     return listChats(buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes), 'demo', null);
@@ -176,7 +177,7 @@ describe('chatListRows', () => {
   it("hangs a workspace's shell pane under its card in Spaces", async () => {
     const rows = chatListRows('spaces', await listed(), '', new Map(), true);
     const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.terminal.paneId}`]));
-    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'terminal:w6:p4']);
+    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'terminal:w6:p4', 'pane:w7:p1', 'terminal:w7:p2']);
   });
 
   // Android has no terminal: a row would only open the screen saying so.

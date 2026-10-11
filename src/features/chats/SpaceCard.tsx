@@ -1,9 +1,11 @@
 import { memo, useRef } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
+import { HoverView } from '../../../modules/herdr-keys/src/hover';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';
+import { useHoverIntent } from '@/features/spaces/useHoverIntent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, size, spaceLayout, spacing } from '@/theme/tokens';
 import { AVATAR_SIZE, type RowAction } from './ChatRow';
@@ -19,8 +21,10 @@ import type { ChatSummary } from './useWorkspaces';
  *
  * Drawn as `ChatRow` draws a card, same padding, badge and corner, so the
  * rows hung off it line up with its rail. Tapping it shows the layout too;
- * on iPad a pointer resting on the button shows it while it stays there.
- * Its attention border and unread dot are its agents' together, as before.
+ * on iPad a pointer resting on the button shows it while it stays there
+ * (`HoverView`: `Pressable`'s own hover never fires on iOS here). A herdr
+ * that reports no tabs or layouts gets no button: the view would only say
+ * so. Its attention border and unread dot are its agents' together, as before.
  */
 export const SpaceCard = memo(function SpaceCard({
   summary, testKey, unread, pinned = false, muted = false, onOpenLayout, onHoverLayout, onLeaveLayout, onLongPress, actions = [],
@@ -47,6 +51,13 @@ export const SpaceCard = memo(function SpaceCard({
   const stats = spaceStats(summary);
   const key = testKey ?? rowTestKey(summary);
   const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
+  const hasLayout = summary.tabs.length > 0 || summary.layouts.length > 0;
+  const hover = useHoverIntent({
+    onIn: onHoverLayout === undefined ? undefined : () => onHoverLayout(button),
+    onOut: onLeaveLayout,
+    delayIn: motion.hoverIn,
+    delayOut: motion.hoverOut,
+  });
 
   return (
     <View
@@ -57,10 +68,11 @@ export const SpaceCard = memo(function SpaceCard({
         backgroundColor: colors.chatCard,
       }}>
       <Pressable
-        onPress={() => onOpenLayout(button)}
+        // Nothing to show without a layout: the agents under it are the way in.
+        onPress={hasLayout ? () => onOpenLayout(button) : undefined}
         onLongPress={onLongPress}
         accessibilityRole="button"
-        accessibilityHint="Shows its tabs and panes"
+        accessibilityHint={hasLayout ? 'Shows its tabs and panes' : undefined}
         accessibilityActions={actions.map(({ name, label }) => ({ name, label }))}
         onAccessibilityAction={(event) => {
           actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
@@ -69,7 +81,7 @@ export const SpaceCard = memo(function SpaceCard({
         testID={`chat-row-${key}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-          padding: spacing.md, paddingRight: spacing.xs,
+          padding: spacing.md, paddingRight: hasLayout ? spacing.xs : spacing.md,
           borderTopLeftRadius: radius.sm, borderBottomLeftRadius: radius.sm,
           backgroundColor: pressed ? colors.chatCardPressed : 'transparent',
         })}>
@@ -98,24 +110,24 @@ export const SpaceCard = memo(function SpaceCard({
           />
         )}
       </Pressable>
-      <Pressable
-        ref={button}
-        onPress={() => onOpenLayout(button)}
-        onHoverIn={onHoverLayout === undefined ? undefined : () => onHoverLayout(button)}
-        onHoverOut={onLeaveLayout}
-        delayHoverIn={motion.hoverIn}
-        delayHoverOut={motion.hoverOut}
-        accessibilityRole="button"
-        accessibilityLabel="Show layout"
-        testID={`space-layout-${key}`}
-        style={({ pressed }) => ({
-          width: minTouchTarget, minHeight: minTouchTarget,
-          alignItems: 'center', justifyContent: 'center', marginRight: spacing.xs,
-          borderRadius: radius.sm,
-          backgroundColor: pressed ? colors.chatCardPressed : 'transparent',
-        })}>
-        <Icon name="rectangle.split.2x2" size={spaceLayout.buttonGlyph} tintColor={colors.tint} />
-      </Pressable>
+      {hasLayout && (
+        <HoverView onHoverChange={hover} style={{ justifyContent: 'center', marginRight: spacing.xs }}>
+          <Pressable
+            ref={button}
+            onPress={() => onOpenLayout(button)}
+            accessibilityRole="button"
+            accessibilityLabel="Show layout"
+            testID={`space-layout-${key}`}
+            style={({ pressed }) => ({
+              width: minTouchTarget, minHeight: minTouchTarget,
+              alignItems: 'center', justifyContent: 'center',
+              borderRadius: radius.sm,
+              backgroundColor: pressed ? colors.chatCardPressed : 'transparent',
+            })}>
+            <Icon name="rectangle.split.2x2" size={spaceLayout.buttonGlyph} tintColor={colors.tint} />
+          </Pressable>
+        </HoverView>
+      )}
     </View>
   );
 });

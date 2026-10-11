@@ -1,8 +1,9 @@
 import { peekReducer, type Peek } from '../spaces/peek';
 
 const anchor = { x: 260, y: 200, width: 44, height: 44 };
-const host = { x: 0, y: 0, width: 320, height: 900 };
-const show = (key: string, how: 'hover' | 'pin') => ({ type: 'show' as const, key, how, anchor, host });
+const column = { x: 0, y: 0, width: 320, height: 900 };
+const window = { x: 0, y: 0, width: 1180, height: 900 };
+const show = (key: string, how: 'hover' | 'pin') => ({ type: 'show' as const, key, how, anchor, column, window });
 const run = (...events: Parameters<typeof peekReducer>[1][]): Peek | null => events.reduce<Peek | null>(peekReducer, null);
 
 describe('the floating layout card', () => {

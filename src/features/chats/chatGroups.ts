@@ -34,11 +34,19 @@ export type ChatListItem<S extends ChatSummary = ChatSummary> =
  * own under it, then each other pane's terminal row. A one-agent workspace
  * with a shell used to be the agent's card with the terminal row hanging off
  * it, which read as if the terminal belonged to the agent.
+ *
+ * A workspace whose one agent herdr could not restore (no pane, a
+ * `restoreError`, nothing else in it) is still that agent's chat: its card
+ * says "Couldn't restore" and opens the conversation, as it always did. As a
+ * space it would be titled by the workspace with "no agent" and open a layout
+ * with nothing to tap, and the conversation could not be reached from Spaces.
  */
 export type SpaceCardMode = 'chat' | 'space';
 
-export function spaceCardMode(summary: Pick<ChatSummary, 'panes' | 'shellPanes'>): SpaceCardMode {
-  return summary.panes.length === 1 && summary.shellPanes.length === 0 ? 'chat' : 'space';
+export function spaceCardMode(summary: Pick<ChatSummary, 'panes' | 'shellPanes' | 'restoreError'>): SpaceCardMode {
+  if (summary.shellPanes.length > 0) return 'space';
+  if (summary.panes.length === 1) return 'chat';
+  return summary.panes.length === 0 && summary.restoreError !== null ? 'chat' : 'space';
 }
 
 /**

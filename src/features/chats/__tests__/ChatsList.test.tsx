@@ -1,13 +1,15 @@
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import type { ReactElement, ReactNode } from 'react';
-import { View as MockView, type ViewProps } from 'react-native';
+import { Platform, View as MockView, type ViewProps } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import { DemoHost } from '@/lib/demo/host';
+import { useChatSelection } from '@/state/chatSelection';
 import { useSpaceLayoutSheet } from '@/state/spaceLayout';
 import ChatsList from '../ChatsList';
 import { listChats, type ListedChat } from '../listedChat';
 import { buildSummaries } from '../useWorkspaces';
+import { motion } from '@/theme/tokens';
 
 // Every row drawn, in order: the list's own virtualisation is not under test.
 jest.mock('@shopify/flash-list', () => ({
@@ -33,7 +35,10 @@ jest.mock('expo-router', () => ({
   useFocusEffect: jest.fn(),
   router: { push: jest.fn(), dismissTo: jest.fn() },
 }));
-jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
+// One database for every render, as the real context gives: a new object
+// each time re-ran the list's read-marker effect forever once a chat was open.
+const mockDb = {};
+jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => mockDb }));
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: (props: ViewProps) => <MockView {...props} />,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -82,9 +87,12 @@ jest.mock('../useHostChats', () => ({
     notices: [], connectionIds: ['demo'], targetOf: () => null,
   }),
 }));
+/** Workspaces pinned in a test, by id. */
+let mockPinned: readonly string[] = [];
 jest.mock('../useChatPrefs', () => ({
   useChatPrefs: () => ({
-    pinnedAt: new Map(), isPinned: () => false, isMuted: () => false, canMute: () => false,
+    pinnedAt: new Map(), isPinned: (chat: { workspaceId: string }) => mockPinned.includes(chat.workspaceId),
+    isMuted: () => false, canMute: () => false,
     togglePin: jest.fn(), toggleMute: jest.fn(), error: null, clearError: jest.fn(),
   }),
 }));
@@ -94,6 +102,8 @@ jest.mock('../useChatActions', () => ({
   useChatActions: () => ({ error: null, clearError: jest.fn(), manageChat: jest.fn(), renameChat: jest.fn(), closeChat: jest.fn() }),
 }));
 jest.mock('../MachineChats', () => ({ MachineFeeds: () => null }));
+const mockOpenChat = jest.fn();
+jest.mock('../navigation', () => ({ openChat: (...args: unknown[]) => mockOpenChat(...args) }));
 
 beforeAll(async () => {
   const snapshot = await new HerdrClient(new DemoHost()).snapshot();
@@ -104,7 +114,10 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   mockPush.mockClear();
+  mockOpenChat.mockClear();
+  mockPinned = [];
   mockTerminalAvailable = true;
+  useChatSelection.setState({ selection: null });
 });
 
 // "Each top level card doesn't represent an agent, it should just list the
@@ -148,4 +161,104 @@ it("opens w6's layout sheet from its button and from the card", async () => {
   await fireEvent.press(screen.getByTestId('chat-row-w6'));
   expect(mockPush).toHaveBeenCalledWith('/space-layout');
   expect(useSpaceLayoutSheet.getState().summary?.workspaceId).toBe('w6');
+});
+
+// Kenneth's own case: one agent and a terminal. The card is the workspace,
+// the agent a row under it (still the workspace's chat), then the terminal.
+it('draws one agent beside a shell as a space, the agent and its terminal under it', async () => {
+  const screen = await render(<ChatsList />);
+  const card = screen.getByTestId('chat-row-w7');
+  expect(card).toHaveProp('accessibilityLabel', expect.stringMatching(/^site, 1 agent · 1 tab · 2 panes · demo\/site/));
+  expect(within(card).getByText('site')).toBeOnTheScreen();
+  expect(screen.getByTestId('space-layout-w7')).toBeOnTheScreen();
+  expect(screen.getByTestId('pane-row-w7:p1')).toHaveProp('accessibilityLabel', expect.stringMatching(/^Landing page copy, /));
+  expect(screen.getByTestId('terminal-row-w7:p2')).toBeOnTheScreen();
+  await fireEvent.press(screen.getByTestId('pane-row-w7:p1'));
+  expect(mockOpenChat).toHaveBeenCalledWith('demo', 'w7', 'Landing page copy', undefined);
+});
+
+// The lone agent's row is the workspace chat, so it is the one lit while
+// that chat is open, under the workspace's key.
+it("highlights a lone agent's row while its workspace chat is open", async () => {
+  useChatSelection.setState({ selection: { connectionId: 'demo', workspaceId: 'w7', title: 'Landing page copy' } });
+  const screen = await render(<ChatsList selectedWorkspaceId="w7" selectedConnectionId="demo" />);
+  expect(screen.getByTestId('pane-row-w7:p1')).toHaveProp('accessibilityState', { selected: true });
+});
+
+// Opened as its own pane chat while w7 held two agents; the other exited,
+// and it is alone beside the shell. Its row is keyed `w7` now, and stays lit.
+it("keeps a lone agent's row highlighted when it was opened as a pane chat", async () => {
+  useChatSelection.setState({ selection: { connectionId: 'demo', workspaceId: 'w7', paneId: 'w7:p1', title: 'Landing page copy' } });
+  const screen = await render(<ChatsList selectedWorkspaceId="w7" selectedConnectionId="demo" />);
+  expect(screen.getByTestId('pane-row-w7:p1')).toHaveProp('accessibilityState', { selected: true });
+  expect(screen.getByTestId('chat-row-w7')).not.toHaveProp('accessibilityState', { selected: true });
+});
+
+// The lone agent shares its workspace's pin: one pin, on the card.
+it("draws a workspace's pin once, on its card, not again on its lone agent", async () => {
+  mockPinned = ['w7'];
+  const screen = await render(<ChatsList />);
+  expect(screen.getByTestId('chat-row-w7')).toHaveProp('accessibilityLabel', expect.stringMatching(/^site, Pinned, /));
+  expect(screen.getByTestId('pane-row-w7:p1')).toHaveProp('accessibilityLabel', expect.not.stringMatching(/Pinned/));
+});
+
+// An older herdr sends no tabs or layouts: no button that opens an empty view.
+it('offers no layout button where herdr reports no layout', async () => {
+  const before = mockSummaries;
+  mockSummaries = mockSummaries.map((summary) => summary.workspaceId === 'w6' ? { ...summary, tabs: [], layouts: [] } : summary);
+  try {
+    const screen = await render(<ChatsList />);
+    expect(screen.getByTestId('chat-row-w6')).toBeOnTheScreen();
+    expect(screen.queryByTestId('space-layout-w6')).toBeNull();
+    await fireEvent.press(screen.getByTestId('chat-row-w6'));
+    expect(mockPush).not.toHaveBeenCalled();
+  } finally {
+    mockSummaries = before;
+  }
+});
+
+// On iPad the layout is a floating card, not a sheet.
+describe('on iPad', () => {
+  // Jest runs as iOS; `isPad` is iOS's own field, which Platform's union type hides.
+  const wasPad = Platform.OS === 'ios' ? Platform.isPad : false;
+  // The mocked views measure nothing; the card needs its button and the list placed.
+  const native = jest.requireActual<{ default: { measureInWindow: jest.Mock } }>('@react-native/jest-preset/jest/MockNativeMethods').default;
+  beforeAll(() => {
+    Object.defineProperty(Platform, 'isPad', { value: true, configurable: true });
+    native.measureInWindow.mockImplementation((done: (x: number, y: number, width: number, height: number) => void) => done(0, 0, 320, 600));
+  });
+  afterAll(() => {
+    Object.defineProperty(Platform, 'isPad', { value: wasPad, configurable: true });
+    native.measureInWindow.mockReset();
+  });
+
+  it("shows w6's layout as a floating card from its button, pushing no sheet", async () => {
+    const screen = await render(<ChatsList />);
+    await fireEvent.press(screen.getByTestId('space-layout-w6'));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('space-layout-card')).toBeOnTheScreen();
+    expect(screen.getByTestId('layout-w6')).toBeOnTheScreen();
+    // Pinned by the tap: a tap anywhere outside closes it.
+    await fireEvent.press(screen.getByTestId('space-layout-backdrop'));
+    expect(screen.queryByTestId('space-layout-card')).toBeNull();
+  });
+
+  it('shows the card while a pointer rests on the button, and not after it leaves', async () => {
+    jest.useFakeTimers();
+    try {
+      const screen = await render(<ChatsList />);
+      const button = screen.getByTestId('space-layout-w6').parent!;
+      await fireEvent(button, 'pointerEnter');
+      expect(screen.queryByTestId('space-layout-card')).toBeNull();
+      await act(() => jest.advanceTimersByTime(motion.hoverIn));
+      expect(screen.getByTestId('space-layout-card')).toBeOnTheScreen();
+      // Not pinned: nothing to tap outside.
+      expect(screen.queryByTestId('space-layout-backdrop')).toBeNull();
+      await fireEvent(button, 'pointerLeave');
+      await act(() => jest.advanceTimersByTime(motion.hoverOut));
+      expect(screen.queryByTestId('space-layout-card')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

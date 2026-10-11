@@ -26,7 +26,11 @@ export type LayoutPaneKind = 'agent' | 'shell';
 export interface LayoutPane {
   paneId: string;
   kind: LayoutPaneKind;
-  /** "Claude" for an agent; for a shell, the program in front or its title, else "Shell". */
+  /**
+   * "Claude" for an agent; for a shell, the program in front or its title,
+   * else "Shell": the word its terminal row shows (`processLabel`), so one
+   * pane is not "Shell" in the list and "shell" in its layout.
+   */
   label: string;
   /** An agent's session title (or herdr name), which the box shows under its label. */
   detail: string | null;

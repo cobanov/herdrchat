@@ -98,18 +98,36 @@ describe('spaceLayoutModel', () => {
 });
 
 describe('popoverPlacement', () => {
-  const host = { x: 0, y: 100, width: 320, height: 800 };
+  const column = { x: 0, y: 100, width: 320, height: 800 };
+  const phone = { x: 0, y: 0, width: 320, height: 900 };
   const want = { width: 300, maxHeight: 500, margin: 16, gap: 4 };
 
-  it('hangs below a button high on the list, its right edge under the button', () => {
-    expect(popoverPlacement({ x: 260, y: 200, width: 44, height: 44 }, host, want)).toEqual({ left: 16, width: 288, top: 148, maxHeight: 500 });
-    const wide = { ...host, width: 1000 };
-    expect(popoverPlacement({ x: 600, y: 200, width: 44, height: 44 }, wide, want)).toMatchObject({ left: 344, width: 300 });
+  it('hangs below a button high on the list, its right edge under the button, when the list is the window', () => {
+    expect(popoverPlacement({ x: 260, y: 200, width: 44, height: 44 }, column, phone, want)).toEqual({ left: 16, width: 288, top: 248, maxHeight: 500 });
+    const wide = { ...column, width: 1000 };
+    expect(popoverPlacement({ x: 600, y: 200, width: 44, height: 44 }, wide, { ...phone, width: 1000 }, want)).toMatchObject({ left: 344, width: 300 });
   });
 
   it('rises above a button low on the list, capped at the room there', () => {
-    expect(popoverPlacement({ x: 260, y: 800, width: 44, height: 44 }, host, want)).toEqual({ left: 16, width: 288, bottom: 104, maxHeight: 500 });
-    const short = { ...host, height: 300 };
-    expect(popoverPlacement({ x: 260, y: 300, width: 44, height: 44 }, short, want)).toMatchObject({ bottom: 104, maxHeight: 180 });
+    expect(popoverPlacement({ x: 260, y: 800, width: 44, height: 44 }, column, phone, want)).toEqual({ left: 16, width: 288, bottom: 104, maxHeight: 500 });
+    const short = { ...column, height: 300 };
+    expect(popoverPlacement({ x: 260, y: 300, width: 44, height: 44 }, short, { ...phone, height: 400 }, want)).toMatchObject({ bottom: 104, maxHeight: 180 });
+  });
+
+  // iPad: the card floats beside the sidebar at its full width, level with
+  // the button, and leaves the rows under the button uncovered.
+  const sidebar = { x: 0, y: 0, width: 320, height: 1000 };
+  const ipad = { x: 0, y: 0, width: 1180, height: 1000 };
+
+  it('floats beside the sidebar, its top level with a button high on the list', () => {
+    expect(popoverPlacement({ x: 260, y: 200, width: 44, height: 44 }, sidebar, ipad, want)).toEqual({ left: 336, width: 300, top: 200, maxHeight: 500 });
+  });
+
+  it('floats beside the sidebar, its bottom level with a button low on the list', () => {
+    expect(popoverPlacement({ x: 260, y: 900, width: 44, height: 44 }, sidebar, ipad, want)).toEqual({ left: 336, width: 300, bottom: 56, maxHeight: 500 });
+  });
+
+  it('stays inside the column when the window has no room beside it', () => {
+    expect(popoverPlacement({ x: 260, y: 200, width: 44, height: 44 }, sidebar, { ...ipad, width: 600 }, want)).toMatchObject({ left: 16, width: 288 });
   });
 });

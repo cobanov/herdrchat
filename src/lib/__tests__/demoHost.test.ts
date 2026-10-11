@@ -41,7 +41,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -59,8 +59,8 @@ describe('DemoHost as a herdr host', () => {
     ]);
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
-    // The other five keep the one pane they always had.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1]);
+    // The first five keep the one pane they always had; site's agent has a shell beside it.
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2]);
   });
 
   // Scratch and the OMP ledger have no session title, so the Demo also shows
@@ -76,6 +76,7 @@ describe('DemoHost as a herdr host', () => {
       ['w5:p1', 'Daily screen journal'],
       ['w6:p1', 'Archived projects migration'],
       ['w6:p2', 'Save button wrap'],
+      ['w7:p1', 'Landing page copy'],
     ]);
   });
 
@@ -185,7 +186,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

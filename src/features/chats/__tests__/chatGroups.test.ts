@@ -172,6 +172,17 @@ describe('space cards', () => {
     expect(spaceCardMode(shellOnly)).toBe('space');
   });
 
+  // Its card says "Couldn't restore" and opens the conversation, as it did
+  // before spaces: as a space it opened a layout with nothing in it to tap.
+  it('keeps a workspace whose one agent failed to restore as that chat', () => {
+    const lost = { ...chat('lost', 'unknown'), restoreError: 'Session file missing.' };
+    expect(spaceCardMode(lost)).toBe('chat');
+    expect(paneChats(lost)).toEqual([]);
+    // Beside a shell it is a space still, and with no error an empty one is too.
+    expect(spaceCardMode({ ...lost, shellPanes: [shell('lost:p2')] })).toBe('space');
+    expect(spaceCardMode(chat('empty', 'unknown'))).toBe('space');
+  });
+
   it("lists every agent of a space under it, and none under a chat", () => {
     expect(paneChats(one)).toEqual([]);
     expect(paneChats(withShell).map((pane) => pane.paneId)).toEqual(['term:p1']);
