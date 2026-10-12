@@ -4,17 +4,18 @@ import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
 import * as SystemUI from 'expo-system-ui';
 import { Suspense, useEffect, useMemo } from 'react';
-import { ActivityIndicator, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Platform, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ActionSheetHost } from '@/components/ActionSheetHost';
 import {
   useNotificationRouting,
   usePushTokenRefresh,
 } from '@/features/notifications/useNotificationRouting';
 import { AppTheme } from '@/theme/AppTheme';
 import { useTheme } from '@/theme/ThemeProvider';
-import { darkPalette, lightPalette } from '@/theme/tokens';
+import { darkPalette, lightPalette, radius } from '@/theme/tokens';
 import { DATABASE_NAME, migrate } from '@/state/db';
 import { Hydrate } from '@/state/Hydrate';
 
@@ -162,12 +163,22 @@ function RootStack() {
             an iPhone is about 350pt — while the keyboard, which this screen
             raises immediately because the field is autofocused, is about 340pt.
             The sheet was almost entirely behind the keyboard. Letting UIKit size
-            it to its content is both correct and one fewer number to be wrong. */}
+            it to its content is both correct and one fewer number to be wrong.
+
+            Android draws this sheet square unless given a radius; iOS keeps the
+            system's own corner. */}
         <Stack.Screen
           name="rename-chat"
-          options={{ presentation: 'formSheet', sheetAllowedDetents: 'fitToContents' }}
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: 'fitToContents',
+            sheetCornerRadius: Platform.OS === 'android' ? radius.lg : undefined,
+          }}
         />
       </Stack>
+      {/* Android's action sheets, above every screen. Renders nothing on iOS,
+          whose sheets are the system's. */}
+      <ActionSheetHost />
     </ThemeProvider>
   );
 }

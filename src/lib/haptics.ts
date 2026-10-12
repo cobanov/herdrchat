@@ -13,25 +13,36 @@ import { settingsSnapshot } from '@/state/settings';
  * Calibration: `selection` for toggles, tabs and pickers; `light` for sends and
  * confirmations; `medium` for destructive intent; the notification types for
  * outcomes. Never on scroll.
+ *
+ * Android uses the view's own haptic constants rather than expo-haptics' iOS
+ * calls, which Android can only imitate with the vibrator motor: a buzz, not a
+ * tick, and one that ignores the system's touch-feedback setting. Android was
+ * once left out entirely, which made the Haptics switch in Settings a switch
+ * that did nothing there.
  */
 function enabled(): boolean {
-  return Platform.OS === 'ios' && settingsSnapshot().haptics;
+  return settingsSnapshot().haptics;
+}
+
+function play(ios: () => Promise<void>, android: Haptics.AndroidHaptics): void {
+  if (!enabled()) return;
+  void (Platform.OS === 'android' ? Haptics.performAndroidHapticsAsync(android) : ios());
 }
 
 export const haptics = {
   selection() {
-    if (enabled()) void Haptics.selectionAsync();
+    play(() => Haptics.selectionAsync(), Haptics.AndroidHaptics.Clock_Tick);
   },
   light() {
-    if (enabled()) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), Haptics.AndroidHaptics.Context_Click);
   },
   medium() {
-    if (enabled()) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), Haptics.AndroidHaptics.Long_Press);
   },
   success() {
-    if (enabled()) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    play(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), Haptics.AndroidHaptics.Confirm);
   },
   error() {
-    if (enabled()) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    play(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error), Haptics.AndroidHaptics.Reject);
   },
 };

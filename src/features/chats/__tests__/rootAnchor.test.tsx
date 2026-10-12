@@ -10,6 +10,10 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('expo-notifications', () => ({ setNotificationHandler: jest.fn() }));
 jest.mock('expo-sqlite', () => ({ SQLiteProvider: () => null }));
+// Toggle (Android's Material switch) and ActionSheetHost animate with Reanimated,
+// whose native half does not exist under jest.
+jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
+jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-system-ui', () => ({ setBackgroundColorAsync: jest.fn() }));
 jest.mock('@/features/notifications/useNotificationRouting', () => ({
   useNotificationRouting: jest.fn(),
