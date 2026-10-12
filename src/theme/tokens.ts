@@ -73,8 +73,12 @@ export const size = {
    * Not `spacing.xxxl * 2`: doubling a spacing token to reach a clearance is how
    * you end up unable to change either one. The bar's height is the system's,
    * so this is measured generously rather than derived.
+   *
+   * Android's bar does not float: the screen ends at its top edge, so all a
+   * list needs there is the usual breathing room, not a bar's height of blank
+   * page above another bar.
    */
-  floatingBarClearance: 96,
+  floatingBarClearance: Platform.OS === 'ios' ? 96 : spacing.lg,
   /**
    * The segmented picker's fixed geometry.
    *
@@ -84,6 +88,12 @@ export const size = {
    * one and the other two follow.
    */
   segmented: { inset: 3, height: 36 },
+  /**
+   * Android's switch, drawn to Material 3's measurements because the platform
+   * switch React Native renders is the older one, a knob hanging off a thin
+   * track. The knob grows when on, which is half of how the state reads.
+   */
+  materialSwitch: { width: 52, height: 32, border: 2, thumbOff: 16, thumbOn: 24 },
   /** A glyph in a thread header's round controls (reload, tool calls). */
   headerGlyph: 19,
   /** The floating "jump to latest" circle; `hitSlop` carries it past 44pt. */
@@ -301,6 +311,18 @@ export const welcome = {
   terminalTilt: '-2deg',
 } as const;
 
+/**
+ * Android's action sheet (`ActionSheetHost`): Material's drag handle, and how
+ * far down, or how fast, a drag has to go before letting go closes the sheet
+ * rather than settling it back.
+ */
+export const sheet = {
+  handleWidth: 32,
+  handleHeight: 4,
+  dismissFraction: 0.3,
+  dismissVelocity: 800,
+} as const;
+
 /** The working indicator's dot grid: 3 × 3 dots, and one breath of the wave in ms. */
 export const activity = {
   gridDot: 4,
@@ -504,14 +526,25 @@ export interface Palette {
    * invisibly under a code block, which is the opposite requirement.
    */
   controlTrack: string;
+  /**
+   * The rim and knob of an OFF Material switch (Android). The off track alone
+   * is a shade off the card; the outline is what makes it read as a control.
+   */
+  controlOutline: string;
 
   /**
    * Solid stand-in for glass, used on Android and under Reduce Transparency.
    * Opaque: at 92 to 94% the thread scrolled visibly behind the header and its
    * banners on Android, where nothing blurs it (#4 acceptance), and Reduce
    * Transparency asks for exactly no see-through.
+   *
+   * A step off the canvas, never the canvas itself. Glass reads as a surface
+   * because it is not the page; the light value was once the page colour, and
+   * the thread's round header buttons drew as bare glyphs floating on nothing.
    */
   glassFallback: string;
+  /** Dims the screen behind a modal sheet, so the sheet is the only thing lit. */
+  scrim: string;
   /** The depth wash behind glass. Flat grey makes the effect invisible. */
   backdropTop: string;
   backdropBottom: string;
@@ -578,8 +611,11 @@ export const lightPalette: Palette = {
   // system's proportions by keeping the same step DOWN from the surface it
   // sits on.
   controlTrack: '#CFD3E3',
+  controlOutline: '#7B7D92', // Material's outline step, in the palette's hue
 
-  glassFallback: '#F6F7FC',
+  glassFallback: '#EBEDF7',
+  // The label colour at Material's 32%: a tinted dim rather than a grey one.
+  scrim: 'rgba(21, 22, 28, 0.32)',
   backdropTop: '#F0F2FB',
   backdropBottom: '#E4E7F4',
 };
@@ -609,8 +645,11 @@ export const darkPalette: Palette = {
   swipeNeutral: '#2C2F42',
   attentionBorder: 'rgba(255, 159, 10, 0.55)',
   controlTrack: '#3A3A41', // the system's dark off-track, lifted off our card
+  controlOutline: '#8E8E99',
 
   glassFallback: '#1E1E22',
+  // Darker than light's: on a black canvas 32% hardly reads as a dim at all.
+  scrim: 'rgba(0, 0, 0, 0.6)',
   backdropTop: '#111119',
   backdropBottom: '#07070C',
 };

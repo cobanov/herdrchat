@@ -15,6 +15,10 @@ const mockSaveSetting = jest.fn();
 let mockEnabled = true;
 
 jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
+// Toggle (Android's Material switch) and ActionSheetHost animate with Reanimated,
+// whose native half does not exist under jest.
+jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
+jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-clipboard', () => ({ setStringAsync: (text: string) => mockSetString(text) }));
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette }),

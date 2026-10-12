@@ -33,7 +33,9 @@ export const PALETTE_KEY_DESCRIPTIONS = {
   swipeNeutral: 'A swipe action that is neither the tint nor destructive (Rename, Mute). Opaque.',
   attentionBorder: 'The rim around a chat that is waiting on you.',
   controlTrack: 'The track of a switch that is off. It must stand out from the card it sits on.',
+  controlOutline: "The rim and knob of a switch that is off, on Android: the outline is what makes it read as a control.",
   glassFallback: 'The solid stand-in for glass on Android and under Reduce Transparency. Opaque.',
+  scrim: 'Dims the screen behind a sheet, so the sheet is the only thing lit. Translucent.',
   backdropTop: 'The top of the gradient behind glass surfaces.',
   backdropBottom: 'The bottom of the gradient behind glass surfaces.',
 } as const satisfies Record<keyof Palette, string>;

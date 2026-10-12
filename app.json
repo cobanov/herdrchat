@@ -3,7 +3,7 @@
     "name": "HerdrChat",
     "slug": "herdrchat",
     "scheme": "herdrchat",
-    "version": "0.11.2",
+    "version": "0.11.3",
     "primaryColor": "#5459D4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +18,7 @@
     },
     "ios": {
       "bundleIdentifier": "dev.herdr.HerdrChat",
-      "buildNumber": "84",
+      "buildNumber": "85",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -31,7 +31,7 @@
     },
     "android": {
       "package": "dev.herdr.herdrchat",
-      "versionCode": 73,
+      "versionCode": 74,
       "adaptiveIcon": {
         "backgroundColor": "#151A34",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -71,7 +71,18 @@
           "microphonePermission": false
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              "./node_modules/@expo-google-fonts/material-symbols/400Regular/MaterialSymbols_400Regular.ttf"
+            ]
+          }
+        }
+      ],
+      "./plugins/withAndroidAccent"
     ]
   }
 }
