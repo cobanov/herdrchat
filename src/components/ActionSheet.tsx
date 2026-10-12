@@ -1,7 +1,8 @@
-import { ActionSheetIOS, Alert, Platform } from 'react-native';
+import { ActionSheetIOS, Platform } from 'react-native';
 
 import { haptics } from '@/lib/haptics';
 import { buildSheet, type SheetAction } from '@/lib/actionSheet';
+import { useActionSheet } from '@/state/actionSheet';
 
 /**
  * The ONLY file in the app that imports `ActionSheetIOS`.
@@ -24,8 +25,10 @@ import { buildSheet, type SheetAction } from '@/lib/actionSheet';
  * genuinely needed, that is a custom sheet and a deliberate decision — not
  * something to expect from here.
  *
- * Android falls back to `Alert.alert`, which is that platform's own equivalent
- * surface. A JS imitation of an iOS sheet on Android would be worse than either.
+ * Android shows a Material bottom sheet, `ActionSheetHost`, which is that
+ * platform's own idiom for "actions on this thing". It used to fall back to
+ * `Alert.alert`, which keeps three buttons and silently drops the rest: a chat's
+ * long press lost Close chat and Cancel both.
  */
 
 export type { SheetAction };
@@ -73,19 +76,8 @@ export function showActionSheet({
     return;
   }
 
-  // Android. `Alert` renders buttons in the order given and has no notion of a
-  // destructive one, so the ordering `buildSheet` applied is the only thing
-  // separating Delete from the rows above it — which is an argument for the
-  // rule living there rather than in the iOS branch.
-  Alert.alert(
-    title,
-    message,
-    sheet.options.map((label, index) => ({
-      text: label,
-      style: index === sheet.cancelButtonIndex ? 'cancel' : 'default',
-      onPress: () => sheet.handlers[index]?.(),
-    }))
-  );
+  // Android: the host at the root draws it, from the same ordered config.
+  useActionSheet.getState().present({ title, message, config: sheet });
 }
 
 /**

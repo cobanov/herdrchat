@@ -1,7 +1,7 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
@@ -187,7 +187,9 @@ export default function SettingsScreen() {
             </Text>
           </View></>}
 
-          {show('notifications') && <HighlightOnLink section="notifications" target={target} onMeasure={onMeasure}>
+          {/* iOS only: notifications go through APNs and Android has no push
+              path yet, so there the switch could only ever explain that. */}
+          {show('notifications') && Platform.OS === 'ios' && <HighlightOnLink section="notifications" target={target} onMeasure={onMeasure}>
             <NotificationsSection />
           </HighlightOnLink>}
 

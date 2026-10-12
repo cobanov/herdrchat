@@ -2,6 +2,7 @@ import { render } from '@testing-library/react-native';
 import { Text, View as MockView, type ViewProps } from 'react-native';
 
 import { Glass } from '../Glass';
+import { darkPalette, lightPalette } from '@/theme/tokens';
 
 let mockScheme = 'dark';
 let mockReduceTransparency = false;
@@ -41,4 +42,11 @@ it('hides real glass by animating its style, never by unmounting', async () => {
   expect(screen.getByTestId('liquid-glass')).toHaveProp('glassEffectStyle', expect.objectContaining({ style: 'none' }));
   await screen.rerender(<Glass hidden edgeAttached><Text>Jump</Text></Glass>);
   expect(screen.queryByTestId('blur')).toBeNull();
+});
+
+// Android has no glass, so this colour IS the control's shape there. In light it
+// was once the page colour itself, and the thread's round header buttons drew
+// as bare glyphs floating on nothing.
+it.each([['light', lightPalette], ['dark', darkPalette]] as const)('stands in for glass with a surface off the %s page', (_scheme, palette) => {
+  expect(palette.glassFallback).not.toBe(palette.systemBackground);
 });

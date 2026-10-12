@@ -68,7 +68,7 @@ export default function RenameChatScreen() {
   };
 
   return (
-    <Screen presentation="sheet">
+    <Screen presentation="form-sheet">
       <View style={{ padding: screenPadding, gap: spacing.lg }}>
         {/* Cancel / title / Save on one line, the way a system sheet does it.
             Both actions sit at the top because the bottom of a keyboard-raised
