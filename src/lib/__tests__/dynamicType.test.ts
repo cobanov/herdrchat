@@ -56,7 +56,8 @@ describe('Dynamic Type', () => {
   it('lets no other component set a raw lineHeight', () => {
     // Anything setting its own lineHeight bypasses the scaling above. The avatar
     // glyph is the documented exception and turns font scaling off entirely,
-    // because it is a picture drawn with a font and sized to its container.
+    // because it is a picture drawn with a font and sized to its container. An
+    // Android icon is the same thing: a Material Symbol, drawn with its font.
     //
     // `^[^/*]*` keeps this to real assignments: the type scale in `theme/` is
     // where these numbers are DEFINED, and a prose mention in a comment is not a
@@ -64,12 +65,16 @@ describe('Dynamic Type', () => {
     const offenders = grepSource('^[^/*]*lineHeight:', [
       'components/Text.tsx',
       'components/PresenceAvatar.tsx',
+      'components/Icon.tsx',
     ]).filter((hit) => !hit.startsWith('src/theme/'));
     expect(offenders).toEqual([]);
   });
 
-  it('turns font scaling off in exactly one place, and says why', () => {
-    const offenders = grepSource('allowFontScaling=\\{false\\}', ['components/PresenceAvatar.tsx']);
+  it('turns font scaling off only for glyphs drawn with a font, and says why', () => {
+    const offenders = grepSource('allowFontScaling=\\{false\\}', [
+      'components/PresenceAvatar.tsx',
+      'components/Icon.tsx',
+    ]);
     expect(offenders).toEqual([]);
   });
 

@@ -1,5 +1,6 @@
-import { Alert, Pressable } from 'react-native';
+import { Pressable } from 'react-native';
 
+import { confirmDestructive } from '@/components/ActionSheet';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
@@ -27,16 +28,16 @@ import { minTouchTarget } from '@/theme/tokens';
 export function StopButton({ onStop }: { onStop: (hard: boolean) => void }) {
   const { colors } = useTheme();
 
+  // The app's one confirmation, rather than an Alert of its own: an Android
+  // alert is a different, older-looking surface from every other sheet here.
   const confirmHard = () => {
-    haptics.error();
-    Alert.alert(
-      'Force quit the agent?',
-      'Ctrl-C can exit the agent process and end this session. The conversation stays on the host but the agent stops running.\n\nA tap on Stop interrupts the current turn without this.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Force quit', style: 'destructive', onPress: () => onStop(true) },
-      ]
-    );
+    confirmDestructive({
+      title: 'Force quit the agent?',
+      message:
+        'Ctrl-C can exit the agent process and end this session. The conversation stays on the host but the agent stops running.\n\nA tap on Stop interrupts the current turn without this.',
+      confirmLabel: 'Force quit',
+      onConfirm: () => onStop(true),
+    });
   };
 
   return (

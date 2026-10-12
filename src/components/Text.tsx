@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import {
   Text as RNText,
   type TextProps as RNTextProps,
@@ -14,6 +15,8 @@ export interface TextProps extends RNTextProps {
   color?: ColorRole;
   weight?: TextStyle['fontWeight'];
   mono?: boolean;
+  /** Passed through to the native text, for moving accessibility focus to it. */
+  ref?: Ref<RNText>;
 }
 
 /**

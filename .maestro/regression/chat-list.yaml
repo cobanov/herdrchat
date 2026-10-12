@@ -41,6 +41,18 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible:
     id: chat-group-pinned
 
+# Every row of the menu is there, and Cancel leaves it doing nothing. On
+# Android it was an alert, which keeps three buttons: Close chat and Cancel
+# were cut, and picking an action was the only way out.
+- longPressOn:
+    id: chat-row-w2
+- assertVisible: Rename…
+- assertVisible: Close chat
+- tapOn: Cancel
+- assertNotVisible: Close chat
+- assertVisible:
+    id: chat-row-w2
+
 # Trailing swipe: Rename and Close, and it closes again cleanly.
 - swipe:
     from:
