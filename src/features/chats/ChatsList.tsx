@@ -307,6 +307,8 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                   void refresh();
                 }}
                 tintColor={colors.tint}
+                colors={[colors.tint]}
+                progressBackgroundColor={colors.secondarySystemBackground}
               />
             }>
             {error !== null && !keyChanged ? (
@@ -423,6 +425,10 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
                 void refresh();
               }}
               tintColor={colors.tint}
+              // Android's spinner ignores tintColor: black on a white disc
+              // otherwise, in either scheme.
+              colors={[colors.tint]}
+              progressBackgroundColor={colors.secondarySystemBackground}
             />
           }
         />

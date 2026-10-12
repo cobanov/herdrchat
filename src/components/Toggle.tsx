@@ -1,9 +1,11 @@
-import { Platform, Switch, View } from 'react-native';
+import { useEffect } from 'react';
+import { Platform, Pressable, Switch, View } from 'react-native';
+import Animated, { interpolate, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Text } from './Text';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, spacing } from '@/theme/tokens';
+import { minTouchTarget, motion, radius, size, spacing } from '@/theme/tokens';
 
 /**
  * A labelled switch row, with an optional line of explanation underneath.
@@ -59,27 +61,107 @@ export function Toggle({
           </Text>
         )}
       </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={(next) => {
-          haptics.selection();
-          onChange(next);
-        }}
-        // The off track is what makes a switch visible when it is off — the knob
-        // is white and iOS draws no border around it.
-        trackColor={{ true: colors.tint, false: colors.controlTrack }}
-        // iOS tints the knob, not the track, when this is set; leaving it unset
-        // keeps the system's white knob and its shadow, which is the thing that
-        // separates knob from track at all.
-        ios_backgroundColor={colors.controlTrack}
-        // Android colours the knob with the system accent (teal) unless told;
-        // white on either track, like the iOS knob.
-        thumbColor={Platform.OS === 'android' ? colors.onTint : undefined}
-        accessibilityLabel={label}
-        accessibilityHint={detail}
-        testID={testID}
-      />
+      {Platform.OS === 'android' ? (
+        <MaterialSwitch
+          value={value}
+          disabled={disabled}
+          onChange={(next) => {
+            haptics.selection();
+            onChange(next);
+          }}
+          label={label}
+          detail={detail}
+          testID={testID}
+        />
+      ) : (
+        <Switch
+          value={value}
+          disabled={disabled}
+          onValueChange={(next) => {
+            haptics.selection();
+            onChange(next);
+          }}
+          // The off track is what makes a switch visible when it is off — the knob
+          // is white and iOS draws no border around it.
+          trackColor={{ true: colors.tint, false: colors.controlTrack }}
+          // iOS tints the knob, not the track, when this is set; leaving it unset
+          // keeps the system's white knob and its shadow, which is the thing that
+          // separates knob from track at all.
+          ios_backgroundColor={colors.controlTrack}
+          accessibilityLabel={label}
+          accessibilityHint={detail}
+          testID={testID}
+        />
+      )}
     </View>
+  );
+}
+
+/**
+ * Material 3's switch, for Android.
+ *
+ * React Native's Android switch is the platform's older one: a white knob
+ * hanging over the ends of a thin track, the off state barely there on a light
+ * card. Material 3 holds the knob inside a full-height track, outlines it when
+ * off and grows the knob when on, so the state reads at a glance.
+ */
+function MaterialSwitch({
+  value,
+  disabled,
+  onChange,
+  label,
+  detail,
+  testID,
+}: {
+  value: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  detail?: string;
+  testID?: string;
+}) {
+  const { colors, reduceMotion } = useTheme();
+  const { width, height, border, thumbOff, thumbOn } = size.materialSwitch;
+  const on = useSharedValue(value ? 1 : 0);
+
+  useEffect(() => {
+    on.set(reduceMotion ? (value ? 1 : 0) : withSpring(value ? 1 : 0, motion.press));
+  }, [on, value, reduceMotion]);
+
+  const track = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(on.get(), [0, 1], [colors.controlTrack, colors.tint]),
+    borderColor: interpolateColor(on.get(), [0, 1], [colors.controlOutline, colors.tint]),
+  }));
+  // The knob's centre sits half a track-height in from either end, so it
+  // travels the same way whatever size it is.
+  const thumb = useAnimatedStyle(() => {
+    const diameter = interpolate(on.get(), [0, 1], [thumbOff, thumbOn]);
+    return {
+      width: diameter,
+      height: diameter,
+      backgroundColor: interpolateColor(on.get(), [0, 1], [colors.controlOutline, colors.onTint]),
+      transform: [{ translateX: interpolate(on.get(), [0, 1], [height / 2, width - height / 2]) - diameter / 2 - border }],
+    };
+  });
+
+  return (
+    <Pressable
+      onPress={() => onChange(!value)}
+      disabled={disabled}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled }}
+      accessibilityLabel={label}
+      accessibilityHint={detail}
+      testID={testID}
+      // The track is 32 tall; the target reaches the 48 Android asks for.
+      hitSlop={spacing.sm}>
+      <Animated.View
+        style={[
+          { width, height, borderRadius: radius.full, borderWidth: border, justifyContent: 'center' },
+          track,
+        ]}>
+        <Animated.View style={[{ borderRadius: radius.full }, thumb]} />
+      </Animated.View>
+    </Pressable>
   );
 }

@@ -34,6 +34,18 @@ export default function TabsLayout() {
     <NativeTabs
       tintColor={colors.tint}
       badgeBackgroundColor={colors.attention}
+      // Android's bar is Material's navigation bar, which brings its own
+      // lavender surface, a blue pill and black icons unless told otherwise.
+      // It sits on the page here rather than as a slab of a second colour, and
+      // carries the accent the way the iOS bar does. iOS keeps its system bar.
+      {...(Platform.OS === 'android' && {
+        backgroundColor: colors.systemBackground,
+        indicatorColor: colors.tintMuted,
+        rippleColor: colors.fillSubtle,
+        iconColor: { default: colors.secondaryLabel, selected: colors.tint },
+        labelStyle: { default: { color: colors.secondaryLabel }, selected: { color: colors.tint } },
+        badgeTextColor: colors.onTint,
+      })}
       // The bar shrinks out of the way as the chat list scrolls, then comes
       // back on scroll-up — the iOS 26 behaviour people already expect.
       minimizeBehavior={Platform.OS === 'ios' && Platform.isPad ? 'never' : 'onScrollDown'}>
