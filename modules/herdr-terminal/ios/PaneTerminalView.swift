@@ -41,6 +41,11 @@ final class PaneTerminalView: SwiftTerm.TerminalView {
     wheel.addTarget(self, action: #selector(wheeled(_:)))
     // One finger: two are the container's pinch, which never runs with it.
     wheel.maximumNumberOfTouches = 1
+    // A trackpad or mouse scroll on iPadOS is an indirect scroll event, not a
+    // touch, and a pan recognizer drops those unless asked for them. Without
+    // this a two-finger scroll on an iPad's trackpad never began the wheel,
+    // the scroll view's pan took it instead, and the pane did not move.
+    wheel.allowedScrollTypesMask = [.continuous, .discrete]
     addGestureRecognizer(wheel)
     // The scroll view's own pan waits for the wheel to decline, which it does
     // at once whenever the mouse is off.

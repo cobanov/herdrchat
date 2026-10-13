@@ -97,7 +97,9 @@ herdr open on the desktop as well, check each of these and what it should do:
 - **Scrolling.** After `git log` (or in an agent's pane), a one-finger swipe up
   scrolls herdr's history of the pane, a swipe down comes back; it does not
   select text or drag a split. A tap still clicks. A pinch
-  changes the font size and moves nothing in herdr.
+  changes the font size and moves nothing in herdr. On an iPad with a
+  trackpad, a two-finger scroll does the same as the swipe (it is an
+  indirect scroll event, which the wheel gesture accepts).
 - **Programs.** `htop` (colours, live, `q` quits), `vim` (arrows, Esc from the
   bar, `:q`), a `git log` with colours, the agent's own `/model` panel through
   the header Terminal.
