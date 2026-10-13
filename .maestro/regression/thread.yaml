@@ -1,6 +1,7 @@
 # The thread's features against the Demo's scenarios (src/lib/demo/scenarios.ts):
 # effort in the header, a folded tool run, a question in two parts, the
-# keyboard button, and the /model and /effort panels.
+# keyboard button, the /model and /effort panels, and what a permission prompt
+# would run.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -151,5 +152,38 @@ appId: dev.herdr.HerdrChat
     visible: Set effort level to xhigh (this session only)
     timeout: 10000
 - assertVisible: .*Sonnet 5 · xhigh effort.*
+- tapOn:
+    id: thread-back
+
+# A permission prompt shows what it is for, not only "Do you want to proceed?":
+# the tool, its description, the command, Claude's warning and its auto-deny
+# time, above the question (the Demo's herdrchat chat waits on a Bash prompt in
+# Claude 2.1.296's shape). Open the screenshot: the command must be legible and
+# the choices still under it.
+- tapOn:
+    id: chat-row-w1
+- extendedWaitUntil:
+    visible:
+      id: blocked-details
+    timeout: 15000
+- assertVisible:
+    id: blocked-details-title
+- assertVisible: .*Bash command.*
+- assertVisible: Reproduce the empty-folder bug against an unreadable folder
+- assertVisible:
+    id: blocked-details-body
+- assertVisible: '(?s).*chmod 000 /tmp/demo-unreadable &&.*'
+- assertVisible: This command runs rm and could not be checked
+- assertVisible: Auto-denies in 1:32
+- assertVisible: Do you want to proceed?
+- takeScreenshot: blocked-details-${APPEARANCE}
+- tapOn:
+    id: blocked-option-1
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: .*Going ahead.*
+    timeout: 15000
+- assertNotVisible:
+    id: blocked-bar
 - tapOn:
     id: thread-back

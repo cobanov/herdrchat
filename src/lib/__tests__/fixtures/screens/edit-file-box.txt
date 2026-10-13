@@ -1,0 +1,16 @@
+⏺ Update(src/lib/directories.ts)
+
+╭────────────────────────────────────────────────────────────╮
+│ Edit file                                                  │
+│ src/lib/directories.ts                                     │
+│ ╭────────────────────────────────────────────────────────╮ │
+│ │ 12   export async function list(path) {                │ │
+│ │ 13 -   const out = await run(`ls ${path}; true`);      │ │
+│ │ 13 +   const out = await run(`ls ${path}`);            │ │
+│ │ 14     return out.split("\n");                         │ │
+│ ╰────────────────────────────────────────────────────────╯ │
+│ Do you want to make this edit to directories.ts?           │
+│ ❯ 1. Yes                                                   │
+│   2. Yes, allow all edits during this session              │
+│   3. No, and tell Claude what to do differently            │
+╰────────────────────────────────────────────────────────────╯

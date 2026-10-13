@@ -293,24 +293,31 @@ export function answeredReply(choice: string): string {
 }
 
 /**
- * Claude's visible screen on the blocked pane.
- *
- * The shape the real parser expects: the question, then a numbered menu, with
- * the selection marker Claude draws on the focused row.
+ * Claude's visible screen on the blocked pane: a Bash permission prompt in the
+ * shape Claude Code 2.1.296 draws it, between rules, with its description, a
+ * two-line command, the "could not be checked" note, the auto-deny line, the
+ * question and its menu. The parser reads the details from exactly this, and
+ * the blocked bar shows them above the question.
  */
 export const DEMO_BLOCKED_SCREEN = [
-  '╭──────────────────────────────────────────────╮',
-  '│ Edit file                                    │',
-  '╰──────────────────────────────────────────────╯',
+  '⏺ Bash(mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable && …)',
+  '  ⎿  Waiting…',
   '',
-  'src/lib/herdr/client.ts',
+  '────────────────────────────────────────────────────────────────────────',
+  ' Bash command',
+  ' Reproduce the empty-folder bug against an unreadable folder',
   '',
-  'Before I write to client.ts: this changes what every caller of',
-  'listDirectories sees on failure. Want me to go ahead?',
+  '   mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable &&',
+  '   npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable',
+  '────────────────────────────────────────────────────────────────────────',
+  ' This command runs rm and could not be checked',
+  ' ⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session',
   '',
-  '❯ 1. Yes, go ahead',
-  '  2. No, tell me more first',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  '   2. No',
   '',
+  ' Esc to cancel · Tab to amend',
 ].join('\n');
 
 /**

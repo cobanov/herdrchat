@@ -15,7 +15,7 @@ where regressions are found.
 | `regression/new-chat` | Start reachable with the keyboard up, Cancel |
 | `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
-| `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+| `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider, a Bash permission prompt showing its tool, description, command, warning and auto-deny time above the question (`blocked-details` screenshot) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 
 A fresh install with no host opens on the welcome, so every flow runs

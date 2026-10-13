@@ -28,9 +28,41 @@ export interface BlockedOption {
   keys?: readonly string[];
 }
 
+/**
+ * What a permission prompt is asking to do, as Claude drew it above the
+ * question: which tool, what it says it is for, the command or diff itself,
+ * and any warning under it. Without this the phone showed only "Do you want to
+ * proceed?", which is not something anyone can answer.
+ */
+export interface PromptDetails {
+  /** The tool line: "Bash command · from the "zen-video-v6" workflow", "Edit file". */
+  title: string | null;
+  /** The prose line straight under the title: the tool's description, a file path. */
+  summary: string | null;
+  /**
+   * The command, diff or preview, a line per terminal line, with box borders
+   * and the common indent removed and everything else kept as drawn.
+   */
+  body: string[];
+  /** The lines between the body and the question, the auto-deny line among them. */
+  notes: string[];
+  /**
+   * When Claude will deny the prompt on its own, as it printed it ("1:32",
+   * "about 2 minutes"). Read from each poll's screen, never counted down
+   * locally: the phone's clock is not the agent's.
+   */
+  deadline: string | null;
+}
+
 export interface BlockedPrompt {
   question: string | null;
   options: BlockedOption[];
+  /**
+   * What is being approved. Null for a prompt that is only its question (an
+   * AskUserQuestion, the trust prompt) or where none could be read; absent on
+   * prompts this parser did not build.
+   */
+  details?: PromptDetails | null;
   /**
    * The only safe answer is to close it (Esc). Set for Codex's file-mention
    * popup, which herdr counts as blocked (herdr #4495): Enter or a digit there
@@ -156,7 +188,7 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   }
 
   if (options.length === 0 || firstOptionLine === null) {
-    return parseTrustPrompt(raw) ?? { question: null, options: [] };
+    return parseTrustPrompt(raw) ?? { question: null, options: [], details: null };
   }
 
   // Question: the contiguous non-empty text lines immediately above the first
@@ -176,8 +208,201 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   return {
     question: question.length > 0 ? question : null,
     options,
+    details: parsePromptDetails(rawLines, cursor + 1),
     ...(multiSelect ? { multiSelect } : {}),
   };
+}
+
+/**
+ * How far above the question the details may start, in screen lines. A
+ * permission prompt that tall would not fit the 40-line screen the app reads
+ * anyway; past it, whatever is there is conversation, not the prompt.
+ */
+export const PROMPT_DETAILS_MAX_LINES = 30;
+
+/**
+ * Read what a prompt is asking to do from the lines above its question.
+ *
+ * Claude 2.1.296 draws a permission prompt between rules:
+ *
+ *     ──────────────────────────────────────
+ *     Bash command · from the "x" workflow      ← title
+ *     Transcribe the voice parts alone          ← summary
+ *
+ *       cd /repo &&                             ← body
+ *       ffmpeg …
+ *     ──────────────────────────────────────
+ *     This shell -c script runs rm and could not be checked     ← notes
+ *     ⚠ Claude Code will automatically deny this request in 1:32, …
+ *
+ *     Do you want to proceed?                   ← question
+ *
+ * Older versions draw one rule (or a `╭` box) with the command under a blank
+ * line. The block starts at the rule that opens the prompt: the one nearest
+ * the question, or the one before it when only prompt text lies between the
+ * two (2.1.296's second rule separates the notes). With no rule it is the
+ * paragraph group above the question. Either way it stays within
+ * `PROMPT_DETAILS_MAX_LINES`.
+ *
+ * An AskUserQuestion has no tool line, only its header tab (`☐ Database`),
+ * and gets null: its question already says everything.
+ */
+export function parsePromptDetails(rawLines: readonly string[], questionStart: number): PromptDetails | null {
+  const floor = Math.max(0, questionStart - PROMPT_DETAILS_MAX_LINES);
+  const rules: number[] = [];
+  for (let index = questionStart - 1; index >= floor; index -= 1) {
+    if (isRuleLine(rawLines[index] ?? '')) rules.push(index);
+  }
+
+  let start: number;
+  const nearest = rules[0];
+  if (nearest === undefined) {
+    start = paragraphStart(rawLines, questionStart, floor);
+  } else {
+    start = nearest + 1;
+    const before = rules[1];
+    const opensBox = /^\s*[╭┌]/.test(rawLines[nearest] ?? '');
+    if (before !== undefined && !opensBox && isPromptText(rawLines.slice(before + 1, nearest))) {
+      start = before + 1;
+    }
+    // A rule with conversation under it, or a box already closed above the
+    // question (Codex's banner), is not this prompt's.
+    const segment = rawLines.slice(start, questionStart);
+    const closed = opensBox && segment.some((line) => /^\s*[╰└]/.test(line));
+    if (closed || segment.some((line) => CONVERSATION_MARKER.test(line))) {
+      start = paragraphStart(rawLines, questionStart, floor);
+    }
+  }
+
+  const block = rawLines.slice(start, questionStart).map(unframe);
+  while (block.length > 0 && (block[0] ?? '').trim().length === 0) block.shift();
+  while (block.length > 0 && (block[block.length - 1] ?? '').trim().length === 0) block.pop();
+  const first = block[0];
+  if (first === undefined) return null;
+  const title = first.trim();
+  if (QUESTION_HEADER.test(title) || isFrameLine(title)) return null;
+
+  let index = 1;
+  let summary: string | null = null;
+  const next = block[1];
+  if (next !== undefined && next.trim().length > 0 && !isFrameLine(next) && indentOf(next) <= indentOf(first)) {
+    summary = next.trim();
+    index = 2;
+  }
+
+  // The body runs to the separator rule; whatever follows it is notes.
+  const bodyLines: string[] = [];
+  const notes: string[] = [];
+  let inNotes = false;
+  for (; index < block.length; index += 1) {
+    const line = block[index] ?? '';
+    if (isFrameLine(line)) {
+      // A plain rule at the prompt's own level separates the notes. Any other
+      // frame (a diff's own box inside an older prompt's box) is decoration.
+      if (/^\s*[─━]+\s*$/.test(line)) inNotes = true;
+      continue;
+    }
+    if (inNotes) {
+      if (line.trim().length > 0) notes.push(line.trim());
+    } else {
+      bodyLines.push(line);
+    }
+  }
+  // Without a separator, a warning paragraph at the end is still notes.
+  if (!inNotes) {
+    const trailing: string[] = [];
+    while (bodyLines.length > 0) {
+      const line = (bodyLines[bodyLines.length - 1] ?? '').trim();
+      if (line.length === 0 && trailing.length > 0) break;
+      if (line.length > 0 && !isWarning(line)) break;
+      bodyLines.pop();
+      if (line.length > 0) trailing.unshift(line);
+    }
+    notes.unshift(...trailing);
+  }
+
+  const deadline = notes.map((line) => DEADLINE.exec(line)?.[1]).find((match) => match !== undefined) ?? null;
+  return { title, summary, body: dedent(bodyLines), notes, deadline };
+}
+
+/** Claude's auto-deny line, with the time as it printed it. */
+const DEADLINE = /automatically deny this request in (\d+:\d{2}|about \d+ (?:minutes?|seconds?))/;
+
+/** AskUserQuestion's header tabs and review markers, never a tool line. */
+const QUESTION_HEADER = /^[←→☐☒☑✔✓□■●◯]/;
+
+/**
+ * Lines that belong to the conversation above a prompt, never to it: Claude's
+ * and Codex's message, tool and spinner marks, and a typed prompt's `>`. Only
+ * near the left edge; a prompt's own body is indented or inside a box.
+ */
+const CONVERSATION_MARKER = /^ {0,2}[⏺⎿❯›•✻✳✢✶✽>]/;
+
+/** A rule across the screen, or the top of a box. Only at the screen's own level. */
+function isRuleLine(raw: string): boolean {
+  const text = raw.trim();
+  return /^[─━▔]{8,}$/.test(text) || /^[╭┌][─━]{6,}[╮┐]$/.test(text);
+}
+
+/** A line drawn only with box characters, once its borders are gone. */
+function isFrameLine(line: string): boolean {
+  return /^\s*[─━▔╭╮╰╯┌┐└┘├┤┬┴┼]{3,}\s*$/.test(line);
+}
+
+function isWarning(line: string): boolean {
+  return line.startsWith('⚠') || DEADLINE.test(line);
+}
+
+/** Whether lines between two rules are the top of a prompt, not conversation. */
+function isPromptText(lines: readonly string[]): boolean {
+  const text = lines.filter((line) => line.trim().length > 0);
+  return text.length > 0 && !text.some((line) => CONVERSATION_MARKER.test(line) || parseOption(clean(line)) !== null);
+}
+
+/**
+ * Where the paragraph group above the question starts: up through single blank
+ * lines, stopping at two in a row, an option of an older menu, or a line from
+ * the conversation.
+ */
+function paragraphStart(rawLines: readonly string[], questionStart: number, floor: number): number {
+  let start = questionStart;
+  let blanks = 0;
+  for (let index = questionStart - 1; index >= floor; index -= 1) {
+    const raw = rawLines[index] ?? '';
+    const line = clean(raw);
+    if (line.length === 0) {
+      blanks += 1;
+      if (blanks >= 2 && start < questionStart) break;
+      continue;
+    }
+    if (CONVERSATION_MARKER.test(raw) || parseOption(line) !== null) break;
+    blanks = 0;
+    start = index;
+  }
+  return start;
+}
+
+/** Drop a box's side borders (nested boxes too) and trailing padding, keeping the indent. */
+function unframe(raw: string): string {
+  let line = raw.trimEnd();
+  while (/^\s*[│┃]/.test(line) && /[│┃]$/.test(line) && line.trim().length > 1) {
+    line = line.replace(/^\s*[│┃]/, '').replace(/[│┃]$/, '').trimEnd();
+  }
+  return line;
+}
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+/** Remove the indent every non-blank line shares; blank lines become empty. */
+function dedent(lines: readonly string[]): string[] {
+  const trimmed = [...lines];
+  while (trimmed.length > 0 && (trimmed[0] ?? '').trim().length === 0) trimmed.shift();
+  while (trimmed.length > 0 && (trimmed[trimmed.length - 1] ?? '').trim().length === 0) trimmed.pop();
+  const indents = trimmed.filter((line) => line.trim().length > 0).map(indentOf);
+  const common = indents.length === 0 ? 0 : Math.min(...indents);
+  return trimmed.map((line) => (line.trim().length === 0 ? '' : line.slice(common)));
 }
 
 /**
@@ -230,7 +455,7 @@ export function parseTrustPrompt(raw: string): BlockedPrompt | null {
   const question = /^[/~]/.test(folder)
     ? `Trust ${folder}? Claude Code will be able to read, edit and run files there.`
     : 'Trust this folder? Claude Code will be able to read, edit and run files here.';
-  return { question, options, unnumbered: true };
+  return { question, options, details: null, unnumbered: true };
 }
 
 const TRUST_HEADING = 'Accessing workspace:';
@@ -271,7 +496,12 @@ export function blockedPromptSignature(prompt: BlockedPrompt | null): string | n
   // Ticks included: toggling a multi-select row changes nothing else on screen,
   // and without them the reply would look undelivered until it timed out.
   const tick = (o: BlockedOption) => (o.checked === undefined ? '' : o.checked ? '[x]' : '[ ]');
-  return [prompt.question ?? '', ...prompt.options.map((o) => `${o.number}.${tick(o)}${o.label}`)].join('\n');
+  // The tool and the first line of its command: a different command under the
+  // same "Do you want to proceed?" is a different decision. Not the deadline,
+  // which ticks every second and would make every poll a new prompt.
+  const details = prompt.details ?? null;
+  const subject = details === null ? [] : [details.title ?? '', details.body[0] ?? ''];
+  return [prompt.question ?? '', ...subject, ...prompt.options.map((o) => `${o.number}.${tick(o)}${o.label}`)].join('\n');
 }
 
 export type PendingResolution = 'waiting' | 'delivered' | 'superseded' | 'timed_out';

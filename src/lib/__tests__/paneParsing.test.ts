@@ -7,6 +7,7 @@ import {
   isMentionPopup,
   optionKeys,
   parseBlockedPrompt,
+  PROMPT_DETAILS_MAX_LINES,
 } from '../transcript/blockedPrompt';
 import { extractLivePreview } from '../transcript/livePreview';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
@@ -206,6 +207,107 @@ describe('captured menus', () => {
   it('offers nothing for any other unnumbered menu', () => {
     expect(isBlockedPromptEmpty(parseBlockedPrompt('Pick one\n❯ Apples\n  Pears\n'))).toBe(true);
     expect(isBlockedPromptEmpty(parseBlockedPrompt(screen('trust').replace('Yes, I trust this folder', 'Yes')))).toBe(true);
+  });
+});
+
+/**
+ * What is being approved. The phone showed only "Do you want to proceed?",
+ * with the command, its description and Claude's warning cut off by the blank
+ * line above the question, so nobody could tell what they were approving.
+ *
+ * `permission-bash-2.1.296` and `edit-file-box` are written from what Claude
+ * Code 2.1.296 and the older boxed versions draw, not captured from a pane;
+ * `permission-bash` is a real capture.
+ */
+describe('prompt details', () => {
+  // Claude Code 2.1.296: rule, tool line, description, command, rule, notes.
+  it('reads the tool, its description, the command and the warnings', () => {
+    const prompt = parseBlockedPrompt(screen('permission-bash-2.1.296'));
+    expect(prompt.question).toBe('Do you want to proceed?');
+    expect(labels('permission-bash-2.1.296')).toEqual(['1. Yes', '2. No']);
+    expect(prompt.details).toEqual({
+      title: 'Bash command · from the "zen-video-v6" workflow',
+      summary: 'Transcribe the voice parts alone',
+      body: [
+        'cd /home/me/work/zen-video &&',
+        'S=/tmp/scratchpad; for r in "2.05 3.2" "6.7 8.05"; do bash -c "ffmpeg -v error -ss ${r% *} -to ${r#* } -i mix.wav $S/part.wav && rm $S/part.wav"; done; git show',
+        `HEAD:assets/audio/mixcheck.json | grep -o '"text":"The pop-up.","heard":"[^"]*"'`,
+      ],
+      notes: [
+        'This shell -c script runs rm and could not be checked',
+        '⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session',
+      ],
+      deadline: '1:32',
+    });
+  });
+
+  it('reads the older single-rule shape, command under a blank line', () => {
+    expect(parseBlockedPrompt(screen('permission-bash')).details).toEqual({
+      title: 'Bash command',
+      summary: null,
+      body: ['date +%s > stamp.txt', 'Get current Unix timestamp and write to stamp.txt'],
+      notes: [],
+      deadline: null,
+    });
+  });
+
+  it('reads a boxed prompt, its diff box and borders gone, its indent kept', () => {
+    const prompt = parseBlockedPrompt(screen('edit-file-box'));
+    expect(prompt.question).toBe('Do you want to make this edit to directories.ts?');
+    expect(prompt.details).toEqual({
+      title: 'Edit file',
+      summary: 'src/lib/directories.ts',
+      body: [
+        '12   export async function list(path) {',
+        '13 -   const out = await run(`ls ${path}; true`);',
+        '13 +   const out = await run(`ls ${path}`);',
+        '14     return out.split("\\n");',
+      ],
+      notes: [],
+      deadline: null,
+    });
+    expect(parseBlockedPrompt(PERMISSION_PROMPT).details).toMatchObject({
+      title: 'Bash command',
+      body: ['rm -rf build/', 'Delete the build directory'],
+    });
+  });
+
+  it('reads the deadline Claude prints when it rounds to minutes', () => {
+    const rounded = screen('permission-bash-2.1.296').replace('in 1:32,', 'in about 2 minutes,');
+    expect(parseBlockedPrompt(rounded).details?.deadline).toBe('about 2 minutes');
+  });
+
+  // A question with its options and no tool line: the question is the whole of it.
+  it('has no details for an AskUserQuestion, a review, or the trust prompt', () => {
+    for (const name of ['ask-plain-numbered-description', 'ask-preview', 'ask-multiselect', 'ask-multiselect-review', 'trust']) {
+      expect(parseBlockedPrompt(screen(name)).details).toBeNull();
+    }
+    expect(parseBlockedPrompt('Pick one?\n❯ 1. A\n  2. B').details).toBeNull();
+  });
+
+  // Codex's banner box closes long before its question; it is not the prompt.
+  it('does not take a closed box or the conversation for the prompt', () => {
+    expect(parseBlockedPrompt(screen('codex-approval')).details?.title).toBe('Would you like to run the following command?');
+    expect(parseBlockedPrompt(screen('codex-trust')).details).toBeNull();
+  });
+
+  it('looks no further up than the line cap when there is no rule', () => {
+    const prose = Array.from({ length: PROMPT_DETAILS_MAX_LINES + 10 }, (_, index) => `line ${index}`);
+    const details = parseBlockedPrompt([...prose, '', 'Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n')).details;
+    // The cap counts from the question, whose blank line above it is one of them.
+    expect(details?.title).toBe(`line ${prose.length - PROMPT_DETAILS_MAX_LINES + 1}`);
+    expect(details?.body.at(-1)).toBe(`line ${prose.length - 1}`);
+  });
+
+  // The deadline ticks every second; the prompt must not look new on each poll,
+  // or a reply in flight would read as superseded and its options come back.
+  it('keeps its signature while the deadline ticks, and changes it for another command', () => {
+    const now = parseBlockedPrompt(screen('permission-bash-2.1.296'));
+    const later = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('in 1:32,', 'in 1:30,'));
+    expect(later.details?.deadline).toBe('1:30');
+    expect(blockedPromptSignature(later)).toBe(blockedPromptSignature(now));
+    const other = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('\n   cd /home/me/work/zen-video &&', '\n   cd /home/me/work/other &&'));
+    expect(blockedPromptSignature(other)).not.toBe(blockedPromptSignature(now));
   });
 });
 
