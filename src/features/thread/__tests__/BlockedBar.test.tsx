@@ -14,6 +14,9 @@ jest.mock('@/theme/ThemeProvider', () => ({
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
+jest.mock('@/lib/haptics', () => ({ haptics: { success: jest.fn() } }));
+
+const Clipboard = jest.requireMock<{ setStringAsync: jest.Mock }>('expo-clipboard');
 
 const bar = (prompt: BlockedPrompt) => render(<BlockedBar prompt={prompt} pending={null} onKeys={() => {}} />);
 
@@ -33,6 +36,19 @@ describe('a prompt with details', () => {
     expect(screen.getByText('Do you want to proceed?')).toBeTruthy();
     expect(screen.getByTestId('blocked-option-1')).toBeTruthy();
     expect(screen.queryByTestId('blocked-details-fold')).toBeNull();
+  });
+
+  // A long press copies the command, and only the command, to paste elsewhere.
+  // The accessibility Copy action is the same path a screen reader takes.
+  it('copies the command on long press', async () => {
+    const screen = await bar(prompt);
+    await fireEvent(screen.getByTestId('blocked-details-body'), 'accessibilityAction', {
+      nativeEvent: { actionName: 'longpress' },
+    });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      'mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable &&\n' +
+        'npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable'
+    );
   });
 
   it('folds a long body and opens it on request', async () => {

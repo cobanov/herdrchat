@@ -149,7 +149,7 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
       content: [
         {
           type: 'text',
-          text: 'Before I write to `client.ts`: this changes what every caller of `listDirectories` sees on failure. Want me to go ahead?',
+          text: 'Before I change it, I’ll reproduce it: an unreadable folder should fail the directories test, not pass as an empty list.',
         },
       ],
     }),
@@ -288,8 +288,8 @@ export function replyFor(prompt: string): string {
 /** What the demo agent says once a menu choice has been tapped. */
 export function answeredReply(choice: string): string {
   return choice === '1'
-    ? 'Going ahead. Split the error state from the empty one and gave the error a Retry, so a failed read stops looking like an empty folder.'
-    : 'Holding off. The change would alter what every caller of listDirectories sees on failure. Say the word when you want it.';
+    ? 'Going ahead. The repro failed as expected: the unreadable folder came back as an empty list. Split the error state from the empty one and gave the error a Retry, so a failed read stops looking like an empty folder.'
+    : 'Holding off on the repro. Say the word when you want it run.';
 }
 
 /**

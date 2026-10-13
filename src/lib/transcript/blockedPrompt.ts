@@ -208,7 +208,7 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   return {
     question: question.length > 0 ? question : null,
     options,
-    details: parsePromptDetails(rawLines, cursor + 1),
+    details: codexCommand(parsePromptDetails(rawLines, cursor + 1), question),
     ...(multiSelect ? { multiSelect } : {}),
   };
 }
@@ -322,7 +322,38 @@ export function parsePromptDetails(rawLines: readonly string[], questionStart: n
   }
 
   const deadline = notes.map((line) => DEADLINE.exec(line)?.[1]).find((match) => match !== undefined) ?? null;
-  return { title, summary, body: dedent(bodyLines), notes, deadline };
+  let body = dedent(bodyLines);
+  // Older Claude (2.1.280) draws a Bash prompt's description under the command,
+  // at the same indent, with no line between them. Left in the body it reads as
+  // a second command line, and copying the body would paste it into a shell.
+  const last = body[body.length - 1];
+  if (summary === null && title.startsWith('Bash') && body.length > 1 && (body[body.length - 2] ?? '').length > 0 && last !== undefined && isProse(last)) {
+    summary = last.trim();
+    body = body.slice(0, -1);
+  }
+  return { title, summary, body, notes, deadline };
+}
+
+/**
+ * Codex's approval asks "Would you like to run the following command?" and puts
+ * the command (`$ date …`) straight above its menu, where it becomes the
+ * question, with the environment and the reason as the block's lines. Turned
+ * round, the command is the body that can be copied and the prose its summary;
+ * the question stays what Codex drew.
+ */
+function codexCommand(details: PromptDetails | null, question: string): PromptDetails | null {
+  if (details === null || !/the following command\?$/.test(details.title ?? '') || !question.startsWith('$ ')) return details;
+  const prose = [details.summary, ...details.body].filter((line): line is string => line !== null && line.trim().length > 0);
+  return { ...details, summary: prose.length > 0 ? prose.join('\n') : null, body: [question.slice(2)] };
+}
+
+/**
+ * Whether a line reads as a sentence rather than a shell command: a capital,
+ * words, and none of the shell's operators, redirections or substitutions.
+ */
+function isProse(line: string): boolean {
+  const text = line.trim();
+  return /^[A-Z][a-z]/.test(text) && text.includes(' ') && !/[|&;<>$`\\=(){}*]/.test(text);
 }
 
 /** Claude's auto-deny line, with the time as it printed it. */
@@ -496,11 +527,13 @@ export function blockedPromptSignature(prompt: BlockedPrompt | null): string | n
   // Ticks included: toggling a multi-select row changes nothing else on screen,
   // and without them the reply would look undelivered until it timed out.
   const tick = (o: BlockedOption) => (o.checked === undefined ? '' : o.checked ? '[x]' : '[ ]');
-  // The tool and the first line of its command: a different command under the
-  // same "Do you want to proceed?" is a different decision. Not the deadline,
-  // which ticks every second and would make every poll a new prompt.
+  // The tool, its description and the whole command: a different command under
+  // the same "Do you want to proceed?" is a different decision, and commands in
+  // one repo usually share their first line (`cd /repo &&`). Not the notes,
+  // which hold the deadline: it ticks every second and would make every poll a
+  // new prompt.
   const details = prompt.details ?? null;
-  const subject = details === null ? [] : [details.title ?? '', details.body[0] ?? ''];
+  const subject = details === null ? [] : [details.title ?? '', details.summary ?? '', ...details.body];
   return [prompt.question ?? '', ...subject, ...prompt.options.map((o) => `${o.number}.${tick(o)}${o.label}`)].join('\n');
 }
 

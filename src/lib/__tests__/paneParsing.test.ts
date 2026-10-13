@@ -241,11 +241,13 @@ describe('prompt details', () => {
     });
   });
 
+  // The description sits under the command there; copying the body must give
+  // only the command, or pasting it would run the description as one.
   it('reads the older single-rule shape, command under a blank line', () => {
     expect(parseBlockedPrompt(screen('permission-bash')).details).toEqual({
       title: 'Bash command',
-      summary: null,
-      body: ['date +%s > stamp.txt', 'Get current Unix timestamp and write to stamp.txt'],
+      summary: 'Get current Unix timestamp and write to stamp.txt',
+      body: ['date +%s > stamp.txt'],
       notes: [],
       deadline: null,
     });
@@ -268,7 +270,8 @@ describe('prompt details', () => {
     });
     expect(parseBlockedPrompt(PERMISSION_PROMPT).details).toMatchObject({
       title: 'Bash command',
-      body: ['rm -rf build/', 'Delete the build directory'],
+      summary: 'Delete the build directory',
+      body: ['rm -rf build/'],
     });
   });
 
@@ -291,6 +294,20 @@ describe('prompt details', () => {
     expect(parseBlockedPrompt(screen('codex-trust')).details).toBeNull();
   });
 
+  // Codex puts the command where the question goes and prose in the block: the
+  // command is what goes in the box that copies, the reason is its summary.
+  it('puts the command of a Codex approval in the body and its reason in the summary', () => {
+    const prompt = parseBlockedPrompt(screen('codex-approval'));
+    expect(prompt.question).toBe('$ date +%s > stamp2.txt');
+    expect(prompt.details).toEqual({
+      title: 'Would you like to run the following command?',
+      summary: 'Environment: local\nReason: Do you allow me to write the current Unix timestamp to stamp2.txt?',
+      body: ['date +%s > stamp2.txt'],
+      notes: [],
+      deadline: null,
+    });
+  });
+
   it('looks no further up than the line cap when there is no rule', () => {
     const prose = Array.from({ length: PROMPT_DETAILS_MAX_LINES + 10 }, (_, index) => `line ${index}`);
     const details = parseBlockedPrompt([...prose, '', 'Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n')).details;
@@ -308,6 +325,10 @@ describe('prompt details', () => {
     expect(blockedPromptSignature(later)).toBe(blockedPromptSignature(now));
     const other = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('\n   cd /home/me/work/zen-video &&', '\n   cd /home/me/work/other &&'));
     expect(blockedPromptSignature(other)).not.toBe(blockedPromptSignature(now));
+    // Same `cd /repo &&` first line, a different command behind it.
+    const rest = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('git show', 'git push --force'));
+    expect(rest.details?.body[0]).toBe(now.details?.body[0]);
+    expect(blockedPromptSignature(rest)).not.toBe(blockedPromptSignature(now));
   });
 });
 
