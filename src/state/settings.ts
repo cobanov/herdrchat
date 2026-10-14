@@ -23,10 +23,12 @@ export interface Settings {
   /** Haptic feedback on sends, taps and confirmations. */
   haptics: boolean;
   /**
-   * Return in the composer sends, and Shift-Return starts a new line, the way
-   * a chat app on a hardware keyboard behaves. On by default. Off restores
-   * #113: Return is a newline and Command-Return sends, for whoever writes
-   * long multi-line prompts on an iPad.
+   * Return on a hardware keyboard sends, and Shift-Return or Option-Return
+   * starts a new line, the way a chat app on a Mac behaves. On by default,
+   * since it only ever applies to a hardware keyboard: the on-screen
+   * keyboard's Return is a newline either way (#155). Off restores #113:
+   * Return is a newline and Command-Return sends. iOS only; Android has no
+   * key commands, so Return is a newline there always.
    */
   returnSends: boolean;
   /** Push notifications when an agent blocks or finishes. */

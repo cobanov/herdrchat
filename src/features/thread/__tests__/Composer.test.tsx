@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View as MockView, type ViewProps } from 'react-native';
 
 import { Composer } from '../Composer';
+import { SETTINGS_DEFAULTS, useSettings } from '@/state/settings';
 
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
@@ -11,6 +12,11 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+// The key-command container passes its callbacks through, so a test can press
+// the hardware keys the way the native side reports them.
+jest.mock('../../../../modules/herdr-keys/src', () => ({
+  SubmitShortcutView: (props: ViewProps) => <MockView testID="composer-keys" {...props} />,
+}));
 
 function Harness({ onSend }: { onSend: (text: string) => Promise<boolean> }) {
   const [draft, setDraft] = useState('');
@@ -88,4 +94,66 @@ it('offers to hide the keyboard while typing, and keeps the draft', async () => 
   await fireEvent.press(screen.getByTestId('composer-hide-keyboard'));
   expect(dismiss).toHaveBeenCalled();
   expect(screen.getByTestId('composer-input').props.value).toBe('a long prompt');
+});
+
+// #155: Return sends only from a hardware keyboard. The software keyboard's
+// Return is the field's own newline; the hardware keys are key commands
+// (HerdrKeysModule.swift) that reach `returnAction` through these callbacks.
+describe('Return', () => {
+  // In act: the composer from the test is still mounted and reads the setting.
+  afterEach(async () => {
+    await act(async () => useSettings.getState().hydrate(SETTINGS_DEFAULTS));
+  });
+
+  const keys = (screen: Awaited<ReturnType<typeof render>>) => screen.getByTestId('composer-keys').props as {
+    onSubmitShortcut: () => void;
+    onReturnShortcut?: () => void;
+    onNewlineShortcut?: (modifiers: { shift: boolean; option: boolean }) => void;
+  };
+
+  it.each([true, false])('leaves the field\'s own Return a newline with the setting %s', async (returnSends) => {
+    useSettings.getState().set('returnSends', returnSends);
+    const onSend = jest.fn(async () => true);
+    const screen = await render(<Harness onSend={onSend} />);
+    const field = screen.getByTestId('composer-input');
+    expect(field.props.submitBehavior).toBe('newline');
+    expect(field.props.returnKeyType).toBe('default');
+    await fireEvent.changeText(field, 'half a prompt');
+    await fireEvent(field, 'submitEditing');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input').props.value).toBe('half a prompt');
+  });
+
+  it('sends on a hardware Return', async () => {
+    const onSend = jest.fn(async () => true);
+    const screen = await render(<Harness onSend={onSend} />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), 'go');
+    await act(async () => keys(screen).onReturnShortcut?.());
+    expect(onSend).toHaveBeenCalledWith('go');
+  });
+
+  it.each([
+    [{ shift: true, option: false }],
+    [{ shift: false, option: true }],
+  ])('starts a new line on %o', async (modifiers) => {
+    const onSend = jest.fn(async () => true);
+    const screen = await render(<Harness onSend={onSend} />);
+    const field = screen.getByTestId('composer-input');
+    await fireEvent.changeText(field, 'one');
+    await fireEvent(field, 'selectionChange', { nativeEvent: { selection: { start: 3, end: 3 } } });
+    await act(async () => keys(screen).onNewlineShortcut?.(modifiers));
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input').props.value).toBe('one\n');
+  });
+
+  it('takes no hardware Return, Shift-Return or Option-Return with the setting off; Command-Return still sends', async () => {
+    useSettings.getState().set('returnSends', false);
+    const onSend = jest.fn(async () => true);
+    const screen = await render(<Harness onSend={onSend} />);
+    expect(keys(screen).onReturnShortcut).toBeUndefined();
+    expect(keys(screen).onNewlineShortcut).toBeUndefined();
+    await fireEvent.changeText(screen.getByTestId('composer-input'), 'go');
+    await act(async () => keys(screen).onSubmitShortcut());
+    expect(onSend).toHaveBeenCalledWith('go');
+  });
 });

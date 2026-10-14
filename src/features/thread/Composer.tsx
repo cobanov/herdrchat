@@ -128,20 +128,31 @@ export function Composer({
     if (start !== end) requestAnimationFrame(() => input.current?.setSelection(next.caret, next.caret));
   };
 
-  // Every way of pressing Return asks the one table in `composerKeys`.
-  const pressReturn = (modifiers: { shift: boolean; command: boolean }) => {
-    const action = returnAction({ returnSends, draftEmpty, disabled: disabled || uploading, ...modifiers });
+  // Every hardware Return asks the one table in `composerKeys`. The software
+  // keyboard's Return never comes through here: it is the field's own newline.
+  const pressReturn = (modifiers: { shift?: boolean; option?: boolean; command?: boolean }) => {
+    const action = returnAction({
+      source: 'hardware',
+      returnSends,
+      shift: modifiers.shift ?? false,
+      option: modifiers.option ?? false,
+      command: modifiers.command ?? false,
+      draftEmpty,
+      disabled: disabled || uploading,
+    });
     if (action === 'send') send();
     else if (action === 'newline') newline();
   };
 
   return (
-    // Command-Return sends from an iPad's hardware keyboard whichever way the
-    // setting points (#113). While Return sends, Shift-Return comes through
-    // here too: the text field alone cannot tell it from Return.
+    // Command-Return sends from a hardware keyboard whichever way the setting
+    // points (#113). While Return sends, a hardware Return, Shift-Return and
+    // Option-Return come through here too; they are key commands, which fire
+    // for hardware keys only, so a phone's own Return stays a newline (#155).
     <SubmitShortcutView
-      onSubmitShortcut={() => pressReturn({ shift: false, command: true })}
-      onNewlineShortcut={returnSends ? () => pressReturn({ shift: true, command: false }) : undefined}
+      onSubmitShortcut={() => pressReturn({ command: true })}
+      onReturnShortcut={returnSends ? () => pressReturn({}) : undefined}
+      onNewlineShortcut={returnSends ? (modifiers) => pressReturn(modifiers) : undefined}
       // Command-V with a lone picture attaches it; text still pastes as text.
       // Not while a send or upload is in flight, the same as the picture button,
       // and not at MAX_ATTACHMENTS: then Command-V is the text field's alone.
@@ -255,12 +266,12 @@ export function Composer({
               selection.current = event.nativeEvent.selection;
             }}
             multiline
-            // Return sends, from the software keyboard and a hardware one; the
-            // field refuses the "\n" and reports a submit instead. Off, Return
-            // is a newline as #113 made it.
-            submitBehavior={returnSends ? 'submit' : 'newline'}
-            returnKeyType={returnSends ? 'send' : 'default'}
-            onSubmitEditing={() => pressReturn({ shift: false, command: false })}
+            // The field's own Return is always a newline, on every platform and
+            // whatever the setting: a hardware Return that sends is a key
+            // command on the view around it, and the software keyboard has no
+            // Shift-Return to fall back on (#155).
+            submitBehavior="newline"
+            returnKeyType="default"
             style={{
               flex: 1,
               minHeight,

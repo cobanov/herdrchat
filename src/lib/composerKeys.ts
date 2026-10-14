@@ -1,16 +1,29 @@
 /**
  * What a key does in the composer. Every way of pressing Return lands here —
- * the software keyboard's Return, a hardware Return, Shift-Return and
- * Command-Return from the iPad key commands — so the rule lives in one table a
- * test can walk row by row, instead of in four handlers that drift apart.
+ * the software keyboard's Return and the hardware key commands (Return,
+ * Shift-Return, Option-Return, Command-Return) — so the rule lives in one table
+ * a test can walk row by row, instead of in handlers that drift apart.
+ *
+ * Only a hardware keyboard ever sends on Return. A phone's software keyboard
+ * has no Shift-Return, so a Return that sent there would leave no way to type a
+ * second line, and a half-written prompt would go to the agent on a stray tap
+ * (#155). On iOS, plain Return from a hardware keyboard is a `UIKeyCommand`,
+ * which UIKit fires for hardware keys only; the software keyboard's Return
+ * never reaches the composer as anything but a typed newline.
  */
 
 export type ReturnAction = 'send' | 'newline' | 'none';
 
+/** Where the Return came from: a hardware key command, or the software keyboard. */
+export type ReturnSource = 'hardware' | 'software';
+
 export interface ReturnKey {
+  source: ReturnSource;
   /** The "Return sends" setting. Off, Return is a newline as #113 made it. */
   returnSends: boolean;
   shift: boolean;
+  /** Option (Alt). A newline, the same as Shift, as on a Mac. */
+  option: boolean;
   command: boolean;
   /** No text worth sending (blank or whitespace) and no pictures. */
   draftEmpty: boolean;
@@ -18,13 +31,16 @@ export interface ReturnKey {
   disabled: boolean;
 }
 
-export function returnAction({ returnSends, shift, command, draftEmpty, disabled }: ReturnKey): ReturnAction {
+export function returnAction({ source, returnSends, shift, option, command, draftEmpty, disabled }: ReturnKey): ReturnAction {
+  // The software keyboard's Return is a newline, whatever the setting says.
+  if (source === 'software') return 'newline';
   const sendable = !draftEmpty && !disabled;
   // Command-Return always sends, whichever way the setting points: it is the
   // shortcut iPad users already have in their hands (#113).
   if (command) return sendable ? 'send' : 'none';
-  // Shift-Return is how a multi-line prompt gets typed once Return sends.
-  if (shift) return 'newline';
+  // Shift-Return and Option-Return are how a multi-line prompt gets typed once
+  // Return sends.
+  if (shift || option) return 'newline';
   if (!returnSends) return 'newline';
   // Return on nothing, or while a send is in flight, does nothing at all:
   // not an empty send, and not a stray newline in a draft that is about to go.

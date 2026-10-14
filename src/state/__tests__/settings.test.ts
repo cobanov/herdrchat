@@ -3,7 +3,7 @@ import { SETTINGS_DEFAULTS, decodeBool, encodeBool, settingsSnapshot, useSetting
 describe('returnSends', () => {
   afterEach(() => useSettings.getState().hydrate(SETTINGS_DEFAULTS));
 
-  // A chat app on a keyboard sends on Return; #113's newline is the opt-out.
+  // On: it only ever applies to a hardware keyboard (#155); #113's newline is the opt-out.
   it('is on by default', () => {
     expect(SETTINGS_DEFAULTS.returnSends).toBe(true);
     expect(useSettings.getState().returnSends).toBe(true);

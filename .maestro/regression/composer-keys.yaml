@@ -1,7 +1,10 @@
-# Return sends from the composer, and with "Return sends" off it does not
-# (Settings > Conversations). Shift-Return, Command-Return and Command-V with a
-# picture are hardware-keyboard key commands the simulator's Maestro cannot
-# press; they are checked by hand on an iPad (see .maestro/README.md).
+# The on-screen keyboard's Return in the composer starts a new line and sends
+# nothing, with Settings > Conversations > "Return sends" on (the default) and
+# off (#155: on a phone it sent a half-written prompt). A hardware Return,
+# Shift-Return, Option-Return, Command-Return and Command-V with a picture are
+# key commands the simulator's Maestro cannot press; jest covers their rules
+# (composerKeys.test.ts, Composer.test.tsx) and they are checked by hand on a
+# device with a keyboard (see .maestro/README.md).
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -13,23 +16,30 @@ appId: dev.herdr.HerdrChat
       id: bubble-d2-2
     timeout: 15000
 
-# Return sends (the default).
+# Setting on: Return is a newline, the draft stays, and the button sends both lines.
 - tapOn:
     id: composer-input
-- inputText: sent with return
+- inputText: first line
 - extendedWaitUntil:
     visible:
       id: composer-send
       enabled: true
     timeout: 15000
 - pressKey: Enter
+- inputText: second line
+- waitForAnimationToEnd
 # The bubble's label, not the text: the text alone also matches an unsent draft.
-- extendedWaitUntil:
-    visible: 'Your message\. sent with return.*'
-    timeout: 15000
+- assertNotVisible: 'Your message\. first line.*'
+- assertVisible:
+    id: composer-send
+    enabled: true
 - takeScreenshot: composer-keys-${APPEARANCE}
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: 'Your message\. first line\s+second line.*'
+    timeout: 15000
 
-# Off, Return is a newline: the draft stays and nothing is sent.
+# Setting off: the same, Return keeps the draft and sends nothing.
 - tapOn:
     id: thread-back
 - tapOn: Settings

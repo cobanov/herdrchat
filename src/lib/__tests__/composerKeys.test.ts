@@ -1,26 +1,30 @@
 import { followCaret, insertNewline, pasteAction, returnAction, type ReturnAction, type ReturnKey } from '../composerKeys';
 
 const flags = [false, true] as const;
+const sources = ['hardware', 'software'] as const;
 
 /** The table written out independently of the implementation's branches. */
-function expected({ returnSends, shift, command, draftEmpty, disabled }: ReturnKey): ReturnAction {
+function expected({ source, returnSends, shift, option, command, draftEmpty, disabled }: ReturnKey): ReturnAction {
+  if (source === 'software') return 'newline';
   const sendable = !draftEmpty && !disabled;
   if (command) return sendable ? 'send' : 'none';
-  if (shift) return 'newline';
+  if (shift || option) return 'newline';
   if (returnSends) return sendable ? 'send' : 'none';
   return 'newline';
 }
 
 describe('returnAction', () => {
   const rows: ReturnKey[] = [];
-  for (const returnSends of flags)
-    for (const shift of flags)
-      for (const command of flags)
-        for (const draftEmpty of flags)
-          for (const disabled of flags) rows.push({ returnSends, shift, command, draftEmpty, disabled });
+  for (const source of sources)
+    for (const returnSends of flags)
+      for (const shift of flags)
+        for (const option of flags)
+          for (const command of flags)
+            for (const draftEmpty of flags)
+              for (const disabled of flags) rows.push({ source, returnSends, shift, option, command, draftEmpty, disabled });
 
   it('covers every combination', () => {
-    expect(rows).toHaveLength(32);
+    expect(rows).toHaveLength(128);
   });
 
   it.each(rows)('%o', (key) => {
@@ -28,11 +32,14 @@ describe('returnAction', () => {
   });
 
   // The rows a person feels, pinned by name so a wrong table above cannot hide them.
+  // Hardware keys reach `returnAction` through the iOS key commands
+  // (HerdrKeysModule.swift): Return, Shift-Return, Option-Return, Command-Return.
   const key = (extra: Partial<ReturnKey>): ReturnKey => ({
-    returnSends: true, shift: false, command: false, draftEmpty: false, disabled: false, ...extra,
+    source: 'hardware', returnSends: true, shift: false, option: false, command: false,
+    draftEmpty: false, disabled: false, ...extra,
   });
 
-  it('sends on Return when the setting is on', () => {
+  it('sends on a hardware Return when the setting is on', () => {
     expect(returnAction(key({}))).toBe('send');
   });
 
@@ -40,7 +47,19 @@ describe('returnAction', () => {
     expect(returnAction(key({ shift: true }))).toBe('newline');
   });
 
-  it('breaks the line on Return when the setting is off (#113)', () => {
+  it('breaks the line on Option-Return, the same as Shift-Return', () => {
+    expect(returnAction(key({ option: true }))).toBe('newline');
+    expect(returnAction(key({ option: true, shift: true }))).toBe('newline');
+  });
+
+  // #155: on a phone, Return sent a half-written prompt and no newline was possible.
+  it('never sends on the software keyboard\'s Return, setting on or off', () => {
+    expect(returnAction(key({ source: 'software' }))).toBe('newline');
+    expect(returnAction(key({ source: 'software', returnSends: false }))).toBe('newline');
+    expect(returnAction(key({ source: 'software', draftEmpty: true }))).toBe('newline');
+  });
+
+  it('breaks the line on a hardware Return when the setting is off (#113)', () => {
     expect(returnAction(key({ returnSends: false }))).toBe('newline');
   });
 
