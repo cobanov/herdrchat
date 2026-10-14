@@ -61,7 +61,7 @@ it('refuses a jumped command that only the jump made too long', async () => {
   });
   const prompt = `herdr pane run w1:p1 '${"it'''s ".repeat(4_000)}${'a'.repeat(90 * 1024)}'`;
   expect(Buffer.byteLength(prompt)).toBeLessThan(MAX_COMMAND_BYTES);
-  expect(Buffer.byteLength(jumpCommand('klaw', prompt))).toBeGreaterThan(MAX_COMMAND_BYTES);
+  expect(Buffer.byteLength(jumpCommand('klaw', prompt, 1000))).toBeGreaterThan(MAX_COMMAND_BYTES);
   await expect(withMachine(transport, 'klaw').exec(prompt, 1000)).resolves.toMatchObject({
     ok: false,
     code: 'request_too_large',

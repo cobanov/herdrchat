@@ -114,11 +114,32 @@ export const JUMP_CONNECT_TIMEOUT_MS = 10_000;
 
 /**
  * `ServerAliveInterval` on the jump: how often the host's `ssh` asks the
- * machine whether it is still there. Without it a machine that went to sleep
- * mid-command would hold the host's `ssh` open until TCP gave up, which is
- * far longer than any deadline above.
+ * machine whether it is still there, with `ServerAliveCountMax=1`, so a machine
+ * that went to sleep or off the network mid-command is given up within two of
+ * these (one unanswered probe) rather than when TCP gives up, or, at the
+ * default count of three, 45 seconds later.
  */
-export const JUMP_SERVER_ALIVE_MS = 15_000;
+export const JUMP_SERVER_ALIVE_MS = 5_000;
+
+/**
+ * How far the native deadline of a jumped command stays above the host-side
+ * bound on the host's `ssh` (see `jumpCommand`).
+ *
+ * The bound has to fire first. When the native deadline fires instead, it
+ * drops the phone's whole connection to the host (`resetClient()` on iOS,
+ * `abandon()` on Android), the host's own event stream and every open live tail
+ * with it, so one machine that hangs took its host down about once a minute.
+ * With the bound first, the host stops its `ssh` to the machine, the command
+ * ends with the bound's status, and the host's connection never notices.
+ */
+export const JUMP_DEADLINE_MARGIN_MS = 5_000;
+
+/**
+ * How long the host-side bound waits, after asking the host's `ssh` to stop
+ * (TERM), before it kills it outright. Inside `JUMP_DEADLINE_MARGIN_MS`, so even
+ * an `ssh` that ignores the first signal is gone before the native deadline.
+ */
+export const JUMP_KILL_GRACE_MS = 2_000;
 
 /**
  * How often a jumped stream's stdin hears a newline. The newline is what

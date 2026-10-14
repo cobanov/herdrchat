@@ -2,7 +2,9 @@ import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import { uploadCommands } from '../attachments/upload';
 import { HerdrClient } from '../herdr/client';
 import {
+  JUMP_TIMED_OUT_EXIT,
   jumpCommand,
+  jumpDeadlines,
   jumpFailure,
   jumpStream,
   machineUnreachableMessage,
@@ -14,7 +16,16 @@ import {
 import { withSession } from '../herdr/session';
 import { needsTheUser } from '../poll';
 import { shellQuote, untilChannelCloses, withPath } from '../herdr/shell';
-import { JUMP_CONNECT_TIMEOUT_MS, POLL_TIMEOUT_MS } from '../herdr/timeouts';
+import {
+  INSTALL_TIMEOUT_MS,
+  JUMP_CONNECT_TIMEOUT_MS,
+  JUMP_DEADLINE_MARGIN_MS,
+  JUMP_KILL_GRACE_MS,
+  LAUNCH_TIMEOUT_MS,
+  POLL_TIMEOUT_MS,
+  SEND_TIMEOUT_MS,
+  TRANSCRIPT_TIMEOUT_MS,
+} from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 
 const { execFileSync, spawn } = jest.requireActual<typeof import('node:child_process')>('node:child_process');
@@ -64,9 +75,9 @@ function fakeHost() {
 const PYTHON_BRIDGE = `python3 -S -c ${shellQuote("import sys\nprint('bridge:' + sys.argv[1])")} ${shellQuote("it's $HOME")}`;
 
 describe('sshJump', () => {
-  it('runs ssh without a prompt, with a connect timeout and keepalives, and no pty', () => {
+  it('runs ssh without a prompt, with a connect timeout and keepalives that give up after one probe, and no pty', () => {
     expect(sshJump('klaw', 'herdr api snapshot')).toBe(
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -- 'klaw' 'herdr api snapshot'"
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -- 'klaw' 'herdr api snapshot'"
     );
     expect(sshJump('klaw', 'x')).not.toMatch(/ -t\b/);
   });
@@ -93,18 +104,18 @@ describe('sshJump', () => {
     ];
 
     it.each(inners)('keeps %s intact', (_name, inner) => {
-      expect(host.run(jumpCommand('nuku', inner))).toBe(host.run(inner));
+      expect(host.run(jumpCommand('nuku', inner, POLL_TIMEOUT_MS))).toBe(host.run(inner));
     });
 
     it('keeps the python bridge saying what it said', () => {
-      expect(host.run(jumpCommand('nuku', PYTHON_BRIDGE))).toBe(`bridge:it's $HOME\n`);
+      expect(host.run(jumpCommand('nuku', PYTHON_BRIDGE, POLL_TIMEOUT_MS))).toBe(`bridge:it's $HOME\n`);
     });
 
     it('carries a picture chunk through intact, base64 and all', () => {
       const piece = Buffer.from(Array.from({ length: 3072 }, (_, i) => (i * 37) % 256)).toString('base64');
       expect(piece.length).toBe(4096);
       const [first] = uploadCommands('m1-abcdefgh.jpg', piece, 4096);
-      host.run(jumpCommand('nuku', first!));
+      host.run(jumpCommand('nuku', first!, POLL_TIMEOUT_MS));
       expect(readFileSync(`${host.home}/.cache/herdrchat/uploads/m1-abcdefgh.jpg.part`, 'utf8')).toBe(piece);
     });
   });
@@ -113,13 +124,15 @@ describe('sshJump', () => {
 describe('unwrapJump', () => {
   it('reads back exactly what was jumped', () => {
     for (const inner of [PYTHON_BRIDGE, "a 'b' c\nd", '', withPath('herdr api snapshot')]) {
-      expect(unwrapJump('nuku', jumpCommand('nuku', inner))).toBe(inner);
+      for (const timeoutMs of [1_000, POLL_TIMEOUT_MS, INSTALL_TIMEOUT_MS]) {
+        expect(unwrapJump('nuku', jumpCommand('nuku', inner, timeoutMs))).toBe(inner);
+      }
       expect(unwrapJumpStream('nuku', jumpStream('nuku', inner))).toBe(inner);
     }
   });
 
   it('answers null for another machine, a host command, or the other shape', () => {
-    const jumped = jumpCommand('nuku', 'x');
+    const jumped = jumpCommand('nuku', 'x', POLL_TIMEOUT_MS);
     expect(unwrapJump('klaw', jumped)).toBeNull();
     expect(unwrapJump('nuku', withPath('herdr api snapshot'))).toBeNull();
     expect(unwrapJump('nuku', `${jumped} extra`)).toBeNull();
@@ -129,19 +142,23 @@ describe('unwrapJump', () => {
 });
 
 describe('withMachine', () => {
-  it('jumps each command and adds the jump to its deadline', async () => {
+  it('jumps each command, bounded on the host, with the native deadline above the bound', async () => {
     const { transport, calls } = recorder();
     await withMachine(transport, 'nuku').exec('herdr api snapshot', POLL_TIMEOUT_MS);
     expect(calls).toEqual([
-      { command: jumpCommand('nuku', 'herdr api snapshot'), timeoutMs: POLL_TIMEOUT_MS + JUMP_CONNECT_TIMEOUT_MS },
+      {
+        command: jumpCommand('nuku', 'herdr api snapshot', POLL_TIMEOUT_MS),
+        timeoutMs: POLL_TIMEOUT_MS + JUMP_CONNECT_TIMEOUT_MS + JUMP_DEADLINE_MARGIN_MS,
+      },
     ]);
+    expect(calls[0]!.command).toContain(` hj ${(POLL_TIMEOUT_MS + JUMP_CONNECT_TIMEOUT_MS) / 1000} ssh `);
   });
 
   // Session second, so its export runs on the machine, where its herdr is.
   it('runs the session export on the machine when wrapped machine-first', async () => {
     const { transport, calls } = recorder();
     await withSession(withMachine(transport, 'nuku'), 'work').exec('herdr ping', 1_000);
-    expect(calls[0]!.command).toBe(jumpCommand('nuku', "export HERDR_SESSION='work'; herdr ping"));
+    expect(calls[0]!.command).toBe(jumpCommand('nuku', "export HERDR_SESSION='work'; herdr ping", 1_000));
     expect(calls[0]!.command.startsWith('export HERDR_SESSION')).toBe(false);
   });
 
@@ -259,7 +276,7 @@ describe('herdr missing on a machine', () => {
 describe('jumpStream', () => {
   it('wraps the machine-side command so it stops when its stdin goes', () => {
     expect(jumpStream('nuku', 'tail -f x')).toContain(shellQuote(untilChannelCloses('tail -f x')));
-    expect(jumpStream('nuku', 'tail -f x')).toMatch(/while sleep \d+ && echo; do :; done \| ssh /);
+    expect(jumpStream('nuku', 'tail -f x')).toMatch(/while sleep \d+ && echo; do :; done \| sh -c '/);
   });
 
   // The host's wrapper runs the jump with stdin from /dev/null; without the
@@ -284,4 +301,119 @@ describe('jumpStream', () => {
       host.cleanup();
     }
   }, 15_000);
+});
+
+// #159 review: a machine that hung after connecting held the host's `ssh` until
+// the native deadline, which drops the phone's whole connection to the host
+// (its event stream and live tails with it), about once a minute. The host
+// now stops its own `ssh` first.
+describe('the host-side bound', () => {
+  it('keeps the native deadline above the bound, by more than the kill grace', () => {
+    expect(JUMP_DEADLINE_MARGIN_MS).toBeGreaterThan(JUMP_KILL_GRACE_MS);
+    for (const timeoutMs of [1, 1_000, POLL_TIMEOUT_MS, SEND_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS, LAUNCH_TIMEOUT_MS, INSTALL_TIMEOUT_MS, 12_345]) {
+      const { boundSeconds, nativeMs } = jumpDeadlines(timeoutMs);
+      // The command keeps its own time, and the connect is not taken out of it.
+      expect(boundSeconds * 1000).toBeGreaterThanOrEqual(timeoutMs + JUMP_CONNECT_TIMEOUT_MS);
+      expect(nativeMs - boundSeconds * 1000).toBe(JUMP_DEADLINE_MARGIN_MS);
+      expect(nativeMs - boundSeconds * 1000).toBeGreaterThan(JUMP_KILL_GRACE_MS);
+    }
+  });
+
+  it('shares one login per machine, under the uploads cache, unconditionally', () => {
+    const command = jumpCommand('klaw', 'herdr api snapshot', POLL_TIMEOUT_MS);
+    expect(command).toContain('ControlMaster=auto');
+    expect(command).toContain('"ControlPath=$hj_d/ssh-%C"');
+    expect(command).toContain('ControlPersist=60');
+    expect(command).toContain('hj_d="$HOME/.cache/herdrchat"');
+    // Run by sh, whatever the host's login shell is.
+    expect(command).toMatch(/; sh -c '/);
+    expect(jumpStream('klaw', 'tail -f x')).toContain(' hj 0 ssh ');
+  });
+
+  it("reads the bound's status as the machine not answering, naming it", async () => {
+    const names = { host: 'Gimel', machine: 'klaw' };
+    const { transport } = recorder({ ok: true, stdout: '', stderr: 'Killed by signal 15.', exitCode: JUMP_TIMED_OUT_EXIT });
+    await expect(withMachine(transport, 'klaw', names).exec('x', 1_000)).resolves.toEqual({
+      ok: false,
+      code: 'machine_timeout',
+      message: 'klaw did not answer in time.',
+    });
+    const client = new HerdrClient(withMachine(transport, 'klaw', names));
+    await expect(client.ping()).rejects.toMatchObject({ code: 'machine_timeout', message: 'klaw did not answer in time.' });
+    // A timeout is worth retrying: it is not one of the failures only the person can fix.
+    expect(needsTheUser('machine_timeout')).toBe(false);
+  });
+
+  describe('under a real shell', () => {
+    /** Run a jump on a fake host, resolving with its exit status and how long it took. */
+    function runJump(env: NodeJS.ProcessEnv, command: string) {
+      const started = Date.now();
+      const child = spawn('sh', ['-c', command], { stdio: ['ignore', 'pipe', 'pipe'], env });
+      let out = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+      });
+      return new Promise<{ code: number | null; ms: number; out: string }>((resolve) =>
+        child.on('exit', (code) => resolve({ code, ms: Date.now() - started, out }))
+      );
+    }
+    /** A timeout whose bound comes out at one second. */
+    const ONE_SECOND = 1_000 - JUMP_CONNECT_TIMEOUT_MS;
+
+    it('stops a machine that never answers at the bound, with its own status', async () => {
+      const host = fakeHost();
+      try {
+        const { code, ms } = await runJump(host.env, jumpCommand('klaw', 'sleep 20', ONE_SECOND));
+        expect(code).toBe(JUMP_TIMED_OUT_EXIT);
+        expect(ms).toBeLessThan(1_000 + JUMP_KILL_GRACE_MS);
+      } finally {
+        host.cleanup();
+      }
+    }, 15_000);
+
+    it('kills an ssh that ignores being asked to stop, inside the margin', async () => {
+      const host = fakeHost();
+      try {
+        const { code, ms } = await runJump(host.env, jumpCommand('klaw', "trap '' TERM; sleep 6 >/dev/null 2>&1", ONE_SECOND));
+        expect(code).toBe(JUMP_TIMED_OUT_EXIT);
+        expect(ms).toBeLessThan(1_000 + JUMP_DEADLINE_MARGIN_MS);
+      } finally {
+        host.cleanup();
+      }
+    }, 15_000);
+
+    it("passes a command's own status and output through, and leaves nothing running", async () => {
+      const host = fakeHost();
+      try {
+        const { code, ms, out } = await runJump(host.env, jumpCommand('klaw', 'echo hi; exit 3', POLL_TIMEOUT_MS));
+        expect(code).toBe(3);
+        expect(out).toBe('hi\n');
+        expect(ms).toBeLessThan(2_000);
+        // The watchdog's sleep went with it.
+        expect(execFileSync('sh', ['-c', `pgrep -f '^sleep ${jumpDeadlines(POLL_TIMEOUT_MS).boundSeconds}$' || true`], { encoding: 'utf8' })).toBe('');
+      } finally {
+        host.cleanup();
+      }
+    }, 15_000);
+
+    // A socket path over 104 bytes stops ssh outright, so a long home jumps
+    // without sharing rather than not at all.
+    it('hands ssh the sharing options only where the socket path fits', async () => {
+      for (const [prefix, shares] of [['/tmp/hc-', true], [`${tmpdir()}/hc-a-rather-long-home-directory-name-`, false]] as const) {
+        const home = mkdtempSync(prefix);
+        try {
+          mkdirSync(`${home}/.local/bin`, { recursive: true });
+          writeFileSync(`${home}/.local/bin/ssh`, ['#!/bin/sh', 'printf "%s\\n" "$@" > "$HOME/argv"', ''].join('\n'));
+          chmodSync(`${home}/.local/bin/ssh`, 0o755);
+          await runJump({ ...process.env, HOME: home }, jumpCommand('klaw', 'true', POLL_TIMEOUT_MS));
+          const argv = readFileSync(`${home}/argv`, 'utf8').split('\n');
+          expect(argv.includes('ControlMaster=auto')).toBe(shares);
+          expect(argv.includes(`ControlPath=${home}/.cache/herdrchat/ssh-%C`)).toBe(shares);
+          expect(argv.slice(argv.indexOf('--'), argv.indexOf('--') + 3)).toEqual(['--', 'klaw', 'true']);
+        } finally {
+          rmSync(home, { recursive: true, force: true });
+        }
+      }
+    }, 15_000);
+  });
 });

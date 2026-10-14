@@ -102,6 +102,6 @@ export function machineNotice(label: string, error: string, errorCode: string | 
 }
 
 const NAMES_THE_MACHINE: ReadonlySet<string> = new Set([
-  'connect_failed', 'machine_auth_failed', 'machine_host_key',
+  'connect_failed', 'machine_auth_failed', 'machine_host_key', 'machine_timeout',
   'herdr_not_found', 'herdr_not_on_path', 'herdr_not_executable',
 ]);
