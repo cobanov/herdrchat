@@ -538,9 +538,10 @@ export function parseScanOutput(
     } else if (tag === SLASH_BUILTINS_UNCHANGED) {
       result.builtins = { kind: 'unchanged' };
     } else if (tag === SLASH_BUILTINS_FAILED) {
-      // The grep failed or hit its deadline: nothing read, nothing to record.
-      // The held built-ins stay, and so does the held binary, so the next due
-      // scan reads this one again.
+      // The grep failed or hit its deadline: nothing read. The held built-ins
+      // and the held binary stay, and the failure is recorded (grepFailed):
+      // applyScan keeps this binary as failed, so it is not grepped again
+      // until SLASH_GREP_RETRY_MS has passed or a different binary appears.
       result.builtins = null;
       result.grepFailed = true;
     } else if (tag === SLASH_FILES_CUT && fields.length >= 3) {

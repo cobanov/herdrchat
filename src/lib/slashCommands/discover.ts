@@ -15,8 +15,10 @@
  *   and only up to the end of its frontmatter. Every `find` runs under
  *   `hs_bounded` with what is left of one deadline for the whole file phase
  *   (`SLASH_SCAN_FILES_TIMEOUT_S`), since `-L` follows a symlink into any
- *   tree; a folder it stopped or skipped is reported (`SLASH_FILES_CUT`), so
- *   a partial list is never taken for a whole one.
+ *   tree, and no file is read once that deadline has passed; a folder that
+ *   was stopped or skipped is reported (`SLASH_FILES_CUT`), so a partial list
+ *   is never taken for a whole one. The one read under way at the deadline
+ *   (`EXCERPT_BYTES` of one file) is not itself stopped.
  * - The Claude binary is grepped only when its path, size or mtime changed
  *   since the last read (`knownBinary`), so the grep over a large bundle runs
  *   once per Claude Code version. Each grep has a deadline the host enforces
@@ -188,11 +190,21 @@ const FUNCTIONS = [
   `  if [ $? -gt 1 ]; then printf '${SLASH_FILES_CUT}\\t%s\\t%s\\n' "$hs_src" "$hs_own"; return 1; fi`,
   '  return 0',
   '}',
+  // Whether the file phase's deadline has passed (or the clock does not
+  // read). Checked before each file is read: a find that ended just inside
+  // the deadline must not start up to MAX_FILES_PER_DIR more reads after it,
+  // through a `-L` link onto a slow mount, say. The rest of that folder is
+  // then reported cut, so its partial list is read as not read.
+  'hs_late() {',
+  '  hs_t2=$(hs_now)',
+  '  [ "$hs_t2" -eq 0 ] || [ "$hs_t2" -ge "$hs_end" ]',
+  '}',
   // `<dir>/**/*.md`, three levels deep: `foo/bar.md` is `/foo:bar`.
   'hs_commands() {',
   '  [ -d "$1" ] || return 0',
   `  hs_find "$2" "$3" -L "$1" -maxdepth 3 -type f -name '*.md' || return 0`,
   `  head -n ${MAX_FILES_PER_DIR} "$hs_ft" | while IFS= read -r hs_f; do`,
+  `    if hs_late; then printf '${SLASH_FILES_CUT}\\t%s\\t%s\\n' "$2" "$3"; break; fi`,
   '    hs_emit command "$2" "$3" "${hs_f#"$1"/}" "$hs_f"',
   '  done',
   '}',
@@ -203,6 +215,7 @@ const FUNCTIONS = [
   `  head -n ${MAX_FILES_PER_DIR} "$hs_ft" | while IFS= read -r hs_f; do`,
   '    hs_d=${hs_f%/SKILL.md}',
   '    [ "$hs_d" = "$1" ] && continue',
+  `    if hs_late; then printf '${SLASH_FILES_CUT}\\t%s\\t%s\\n' "$2" "$3"; break; fi`,
   '    hs_emit skill "$2" "$3" "${hs_d##*/}" "$hs_f"',
   '  done',
   '}',

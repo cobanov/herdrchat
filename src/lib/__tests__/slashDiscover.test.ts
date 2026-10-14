@@ -124,7 +124,14 @@ function scratchHost(): { home: string; project: string; cleanup: () => void } {
 
 const SHELLS = ['sh', ...(existsSync('/bin/zsh') || existsSync('/usr/bin/zsh') ? ['zsh'] : [])];
 
+// The deadline tests below wait out real deadlines, a second or two each. The
+// script always runs under `sh -c` (discoveryCommand), so they run under the
+// first shell by default; HERDRCHAT_ALL_SHELLS=1 runs them under every one.
+const allShells = process.env.HERDRCHAT_ALL_SHELLS === '1';
+
 describe.each(SHELLS)('the discovery script under %s', (shell) => {
+  const deadlines = shell === SHELLS[0] || allShells ? describe : describe.skip;
+  const slow = (name: string) => (shell === SHELLS[0] || allShells ? name : `${name} (skipped: set HERDRCHAT_ALL_SHELLS=1)`);
   let host: ReturnType<typeof scratchHost>;
   beforeAll(() => {
     host = scratchHost();
@@ -192,7 +199,7 @@ describe.each(SHELLS)('the discovery script under %s', (shell) => {
 
   // The review of 4d5c706: a grep cut by its deadline printed the built-ins'
   // end anyway, so a partial read was cached against the binary for good.
-  describe('when the grep over the binary is slow', () => {
+  deadlines(slow('when the grep over the binary is slow'), () => {
     const tools = ['head', 'sed', 'find', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat', 'date'];
     let bin: string;
     beforeAll(() => {
@@ -250,7 +257,7 @@ exec ${realGrep} "$@"
 
   // The review of #160: a `find` that runs into a big tree is stopped at the
   // file phase's deadline, and what it cut is read as not read.
-  describe('when a find is slow', () => {
+  deadlines(slow('when a find is slow'), () => {
     const tools = ['head', 'sed', 'grep', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat', 'date'];
     let bin: string;
     beforeAll(() => {
@@ -273,7 +280,7 @@ exec ${realFind} "$@"
     });
 
     const scan = (path: string) => {
-      const request: ScanRequest = { host: true, cwds: [host.project], knownBinary: null, filesDeadlineS: 3 };
+      const request: ScanRequest = { host: true, cwds: [host.project], knownBinary: null, filesDeadlineS: 2 };
       const started = Date.now();
       const shellPath = execFileSync('sh', ['-c', `command -v ${shell}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
       const stdout = execFileSync(shellPath, ['-c', discoveryScript(request)], {
@@ -284,8 +291,8 @@ exec ${realFind} "$@"
     };
 
     // This host's own way (timeout(1) or Perl), then the watchdog alone. The
-    // clock is read in whole seconds, so the deadline leaves the fast folders
-    // a second or two before the slow one.
+    // clock is read in whole seconds, so a 2 s deadline leaves the fast
+    // folders at least a second (1 s could pass at once) and keeps the run short.
     it.each([
       ['this host\'s way', () => `${bin}:/usr/bin:/bin`],
       ['the watchdog', () => bin],
@@ -297,6 +304,58 @@ exec ${realFind} "$@"
       // What came before the cut arrived whole.
       expect(result.user?.length).toBe(4);
       expect(result.plugins?.length).toBe(2);
+    }, 20_000);
+  });
+
+  // The review of the bounded file phase: a find that ends just inside the
+  // deadline must not then read every file it found, each through a slow
+  // link, past it. No read starts after the deadline; the rest of the folder
+  // is reported cut and read as not read.
+  deadlines(slow('when reading the files a find listed is slow'), () => {
+    const tools = ['sed', 'grep', 'find', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat', 'date', 'timeout', 'perl'];
+    let bin: string;
+    let folder: string;
+    beforeAll(() => {
+      bin = join(host.home, `slow-read-${shell}`);
+      mkdirSync(bin, { recursive: true });
+      folder = join(host.home, 'slowread');
+      // Commands only: no skills folder, so no later find would report the cut.
+      mkdirSync(join(folder, '.claude/commands'), { recursive: true });
+      for (const name of ['a', 'b', 'c', 'd']) writeFileSync(join(folder, `.claude/commands/${name}.md`), `---\ndescription: ${name}\n---\n`);
+      const realHead = execFileSync('sh', ['-c', 'command -v head'], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      // Slow only on this folder's files; every other head is the real one.
+      writeFileSync(
+        join(bin, 'head'),
+        `#!/bin/sh
+for a in "$@"; do case "$a" in */slowread/*) sleep 2 ;; esac; done
+exec ${realHead} "$@"
+`
+      );
+      chmodSync(join(bin, 'head'), 0o755);
+      for (const tool of tools) {
+        let path = '';
+        try {
+          path = execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+        } catch {
+          continue;
+        }
+        symlinkSync(path, join(bin, tool));
+      }
+    });
+
+    it('stops reading at the deadline and reads the folder as not read', () => {
+      const request: ScanRequest = { host: false, cwds: [folder], knownBinary: null, filesDeadlineS: 2 };
+      const started = Date.now();
+      const shellPath = execFileSync('sh', ['-c', `command -v ${shell}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      const stdout = execFileSync(shellPath, ['-c', discoveryScript(request)], {
+        env: { ...process.env, HOME: host.home, CLAUDE_CONFIG_DIR: '', PATH: bin },
+        encoding: 'utf8',
+      });
+      const seconds = (Date.now() - started) / 1000;
+      // Four reads of 2 s each would be 8 s; the deadline stops it after one or two.
+      expect(seconds).toBeLessThan(6);
+      expect(stdout).toContain(`${SLASH_FILES_CUT}\tproject\t${folder}`);
+      expect(parseScanOutput(stdout, request)?.projects).not.toHaveProperty([folder]);
     }, 20_000);
   });
 

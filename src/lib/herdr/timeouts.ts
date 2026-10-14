@@ -74,8 +74,10 @@ export const SLASH_SCAN_GREP_TIMEOUT_S = 12;
 /**
  * The deadline for the scan's file phase (every `find` under the person's,
  * the plugins' and the projects' folders, and the `head`/`sed` of what they
- * found), in whole seconds, one budget for the phase, enforced by the host the
- * same way as the greps'. `find -L` follows a symlink into any tree. It starts
+ * found), in whole seconds, one budget for the phase. Each `find` is stopped
+ * by the host the same way as the greps; no file's `head`/`sed` starts once
+ * the deadline has passed, though the one under way then runs to its end (a
+ * read of `EXCERPT_BYTES`). `find -L` follows a symlink into any tree. It starts
  * after the greps, so the two together stay strictly inside
  * `SLASH_SCAN_TIMEOUT_MS`, with room for the connection's own round trip.
  */
