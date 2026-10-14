@@ -78,6 +78,19 @@ it('uses the Chats tab for all iPad chat entry points, including narrow windows'
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/chat/[workspaceId]', params: { connectionId: 'host-a', workspaceId: 'w2', title: '' } });
 });
 
+// One agent of a workspace is its own chat; opening it must say which.
+it('carries the pane into the route on a phone and into the selection on iPad', () => {
+  openChat('host-a', 'w6', 'api', 'w6:p2');
+  expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w6', title: 'api', paneId: 'w6:p2' });
+  openChat('host-a', 'w6', 'api');
+  expect(useChatSelection.getState().selection).toEqual({ connectionId: 'host-a', workspaceId: 'w6', title: 'api' });
+  windowAt(932, false);
+  openChat('host-a', 'w6', 'api', 'w6:p2');
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/chat/[workspaceId]', params: { connectionId: 'host-a', workspaceId: 'w6', title: 'api', paneId: 'w6:p2' },
+  });
+});
+
 it('keeps the selected detail and draft mounted across width changes, with back only when compact', async () => {
   const screen = await render(<ChatsScreen />);
   expect(screen.getByTestId('tablet-sidebar')).toBeOnTheScreen();

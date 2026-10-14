@@ -19,8 +19,14 @@ interface DraftsState {
   save: (key: string, text: string, sessionSig: string | null) => void;
 }
 
-export const draftKey = (connectionId: string, workspaceId: string): string =>
-  `${connectionId}\n${workspaceId}`;
+/**
+ * Where a chat's draft is kept. `chat` is the chat key (`chatKey` in
+ * `lib/chatKey`): a bare workspace id for the workspace chat, so drafts typed
+ * there keep their key, or workspace and pane for one agent's chat, so text
+ * typed to one agent does not appear in its sibling's composer.
+ */
+export const draftKey = (connectionId: string, chat: string): string =>
+  `${connectionId}\n${chat}`;
 
 export const useDrafts = create<DraftsState>((set) => ({
   drafts: {},

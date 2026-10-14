@@ -182,7 +182,7 @@ function safeParse(payload: string): ChatMessage | null {
 }
 
 /**
- * Forget everything cached for one workspace.
+ * Forget everything cached for one workspace, and for each agent's chat in it.
  *
  * Called when a workspace is closed. herdr recycles workspace ids, so leaving
  * a dead chat's messages behind means the next workspace to land in that slot
@@ -198,9 +198,16 @@ export async function forgetWorkspace(
 ): Promise<void> {
   await inTransaction(db, async () => {
     for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs']) {
+      // The workspace's own rows, and those of each agent in it, which are
+      // filed under `w6/<pane>` (see chatKey). By prefix rather than by the
+      // panes it has now: one that closed earlier left rows too. `substr`,
+      // not LIKE, so an `_` in an id is not a wildcard.
       await db.runAsync(
-        `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
+        `DELETE FROM ${table} WHERE connection_id = ?
+         AND (workspace_id = ? OR substr(workspace_id, 1, length(?) + 1) = ? || '/')`,
         connectionId,
+        workspaceId,
+        workspaceId,
         workspaceId
       );
     }

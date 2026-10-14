@@ -1123,3 +1123,66 @@ describe("Claude's folder-trust question", () => {
     await unmount();
   });
 });
+
+describe('one agent of a workspace', () => {
+  // Deliberately the unfocused pane: the workspace chat would elect `agent`
+  // to send to, so a pane chat that fell back to that election shows here.
+  const sibling: AgentInfo = {
+    ...agent,
+    focused: false,
+    paneId: 'chat:p2',
+    agentSession: { kind: 'id', value: 'sibling-session', agent: 'claude', source: null },
+  };
+
+  it('tails only its own session, caches it under its own key and sends only to its pane', async () => {
+    mockProbe = { kind: 'size', bytes: 10 };
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, sibling]));
+    const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+    const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], 'chat:p2'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect(result.current.agents.map((item) => item.paneId)).toEqual(['chat:p2']);
+    expect(mockTailStarts.map((start) => start.path)).toEqual(['/test/sibling-session.jsonl']);
+    expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat/chat:p2', 'sibling-session');
+    expect(seedMessages).toHaveBeenCalledWith(db, 'host', 'chat/chat:p2');
+    expect(result.current.canSend).toBe(true);
+    await act(async () => { await result.current.send('for the second agent'); });
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(prompt.mock.calls[0]?.[0]).toBe('chat:p2');
+    await act(async () => { await result.current.sendKeys(['Escape']); });
+    expect(keys.mock.calls.map((call) => call[0])).toEqual(['chat:p2']);
+    await unmount();
+  });
+
+  it('keeps the workspace chat on every agent, under the bare workspace key', async () => {
+    mockProbe = { kind: 'size', bytes: 10 };
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, sibling]));
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect(result.current.agents).toHaveLength(2);
+    expect(mockTailStarts.map((start) => start.path).sort()).toEqual(['/test/session.jsonl', '/test/sibling-session.jsonl']);
+    expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'session,sibling-session');
+    await unmount();
+  });
+
+  it('unbinds and holds sending when its pane goes, even with a sibling still there', async () => {
+    mockLive = false;
+    mockProbe = { kind: 'size', bytes: 10 };
+    mockRecentMessages = [{ id: 'p2-1', role: 'assistant', segments: [{ kind: 'text', text: 'second agent' }],
+      timestamp: 1, agentLabel: null, isSidechain: false }];
+    const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, sibling]));
+    const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], 'chat:p2'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+    expect(result.current.messages.map((message) => message.id)).toEqual(['p2-1']);
+
+    fetch.mockResolvedValue(snapshot([agent]));
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.canSend).toBe(false);
+    await act(async () => { await result.current.send('meant for the closed pane'); });
+    expect(prompt).not.toHaveBeenCalled();
+    await unmount();
+  });
+});
