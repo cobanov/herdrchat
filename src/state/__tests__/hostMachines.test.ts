@@ -14,6 +14,7 @@ import {
   useHostMachines,
 } from '../hostMachines';
 import { clearHostSettings } from '../hostTheme';
+import { draftKey, useDrafts } from '../drafts';
 
 jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
@@ -153,5 +154,57 @@ describe('persistence', () => {
     await clearHostSettings(db, 'h1');
     expect(Object.keys(useHostMachines.getState().byHost)).toEqual(['h10']);
     expect([...rows.keys()]).toEqual([hostMachinesKey('h10')]);
+  });
+});
+
+// #159 review: rows for a machine the host stopped listing (its cache, read
+// markers, pins, prompts, settings, drafts) went only with the host.
+describe('a machine the host stops listing', () => {
+  function recordingDb() {
+    const statements: { sql: string; params: unknown[] }[] = [];
+    const db = {
+      runAsync: async (sql: string, ...params: unknown[]) => {
+        statements.push({ sql, params });
+      },
+      withTransactionAsync: async (task: () => Promise<void>) => task(),
+    } as unknown as SQLiteDatabase;
+    /** The connection ids rows were deleted under, per table. */
+    const deletedUnder = () =>
+      statements
+        .filter(({ sql }) => sql.startsWith('DELETE FROM') && !sql.startsWith('DELETE FROM settings'))
+        .map(({ sql, params }) => `${/DELETE FROM (\w+)/.exec(sql)?.[1]}:${String(params[0])}`);
+    const settingsCleared = () =>
+      statements.filter(({ sql }) => sql.startsWith('DELETE FROM settings WHERE (length(key)')).map(({ params }) => params[0]);
+    return { db, deletedUnder, settingsCleared };
+  }
+
+  it('forgets its rows and drafts, and nothing of the machines still listed or disabled', async () => {
+    const { db, deletedUnder, settingsCleared } = recordingDb();
+    const gone: HostMachine = { id: 'm-gone', label: 'gone', target: 'gone', session: 'default', enabled: true };
+    useHostMachines.getState().set('h1', [klaw, nuku, gone]);
+    useDrafts.getState().save(draftKey('h1/m-gone', 'w1'), 'half typed', null);
+    useDrafts.getState().save(draftKey('h1/m-klaw', 'w1'), 'keep me', null);
+    useDrafts.getState().save(draftKey('h1', 'w1'), 'host draft', null);
+    const stop = mirrorHostMachines(db);
+    // nuku turned off at the host: still listed, still kept.
+    expect(await refreshHostMachines('h1', answering([klaw, { ...nuku, enabled: false }]))).toBe(true);
+    await flush();
+    stop();
+    expect(deletedUnder()).toEqual([
+      'connections:h1/m-gone',
+      ...['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs', 'prompts'].map((table) => `${table}:h1/m-gone`),
+    ]);
+    expect(settingsCleared()).toEqual(['.h1/m-gone']);
+    expect(Object.keys(useDrafts.getState().drafts).sort()).toEqual([draftKey('h1', 'w1'), draftKey('h1/m-klaw', 'w1')].sort());
+  });
+
+  it('forgets nothing on a first answer, or on an unchanged one', async () => {
+    const { db, deletedUnder } = recordingDb();
+    const stop = mirrorHostMachines(db);
+    await refreshHostMachines('h1', answering([klaw]));
+    await refreshHostMachines('h1', answering([{ ...klaw }]));
+    await flush();
+    stop();
+    expect(deletedUnder()).toEqual([]);
   });
 });

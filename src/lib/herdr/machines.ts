@@ -151,6 +151,16 @@ export function isUnderHost(key: string, hostId: string): boolean {
   return key.startsWith(`${hostId}${MACHINE_SEPARATOR}`);
 }
 
+/**
+ * The machines in `previous` that `next` no longer lists, by id: removed at the
+ * host (`herdr machine remove`). A disabled machine is still listed, and keeps
+ * its rows.
+ */
+export function droppedMachineIds(previous: readonly HostMachine[], next: readonly HostMachine[]): string[] {
+  const kept = new Set(next.map((machine) => machine.id));
+  return previous.filter((machine) => !kept.has(machine.id)).map((machine) => machine.id);
+}
+
 // MARK: - Refresh cadence
 
 /**

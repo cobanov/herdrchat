@@ -1,8 +1,17 @@
 import type * as SQLite from 'expo-sqlite';
 import { create } from 'zustand';
 
-import { parseMachineList, type HostMachine, type MachineList } from '@/lib/herdr/machines';
-import { HOST_MACHINES_KEY_PREFIX, deleteSetting, hostMachinesKey, loadHostMachineRows, setSetting } from './db';
+import { droppedMachineIds, machineConnectionId, parseMachineList, type HostMachine, type MachineList } from '@/lib/herdr/machines';
+import {
+  HOST_MACHINES_KEY_PREFIX,
+  clearConnectionSettings,
+  deleteConnection,
+  deleteSetting,
+  hostMachinesKey,
+  loadHostMachineRows,
+  setSetting,
+} from './db';
+import { useDrafts } from './drafts';
 
 /**
  * The machines saved on each host, as the host last listed them.
@@ -133,20 +142,39 @@ export async function loadHostMachines(db: SQLite.SQLiteDatabase): Promise<void>
 /**
  * Keep the settings table in step with the store from now on. Returns the
  * unsubscribe. A mirror, as for host themes (`mirrorHostThemes`), so the poll
- * never needs the database in hand.
+ * never needs the database in hand. A machine gone from a host's new list is
+ * forgotten here too (`forgetMachine`).
  */
 export function mirrorHostMachines(db: SQLite.SQLiteDatabase): () => void {
   return useHostMachines.subscribe((next, previous) => {
     if (hydrating || next.byHost === previous.byHost) return;
     for (const [hostId, machines] of Object.entries(next.byHost)) {
-      if (previous.byHost[hostId] === machines) continue;
+      const held = previous.byHost[hostId];
+      if (held === machines) continue;
       void setSetting(db, hostMachinesKey(hostId), serializeMachines(machines)).catch(() => undefined);
+      for (const machineId of droppedMachineIds(held ?? [], machines)) {
+        void forgetMachine(db, machineConnectionId(hostId, machineId)).catch(() => undefined);
+      }
     }
     for (const hostId of Object.keys(previous.byHost)) {
       if (hostId in next.byHost) continue;
       void deleteSetting(db, hostMachinesKey(hostId)).catch(() => undefined);
     }
   });
+}
+
+/**
+ * Forget a machine the host stopped listing: its cached chats, read markers,
+ * pins and mutes, prompts and settings, filed under its connection id, and its
+ * unsent drafts. They used to go only with the host, so a machine removed at
+ * the host left them behind for good, and one added back under the same id
+ * opened on the old history. A host the phone forgets goes another way
+ * (`clearHostSettings`, `deleteConnection`), which takes its machines with it.
+ */
+export async function forgetMachine(db: SQLite.SQLiteDatabase, connectionId: string): Promise<void> {
+  useDrafts.getState().forgetConnection(connectionId);
+  await deleteConnection(db, connectionId);
+  await clearConnectionSettings(db, connectionId);
 }
 
 // MARK: - Asking the host

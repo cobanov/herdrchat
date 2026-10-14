@@ -1,6 +1,7 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import { HerdrClient } from '../herdr/client';
 import {
+  droppedMachineIds,
   MACHINE_LIST_INTERVAL_MS,
   isUnderHost,
   machineConnectionId,
@@ -131,5 +132,14 @@ describe('machineListDue', () => {
     expect(machineListDue(1_000, 1_000 + MACHINE_LIST_INTERVAL_MS - 1)).toBe(false);
     expect(machineListDue(1_000, 1_000 + MACHINE_LIST_INTERVAL_MS)).toBe(true);
     expect(MACHINE_LIST_INTERVAL_MS).toBe(60_000);
+  });
+});
+
+describe('droppedMachineIds', () => {
+  const machine = (id: string, enabled = true) => ({ id, label: id, target: id, session: 'default', enabled });
+  it('names the machines the new list leaves out, and not the disabled ones it keeps', () => {
+    expect(droppedMachineIds([machine('a'), machine('b'), machine('c')], [machine('a'), machine('c', false)])).toEqual(['b']);
+    expect(droppedMachineIds([], [machine('a')])).toEqual([]);
+    expect(droppedMachineIds([machine('a')], [])).toEqual(['a']);
   });
 });
