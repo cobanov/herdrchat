@@ -5,21 +5,11 @@ import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
+import { rowContext, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
 /** Shared with the loading skeleton so content does not jump on arrival. */
 export const AVATAR_SIZE = size.chatBadge;
-
-/**
- * How the agents herdr detects are named on a row. Letta Code joined in herdr
- * 0.9.1 (#120); anything else shows herdr's own id.
- */
-const AGENT_NAMES: Readonly<Record<string, string>> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  omp: 'OMP',
-  letta: 'Letta',
-};
 
 /** Something a row can do besides open, named for assistive technology. */
 export interface RowAction {
@@ -52,10 +42,8 @@ export const ChatRow = memo(function ChatRow({
   const working = summary.status === 'working';
   const agent = summary.agents.find((item) => item.focused && item.agent !== null)
     ?? summary.agents.find((item) => item.agent !== null);
-  const provider = agent?.agent == null ? 'Terminal' : (AGENT_NAMES[agent.agent] ?? agent.agent);
-  const folder = agent?.cwd.split('/').filter(Boolean).slice(-2).join('/') ?? '';
-  const context = [provider, folder].filter(Boolean).join(' · ');
-  const status = attention ? 'Waiting for you' : working ? 'Working' : summary.status === 'unknown' ? 'Status unknown' : summary.status === 'done' ? 'Done' : 'Idle';
+  const context = rowContext(summary);
+  const status = statusLabel(summary.status);
   const preview = summary.preview === null ? status
     : `${summary.preview.fromUser ? 'You: ' : ''}${summary.preview.text}`;
   // herdr's own sentence, which already says what to do about it.
@@ -113,7 +101,7 @@ export const ChatRow = memo(function ChatRow({
         {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
           <Icon
             name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-            size={18}
+            size={size.rowStatusGlyph}
             tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
           />
         )}

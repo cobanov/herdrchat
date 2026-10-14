@@ -673,6 +673,19 @@ describe('preview marker collision', () => {
     expect([...result.keys()]).toEqual(['w1']);
     expect(result.has('ghost')).toBe(false);
   });
+
+  // Two agents in one workspace: filed by workspace, the second line
+  // overwrote the first and one agent's row showed the other's message.
+  it('files each request under its own key when one workspace asks twice', async () => {
+    const line = JSON.stringify({ type: 'user', uuid: 'u1', message: { role: 'user', content: 'hi' } });
+    const subject = new TranscriptStore(new MarkerTransport(`${line}\n`));
+    const result = await subject.latestMessages([
+      { workspaceId: 'w6', key: 'w6:p1', cwd: '/srv/app', sessionId: 'sess-a' },
+      { workspaceId: 'w6', key: 'w6:p2', cwd: '/srv/app/web', sessionId: 'sess-b' },
+    ]);
+
+    expect([...result.keys()]).toEqual(['w6:p1', 'w6:p2']);
+  });
 });
 
 /**
