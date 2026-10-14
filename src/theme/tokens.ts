@@ -68,17 +68,10 @@ export const size = {
    */
   headerControl: 32,
   /**
-   * Room under a scroll view for the floating tab bar to pass over.
-   *
-   * Not `spacing.xxxl * 2`: doubling a spacing token to reach a clearance is how
-   * you end up unable to change either one. The bar's height is the system's,
-   * so this is measured generously rather than derived.
-   *
-   * Android's bar does not float: the screen ends at its top edge, so all a
-   * list needs there is the usual breathing room, not a bar's height of blank
-   * page above another bar.
+   * The count beside Done on a sheet over the chats (Hosts, Settings): its
+   * height, which is also its narrowest width, so one digit is a circle.
    */
-  floatingBarClearance: Platform.OS === 'ios' ? 96 : spacing.lg,
+  countBadge: 18,
   /**
    * The segmented picker's fixed geometry.
    *

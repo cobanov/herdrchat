@@ -30,7 +30,7 @@ import { useWorkspaces } from '@/features/chats/useWorkspaces';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { chatKey } from '@/lib/chatKey';
-import { mainMenuActions, mainMenuTitle } from '@/lib/mainMenu';
+import { mainMenuActions, mainMenuLabel, mainMenuTitle } from '@/lib/mainMenu';
 import { type ThreadRead } from '@/lib/unread';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
 import { useChatEdits } from '@/state/chatEdits';
@@ -238,6 +238,13 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
     });
   };
 
+  const menuActions = mainMenuActions({
+    hasConnection: connection !== null,
+    newChat: () => router.push('/new-chat'),
+    hosts: () => router.navigate('/hosts'),
+    settings: () => router.navigate('/settings'),
+  });
+
   return (
     <Screen>
       <Header
@@ -248,17 +255,8 @@ function ChatsForServer({ selectedWorkspaceId }: { selectedWorkspaceId?: string 
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
         menuTestID="chats-menu"
-        onMenu={() =>
-          showActionSheet({
-            title: mainMenuTitle(connection?.name),
-            actions: mainMenuActions({
-              hasConnection: connection !== null,
-              newChat: () => router.push('/new-chat'),
-              hosts: () => router.navigate('/hosts'),
-              settings: () => router.navigate('/settings'),
-            }),
-          })
-        }
+        menuLabel={mainMenuLabel(menuActions)}
+        onMenu={() => showActionSheet({ title: mainMenuTitle(connection?.name), actions: menuActions })}
       />
 
       {/* Rename and close fail outside the poll's own error path, so they get

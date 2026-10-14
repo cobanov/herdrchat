@@ -3,13 +3,13 @@ import { create } from 'zustand';
 /**
  * How many chats want attention.
  *
- * One writer (the chats list) and, for now, no reader. It fed the Chats tab's
- * badge, and the tab bar is gone: Chats is the root and Hosts and Settings are
- * sheets above it. Kept rather than deleted because the number is the one an app
- * icon badge or a mark on the menu would show, and recomputing it elsewhere —
- * polling for it — is the wrong way to get it: it would double every host's SSH
- * round-trips and quietly defeat the whole poll-rate preference, to show a
- * number the chats list already knows.
+ * One writer (the chats list) and two readers: the Done of Hosts and of
+ * Settings, the sheets above the chats. The tab bar's badge used to be the only
+ * sign of a blocked agent while one of those was open; the count beside Done
+ * is that sign again, on the control that goes back to them. Recomputing it
+ * there — polling for it — would be the wrong way to get it: it would double
+ * every host's SSH round-trips and quietly defeat the poll-rate preference, to
+ * show a number the chats list already knows.
  *
  * So the list publishes what it already computed. A reader is free.
  */

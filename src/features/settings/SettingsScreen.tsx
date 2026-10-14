@@ -20,6 +20,7 @@ import { useSelectedConnection } from '@/state/connections';
 import { NotificationsSection } from '@/features/settings/NotificationsSection';
 import { SupportSection } from '@/features/settings/SupportSection';
 import { useLinkedSection } from '@/features/settings/useLinkedSection';
+import { useBadge } from '@/state/badge';
 import { cachedMessageCount } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { useSettings, type PollScale, type Settings } from '@/state/settings';
@@ -54,6 +55,8 @@ export default function SettingsScreen() {
   const connection = useSelectedConnection();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // How many chats want you, from the list under this sheet: see Hosts.
+  const waiting = useBadge((state) => state.count);
   // A presented sheet: Done closes it. On iPad the control goes on the detail
   // column's header, at the sheet's trailing edge where a person looks for it,
   // not on the sidebar's.
@@ -94,7 +97,7 @@ export default function SettingsScreen() {
       </Screen>
     }>
       <Screen presentation="sheet">
-        <Header title={wide ? SECTION_TITLES[selected] : 'Settings'} onClose={close} />
+        <Header title={wide ? SECTION_TITLES[selected] : 'Settings'} onClose={close} closeBadge={waiting} />
 
         <ScrollView
           key={wide ? selected : 'all'}

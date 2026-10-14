@@ -1,10 +1,11 @@
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 
 import { Text } from './Text';
+import { attentionBadge } from '@/lib/attentionBadge';
 import { haptics } from '@/lib/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine } from '@/theme/tokens';
+import { headerTitleLine, minTouchTarget, radius, screenPadding, size, spacing, useScaledLine } from '@/theme/tokens';
 
 /**
  * The screen header: a large title, an optional server line under it, and up to
@@ -35,12 +36,16 @@ export function Header({
   actionSymbol,
   actionLabel,
   onAction,
-  menuSymbol = 'ellipsis.circle',
+  // Each platform's own "more": the circled ellipsis of an iOS bar, and
+  // Material's vertical overflow, not the `pending` clock-ish circle that
+  // `ellipsis.circle` maps to there.
+  menuSymbol = Platform.OS === 'android' ? 'ellipsis' : 'ellipsis.circle',
   menuLabel = 'Menu',
   menuTestID = 'header-menu',
   onMenu,
   onClose,
   closeLabel = 'Done',
+  closeBadge = 0,
 }: {
   title: string;
   subtitle?: string | null;
@@ -65,8 +70,14 @@ export function Header({
    * filled a new host, tapped Done and lost it.
    */
   closeLabel?: string;
+  /**
+   * How many chats want you, beside the dismiss control of a sheet over them.
+   * Nothing at zero (see `attentionBadge`).
+   */
+  closeBadge?: number;
 }) {
   const { colors } = useTheme();
+  const badge = attentionBadge(closeBadge);
   const titleLine = useScaledLine(headerTitleLine);
   const hasAction = actionSymbol !== undefined && onAction !== undefined;
   const hasGlyph = hasAction || onMenu !== undefined;
@@ -105,16 +116,38 @@ export function Header({
             // "Close" here while the screen said "Done" left "Tap Done" with
             // nothing to find (#112).
             accessibilityLabel={closeLabel}
+            // The count is a value, not part of the label, so "Tap Done"
+            // still finds it whatever the count is.
+            accessibilityValue={badge === null ? undefined : { text: badge.spoken }}
             testID="header-close"
             hitSlop={spacing.sm}
             style={({ pressed }) => ({
               marginLeft: hasGlyph ? spacing.xl : 0,
               minWidth: minTouchTarget,
               height: minTouchTarget,
-              alignItems: 'flex-end',
-              justifyContent: 'center',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: spacing.xs,
               opacity: pressed ? 0.5 : 1,
             })}>
+            {badge !== null && (
+              <View
+                testID="header-close-badge"
+                style={{
+                  minWidth: size.countBadge,
+                  minHeight: size.countBadge,
+                  borderRadius: radius.full,
+                  paddingHorizontal: spacing.xs,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.attentionMuted,
+                }}>
+                <Text variant="caption2" weight="700" color="attention">
+                  {badge.text}
+                </Text>
+              </View>
+            )}
             <Text variant="headline" color="tint">
               {closeLabel}
             </Text>

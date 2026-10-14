@@ -79,6 +79,23 @@ it('uses the root chats screen for all iPad chat entry points, including narrow 
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/chat/[workspaceId]', params: { connectionId: 'host-a', workspaceId: 'w2', title: '' } });
 });
 
+// #154 review: a phone pushing the chat while Hosts or Settings was open put it
+// under the sheet, so a notification tap looked like it did nothing until Done.
+// The chats come to the top first, then the chat is pushed on them; the same
+// call from the list, with no sheet, is a `dismissTo` the router keeps as is.
+it('closes any sheet before pushing the chat on a phone', () => {
+  windowAt(932, false);
+  const order: string[] = [];
+  mockDismissTo.mockImplementation((href: string) => order.push(`dismissTo ${href}`));
+  mockPush.mockImplementation((href: { pathname: string }) => order.push(`push ${href.pathname}`));
+  openChat('host-a', 'w4', 'Build');
+  expect(order).toEqual(['dismissTo /', 'push /chat/[workspaceId]']);
+  expect(mockPush).toHaveBeenCalledTimes(1);
+  expect(mockPush).toHaveBeenCalledWith({ pathname: '/chat/[workspaceId]', params: { connectionId: 'host-a', workspaceId: 'w4', title: 'Build' } });
+  mockDismissTo.mockReset();
+  mockPush.mockReset();
+});
+
 // One agent of a workspace is its own chat; opening it must say which.
 it('carries the pane into the route on a phone and into the selection on iPad', () => {
   openChat('host-a', 'w6', 'api', 'w6:p2');

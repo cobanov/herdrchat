@@ -21,7 +21,11 @@ jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: () => ({ remove: jest.fn() }),
 }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), push: jest.fn(), dismissTo: jest.fn() } }));
-jest.mock('@/features/chats/navigation', () => ({ openChat: jest.fn() }));
+// The real `returnToChats`, so the test still sees which router call it makes.
+jest.mock('@/features/chats/navigation', () => ({
+  openChat: jest.fn(),
+  returnToChats: jest.requireActual<typeof import('@/features/chats/navigation')>('@/features/chats/navigation').returnToChats,
+}));
 jest.mock('@/features/notifications/deviceId', () => ({ getPushDeviceId: jest.fn() }));
 jest.mock('@/features/notifications/mutedChats', () => ({ mutedForHost: jest.fn() }));
 jest.mock('@/features/notifications/push', () => ({}));

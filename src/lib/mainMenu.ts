@@ -41,3 +41,12 @@ export function mainMenuTitle(hostName: string | null | undefined): string {
   const name = hostName?.trim() ?? '';
   return name.length > 0 ? name : 'HerdrChat';
 }
+
+/**
+ * What VoiceOver and TalkBack read for the menu button: what is behind it,
+ * built from the rows so it stays true when they change. "Menu" alone said
+ * nothing about where Hosts and Settings had gone when the tab bar went.
+ */
+export function mainMenuLabel(actions: readonly SheetAction[]): string {
+  return `More: ${actions.map((action) => action.label).join(', ')}`;
+}

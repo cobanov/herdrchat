@@ -1,5 +1,5 @@
 import { buildSheet } from '../actionSheet';
-import { mainMenuActions, mainMenuTitle } from '../mainMenu';
+import { mainMenuActions, mainMenuLabel, mainMenuTitle } from '../mainMenu';
 
 const handlers = () => ({ newChat: jest.fn(), hosts: jest.fn(), settings: jest.fn() });
 
@@ -41,5 +41,13 @@ describe('mainMenuTitle', () => {
     expect(mainMenuTitle(null)).toBe('HerdrChat');
     expect(mainMenuTitle(undefined)).toBe('HerdrChat');
     expect(mainMenuTitle('  ')).toBe('HerdrChat');
+  });
+});
+
+describe('mainMenuLabel', () => {
+  // "Menu" alone did not say where Hosts and Settings went (#154 review).
+  it('names the rows behind the button, as the menu lists them', () => {
+    expect(mainMenuLabel(mainMenuActions({ hasConnection: false, ...handlers() }))).toBe('More: Hosts, Settings');
+    expect(mainMenuLabel(mainMenuActions({ hasConnection: true, ...handlers() }))).toBe('More: New chat, Hosts, Settings');
   });
 });

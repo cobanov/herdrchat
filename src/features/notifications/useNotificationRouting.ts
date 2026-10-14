@@ -1,11 +1,10 @@
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { useSQLiteContext } from 'expo-sqlite';
-import { router } from 'expo-router';
 import { useEffect } from 'react';
 
 import { getPushDeviceId } from '@/features/notifications/deviceId';
-import { openChat } from '@/features/chats/navigation';
+import { openChat, returnToChats } from '@/features/chats/navigation';
 import { mutedForHost } from '@/features/notifications/mutedChats';
 import { deviceFileId, existingPushToken, uploadPushToken } from '@/features/notifications/push';
 import { SELECTED_KEY } from '@/state/Hydrate';
@@ -156,10 +155,7 @@ export function useNotificationRouting(): void {
         }
         if (target.session !== undefined && !(await stillThere(connection, target))) {
           // The chat that pushed has ended; its slot may hold another one.
-          // `dismissTo`, not `navigate`: with Hosts or Settings open as a
-          // sheet, `navigate('/')` pushed a second chats screen above it
-          // rather than returning to the one underneath.
-          router.dismissTo('/');
+          returnToChats();
           return;
         }
         openChat(connection.id, target.workspace, target.label);
