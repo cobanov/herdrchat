@@ -1,0 +1,41 @@
+#| Captured from Claude Code 2.1.299 at 120x40, 2026-10-14: a 45-line heredoc, so the rule and the tool line
+#| have scrolled off the top. Real, except option 2's folder, shortened so it no longer wraps (so 39 rows).
+ │ line 16 of the note
+ │ line 17 of the note
+ │ line 18 of the note
+ │ line 19 of the note
+ │ line 20 of the note
+ │ line 21 of the note
+ │ line 22 of the note
+ │ line 23 of the note
+ │ line 24 of the note
+ │ line 25 of the note
+ │ line 26 of the note
+ │ line 27 of the note
+ │ line 28 of the note
+ │ line 29 of the note
+ │ line 30 of the note
+ │ line 31 of the note
+ │ line 32 of the note
+ │ line 33 of the note
+ │ line 34 of the note
+ │ line 35 of the note
+ │ line 36 of the note
+ │ line 37 of the note
+ │ line 38 of the note
+ │ line 39 of the note
+ │ line 40 of the note
+ │ line 41 of the note
+ │ line 42 of the note
+ │ line 43 of the note
+ │ line 44 of the note
+ │ line 45 of the note
+ │ EOF
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and always allow access to /home/me/work/cap from this project
+   3. Yes, and switch to auto mode · auto mode handles these prompts for you
+   4. No
+
+ Esc to cancel · Tab to amend

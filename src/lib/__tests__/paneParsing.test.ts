@@ -7,7 +7,6 @@ import {
   isMentionPopup,
   optionKeys,
   parseBlockedPrompt,
-  PROMPT_DETAILS_MAX_LINES,
 } from '../transcript/blockedPrompt';
 import { extractLivePreview } from '../transcript/livePreview';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
@@ -124,7 +123,9 @@ describe('blocked prompt parsing', () => {
  * host names are replaced; nothing else is.
  */
 const screen = (name: string) =>
-  readFileSync(join(__dirname, 'fixtures', 'screens', `${name}.txt`), 'utf8');
+  readFileSync(join(__dirname, 'fixtures', 'screens', `${name}.txt`), 'utf8')
+    // A fixture's provenance, where it is more than a plain capture.
+    .replace(/^(?:#\| .*\n)+/, '');
 const labels = (name: string) => parseBlockedPrompt(screen(name)).options.map((o) => `${o.number}. ${o.label}`);
 
 describe('captured menus', () => {
@@ -215,29 +216,89 @@ describe('captured menus', () => {
  * with the command, its description and Claude's warning cut off by the blank
  * line above the question, so nobody could tell what they were approving.
  *
- * `permission-bash-2.1.296` and `edit-file-box` are written from what Claude
- * Code 2.1.296 and the older boxed versions draw, not captured from a pane;
- * `permission-bash` is a real capture.
+ * `permission-bash-tip-120` and `permission-heredoc-120` are captured from
+ * Claude Code 2.1.299; `permission-bash-120`, `permission-bash-deadline-80`
+ * and `permission-write-120` are written from those captures and the shapes
+ * the maintainer captured on #170, and each file's `#|` header says how.
+ * `permission-bash` is a real 2.1.280 capture.
  */
 describe('prompt details', () => {
-  // Claude Code 2.1.296: rule, tool line, description, command, rule, notes.
-  it('reads the tool, its description, the command and the warnings', () => {
-    const prompt = parseBlockedPrompt(screen('permission-bash-2.1.296'));
-    expect(prompt.question).toBe('Do you want to proceed?');
-    expect(labels('permission-bash-2.1.296')).toEqual(['1. Yes', '2. No']);
+  const COMMAND = 'mkdir -p cap && cd cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s';
+  const NOTE = "A variable in this command can't be checked before it runs";
+
+  // The dashed rules and the `│ ` margin frame the command; the Tip is Claude's
+  // hint, not the prompt's description.
+  it('reads a 2.1.299 Bash prompt: summary, the command alone, the note', () => {
+    for (const name of ['permission-bash-tip-120', 'permission-bash-120']) {
+      const prompt = parseBlockedPrompt(screen(name));
+      expect(prompt.question).toBe('Do you want to proceed?');
+      expect(prompt.details).toEqual({
+        title: 'Bash command',
+        summary: 'Create cap dir, write and remove two temp files, print epoch time',
+        body: [COMMAND],
+        notes: [NOTE],
+        deadline: null,
+      });
+    }
+    expect(labels('permission-bash-tip-120')).toEqual(['1. Yes', '2. Yes, and switch to auto mode · auto mode handles these prompts for you', '3. No']);
+  });
+
+  // At 80 columns the Tip, the command and the auto-deny line all wrap.
+  it('joins what wrapped at 80 columns, and keeps the deadline in the notes', () => {
+    const prompt = parseBlockedPrompt(screen('permission-bash-deadline-80'));
     expect(prompt.details).toEqual({
-      title: 'Bash command · from the "zen-video-v6" workflow',
-      summary: 'Transcribe the voice parts alone',
-      body: [
-        'cd /home/me/work/zen-video &&',
-        'S=/tmp/scratchpad; for r in "2.05 3.2" "6.7 8.05"; do bash -c "ffmpeg -v error -ss ${r% *} -to ${r#* } -i mix.wav $S/part.wav && rm $S/part.wav"; done; git show',
-        `HEAD:assets/audio/mixcheck.json | grep -o '"text":"The pop-up.","heard":"[^"]*"'`,
-      ],
-      notes: [
-        'This shell -c script runs rm and could not be checked',
-        '⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session',
-      ],
+      title: 'Bash command',
+      summary: 'Create and remove two temp files, then print epoch time',
+      body: ['cd /home/me/work/cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s'],
+      notes: [NOTE, '⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session'],
       deadline: '1:32',
+    });
+  });
+
+  // A second later Claude prints 1:31; the reply in flight must not read as
+  // superseded and unlock its options.
+  it('keeps its signature while the deadline ticks at 80 columns, and changes it for another command', () => {
+    const now = parseBlockedPrompt(screen('permission-bash-deadline-80'));
+    const later = parseBlockedPrompt(screen('permission-bash-deadline-80').replace('in 1:32,', 'in 1:31,'));
+    expect(later.details?.deadline).toBe('1:31');
+    expect(blockedPromptSignature(later)).toBe(blockedPromptSignature(now));
+    const other = parseBlockedPrompt(screen('permission-bash-deadline-80').replace('date +%s', 'rm -rf ~'));
+    expect(blockedPromptSignature(other)).not.toBe(blockedPromptSignature(now));
+  });
+
+  it('reads the deadline Claude prints when it rounds to minutes', () => {
+    const rounded = screen('permission-bash-deadline-80').replace('in 1:32,', 'in about 2 minutes,');
+    expect(parseBlockedPrompt(rounded).details?.deadline).toBe('about 2 minutes');
+  });
+
+  // The rule and the tool line have scrolled off: whatever is at the top is a
+  // line of the command, and taking it for the title would misstate the prompt.
+  it('gives no details, and says so, when the start of the prompt is off screen', () => {
+    const prompt = parseBlockedPrompt(screen('permission-heredoc-120'));
+    expect(prompt.question).toBe('Do you want to proceed?');
+    expect(prompt.details).toBeNull();
+    expect(prompt.detailsOffScreen).toBe(true);
+    expect(labels('permission-heredoc-120')).toEqual([
+      '1. Yes',
+      '2. Yes, and always allow access to /home/me/work/cap from this project',
+      '3. Yes, and switch to auto mode · auto mode handles these prompts for you',
+      '4. No',
+    ]);
+    // The same, with the rule on screen but the tool line not.
+    const ruled = screen('permission-heredoc-120').replace(' │ line 17 of the note', '─'.repeat(120));
+    expect(parseBlockedPrompt(ruled).detailsOffScreen).toBe(true);
+  });
+
+  // The closing dashed rule sits right on top of the question.
+  it('reads a Write prompt: its question alone, the file in the details', () => {
+    const prompt = parseBlockedPrompt(screen('permission-write-120'));
+    expect(prompt.question).toBe('Do you want to create new.txt?');
+    expect(prompt.details).toEqual({
+      title: 'Create file',
+      summary: 'cap/new.txt',
+      body: ['1 alpha', '2 beta', '3 gamma'],
+      notes: [],
+      deadline: null,
     });
   });
 
@@ -253,21 +314,7 @@ describe('prompt details', () => {
     });
   });
 
-  it('reads a boxed prompt, its diff box and borders gone, its indent kept', () => {
-    const prompt = parseBlockedPrompt(screen('edit-file-box'));
-    expect(prompt.question).toBe('Do you want to make this edit to directories.ts?');
-    expect(prompt.details).toEqual({
-      title: 'Edit file',
-      summary: 'src/lib/directories.ts',
-      body: [
-        '12   export async function list(path) {',
-        '13 -   const out = await run(`ls ${path}; true`);',
-        '13 +   const out = await run(`ls ${path}`);',
-        '14     return out.split("\\n");',
-      ],
-      notes: [],
-      deadline: null,
-    });
+  it('reads an older boxed prompt, its borders gone', () => {
     expect(parseBlockedPrompt(PERMISSION_PROMPT).details).toMatchObject({
       title: 'Bash command',
       summary: 'Delete the build directory',
@@ -275,17 +322,27 @@ describe('prompt details', () => {
     });
   });
 
-  it('reads the deadline Claude prints when it rounds to minutes', () => {
-    const rounded = screen('permission-bash-2.1.296').replace('in 1:32,', 'in about 2 minutes,');
-    expect(parseBlockedPrompt(rounded).details?.deadline).toBe('about 2 minutes');
+  // A real newline in a command is kept: only a line that ran to the edge wrapped.
+  it('keeps a command’s own newlines', () => {
+    const rule = '─'.repeat(80);
+    const dashed = '╌'.repeat(80);
+    const prompt = parseBlockedPrompt(
+      [rule, ' Bash command', ' Two steps', dashed, ' │ npm ci', ' │ npm test', dashed, '', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'].join('\n')
+    );
+    expect(prompt.details?.body).toEqual(['npm ci', 'npm test']);
   });
 
   // A question with its options and no tool line: the question is the whole of it.
   it('has no details for an AskUserQuestion, a review, or the trust prompt', () => {
     for (const name of ['ask-plain-numbered-description', 'ask-preview', 'ask-multiselect', 'ask-multiselect-review', 'trust']) {
-      expect(parseBlockedPrompt(screen(name)).details).toBeNull();
+      const prompt = parseBlockedPrompt(screen(name));
+      expect(prompt.details).toBeNull();
+      expect(prompt.detailsOffScreen).toBeUndefined();
     }
     expect(parseBlockedPrompt('Pick one?\n❯ 1. A\n  2. B').details).toBeNull();
+    // Prose with no rule above it is not a prompt's details, however long.
+    const prose = Array.from({ length: 50 }, (_, index) => `line ${index}`);
+    expect(parseBlockedPrompt([...prose, '', 'Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n')).details).toBeNull();
   });
 
   // Codex's banner box closes long before its question; it is not the prompt.
@@ -306,29 +363,6 @@ describe('prompt details', () => {
       notes: [],
       deadline: null,
     });
-  });
-
-  it('looks no further up than the line cap when there is no rule', () => {
-    const prose = Array.from({ length: PROMPT_DETAILS_MAX_LINES + 10 }, (_, index) => `line ${index}`);
-    const details = parseBlockedPrompt([...prose, '', 'Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n')).details;
-    // The cap counts from the question, whose blank line above it is one of them.
-    expect(details?.title).toBe(`line ${prose.length - PROMPT_DETAILS_MAX_LINES + 1}`);
-    expect(details?.body.at(-1)).toBe(`line ${prose.length - 1}`);
-  });
-
-  // The deadline ticks every second; the prompt must not look new on each poll,
-  // or a reply in flight would read as superseded and its options come back.
-  it('keeps its signature while the deadline ticks, and changes it for another command', () => {
-    const now = parseBlockedPrompt(screen('permission-bash-2.1.296'));
-    const later = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('in 1:32,', 'in 1:30,'));
-    expect(later.details?.deadline).toBe('1:30');
-    expect(blockedPromptSignature(later)).toBe(blockedPromptSignature(now));
-    const other = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('\n   cd /home/me/work/zen-video &&', '\n   cd /home/me/work/other &&'));
-    expect(blockedPromptSignature(other)).not.toBe(blockedPromptSignature(now));
-    // Same `cd /repo &&` first line, a different command behind it.
-    const rest = parseBlockedPrompt(screen('permission-bash-2.1.296').replace('git show', 'git push --force'));
-    expect(rest.details?.body[0]).toBe(now.details?.body[0]);
-    expect(blockedPromptSignature(rest)).not.toBe(blockedPromptSignature(now));
   });
 });
 

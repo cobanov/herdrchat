@@ -1,0 +1,22 @@
+#| Hand-written for Claude Code 2.1.299 at 120 columns, 2026-10-14, from the 120-column Bash capture and the
+#| maintainer's description of a real Write prompt on #170 (its question once read "Create file …/new.txt ╌╌╌ 1 alpha
+#| 2 beta 3 gamma ╌╌╌ Do you want to create new.txt?"): the closing dashed rule sits right above the question.
+#| Not a capture: driving a Write prompt was not possible in this session.
+❯ Write a file cap/new.txt with the lines alpha, beta, gamma using the Write tool.
+
+⏺ Write(cap/new.txt)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Create file
+ cap/new.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  1 alpha
+  2 beta
+  3 gamma
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to create new.txt?
+ ❯ 1. Yes
+   2. Yes, allow all edits during this session (shift+tab)
+   3. No
+
+ Esc to cancel · Tab to amend

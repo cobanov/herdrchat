@@ -1,0 +1,25 @@
+#| Hand-written for Claude Code 2.1.299 at 80 columns, 2026-10-14, from the 120-column capture and the maintainer's
+#| description on #170: the Tip and the auto-deny line wrap at the pane's width, the command wraps inside its
+#| margin. The deadline did not appear in a captured run, so this case is not a capture.
+⏺ Bash(cd /home/me/work/cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm…)
+  ⎿  Waiting…
+
+────────────────────────────────────────────────────────────────────────────────
+ Bash command
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode"
+ below
+ Create and remove two temp files, then print epoch time
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ cd /home/me/work/cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm
+ │ out-$f.txt"; done; date +%s
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ A variable in this command can't be checked before it runs
+ ⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking
+ progress on an unattended session
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and switch to auto mode · auto mode handles these prompts for you
+   3. No
+
+ Esc to cancel · Tab to amend

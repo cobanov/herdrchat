@@ -1,0 +1,42 @@
+#| Captured from Claude Code 2.1.299 at 120x40, 2026-10-14, the last 40 rows the app reads.
+#| Real: only the folder in the banner is shortened. Auto mode is offered, so the Tip line shows.
+
+ ▐▛███▛█   Claude Code v2.1.299
+▝▜██████▀  Fable 5.1 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/cap
+
+
+❯ Run exactly this command with the Bash tool and nothing else: mkdir -p cap && cd cap && for f in a b; do bash -c
+  "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s
+
+⏺ Running the requested command now.
+
+  Creating cap dir, writing and removing two temp files, printing epoch time
+  ⎿  $ mkdir -p cap && cd cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode" below
+ Create cap dir, write and remove two temp files, print epoch time
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ mkdir -p cap && cd cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ A variable in this command can't be checked before it runs
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and switch to auto mode · auto mode handles these prompts for you
+   3. No
+
+ Esc to cancel · Tab to amend
+
+
+
+
+
+
+
+
+
+
+
