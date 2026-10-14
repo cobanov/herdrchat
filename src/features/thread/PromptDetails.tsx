@@ -17,8 +17,9 @@ import { motion, radius, size, spacing } from '@/theme/tokens';
  * person needs to answer that, what would run, was on a terminal they could
  * not see.
  *
- * The body is a terminal's lines, so it scrolls sideways rather than wrapping
- * (a wrapped command line reads as a different command), and folds past
+ * The body is the command's own lines, the terminal's wraps joined, so it
+ * scrolls sideways rather than wrapping (a wrapped command line reads as a
+ * different command) and copies as it will run. It folds past
  * `size.blockedBodyLines` so the choices stay on a phone's screen. The fold is
  * keyed by the caller to the prompt, so a new command opens folded.
  *

@@ -294,24 +294,28 @@ export function answeredReply(choice: string): string {
 
 /**
  * Claude's visible screen on the blocked pane: a Bash permission prompt in the
- * shape Claude Code 2.1.296 draws it, between rules, with its description, a
- * two-line command, the "could not be checked" note, the auto-deny line, the
- * question and its menu. The parser reads the details from exactly this, and
- * the blocked bar shows them above the question.
+ * shape Claude Code 2.1.299 draws it in an 80-column pane (rebuilt from a real
+ * capture, `permission-bash-tip-120`, with the Tip left out as when auto mode is
+ * not on offer): the rule, the tool and its description, the command between
+ * dashed rules in its `│ ` margin and wrapped at the pane's edge, the "could
+ * not be checked" note, the auto-deny line (wrapped too), the question and its
+ * menu. The parser reads the details from exactly this, and the blocked bar
+ * shows them above the question.
  */
 export const DEMO_BLOCKED_SCREEN = [
   '⏺ Bash(mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable && …)',
   '  ⎿  Waiting…',
   '',
-  '────────────────────────────────────────────────────────────────────────',
+  '────────────────────────────────────────────────────────────────────────────────',
   ' Bash command',
   ' Reproduce the empty-folder bug against an unreadable folder',
-  '',
-  '   mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable &&',
-  '   npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable',
-  '────────────────────────────────────────────────────────────────────────',
+  '╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌',
+  ' │ mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable && npx jest',
+  ' │ src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable',
+  '╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌',
   ' This command runs rm and could not be checked',
-  ' ⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session',
+  ' ⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking',
+  ' progress on an unattended session',
   '',
   ' Do you want to proceed?',
   ' ❯ 1. Yes',

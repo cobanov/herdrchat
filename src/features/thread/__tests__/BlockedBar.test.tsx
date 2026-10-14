@@ -38,16 +38,17 @@ describe('a prompt with details', () => {
     expect(screen.queryByTestId('blocked-details-fold')).toBeNull();
   });
 
-  // A long press copies the command, and only the command, to paste elsewhere.
-  // The accessibility Copy action is the same path a screen reader takes.
-  it('copies the command on long press', async () => {
+  // A long press copies the command, and only the command, to paste elsewhere:
+  // as it will run, not as the terminal wrapped it (the Demo's wraps at 80
+  // columns, and a pasted newline would run it as two commands). The
+  // accessibility Copy action is the same path a screen reader takes.
+  it('copies the command on long press, its wrapped lines joined', async () => {
     const screen = await bar(prompt);
     await fireEvent(screen.getByTestId('blocked-details-body'), 'accessibilityAction', {
       nativeEvent: { actionName: 'longpress' },
     });
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
-      'mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable &&\n' +
-        'npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable'
+      'mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable && npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable'
     );
   });
 
@@ -63,10 +64,28 @@ describe('a prompt with details', () => {
   });
 });
 
+// A command taller than the screen: its tool line is gone, and a line of the
+// command standing in for it would misstate what is being approved.
+describe('a prompt whose start is off screen', () => {
+  it('says so instead of showing details, and keeps the choices', async () => {
+    const screen = await bar({
+      question: 'Do you want to proceed?',
+      options: [{ number: 1, label: 'Yes' }, { number: 2, label: 'No' }],
+      details: null,
+      detailsOffScreen: true,
+    });
+    expect(screen.queryByTestId('blocked-details')).toBeNull();
+    expect(screen.getByTestId('blocked-details-off-screen')).toHaveTextContent('The start of this prompt is off screen; check the terminal');
+    expect(screen.getByText('Do you want to proceed?')).toBeTruthy();
+    expect(screen.getByTestId('blocked-option-2')).toBeTruthy();
+  });
+});
+
 describe('a prompt without details', () => {
   it('shows only the question and its choices, as before', async () => {
     const screen = await bar({ question: 'Which database?', options: [{ number: 1, label: 'Postgres' }], details: null });
     expect(screen.queryByTestId('blocked-details')).toBeNull();
+    expect(screen.queryByTestId('blocked-details-off-screen')).toBeNull();
     expect(screen.getByText('Which database?')).toBeTruthy();
     expect(screen.getByText('Postgres')).toBeTruthy();
   });

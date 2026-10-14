@@ -31,7 +31,10 @@ import {
  * A permission prompt's details (the tool, the command or diff, Claude's
  * warnings and its auto-deny time) sit above the question: "Do you want to
  * proceed?" on its own cannot be answered. They are keyed to the prompt's
- * signature, so a new command starts folded again.
+ * signature, so a new command starts folded again. When the prompt is taller
+ * than the screen read and its tool line has scrolled off, the bar says the
+ * start is off screen rather than show a command with nothing saying what
+ * it is for.
  *
  * While a reply is in flight (`pending`), every option is disabled and the
  * tapped one shows a spinner: the bar only leaves when a status poll sees the
@@ -72,6 +75,11 @@ export function BlockedBar({
       }}>
       {prompt !== null && prompt.details !== undefined && prompt.details !== null && (
         <PromptDetails key={blockedPromptSignature(prompt) ?? ''} details={prompt.details} />
+      )}
+      {prompt?.detailsOffScreen === true && (
+        <Text variant="footnote" color="attention" testID="blocked-details-off-screen">
+          The start of this prompt is off screen; check the terminal
+        </Text>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
         <View style={{ height: questionLine, justifyContent: 'center' }}>
