@@ -328,6 +328,16 @@ class PreviewTests(unittest.TestCase):
                     notifier.notification_text("claude", "done", "work", "f79b4b69-7da7-4a", session),
                     ("work", "Claude finished its task."))
 
+    def test_a_fresh_session_is_not_titled_by_its_agent_name(self):
+        notifier = self.notifier()
+        self.claude_transcript("s-0000005", self.said({"type": "text", "text": "Hello."}))
+        for terminal in ("Claude Code", "\u2733 Claude Code", "claude code", "codex", "omp"):
+            with self.subTest(terminal=terminal):
+                self.assertEqual(notifier.notification_text("claude", "done", "feke", terminal, "s-0000005"),
+                                 ("feke", "Hello."))
+        self.assertEqual(notifier.notification_text("claude", "done", "feke", "Claude Code docs", "s-0000005")[0],
+                         "feke \u00b7 Claude Code docs")
+
     def test_preview_off_sends_only_the_chat_name_and_state(self):
         notifier = self.notifier({"NOTIFY_PREVIEW": "0"})
         self.claude_transcript("s-0000004", self.said({"type": "text", "text": "Private detail."}))

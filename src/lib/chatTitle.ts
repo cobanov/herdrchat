@@ -106,8 +106,8 @@ const LEADING_GLYPHS = /^[^\p{L}\p{N}\\]+/u;
 /**
  * A starting or resumed session titles its terminal with the command or the
  * session id, which names nothing (`claude --resume 1b2c…`); so does an agent's
- * default title (`Claude Code`). The host's notifier skips the first kind for
- * the same reason (`chat_title` in `scripts/herdr-apns-notifier.py`).
+ * default title (`Claude Code`). The host's notifier skips both for the same
+ * reason (`chat_title` in `scripts/herdr-apns-notifier.py`).
  */
 function namesSomething(title: string | null | undefined): string | null {
   const trimmed = title?.trim() ?? '';

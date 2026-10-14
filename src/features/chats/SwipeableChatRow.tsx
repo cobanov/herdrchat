@@ -92,8 +92,13 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   const renderRightActions = useCallback(
     (_progress: unknown, translation: SharedValue<number>, methods: SwipeableMethods) => (
       <ActionPanel side="right" count={2} translation={translation}>
+        {/* "Workspace" under the pencil, not "Rename": a row titled by its
+            session no longer shows the workspace label this renames, and
+            "Rename workspace" does not fit the panel. VoiceOver hears it whole. */}
         <SwipeAction
-          label="Rename"
+          id="rename"
+          label="Workspace"
+          accessibilityLabel="Rename workspace"
           symbol="pencil"
           tone="neutral"
           onPress={() => {
@@ -225,12 +230,18 @@ function ActionPanel({
 }
 
 function SwipeAction({
+  id,
   label,
+  accessibilityLabel,
   symbol,
   tone,
   onPress,
 }: {
+  /** Names the test id; defaults to the label. */
+  id?: string;
   label: string;
+  /** What VoiceOver reads when the visible label is shortened to fit. */
+  accessibilityLabel?: string;
   symbol: IconName;
   tone: 'neutral' | 'tint' | 'destructive';
   onPress: () => void;
@@ -243,8 +254,8 @@ function SwipeAction({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      testID={`swipe-action-${label.toLowerCase()}`}
+      accessibilityLabel={accessibilityLabel ?? label}
+      testID={`swipe-action-${id ?? label.toLowerCase()}`}
       style={({ pressed }) => ({
         width: ACTION_WIDTH,
         // Stretches to the row's height rather than a fixed one: rows grow with
