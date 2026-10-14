@@ -17,7 +17,10 @@ where regressions are found.
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
 | `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
 | `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
+| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
+| `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
+| `regression/multi-agent` | a workspace with two agents: a row for each under it, a thread with only that agent's lines and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

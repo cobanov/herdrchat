@@ -15,6 +15,8 @@ jest.mock('expo-sqlite', () => ({ SQLiteProvider: () => null }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-system-ui', () => ({ setBackgroundColorAsync: jest.fn() }));
+// The keyboard's native half does not exist under jest either.
+jest.mock('react-native-keyboard-controller', () => jest.requireActual('react-native-keyboard-controller/jest'));
 jest.mock('@/features/notifications/useNotificationRouting', () => ({
   useNotificationRouting: jest.fn(),
   usePushTokenRefresh: jest.fn(),
