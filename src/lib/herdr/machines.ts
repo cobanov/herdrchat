@@ -26,6 +26,18 @@ export interface MachineList {
   machines: HostMachine[];
   /** One line per row that could not be read, so a bad row is visible rather than silently gone. */
   skipped: string[];
+  /**
+   * The ids of the skipped rows that had one. The host still lists those
+   * machines, so they are not gone: a herdr that changed a field's shape, or
+   * listed an id twice, must not cost a machine its chats (see `listedMachines`).
+   */
+  unreadIds: string[];
+  /**
+   * False when the answer says nothing about which machines exist: the host's
+   * herdr exited cleanly with no output at all. Nothing is forgotten on such
+   * an answer; an empty list is `[]`.
+   */
+  complete: boolean;
 }
 
 /** The argv that lists the machines, as JSON. */
@@ -54,12 +66,12 @@ export function machineListCommand(herdrPath: string): string {
  * @throws {HerdrError} when the output is not JSON or holds no list at all.
  */
 export function parseMachineList(output: string): MachineList {
-  const text = output.trim();
-  if (text.length === 0) return { machines: [], skipped: [] };
+  const answer = output.trim();
+  if (answer.length === 0) return { machines: [], skipped: [], unreadIds: [], complete: false };
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(answer) as unknown;
   } catch {
     throw new HerdrError('unparseable_response', "The host's machine list wasn't JSON.");
   }
@@ -71,11 +83,14 @@ export function parseMachineList(output: string): MachineList {
 
   const machines: HostMachine[] = [];
   const skipped: string[] = [];
+  const unreadIds = new Set<string>();
   const seen = new Set<string>();
   rows.forEach((row, index) => {
     const machine = machineFrom(row);
     if (typeof machine === 'string') {
       skipped.push(`machine ${index + 1}: ${machine}`);
+      const id = text(field(row, 'id'));
+      if (id !== null) unreadIds.add(id);
     } else if (seen.has(machine.id)) {
       skipped.push(`machine ${index + 1}: ${machine.id} is listed twice`);
     } else {
@@ -83,7 +98,7 @@ export function parseMachineList(output: string): MachineList {
       machines.push(machine);
     }
   });
-  return { machines, skipped };
+  return { machines, skipped, unreadIds: [...unreadIds].filter((id) => !seen.has(id)), complete: true };
 }
 
 function listIn(value: unknown): unknown[] | null {
@@ -159,6 +174,21 @@ export function isUnderHost(key: string, hostId: string): boolean {
 export function droppedMachineIds(previous: readonly HostMachine[], next: readonly HostMachine[]): string[] {
   const kept = new Set(next.map((machine) => machine.id));
   return previous.filter((machine) => !kept.has(machine.id)).map((machine) => machine.id);
+}
+
+/**
+ * The list to keep after the host answered `list`, when `held` was the last
+ * one. A machine the host still lists but whose row could not be read this
+ * time keeps its last good row, and an answer that says nothing (`complete`
+ * false) keeps everything, so neither reads as the machine being removed,
+ * which forgets its chats for good (`droppedMachineIds`).
+ */
+export function listedMachines(held: readonly HostMachine[] | undefined, list: MachineList): readonly HostMachine[] {
+  if (held === undefined) return list.machines;
+  if (!list.complete) return held.length > 0 ? held : list.machines;
+  if (list.unreadIds.length === 0) return list.machines;
+  const unread = new Set(list.unreadIds);
+  return [...list.machines, ...held.filter((machine) => unread.has(machine.id))];
 }
 
 // MARK: - Refresh cadence
