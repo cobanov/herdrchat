@@ -1,7 +1,7 @@
 import type * as SQLite from 'expo-sqlite';
 import { create } from 'zustand';
 
-import { droppedMachineIds, machineConnectionId, parseMachineList, type HostMachine, type MachineList } from '@/lib/herdr/machines';
+import { droppedMachineIds, listedMachines, machineConnectionId, parseMachineList, type HostMachine, type MachineList } from '@/lib/herdr/machines';
 import {
   HOST_MACHINES_KEY_PREFIX,
   clearConnectionSettings,
@@ -200,8 +200,10 @@ export function refreshHostMachines(
   const generation = generationOf(hostId);
   const refresh = client
     .machines()
-    .then(({ machines }) => {
-      if (generationOf(hostId) === generation) useHostMachines.getState().set(hostId, machines);
+    .then((list) => {
+      if (generationOf(hostId) !== generation) return true;
+      const { getState } = useHostMachines;
+      getState().set(hostId, listedMachines(getState().byHost[hostId], list));
       return true;
     })
     .catch(() => false)
