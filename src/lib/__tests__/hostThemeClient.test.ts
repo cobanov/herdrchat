@@ -31,18 +31,18 @@ function canned(...answers: (ExecResult | Error)[]) {
   return { transport, calls };
 }
 
-const held: HostThemeFile = { kind: 'present', mtime: 100, text: '{"accent":"#123456"}' };
+const held: HostThemeFile = { kind: 'present', version: '100 20', text: '{"accent":"#123456"}' };
 
 describe('fetchHostTheme', () => {
-  it('sends the held mtime and keeps the held file when the host says unchanged', async () => {
-    const { transport, calls } = canned(ok('100\n'));
+  it('sends the held version and keeps the held file when the host says unchanged', async () => {
+    const { transport, calls } = canned(ok('100 20\n'));
     expect(await fetchHostTheme(transport, held)).toBe(held);
-    expect(calls).toEqual([{ command: themeFetchCommand(100), timeoutMs: POLL_TIMEOUT_MS }]);
+    expect(calls).toEqual([{ command: themeFetchCommand('100 20'), timeoutMs: POLL_TIMEOUT_MS }]);
   });
 
   it('returns the new file when it changed', async () => {
-    const { transport } = canned(ok(`101\n${THEME_BEGIN}\n{"name":"New"}\n`));
-    expect(await fetchHostTheme(transport, held)).toEqual({ kind: 'present', mtime: 101, text: '{"name":"New"}\n' });
+    const { transport } = canned(ok(`101 15\n${THEME_BEGIN}\n{"name":"New"}\n`));
+    expect(await fetchHostTheme(transport, held)).toEqual({ kind: 'present', version: '101 15', text: '{"name":"New"}\n' });
   });
 
   it('reads a removed file as missing', async () => {
@@ -50,8 +50,8 @@ describe('fetchHostTheme', () => {
     expect(await fetchHostTheme(transport, held)).toEqual({ kind: 'missing' });
   });
 
-  it('asks for the contents whatever the mtime when forced', async () => {
-    const { transport, calls } = canned(ok(`100\n${THEME_BEGIN}\n${held.kind === 'present' ? held.text : ''}`));
+  it('asks for the contents whatever the version when forced', async () => {
+    const { transport, calls } = canned(ok(`100 20\n${THEME_BEGIN}\n${held.kind === 'present' ? held.text : ''}`));
     expect(await fetchHostTheme(transport, held, { force: true })).toEqual(held);
     expect(calls[0]?.command).toBe(themeFetchCommand(null));
   });

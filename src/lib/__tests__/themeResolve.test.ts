@@ -2,24 +2,24 @@ import { avatarColor, avatarPalette, darkPalette, lightPalette } from '@/theme/t
 import { contrastRatio, MIN_TEXT_CONTRAST, parseColor } from '../theme/color';
 import { MAX_JSON_DEPTH } from '../theme/json';
 import { parseThemeFile } from '../theme/parse';
-import { accentColors, applyOverrides, resolveHostTheme, type HostThemeFile } from '../theme/resolve';
+import { accentColors, applyOverrides, resolveHostTheme, type HostThemeFile, type UnreadableReason } from '../theme/resolve';
 
 const base = { light: lightPalette, dark: darkPalette };
-const present = (value: unknown, mtime = 100): HostThemeFile => ({
+const present = (value: unknown, version = '100 1'): HostThemeFile => ({
   kind: 'present',
-  mtime,
+  version,
   text: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
 });
 
 describe('parseThemeFile', () => {
   it('reads a whole theme', () => {
     const file = parseThemeFile(
-      JSON.stringify({ name: '  Warm dusk ', accent: '#D08A3E', light: { tint: '#B06A1E' }, dark: { label: 'rgb(250, 250, 250)' }, avatars: ['#123', '#456'] })
+      JSON.stringify({ name: '  Warm dusk ', accent: '#D08A3E', light: { tint: '#A55F17' }, dark: { label: 'rgb(250, 250, 250)' }, avatars: ['#123', '#456'] })
     );
     expect(file).toEqual({
       name: 'Warm dusk',
       accent: '#D08A3E',
-      light: { tint: '#B06A1E' },
+      light: { tint: '#A55F17' },
       dark: { label: 'rgb(250, 250, 250)' },
       avatars: ['#123', '#456'],
       problems: [],
@@ -31,13 +31,13 @@ describe('parseThemeFile', () => {
     const file = parseThemeFile(
       JSON.stringify({
         accent: 'orange',
-        light: { tint: '#B06A1E', tnit: '#000', label: 12 },
+        light: { tint: '#A55F17', tnit: '#000', label: 12 },
         dark: 'dark please',
         avatars: ['#123', 'nope'],
         colour: '#fff',
       })
     );
-    expect(file.light).toEqual({ tint: '#B06A1E' });
+    expect(file.light).toEqual({ tint: '#A55F17' });
     expect(file.dark).toEqual({});
     expect(file.accent).toBeNull();
     expect(file.avatars).toEqual(['#123']);
@@ -138,8 +138,7 @@ describe('resolveHostTheme', () => {
   it('is the app’s own theme when there is no file', () => {
     expect(resolveHostTheme({ kind: 'missing' }, base)).toEqual({
       status: 'missing',
-      raw: null,
-      mtime: null,
+      file: { kind: 'missing' },
       name: null,
       overrides: {},
       problems: [],
@@ -148,23 +147,25 @@ describe('resolveHostTheme', () => {
     });
   });
 
-  it('says an unreadable file is one', () => {
-    const resolved = resolveHostTheme({ kind: 'unreadable', mtime: 5 }, base);
+  it.each<[UnreadableReason, string]>([
+    ['permissions', 'theme.json: cannot be read (check its permissions)'],
+    ['notFile', 'theme.json is not a regular file; ignored'],
+    ['tooLarge', 'theme.json is larger than 64 KB; ignored'],
+  ])('applies nothing from a file it did not read (%s), and says why', (reason, problem) => {
+    const resolved = resolveHostTheme({ kind: 'unreadable', reason, version: null }, base);
     expect(resolved.overrides).toEqual({});
-    expect(resolved.problems).toEqual(['theme.json: cannot be read (check its permissions)']);
+    expect(resolved.problems).toEqual([problem]);
   });
 
-  it('keeps the raw text and mtime, so a launch can resolve it again', () => {
-    const file = present({ name: 'x' }, 42);
-    const resolved = resolveHostTheme(file, base);
-    expect(resolved.raw).toBe(file.kind === 'present' ? file.text : null);
-    expect(resolved.mtime).toBe(42);
+  it('keeps the file as fetched, so a launch can resolve it again', () => {
+    const file = present({ name: 'x' }, '42 12');
+    expect(resolveHostTheme(file, base).file).toBe(file);
   });
 
   it('puts an explicit key over the accent and the accent over the base', () => {
-    const resolved = resolveHostTheme(present({ accent: '#E9A25A', dark: { bubbleOutgoing: '#112233' } }), base);
+    const resolved = resolveHostTheme(present({ accent: '#E9A25A', dark: { tintMuted: 'rgba(17, 34, 51, 0.5)' } }), base);
     const dark = applyOverrides(darkPalette, resolved.overrides.dark);
-    expect(dark.bubbleOutgoing).toBe('#112233'); // explicit
+    expect(dark.tintMuted).toBe('rgba(17, 34, 51, 0.5)'); // explicit
     expect(dark.tint).toBe('#E9A25A'); // from the accent
     expect(dark.label).toBe(darkPalette.label); // base
     const light = applyOverrides(lightPalette, resolved.overrides.light);
@@ -179,13 +180,13 @@ describe('resolveHostTheme', () => {
   });
 
   it('leaves a scheme alone when the file says nothing about it', () => {
-    const resolved = resolveHostTheme(present({ light: { tint: '#B06A1E' } }), base);
-    expect(resolved.overrides).toEqual({ light: { tint: '#B06A1E' } });
+    const resolved = resolveHostTheme(present({ light: { tint: '#A55F17' } }), base);
+    expect(resolved.overrides).toEqual({ light: { tint: '#A55F17' } });
   });
 
   it('counts what applied and what was ignored', () => {
     const resolved = resolveHostTheme(
-      present({ name: 'N', accent: '#123456', light: { tint: '#B06A1E', nope: '#000' }, dark: { label: 'x' }, avatars: ['#111', '#222'] }),
+      present({ name: 'N', accent: '#123456', light: { tint: '#A55F17', nope: '#000' }, dark: { label: 'x' }, avatars: ['#111', '#222'] }),
       base
     );
     expect(resolved.colours).toBe(4);

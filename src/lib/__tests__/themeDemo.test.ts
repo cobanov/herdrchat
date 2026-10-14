@@ -6,7 +6,7 @@ import { displayText } from '../transcript/message';
 import { TranscriptStore } from '../transcript/store';
 import { DEMO_PHRASES, DEMO_THEME_REPLY, DEMO_THEME_TEXT } from '../demo/scenarios';
 import { bootstrapCommand, bootstrapFiles } from '../theme/bootstrap';
-import { afterFetch, knownMtime, parseThemeFetch, themeFetchCommand, themeResetCommand } from '../theme/hostTheme';
+import { afterFetch, knownVersion, parseThemeFetch, themeFetchCommand, themeResetCommand } from '../theme/hostTheme';
 import { resolveHostTheme, type HostThemeFile } from '../theme/resolve';
 
 const base = { light: lightPalette, dark: darkPalette };
@@ -27,9 +27,9 @@ async function notesMessages(host: DemoHost) {
 }
 
 async function check(host: DemoHost, held: HostThemeFile): Promise<HostThemeFile> {
-  const result = await host.exec(themeFetchCommand(knownMtime(held)), 5_000);
+  const result = await host.exec(themeFetchCommand(knownVersion(held)), 5_000);
   expect(result.ok).toBe(true);
-  const parsed = parseThemeFetch(result.ok ? result.stdout : '', knownMtime(held));
+  const parsed = parseThemeFetch(result.ok ? result.stdout : '', knownVersion(held));
   expect(parsed).not.toBeNull();
   return afterFetch(held, parsed!);
 }
@@ -71,7 +71,7 @@ describe('the Demo host’s theme', () => {
     expect(JSON.stringify(messages.slice(-3))).toContain('/home/demo/.herdrchat/theme.json');
   });
 
-  it('resets by renaming the file away, and a second write gets a newer mtime', async () => {
+  it('resets by renaming the file away, and the same text written again is the same version', async () => {
     const { host, advance } = demo();
     await new HerdrClient(host).sendPrompt('w2:p1', DEMO_PHRASES.theme);
     advance(2_000);
@@ -84,7 +84,7 @@ describe('the Demo host’s theme', () => {
     await new HerdrClient(host).sendPrompt('w2:p1', DEMO_PHRASES.theme);
     advance(2_000);
     const second = await check(host, { kind: 'missing' });
-    expect(second.kind === 'present' && first.kind === 'present' && second.mtime > first.mtime).toBe(true);
+    expect(second).toEqual(first);
 
     // A second reset keeps the first backup.
     await host.exec(themeResetCommand(), 5_000);

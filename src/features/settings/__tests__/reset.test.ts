@@ -37,7 +37,7 @@ function fakeDb(initial: Record<string, string>) {
 it('erases each host’s theme, in the table and on screen', async () => {
   const { db, rows } = fakeDb({ [hostThemeKey('demo')]: '{"kind":"missing"}' });
   const theme = resolveHostTheme(
-    { kind: 'present', mtime: 1, text: '{"accent":"#B5562F"}' },
+    { kind: 'present', version: '1 1', text: '{"accent":"#B5562F"}' },
     { light: lightPalette, dark: darkPalette }
   );
   useHostTheme.getState().set('demo', theme);

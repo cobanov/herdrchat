@@ -4,7 +4,7 @@ import { darkPalette, lightPalette } from '@/theme/tokens';
 import { hostThemeSummary } from '../hostThemeSummary';
 
 const resolve = (text: string) =>
-  resolveHostTheme({ kind: 'present', mtime: 1, text }, { light: lightPalette, dark: darkPalette });
+  resolveHostTheme({ kind: 'present', version: '1 1', text }, { light: lightPalette, dark: darkPalette });
 
 describe('hostThemeSummary', () => {
   it('says Off when the switch is off, whatever the host has', () => {
@@ -46,7 +46,7 @@ describe('hostThemeSummary', () => {
       detail: 'theme.json could not be used',
       attention: true,
     });
-    const unreadable = resolveHostTheme({ kind: 'unreadable', mtime: 3 }, { light: lightPalette, dark: darkPalette });
+    const unreadable = resolveHostTheme({ kind: 'unreadable', reason: 'permissions', version: null }, { light: lightPalette, dark: darkPalette });
     expect(hostThemeSummary(true, unreadable, 'box').value).toBe('Default');
   });
 });

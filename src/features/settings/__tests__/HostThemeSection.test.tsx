@@ -20,9 +20,19 @@ jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 jest.mock('expo-clipboard', () => ({ setStringAsync: (text: string) => mockSetString(text) }));
-jest.mock('@/theme/ThemeProvider', () => ({
-  useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette }),
-}));
+// A host theme on screen: a light canvas in dark mode. The section must not
+// draw in it.
+const mockHostColors = { ...jest.requireActual('@/theme/tokens').darkPalette, systemBackground: '#F5F0E8', label: '#1A1714' };
+jest.mock('@/theme/ThemeProvider', () => {
+  const { createContext, useContext } = jest.requireActual('react');
+  const tokens = jest.requireActual('@/theme/tokens');
+  const Stock = createContext(false);
+  return {
+    useTheme: () => ({ scheme: 'dark', colors: useContext(Stock) ? tokens.darkPalette : mockHostColors }),
+    themeColors: () => ({ colors: tokens.darkPalette }),
+    StockTheme: ({ children }: { children: React.ReactNode }) => <Stock value={true}>{children}</Stock>,
+  };
+});
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('@/components/ActionSheet', () => ({
   confirmDestructive: ({ onConfirm }: { onConfirm: () => void }) => onConfirm(),
@@ -42,7 +52,7 @@ jest.mock('@/state/hostThemeActions', () => ({
 }));
 
 const present = (text: string) =>
-  resolveHostTheme({ kind: 'present', mtime: 1, text }, { light: lightPalette, dark: darkPalette });
+  resolveHostTheme({ kind: 'present', version: '1 1', text }, { light: lightPalette, dark: darkPalette });
 
 beforeEach(() => {
   mockEnabled = true;
@@ -93,4 +103,13 @@ it('says Off with the switch off, and the switch saves the global setting', asyn
   expect(screen.getByTestId('host-theme-row')).toHaveProp('accessibilityLabel', 'Host theme, Off');
   await fireEvent(screen.getByTestId('toggle-host-themes'), 'valueChange', true);
   expect(mockSaveSetting).toHaveBeenCalledWith({}, 'useHostThemes', true);
+});
+
+// The way out: under a theme.json that makes the app unreadable, the switch
+// that turns host themes off is still drawn in the app's own colours.
+it('draws itself in the app\'s own colours, on the app\'s own canvas, under a host theme', async () => {
+  const screen = await render(<HostThemeSection />);
+  expect(screen.getByTestId('host-theme-canvas')).toHaveStyle({ backgroundColor: darkPalette.systemBackground });
+  expect(screen.getByText('Use host themes')).toHaveStyle({ color: darkPalette.label });
+  expect(screen.getByText('Host theme')).toHaveStyle({ color: darkPalette.label });
 });

@@ -18,18 +18,18 @@ export const PALETTE_KEY_DESCRIPTIONS = {
   attention: 'An agent waiting on you: badges, the blocked bar, warnings. Text-safe on systemBackground.',
   destructive: 'Delete, close and other actions that lose something.',
   positive: 'Success and done states.',
-  label: 'Primary text.',
-  secondaryLabel: 'Secondary text: previews, timestamps, captions.',
+  label: 'Primary text. Opaque, and 4.5:1 or more on systemBackground, chatCard and bubbleIncoming.',
+  secondaryLabel: 'Secondary text: previews, timestamps, captions. Opaque, and 4.5:1 or more on systemBackground, chatCard and bubbleIncoming.',
   tertiaryLabel: 'Placeholders and disabled glyphs only; it is not required to reach 4.5:1.',
-  onTint: 'Text and glyphs drawn on the tint or on bubbleOutgoing.',
-  systemBackground: 'The canvas behind every screen.',
+  onTint: 'Text and glyphs drawn on the tint or on bubbleOutgoing. Opaque, and 4.5:1 or more on both.',
+  systemBackground: 'The canvas behind every screen. Opaque.',
   secondarySystemBackground: 'Grouped surfaces on the canvas, such as Settings sections.',
-  bubbleIncoming: "The agent's message bubbles and other inset surfaces.",
-  bubbleOutgoing: 'Your message bubbles. White (onTint) text sits on it, so keep that at 4.5:1 or more.',
+  bubbleIncoming: "The agent's message bubbles and other inset surfaces. Opaque.",
+  bubbleOutgoing: 'Your message bubbles. Opaque. White (onTint) text sits on it, so keep that at 4.5:1 or more.',
   fillSubtle: 'Subtle fills: tool chips, code blocks, inactive controls.',
   separator: 'Hairlines between rows.',
-  chatCard: 'A chat row in the chat list.',
-  chatCardPressed: 'A chat row under a finger. Keep it opaque: it covers the swipe actions.',
+  chatCard: 'A chat row in the chat list. Opaque.',
+  chatCardPressed: 'A chat row under a finger. Opaque: it covers the swipe actions.',
   swipeNeutral: 'A swipe action that is neither the tint nor destructive (Rename, Mute). Opaque.',
   attentionBorder: 'The rim around a chat that is waiting on you.',
   controlTrack: 'The track of a switch that is off. It must stand out from the card it sits on.',
@@ -50,6 +50,13 @@ export function isPaletteKey(key: string): key is PaletteKey {
 
 /** Longest theme name Settings shows; a longer one is cut. */
 export const THEME_NAME_MAX = 40;
+
+/**
+ * The most of theme.json the app reads. A full theme is about 2 KB; the bound
+ * is there so a file that is huge, or never ends, costs the host a fixed read
+ * rather than filling the phone's memory until the connection times out.
+ */
+export const THEME_MAX_BYTES = 65_536;
 
 /** Where the theme lives on a host, relative to its home directory. */
 export const THEME_DIR = '.herdrchat';

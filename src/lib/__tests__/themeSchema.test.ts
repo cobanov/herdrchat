@@ -12,6 +12,7 @@ import {
   themeReadmeText,
 } from '../theme/bootstrap';
 import { parseThemeFile } from '../theme/parse';
+import { resolveHostTheme } from '../theme/resolve';
 import { PALETTE_KEY_DESCRIPTIONS, PALETTE_KEYS, themeJsonSchema, themeSchemaText } from '../theme/schema';
 
 describe('the palette key list', () => {
@@ -52,6 +53,9 @@ describe('the bootstrap files', () => {
   it('ships an example that is a theme with nothing wrong in it', () => {
     const example = parseThemeFile(themeExampleText());
     expect(example.problems).toEqual([]);
+    // Nor once laid over the app's colours, where contrast is checked.
+    const resolved = resolveHostTheme({ kind: 'present', version: '1 1', text: themeExampleText() }, { light: lightPalette, dark: darkPalette });
+    expect(resolved.problems).toEqual([]);
     expect(example.name).toBe('Warm dusk');
     expect(example.avatars.length).toBeGreaterThan(0);
   });

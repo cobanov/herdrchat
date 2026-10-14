@@ -1,6 +1,7 @@
 /**
  * The host theme's three round-trips, over any transport: check for a new
- * theme.json, write the reference files beside it, and move it aside.
+ * theme.json, write the reference files beside it (only when the person
+ * copies the agent prompt), and move it aside.
  *
  * None of them throws and none of them reports a reason. Each is a side task
  * of something else (the chat list's poll, a Settings button), so a failure is
@@ -11,7 +12,7 @@
 import { POLL_TIMEOUT_MS, SEND_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 import { bootstrapCommand } from './bootstrap';
-import { afterFetch, knownMtime, parseThemeFetch, themeFetchCommand, themeResetCommand } from './hostTheme';
+import { afterFetch, knownVersion, parseThemeFetch, themeFetchCommand, themeResetCommand } from './hostTheme';
 import type { HostThemeFile } from './resolve';
 
 /**
@@ -20,7 +21,7 @@ import type { HostThemeFile } from './resolve';
  * The poll itself runs every 3 s; checking each time would be one more
  * round-trip per tick for a file that changes when someone asks an agent to
  * restyle the app. Ten seconds keeps that change feeling prompt while costing
- * a third of the list's traffic at most, and a few bytes when nothing moved.
+ * a third of the list's traffic at most, and a line when nothing moved.
  */
 export const HOST_THEME_CHECK_INTERVAL_MS = 10_000;
 
@@ -32,7 +33,7 @@ export function themeCheckDue(lastCheck: number | null, now: number): boolean {
 /**
  * Ask the host whether theme.json changed since `held`, and return the file
  * as it now is (`held` itself when unchanged, so a caller can compare by
- * identity). `force` sends no mtime, so the contents come back regardless.
+ * identity). `force` sends no version, so the contents come back regardless.
  *
  * Null is a failed check: the command did not run, exited badly, or printed
  * something the parser does not recognise. The caller keeps what it has.
@@ -42,7 +43,7 @@ export async function fetchHostTheme(
   held: HostThemeFile,
   { force = false }: { force?: boolean } = {}
 ): Promise<HostThemeFile | null> {
-  const last = force ? null : knownMtime(held);
+  const last = force ? null : knownVersion(held);
   try {
     const result = await transport.exec(themeFetchCommand(last), POLL_TIMEOUT_MS);
     if (!result.ok || result.exitCode !== 0) return null;

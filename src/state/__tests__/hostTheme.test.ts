@@ -43,7 +43,7 @@ function fakeDb(initial: Record<string, string> = {}) {
 const ok = (stdout: string): ExecResult => ({ ok: true, exitCode: 0, stdout, stderr: '' });
 
 /** A host with a theme.json that can be edited between checks. */
-function host(initial: { mtime: number; text: string } | null) {
+function host(initial: { version: string; text: string } | null) {
   let file = initial;
   const commands: string[] = [];
   let down = false;
@@ -53,8 +53,8 @@ function host(initial: { mtime: number; text: string } | null) {
       if (down) return { ok: false, code: 'connect_failed', message: 'down' };
       if (command.includes(THEME_BEGIN)) {
         if (file === null) return ok(`${THEME_MISSING}\n`);
-        const last = /if \[ "\$m" = "([^"]*)" \]/.exec(command)?.[1];
-        return ok(last === String(file.mtime) ? `${file.mtime}\n` : `${file.mtime}\n${THEME_BEGIN}\n${file.text}`);
+        const last = /if \[ "\$v" = "([^"]*)" \]/.exec(command)?.[1];
+        return ok(last === file.version ? `${file.version}\n` : `${file.version}\n${THEME_BEGIN}\n${file.text}`);
       }
       return ok('');
     },
@@ -65,7 +65,7 @@ function host(initial: { mtime: number; text: string } | null) {
   return {
     transport,
     commands,
-    edit: (next: { mtime: number; text: string } | null) => { file = next; },
+    edit: (next: { version: string; text: string } | null) => { file = next; },
     setDown: (value: boolean) => { down = value; },
   };
 }
@@ -78,7 +78,7 @@ describe('persistence', () => {
   it('round-trips a host theme through the settings table', async () => {
     const { db, rows } = fakeDb();
     const stop = mirrorHostThemes(db);
-    const theme = resolveFile({ kind: 'present', mtime: 42, text: WARM });
+    const theme = resolveFile({ kind: 'present', version: '42 34', text: WARM });
     useHostTheme.getState().set('h1', theme);
     useHostTheme.getState().set('h2', resolveFile({ kind: 'missing' }));
     await Promise.resolve();
@@ -92,7 +92,7 @@ describe('persistence', () => {
     expect(back.h1).toEqual(theme);
     expect(back.h1?.name).toBe('Warm');
     expect(back.h1?.overrides.light?.tint).toBe('#B5562F');
-    expect(fileOf(back.h1)).toEqual({ kind: 'present', mtime: 42, text: WARM });
+    expect(fileOf(back.h1)).toEqual({ kind: 'present', version: '42 34', text: WARM });
     expect(back.h2?.status).toBe('missing');
   });
 
@@ -125,7 +125,7 @@ describe('persistence', () => {
       [hostThemeKey('h10')]: '{"kind":"missing"}',
       'notifyMode.h1': 'all',
     });
-    useHostTheme.getState().set('h1', resolveFile({ kind: 'present', mtime: 2, text: WARM }));
+    useHostTheme.getState().set('h1', resolveFile({ kind: 'present', version: '2 34', text: WARM }));
     useHostTheme.getState().set('h10', resolveFile({ kind: 'missing' }));
     await clearHostSettings(db, 'h1');
     expect(Object.keys(useHostTheme.getState().byConnection)).toEqual(['h10']);
@@ -136,24 +136,24 @@ describe('persistence', () => {
 
   it('keeps what a check found when the stored themes load after it', async () => {
     const { db } = fakeDb({ [hostThemeKey('h1')]: '{"kind":"missing"}' });
-    useHostTheme.getState().set('h1', resolveFile({ kind: 'present', mtime: 2, text: WARM }));
+    useHostTheme.getState().set('h1', resolveFile({ kind: 'present', version: '2 34', text: WARM }));
     await loadHostThemes(db);
     expect(useHostTheme.getState().byConnection.h1?.name).toBe('Warm');
   });
 });
 
 describe('checkHostTheme', () => {
-  it('stores the file, then costs only an mtime while it is unchanged', async () => {
-    const h = host({ mtime: 10, text: WARM });
+  it('stores the file, then costs only a version while it is unchanged', async () => {
+    const h = host({ version: '10 34', text: WARM });
     expect(await checkHostTheme('h', h.transport)).toBe(true);
     const first = useHostTheme.getState().byConnection.h;
     expect(first?.name).toBe('Warm');
 
     expect(await checkHostTheme('h', h.transport)).toBe(true);
     expect(useHostTheme.getState().byConnection.h).toBe(first);
-    expect(h.commands.at(-1)).toContain('"10"');
+    expect(h.commands.at(-1)).toContain('"10 34"');
 
-    h.edit({ mtime: 11, text: '{"name":"Cool"}' });
+    h.edit({ version: '11 15', text: '{"name":"Cool"}' });
     await checkHostTheme('h', h.transport);
     expect(useHostTheme.getState().byConnection.h?.name).toBe('Cool');
 
@@ -163,19 +163,18 @@ describe('checkHostTheme', () => {
     expect(useHostTheme.getState().byConnection.h?.status).toBe('missing');
   });
 
-  it('writes the reference files once a session, after the first check that works', async () => {
+  // The setting is on by default, so writing them at the first check put
+  // three files in ~/.herdrchat on every host, asked or not.
+  it('only reads: it never writes the reference files to the host', async () => {
     const h = host(null);
-    h.setDown(true);
-    expect(await checkHostTheme('h', h.transport)).toBe(false);
-    expect(h.commands.some((command) => command.includes('mkdir -p'))).toBe(false);
-    h.setDown(false);
     await checkHostTheme('h', h.transport);
-    await checkHostTheme('h', h.transport);
-    expect(h.commands.filter((command) => command.includes('mkdir -p'))).toHaveLength(1);
+    await checkHostTheme('h', h.transport, { force: true });
+    expect(h.commands).toHaveLength(2);
+    expect(h.commands.every((command) => command.includes(THEME_BEGIN) && !command.includes('mkdir'))).toBe(true);
   });
 
   it('keeps the theme it has when a check fails', async () => {
-    const h = host({ mtime: 10, text: WARM });
+    const h = host({ version: '10 34', text: WARM });
     await checkHostTheme('h', h.transport);
     const before = useHostTheme.getState().byConnection.h;
     h.setDown(true);
@@ -184,7 +183,7 @@ describe('checkHostTheme', () => {
   });
 
   it('does not store a forced fetch of the file it already has', async () => {
-    const h = host({ mtime: 10, text: WARM });
+    const h = host({ version: '10 34', text: WARM });
     await checkHostTheme('h', h.transport);
     const before = useHostTheme.getState().byConnection.h;
     await checkHostTheme('h', h.transport, { force: true });
@@ -199,7 +198,7 @@ describe('checkHostTheme', () => {
   });
 
   it('drops the answer of a check for a host removed while it ran', async () => {
-    const h = host({ mtime: 10, text: WARM });
+    const h = host({ version: '10 34', text: WARM });
     const check = checkHostTheme('h', h.transport);
     useHostTheme.getState().clear('h');
     await check;
@@ -210,12 +209,12 @@ describe('checkHostTheme', () => {
 describe('Reload and Reset on the Demo host', () => {
   beforeEach(() => useConnections.getState().setAll([], DEMO_CONNECTION_ID));
 
-  it('reloads to the default theme and leaves the reference files behind', async () => {
+  it('reloads to the default theme and writes nothing on the host', async () => {
     expect(await reloadHostTheme(DEMO_CONNECTION_ID)).toBe(true);
     expect(useHostTheme.getState().byConnection[DEMO_CONNECTION_ID]?.status).toBe('missing');
     const demo = clientFor(demoConnection()).transport as DemoHost;
     for (const name of [THEME_SCHEMA_FILE, THEME_README_FILE, THEME_EXAMPLE_FILE]) {
-      expect(demo.hostFile(name)).not.toBeNull();
+      expect(demo.hostFile(name)).toBeNull();
     }
   });
 
@@ -226,9 +225,9 @@ describe('Reload and Reset on the Demo host', () => {
     expect(await resetHostThemeToDefault('nobody')).toBe(false);
   });
 
-  // The copied prompt names the schema and README; with Use host themes off
-  // no check runs to write them, so copying the prompt does.
-  it('writes the reference files without a theme check', async () => {
+  // The copied prompt names the schema and README, and copying it is the one
+  // thing that writes them.
+  it('writes the reference files when the prompt is copied', async () => {
     expect(await writeHostThemeReference(DEMO_CONNECTION_ID)).toBe(true);
     const demo = clientFor(demoConnection()).transport as DemoHost;
     expect(demo.hostFile(THEME_README_FILE)).toContain('# HerdrChat host theme');

@@ -170,7 +170,7 @@ Every key is optional:
 {
   "name": "Warm dusk",
   "accent": "#D08A3E",
-  "light": { "tint": "#B06A1E", "systemBackground": "#FBF7F2" },
+  "light": { "tint": "#A55F17", "systemBackground": "#FBF7F2" },
   "dark":  { "tint": "#E9A25A" },
   "avatars": ["#8C4A12", "#2E6B5E"]
 }
@@ -182,14 +182,21 @@ Every key is optional:
   it for both schemes, darkening the bubble until white text on it clears
   4.5:1 (on a tint too light for white text, the text is dark and the bubble
   is the tint). A key you set in `light` or `dark` wins over it.
+- Text has to stay readable: `label` and `secondaryLabel` on
+  `systemBackground`, `chatCard` and `bubbleIncoming`, and `onTint` on `tint`
+  and `bubbleOutgoing`, at 4.5:1 (or the app's own ratio for that pair, where
+  that is lower). A colour that breaks a pair is skipped, the app's own stays,
+  and Settings says which pair and the ratio. Text and the surfaces it sits on
+  must be opaque.
 - `avatars` replaces the chat avatar colours; each chat keeps its slot.
 - `name` is what Settings shows, up to 40 characters.
 
-The first time it checks a host's theme, and whenever you copy the agent
-prompt, the app writes `theme.schema.json`, `README.md` (every key, one line
+When you copy the agent prompt, the app writes `theme.schema.json`, `README.md` (every key, one line
 each) and `theme.example.json` next to it when they are missing, and never
-overwrites them. A wrong key or colour is skipped and listed under **Host
-theme**; the rest of the file still applies. The phone checks for changes
+overwrites them; it writes nothing to a host on its own. A wrong key or
+colour is skipped and listed under **Host
+theme**; the rest of the file still applies. A file over 64 KB, or anything
+that is not a regular file, is not read. The phone checks for changes
 about every 10 seconds while the chat list is on screen; **Reload theme**
 reads the file at once, **Reset to default** renames it to `theme.json.bak`
 (`theme.json.bak.1` and on when that is taken, so an older backup is kept),

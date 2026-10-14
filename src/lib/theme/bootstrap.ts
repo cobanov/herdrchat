@@ -4,7 +4,8 @@
  * An agent asked to "make HerdrChat warmer" has only the machine to go on. So
  * the machine carries the instructions: a JSON Schema to edit against, a README
  * saying what each colour is for and how the accent works, and an example that
- * is itself a valid theme. They are written once and never overwritten, so a
+ * is itself a valid theme. They are written when the person copies the agent
+ * prompt in Settings, never on the app's own initiative, and never overwritten, so a
  * person's own notes in them survive, and they sit beside theme.json without
  * ever being theme.json: the app never writes the theme itself.
  */
@@ -17,6 +18,7 @@ import {
   THEME_DIR,
   THEME_EXAMPLE_FILE,
   THEME_FILE,
+  THEME_MAX_BYTES,
   THEME_NAME_MAX,
   THEME_README_FILE,
   THEME_SCHEMA_FILE,
@@ -28,7 +30,7 @@ export const THEME_EXAMPLE = {
   $schema: `./${THEME_SCHEMA_FILE}`,
   name: 'Warm dusk',
   accent: '#D08A3E',
-  light: { tint: '#B06A1E', systemBackground: '#FBF7F2' },
+  light: { tint: '#A55F17', systemBackground: '#FBF7F2' },
   dark: { tint: '#E9A25A' },
   avatars: ['#8C4A12', '#2E6B5E', '#7A4E8C', '#A0453A', '#3F6E8C', '#6B7A2E'],
 } as const;
@@ -72,6 +74,7 @@ export function themeReadmeText(): string {
     '',
     `Colours are ${COLOUR_FORMATS}. A value that is not a colour, or a key the app does`,
     'not know, is left out and listed in Settings; the rest of the file still applies.',
+    `The app reads at most ${THEME_MAX_BYTES / 1024} KB, and only a regular file: a larger file is ignored.`,
     '',
     '## The accent',
     '',
@@ -80,12 +83,17 @@ export function themeReadmeText(): string {
     '- `tint` to the accent itself;',
     `- \`tintMuted\` to the accent at ${percent(TINT_MUTED_ALPHA.light)} alpha (light) or ${percent(TINT_MUTED_ALPHA.dark)} (dark);`,
     `- \`onTint\` to white when white text reaches ${MIN_TEXT_CONTRAST}:1 on the tint (the accent, or the`,
-    '  mode\'s own `tint` if set), otherwise to `label` when that reads better;',
+    '  mode\'s own `tint` if set; or the app\'s own ratio there, where lower), otherwise to `label`,',
+    '  or to the other mode\'s label (dark text in dark mode), whichever reaches it first;',
     `- \`bubbleOutgoing\` to the accent darkened (same hue) until white text clears ${MIN_TEXT_CONTRAST}:1 on it`,
     '  when `onTint` is white, or to the tint itself when `onTint` is `label`.',
     '',
     `Keep text at ${MIN_TEXT_CONTRAST}:1 or more against what it sits on: \`label\` and \`secondaryLabel\``,
     'on `systemBackground`, `chatCard` and `bubbleIncoming`; `onTint` on `tint` and `bubbleOutgoing`.',
+    'The app checks each pair after laying the file over its own colours. A colour that breaks one',
+    'is left out, the app\'s own stays, and Settings names the pair and its ratio. Where the app\'s',
+    'own colours are below 4.5:1 for a pair, their ratio is the bar instead. Text keys, and the',
+    'keys described as opaque below, must have no alpha.',
     '',
     '## Palette keys',
     '',

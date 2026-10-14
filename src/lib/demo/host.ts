@@ -215,10 +215,23 @@ interface Pending {
   dueAt: number;
 }
 
-/** A file in the demo's ~/.herdrchat, with the mtime `stat` would print. */
+/** A file in the demo's ~/.herdrchat, with the version the theme fetch would print. */
 interface HostFile {
   text: string;
-  mtime: number;
+  version: string;
+}
+
+/**
+ * Stands in for `cksum`: a hash of the contents and their length in bytes.
+ * Not the same CRC, which nothing compares it to; the same promise, that the
+ * same text gives the same version and a different one (almost) never does.
+ */
+function demoVersion(text: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 16777619) >>> 0;
+  }
+  return `${hash} ${byteLength(text)}`;
 }
 
 /** A question asked in parts: which part is on screen, and what was picked so far. */
@@ -248,7 +261,6 @@ export class DemoHost implements HerdrTransport {
    * the theme scenario fill it, in memory only.
    */
   private readonly herdrchatDir = new Map<string, HostFile>();
-  private lastMtime = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {
     for (const pane of DEMO_WORKSPACES.flatMap(demoPanes)) {
@@ -414,8 +426,8 @@ export class DemoHost implements HerdrTransport {
     if (script.includes(`echo ${THEME_BEGIN}`)) {
       const file = this.herdrchatDir.get(THEME_FILE);
       if (file === undefined) return out(`${THEME_MISSING}\n`);
-      const last = /if \[ "\$m" = "([^"]*)" \]/.exec(script)?.[1];
-      return out(last === String(file.mtime) ? `${file.mtime}\n` : `${file.mtime}\n${THEME_BEGIN}\n${file.text}`);
+      const last = /if \[ "\$v" = "([^"]*)" \]/.exec(script)?.[1];
+      return out(last === file.version ? `${file.version}\n` : `${file.version}\n${THEME_BEGIN}\n${file.text}`);
     }
     if (script.startsWith('mkdir -p "$HOME/.herdrchat"')) {
       const heredoc = new RegExp(`\\[ -e (\\S+) \\] \\|\\| cat > \\S+ <<'${HEREDOC_END}'\\n([\\s\\S]*?)\\n${HEREDOC_END}(?:\\n|$)`, 'g');
@@ -438,10 +450,8 @@ export class DemoHost implements HerdrTransport {
     return null;
   }
 
-  /** Write a file with an mtime later than any before it, as a real clock in seconds would give, never equal. */
   private writeHostFile(name: string, text: string): void {
-    this.lastMtime = Math.max(Math.floor(this.now() / 1000), this.lastMtime + 1);
-    this.herdrchatDir.set(name, { text, mtime: this.lastMtime });
+    this.herdrchatDir.set(name, { text, version: demoVersion(text) });
   }
 
   /** A file under ~/.herdrchat, for tests: what the app's writes left there. */
@@ -707,7 +717,7 @@ export class DemoHost implements HerdrTransport {
 
   /**
    * The agent restyles the app: it writes ~/.herdrchat/theme.json, says so,
-   * and from then on the theme fetch serves the file with a new mtime. The file
+   * and from then on the theme fetch serves the file with a new version. The file
    * lands with the reply, not with the prompt, as it would on a real host.
    */
   private writeTheme(paneId: string): ExecResult {

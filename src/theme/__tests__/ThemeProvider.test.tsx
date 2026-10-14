@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import type { HostThemeOverrides } from '@/lib/theme/resolve';
-import { ThemeProvider, themeColors, useTheme } from '../ThemeProvider';
+import { StockTheme, ThemeProvider, themeColors, useTheme } from '../ThemeProvider';
 import { avatarPalette, darkPalette, lightPalette } from '../tokens';
 
 const overrides: HostThemeOverrides = {
@@ -51,6 +51,21 @@ it('renders the stock theme without one', async () => {
   );
   const { result } = await renderHook(() => useTheme(), { wrapper });
   expect(result.current.colors).toBe(darkPalette);
+  expect(result.current.avatarPalette).toBe(avatarPalette);
+  expect(result.current.hostThemeName).toBeNull();
+});
+
+// The Settings section that turns host themes off is drawn in the app's own
+// colours, so no theme.json can make the way out unreadable.
+it('draws StockTheme\'s children in the app\'s own colours under a host theme', async () => {
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <ThemeProvider preference="dark" overrides={{ dark: { systemBackground: '#F5F0E8' } }} hostThemeName="Paper">
+      <StockTheme>{children}</StockTheme>
+    </ThemeProvider>
+  );
+  const { result } = await renderHook(() => useTheme(), { wrapper });
+  expect(result.current.colors).toBe(darkPalette);
+  expect(result.current.scheme).toBe('dark');
   expect(result.current.avatarPalette).toBe(avatarPalette);
   expect(result.current.hostThemeName).toBeNull();
 });

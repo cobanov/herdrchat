@@ -25,6 +25,10 @@ where regressions are found.
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
+`regression/_open-settings.yaml` and `_close-settings.yaml` reach Settings and
+come back with the tab bar or, once the Chats menu replaces it, through the
+menu, so a flow that uses them runs on either.
+
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
 `/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
 "restyle the app".

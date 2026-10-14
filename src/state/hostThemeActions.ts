@@ -18,7 +18,7 @@ function transportOf(connectionId: string): HerdrTransport | null {
 }
 
 /**
- * Settings' "Reload theme": fetch the file whatever its mtime. True when the
+ * Settings' "Reload theme": fetch the file whatever its version. True when the
  * host answered, for the haptic and for saying it did not.
  */
 export function reloadHostTheme(connectionId: string): Promise<boolean> {
@@ -41,9 +41,10 @@ export async function resetHostThemeToDefault(connectionId: string): Promise<boo
 
 /**
  * Settings' "Copy prompt for an agent": make sure the schema and README the
- * prompt names are on the host. The theme check writes them too, but it is
- * skipped while Use host themes is off, and the prompt is offered regardless.
- * Never overwrites; a failure is silent, as the next check retries it.
+ * prompt names are on the host. The only place they are written: the theme
+ * check reads and never writes, so a host gets them when its person asks for
+ * a theme, not at launch. Never overwrites; a failure is silent (copying again
+ * retries it).
  */
 export function writeHostThemeReference(connectionId: string): Promise<boolean> {
   const transport = transportOf(connectionId);

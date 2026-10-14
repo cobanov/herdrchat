@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
@@ -16,8 +16,8 @@ import { useHostTheme } from '@/state/hostTheme';
 import { reloadHostTheme, resetHostThemeToDefault, writeHostThemeReference } from '@/state/hostThemeActions';
 import { saveSetting } from '@/state/saveSetting';
 import { useSettings } from '@/state/settings';
-import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, size, spacing } from '@/theme/tokens';
+import { StockTheme, themeColors, useTheme } from '@/theme/ThemeProvider';
+import { minTouchTarget, radius, size, spacing } from '@/theme/tokens';
 import { hostThemeSummary } from './hostThemeSummary';
 
 /**
@@ -33,6 +33,37 @@ import { hostThemeSummary } from './hostThemeSummary';
  * line it changes.
  */
 export function HostThemeSection() {
+  const { colors, scheme } = useTheme();
+  // A host theme is on screen when the colours are not the stock palette
+  // itself (`themeColors` hands that back by identity when nothing overrides).
+  const themed = colors !== themeColors(scheme).colors;
+  return (
+    <StockTheme>
+      <StockCanvas themed={themed}>
+        <HostThemeRows />
+      </StockCanvas>
+    </StockTheme>
+  );
+}
+
+/**
+ * The section drawn in the app's own colours, on the app's own canvas: the
+ * way to turn a host theme off stays readable whatever theme.json says (a
+ * stock-coloured title on a host's canvas could still vanish). Under the
+ * stock theme the canvas is the screen's own and the band does not show.
+ */
+function StockCanvas({ themed, children }: { themed: boolean; children: ReactNode }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      testID="host-theme-canvas"
+      style={themed ? { backgroundColor: colors.systemBackground, borderRadius: radius.sm, paddingVertical: spacing.sm } : undefined}>
+      {children}
+    </View>
+  );
+}
+
+function HostThemeRows() {
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const enabled = useSettings((state) => state.useHostThemes);

@@ -2,7 +2,7 @@ import type * as SQLite from 'expo-sqlite';
 import { create } from 'zustand';
 
 import type { HerdrTransport } from '@/lib/herdr/transport';
-import { bootstrapHostTheme, fetchHostTheme } from '@/lib/theme/hostThemeClient';
+import { fetchHostTheme } from '@/lib/theme/hostThemeClient';
 import { deserializeThemeFile, serializeThemeFile } from '@/lib/theme/hostTheme';
 import { resolveHostTheme, type HostThemeFile, type ResolvedHostTheme } from '@/lib/theme/resolve';
 import { darkPalette, lightPalette } from '@/theme/tokens';
@@ -14,7 +14,7 @@ import { HOST_THEME_KEY_PREFIX, clearConnectionSettings, deleteSetting, hostThem
  *
  * A host with no entry has not been checked yet and renders the default
  * theme, the same as a host whose file is missing. The difference matters only
- * to the next check: an entry carries the mtime that lets the host answer
+ * to the next check: an entry carries the version that lets the host answer
  * "unchanged" in a few bytes.
  */
 interface HostThemeState {
@@ -68,16 +68,14 @@ export function resolveFile(file: HostThemeFile): ResolvedHostTheme {
 
 /** The file a resolved theme was made from, for the next check and for storage. */
 export function fileOf(theme: ResolvedHostTheme | undefined): HostThemeFile {
-  if (theme === undefined || theme.status === 'missing') return { kind: 'missing' };
-  if (theme.status === 'unreadable') return { kind: 'unreadable', mtime: theme.mtime ?? 0 };
-  return { kind: 'present', mtime: theme.mtime ?? 0, text: theme.raw ?? '' };
+  return theme?.file ?? { kind: 'missing' };
 }
 
 // MARK: - Persistence
 
 /**
  * Read every stored host theme and put it in the store. Stored as the raw file
- * and its mtime, not as the resolved overrides: resolving is cheap, and a
+ * and its version, not as the resolved overrides: resolving is cheap, and a
  * newer app that resolves differently (a new palette key, a changed accent
  * rule) then applies to a theme cached by an older one.
  */
@@ -130,10 +128,6 @@ export async function clearHostSettings(db: SQLite.SQLiteDatabase, connectionId:
 
 // MARK: - Checking the host
 
-
-/** Hosts whose reference files were written this session. */
-const bootstrapped = new Set<string>();
-
 /** The check in flight per host, so two callers share one round-trip. */
 const inFlight = new Map<string, Promise<boolean>>();
 
@@ -142,13 +136,12 @@ const inFlight = new Map<string, Promise<boolean>>();
  * answered; false is a failed check, which changes nothing and is never shown
  * (the next poll tries again).
  *
- * The first check that works on a host in a session also writes the
- * schema, README and example next to theme.json, so an agent asked to restyle
- * the app finds them. The command never overwrites, so running it once per
- * launch also puts back any of the three that someone deleted.
+ * It only reads. The schema, README and example are written when the person
+ * copies the agent prompt (`writeHostThemeReference`), not here: a host that
+ * was never asked to carry a theme gets nothing in its home directory.
  *
  * A forced check (Reload theme, after Reset) asks for the contents whatever
- * the mtime, and waits out an unforced check already running rather than
+ * the version, and waits out an unforced check already running rather than
  * sharing its answer, which may predate what the person just did.
  */
 export function checkHostTheme(
@@ -189,23 +182,19 @@ async function runCheck(
   if (held === undefined || !sameFile(next, heldFile)) {
     useHostTheme.getState().set(connectionId, resolveFile(next));
   }
-  if (!bootstrapped.has(connectionId) && (await bootstrapHostTheme(transport))) {
-    bootstrapped.add(connectionId);
-  }
   return true;
 }
 
 function sameFile(a: HostThemeFile, b: HostThemeFile): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'missing' || b.kind === 'missing') return true;
-  if (a.mtime !== b.mtime) return false;
-  return a.kind !== 'present' || b.kind !== 'present' || a.text === b.text;
+  if (a.kind === 'missing' || b.kind === 'missing') return a.kind === b.kind;
+  if (a.version !== b.version) return false;
+  if (a.kind === 'present' && b.kind === 'present') return a.text === b.text;
+  return a.kind === 'unreadable' && b.kind === 'unreadable' && a.reason === b.reason;
 }
 
 /** For tests: forget what this session did, as a relaunch would. */
 export function resetHostThemeSession(): void {
   generations.clear();
-  bootstrapped.clear();
   inFlight.clear();
   useHostTheme.setState({ byConnection: {} });
 }

@@ -146,6 +146,21 @@ export function ThemeProvider({
   );
 }
 
+/**
+ * Its children in the app's own colours, whatever the host's theme says: the
+ * same scheme and accessibility settings, the stock palette and avatars.
+ *
+ * For the one place that must stay readable under any theme.json: the
+ * Settings section that turns host themes off. A theme passes the contrast
+ * check before it applies, but the check covers the pairs it knows, and the
+ * way out should not depend on it.
+ */
+export function StockTheme({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  const stock = useMemo<Theme>(() => ({ ...theme, ...themeColors(theme.scheme), hostThemeName: null }), [theme]);
+  return <ThemeContext value={stock}>{children}</ThemeContext>;
+}
+
 export function useTheme(): Theme {
   const theme = useContext(ThemeContext);
   if (theme === null) {
