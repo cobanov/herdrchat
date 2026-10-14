@@ -63,6 +63,17 @@ export const SUBAGENT_READ_TIMEOUT_MS = TRANSCRIPT_TIMEOUT_MS;
 export const WORKFLOW_POLL_MS = 3_000;
 
 /**
+ * How long a workflow the transcript still calls running may show no sign of
+ * life (being first looked for, a change to its journal or run file) before
+ * its card stops following it. A run whose session died writes neither a run
+ * file nor a notification, and without a cap its chat read two files every
+ * three seconds for as long as it stayed open. Generous: one agent of a phase
+ * can work for a long while without the journal moving. A reload follows it
+ * again.
+ */
+export const WORKFLOW_STALE_MS = 30 * 60_000;
+
+/**
  * How often a subagent card asks which agent its call started, until the
  * agent has written its meta. The status poll's pace: the meta lands within a
  * second or two of the call.

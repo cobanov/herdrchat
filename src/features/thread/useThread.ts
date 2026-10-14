@@ -46,6 +46,7 @@ import {
   tailCursor,
 } from '@/state/threadCache';
 import { inTransaction } from '@/state/db';
+import { resumeStaleRuns } from '@/features/thread/workflowRuns';
 
 /**
  * Transcript lines a thread opens with, about a hundred messages.
@@ -1490,6 +1491,8 @@ export function useThread(
   );
 
   const reload = useCallback(async () => {
+    // A workflow given up on as gone quiet is looked at again.
+    resumeStaleRuns();
     for (const controller of tails.current.values()) controller.abort();
     tails.current.clear();
     tailBeats.current.clear();

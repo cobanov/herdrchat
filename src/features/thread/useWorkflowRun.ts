@@ -1,46 +1,22 @@
 import { useEffect } from 'react';
-import { create } from 'zustand';
 
 import { useDelegationStates, workflowAgentKey } from '@/features/thread/delegation';
+import { EMPTY_RUN as EMPTY, useRuns, type RunEntry } from '@/features/thread/workflowRuns';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { WORKFLOW_POLL_MS } from '@/lib/herdr/timeouts';
-import { workflowJournalPath, workflowRunPath } from '@/lib/subagents/paths';
+import { isInertId, workflowJournalPath, workflowRunPath } from '@/lib/subagents/paths';
 import { SubagentReader } from '@/lib/subagents/reader';
-import { agentState, isRunning, parseWorkflowJournal, parseWorkflowRun, type WorkflowRun } from '@/lib/subagents/workflowRun';
+import {
+  agentState,
+  isRunning,
+  isRunStale,
+  parseWorkflowJournal,
+  parseWorkflowRun,
+  type WorkflowRun,
+} from '@/lib/subagents/workflowRun';
 import type { DelegationState } from '@/lib/threadItems';
 
-/**
- * What the app knows of one workflow run: the last good read of its file,
- * the checksum it had (so the next read downloads it only when it changed),
- * and the session folder it was found in.
- *
- * `source` says which file that was. Claude writes the run file only when
- * the run ends; while it runs, its agents are read from the run's journal,
- * and the run file wins as soon as it appears.
- */
-export interface RunEntry {
-  run: WorkflowRun | null;
-  signature: string | null;
-  source: 'run' | 'journal' | null;
-  dir: string | null;
-  /** No session folder has the run file or its journal: not started yet, or cleaned up. */
-  absent: boolean;
-  /** Read after the transcript said the run ended: what it shows is all there will be. */
-  final: boolean;
-  error: string | null;
-}
-
-const EMPTY: RunEntry = { run: null, signature: null, source: null, dir: null, absent: false, final: false, error: null };
-
-/**
- * Runs by host and run id, outside the rows and screens that show them: the
- * card in the thread and the run's screen read one file, once, and FlashList
- * recycles rows, so state kept in a card would show another card's run.
- */
-const useRuns = create<{ entries: Readonly<Record<string, RunEntry>>; put: (key: string, entry: RunEntry) => void }>((set) => ({
-  entries: {},
-  put: (key, entry) => set((state) => ({ entries: { ...state.entries, [key]: entry } })),
-}));
+export { resumeStaleRuns, type RunEntry } from '@/features/thread/workflowRuns';
 
 const inflight = new Map<string, Promise<void>>();
 
@@ -48,21 +24,35 @@ const runKey = (connectionId: string, runId: string) => `${connectionId}\u0000${
 
 /**
  * Read a run's file again if it changed. One read at a time per run: the
- * card and the screen polling together share it.
+ * card and the screen polling together share it. `ended` is whether the
+ * transcript says the run is over.
  */
 export function refreshRun(
   client: HerdrClient,
   connectionId: string,
   dirs: readonly string[],
   runId: string,
-  ended = false
+  { ended = false }: { ended?: boolean } = {}
 ): Promise<void> {
   const key = runKey(connectionId, runId);
   const running = inflight.get(key);
   if (running !== undefined) return running;
-  const read = (async () => {
+  // The id goes into a path on the host, like every other id read there.
+  if (!isInertId(runId)) {
     const { entries, put } = useRuns.getState();
-    const current = entries[key] ?? EMPTY;
+    if (entries[key] === undefined) put(key, { ...EMPTY, absent: true, final: true, error: 'not a run id this app reads' });
+    return Promise.resolve();
+  }
+  const read = (async () => {
+    const { entries, put: store } = useRuns.getState();
+    const now = Date.now();
+    const current = { ...(entries[key] ?? EMPTY), seenAt: entries[key]?.seenAt ?? now };
+    // Every write says whether the run has gone quiet, measured from its
+    // newest sign of life; one the transcript says ended never is. Not from
+    // its launch: a run launched long ago, read for the first time now (a
+    // chat opened today on yesterday's work), gets a window of its own.
+    const staleness = (next: RunEntry) => !ended && isRunStale([next.seenAt, next.changedAt, next.resumedAt], now);
+    const put = (k: string, next: RunEntry) => store(k, { ...next, stale: staleness(next) });
     const reader = new SubagentReader(client.transport);
     // The folder it was found in, once found; until then each folder in turn,
     // by the run's own id, so a second folder can only ever hold this run.
@@ -81,7 +71,10 @@ export function refreshRun(
         return;
       }
       if (result.kind === 'unchanged') {
-        if (current.error !== null || current.final !== ended) put(key, { ...current, final: current.final || ended, error: null });
+        // Written only when what it shows moved: an unchanged file is the
+        // usual answer, and a new entry each time redraws every card on it.
+        const next = { ...current, final: current.final || ended, error: null };
+        if (current.error !== null || current.final !== next.final || current.stale !== staleness(next)) put(key, next);
         return;
       }
       const run = source === 'run' ? parseWorkflowRun(result.text, current.run) : parseWorkflowJournal(result.text) ?? current.run;
@@ -97,6 +90,11 @@ export function refreshRun(
         absent: false,
         final: current.final || ended,
         error: null,
+        seenAt: current.seenAt,
+        // The first look finds whatever is there, however old; what changes after it is the run moving.
+        changedAt: parsed && entries[key] !== undefined ? now : current.changedAt,
+        resumedAt: current.resumedAt,
+        stale: false,
       });
       if (parsed) reportAgents(runId, run);
       return;
@@ -137,6 +135,9 @@ export function runState(run: WorkflowRun | null, fallback: DelegationState): De
  * and one read from its journal is followed until its run file appears. Once
  * it is not, one more read settles it: a run whose files were cleaned up, or
  * that ended without a run file, is not polled for as long as it is shown.
+ * Nor is one still "running" whose files have not moved for
+ * `WORKFLOW_STALE_MS` since it was first looked for: its session died before
+ * it could say so (`entry.stale`, until `resumeStaleRuns`).
  * Undefined until the first read lands.
  */
 export function useWorkflowRun(
@@ -147,16 +148,18 @@ export function useWorkflowRun(
   { active, awaitFile }: { active: boolean; awaitFile: boolean }
 ): RunEntry | undefined {
   const entry = useRuns((state) => (runId === null ? undefined : state.entries[runKey(connectionId, runId)]));
-  const settled = (entry?.source === 'run' && entry.run !== null && !isRunning(entry.run.status)) || (entry?.final === true && !awaitFile);
+  const settled = (entry?.source === 'run' && entry.run !== null && !isRunning(entry.run.status)) ||
+    (entry?.final === true && !awaitFile) ||
+    (entry?.stale === true && awaitFile);
   // An array param re-made by every render must not restart the poll.
   const dirsKey = dirs.join('\u0000');
 
   useEffect(() => {
     if (!active || settled || client === null || runId === null || dirsKey.length === 0) return;
     const folders = dirsKey.split('\u0000');
-    const ended = !awaitFile;
-    void refreshRun(client, connectionId, folders, runId, ended);
-    const timer = setInterval(() => void refreshRun(client, connectionId, folders, runId, ended), WORKFLOW_POLL_MS);
+    const options = { ended: !awaitFile };
+    void refreshRun(client, connectionId, folders, runId, options);
+    const timer = setInterval(() => void refreshRun(client, connectionId, folders, runId, options), WORKFLOW_POLL_MS);
     return () => clearInterval(timer);
   }, [active, settled, awaitFile, client, connectionId, dirsKey, runId]);
 

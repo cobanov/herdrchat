@@ -8,7 +8,7 @@ import { Text } from '@/components/Text';
 import { openSubagent, useClientFor, useDelegationStates, workflowAgentKey } from '@/features/thread/delegation';
 import { runState, useWorkflowRun } from '@/features/thread/useWorkflowRun';
 import { ReadOnlyHeader } from '@/features/thread/ReadOnlyHeader';
-import { WorkflowAgentRow } from '@/features/thread/WorkflowCard';
+import { STALE_NOTE, WorkflowAgentRow } from '@/features/thread/WorkflowCard';
 import { formatDuration, formatTokens } from '@/lib/subagents/format';
 import type { WorkflowAgent } from '@/lib/subagents/workflowRun';
 import type { DelegationState } from '@/lib/threadItems';
@@ -55,6 +55,7 @@ export default function WorkflowScreen({
   const state = run === null ? null : runState(run, reported);
   const subtitle = [
     run?.status ?? null,
+    entry?.stale === true ? STALE_NOTE : null,
     formatDuration(run?.durationMs ?? null),
     formatTokens(run?.totalTokens ?? null),
   ].filter((part): part is string => part !== null).join(' · ');

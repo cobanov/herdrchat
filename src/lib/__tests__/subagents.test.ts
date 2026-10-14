@@ -21,8 +21,11 @@ import {
 import { SubagentReader } from '../subagents/reader';
 import { scriptMeta } from '../subagents/scriptMeta';
 import { parseTaskNotices } from '../subagents/taskNotice';
-import { agentState, isRunning, parseWorkflowRun, runIdFromResult } from '../subagents/workflowRun';
-import { parseTranscriptLine } from '../transcript/parser';
+import { WORKFLOW_STALE_MS } from '../herdr/timeouts';
+import { agentState, isRunning, isRunStale, parseWorkflowRun, runIdFromResult } from '../subagents/workflowRun';
+import { threadItems } from '../threadItems';
+import { receiptKey, type ChatMessage } from '../transcript/message';
+import { parseTranscript, parseTranscriptLine } from '../transcript/parser';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', 'subagents', name), 'utf8');
 
@@ -248,6 +251,19 @@ describe('workflow run', () => {
   });
 });
 
+// A run whose session died says nothing more: no run file, no notification.
+// Its card stops following it once nothing has moved for the window.
+it('calls a run stale once its newest sign of life is a window old', () => {
+  const launched = 1_000_000; // first looked for
+  expect(isRunStale([launched, null, null], launched + WORKFLOW_STALE_MS - 1)).toBe(false);
+  expect(isRunStale([launched, null, null], launched + WORKFLOW_STALE_MS)).toBe(true);
+  // A change to its files, or a reload, is newer life.
+  expect(isRunStale([launched, launched + 60_000, null], launched + WORKFLOW_STALE_MS)).toBe(false);
+  expect(isRunStale([launched, null, launched + 60_000], launched + WORKFLOW_STALE_MS)).toBe(false);
+  // Nothing to measure from is not stale.
+  expect(isRunStale([null, null, null], launched)).toBe(false);
+});
+
 describe('workflow script meta', () => {
   // The input as the thread has it: flattened, not JSON.
   it('reads the name and description out of the meta block', () => {
@@ -312,6 +328,46 @@ describe('task notifications', () => {
     // Any other harness turn stays hidden, as before.
     const other = JSON.stringify({ type: 'user', uuid: 'n3', promptSource: 'system', message: { role: 'user', content: 'scheduled' } });
     expect(parseTranscriptLine(other)).toBeNull();
+  });
+
+  // A person can paste a whole notification into a message (a transcript, a
+  // log). Read as a notice, the bubble vanished, the echo of a message sent
+  // from the phone never confirmed ("Failed to send"), and the id it quotes
+  // finished another card. Only a line the harness wrote is a notice.
+  it('leaves a pasted notification, or a pasted hand-back, in the message you sent', () => {
+    const typed = `What does this one mean?\n\n${AGENT_NOTICE.replace('completed', 'failed')}`;
+    const call = JSON.stringify({
+      type: 'assistant', uuid: 'c1', timestamp: '2026-09-16T19:00:00.000Z',
+      message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_01YHaw6KgVXRztcfnALFWkii', name: 'Agent', input: { description: 'Catalog' } }] },
+    });
+    const launched = JSON.stringify({
+      type: 'user', uuid: 'c2', timestamp: '2026-09-16T19:00:01.000Z',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_01YHaw6KgVXRztcfnALFWkii', content: 'Async agent launched successfully.\nagentId: a53e546bf8054816f' }] },
+    });
+    const pasted = JSON.stringify({
+      type: 'user', uuid: 'u1', timestamp: '2026-09-16T19:05:00.000Z', promptId: 'p1',
+      message: { role: 'user', content: typed },
+    });
+    const messages = parseTranscript([call, launched, pasted].join('\n'));
+    const sent = messages.find((message) => message.id === 'u1');
+    expect(sent?.segments).toEqual([{ kind: 'text', text: typed }]);
+    // The echo the phone shows confirms against it.
+    const echo: ChatMessage = { id: 'echo', role: 'user', segments: [{ kind: 'text', text: typed }], timestamp: null, agentLabel: null, isSidechain: false };
+    expect(receiptKey(sent!)).toBe(receiptKey(echo));
+    const items = threadItems(messages, { showSidechain: false }).map((placed) => placed.item);
+    expect(items.map((item) => item.kind)).toEqual(['subagent', 'user']);
+    // The card it quotes is still running: nothing ended it.
+    expect(items[0]).toMatchObject({ kind: 'subagent', delegation: { state: 'running', result: null } });
+
+    // Also when it was typed while Claude was busy, as a queued prompt.
+    const handback = '<agent-message from="a53e546bf8054816f">\n[Subagent hand-back] The report follows:\n  Done.\n</agent-message>';
+    const queued = JSON.stringify({
+      type: 'attachment', uuid: 'q1', timestamp: '2026-09-16T19:06:00.000Z',
+      attachment: { type: 'queued_command', commandMode: 'prompt', prompt: `Look:\n${handback}`, origin: { kind: 'human' } },
+    });
+    expect(parseTranscriptLine(queued)?.segments).toEqual([{ kind: 'text', text: `Look:\n${handback}` }]);
+    const typedHandback = JSON.stringify({ type: 'user', uuid: 'u2', message: { role: 'user', content: `Look:\n${handback}` } });
+    expect(parseTranscriptLine(typedHandback)?.segments).toEqual([{ kind: 'text', text: `Look:\n${handback}` }]);
   });
 });
 

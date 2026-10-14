@@ -165,14 +165,17 @@ function messageFrom(
   const role = roleOf(raw.type);
   if (role === null) return null;
   const message = asRecord(raw.message);
-  // Before the harness rule hides it: a background task's end is the harness's
-  // turn, and the only sign that a background subagent or workflow finished.
-  const notices = role === 'user' ? noticeMessage(raw, message?.content, line, agentLabel) : null;
-  if (notices !== null) return notices;
-  // So is a background subagent's report, which arrives as the agent's own turn.
-  const handback = role === 'user' ? handbackMessage(raw, raw.origin, message?.content, line, agentLabel) : null;
-  if (handback !== null) return handback;
-  if (role === 'user' && isClaudeHarnessLine(raw)) return null;
+  if (role === 'user' && isClaudeHarnessLine(raw)) {
+    // Before the harness rule hides it: a background task's end is the
+    // harness's turn, and the only sign that a background subagent or
+    // workflow finished. So is a background subagent's report, which arrives
+    // as the agent's own turn. Only on a harness line: a person who pastes a
+    // whole <task-notification> into a message sent a message, and read as a
+    // notice its bubble vanished, its echo never confirmed, and the id it
+    // quotes finished someone else's card.
+    return noticeMessage(raw, message?.content, line, agentLabel) ??
+      handbackMessage(raw, raw.origin, message?.content, line, agentLabel);
+  }
 
   const output = role === 'user' ? commandOutput(message?.content) : null;
   if (output !== null) {
@@ -295,7 +298,9 @@ function handbackMessage(
 /** A hand-back that arrived while Claude was busy, recorded only as a queued attachment. */
 function queuedHandback(raw: Record<string, unknown>, line: string, agentLabel: string | null): ChatMessage | null {
   const attachment = asRecord(raw.attachment);
-  if (attachment?.type !== 'queued_command') return null;
+  // The agent's own turn, never a prompt someone typed: that one says so in
+  // its origin, and a pasted hand-back in it is only text.
+  if (attachment?.type !== 'queued_command' || !isClaudeHarnessLine({ origin: attachment.origin })) return null;
   return handbackMessage({ ...raw, timestamp: raw.timestamp ?? attachment.timestamp }, attachment.origin, attachment.prompt, line, agentLabel);
 }
 

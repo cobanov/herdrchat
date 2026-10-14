@@ -19,6 +19,8 @@
  * plain list in the same order.
  */
 
+import { WORKFLOW_STALE_MS } from '../herdr/timeouts';
+
 export type WorkflowAgentState = 'running' | 'done' | 'failed';
 
 export interface WorkflowAgent {
@@ -191,6 +193,18 @@ export function runIdFromResult(result: string | null): string | null {
   if (result === null) return null;
   const match = /\bRun ID: (wf_[A-Za-z0-9_-]+)/.exec(result);
   return match?.[1] ?? null;
+}
+
+/**
+ * Whether a run the transcript still calls running has gone quiet for good:
+ * its latest sign of life (when it was first looked for, a change seen in its
+ * files, the reader's last reload) is `WORKFLOW_STALE_MS` or more behind `now`. Without
+ * any sign at all it is not, since there is nothing to measure from.
+ */
+export function isRunStale(signs: readonly (number | null)[], now: number): boolean {
+  const known = signs.filter((sign): sign is number => sign !== null);
+  if (known.length === 0) return false;
+  return now - Math.max(...known) >= WORKFLOW_STALE_MS;
 }
 
 /** A workflow agent's state, from the four Claude writes. An unknown one is still running. */

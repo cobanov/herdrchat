@@ -1,5 +1,6 @@
 import type * as SQLite from 'expo-sqlite';
 
+import { cacheStamp } from '@/lib/transcript/cacheVersion';
 import type { ChatMessage } from '@/lib/transcript/message';
 
 import { inTransaction } from './db';
@@ -11,7 +12,9 @@ import { inTransaction } from './db';
  * The load-bearing idea is `sessionSig`. A chat's identity is its Claude
  * session, not its workspace slot: herdr reuses workspace ids, so without this
  * a new chat started in a recycled workspace would open showing the previous
- * conversation's history. `rebind` is what enforces that.
+ * conversation's history. `rebind` is what enforces that. The stamp also
+ * carries the parser's version (`cacheStamp`), so rows an older parser made
+ * are dropped and read again rather than shown as they were parsed then.
  */
 
 /** Bubbles to seed on open. More than a chat surface should lay out at once. */
@@ -82,7 +85,7 @@ async function insertMessages(
       `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`,
-      connectionId, workspaceId, sessionSig, message.id, start + offset, JSON.stringify(message)
+      connectionId, workspaceId, cacheStamp(sessionSig), message.id, start + offset, JSON.stringify(message)
     );
   }
 }
@@ -106,7 +109,8 @@ export async function rebind(
     connectionId,
     workspaceId
   );
-  if (row === null || row.session_sig === sessionSig) return false;
+  // A row stamped by an older parser is dropped like another session's.
+  if (row === null || row.session_sig === cacheStamp(sessionSig)) return false;
 
   await inTransaction(db, async () => {
     await db.runAsync(

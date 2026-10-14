@@ -13,7 +13,8 @@ import { useToolRuns } from '@/state/toolRuns';
 import { DelegationScopeProvider, decodeDirs, useDelegationStates, type DelegationScope } from '../delegation';
 import { SubagentCard } from '../SubagentCard';
 import { resetWorkflowRuns } from '../useWorkflowRun';
-import { WorkflowAgentRow, WorkflowCard } from '../WorkflowCard';
+import { STALE_NOTE, WorkflowAgentRow, WorkflowCard } from '../WorkflowCard';
+import { WORKFLOW_POLL_MS, WORKFLOW_STALE_MS } from '@/lib/herdr/timeouts';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) } }));
@@ -226,5 +227,28 @@ describe('a workflow card', () => {
     expect(params).toMatchObject({ runId: DEMO_REVIEW.runId, title: DEMO_REVIEW.name, workspaceId: 'w2', state: 'running', followKey: DEMO_REVIEW.toolUseId });
     // The run's agents report where they stand, for an open agent screen.
     expect(Object.values(useDelegationStates.getState().states)).toEqual(expect.arrayContaining(['done', 'running']));
+  });
+
+  // A run whose session died never ends in the transcript. Rather than show
+  // it running forever (and read its files every few seconds), the card says
+  // it stopped looking.
+  it('says it no longer follows a run that has not moved for the window', async () => {
+    jest.useFakeTimers();
+    try {
+      const { review, scope } = await demoCards();
+      const screen = await render(
+        <DelegationScopeProvider value={scope}>
+          <WorkflowCard call={review.call} delegation={review.delegation} runId={review.runId} name={review.name} description={review.description} />
+        </DelegationScopeProvider>
+      );
+      for (let left = WORKFLOW_STALE_MS; left >= 0; left -= WORKFLOW_POLL_MS) {
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(WORKFLOW_POLL_MS);
+        });
+      }
+      expect(screen.getByText(`2 of 3 agents done · ${STALE_NOTE}`)).toBeOnTheScreen();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

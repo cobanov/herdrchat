@@ -65,7 +65,8 @@ export function WorkflowCard({
       kindLabel="Workflow"
       title={title}
       detail={run?.summary ?? description}
-      caption={[progress(run), ...runFigures(run, delegation)].filter((part) => part !== null).join(' · ')}
+      caption={[progress(run), ...runFigures(run, delegation), entry?.stale === true ? STALE_NOTE : null]
+        .filter((part) => part !== null).join(' · ')}
       state={state}
       result={state === 'running' ? null : delegation.result}
       onOpen={onOpen}
@@ -74,6 +75,12 @@ export function WorkflowCard({
     />
   );
 }
+
+/**
+ * A run still "running" that has not moved in a long while: its session
+ * most likely died. Said rather than shown as running forever.
+ */
+export const STALE_NOTE = 'No longer followed · reload to check again';
 
 /** "2 of 3 agents done", once the run says how many it has. */
 function progress(run: WorkflowRun | null): string | null {
