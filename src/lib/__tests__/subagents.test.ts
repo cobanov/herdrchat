@@ -369,6 +369,38 @@ describe('task notifications', () => {
     const typedHandback = JSON.stringify({ type: 'user', uuid: 'u2', message: { role: 'user', content: `Look:\n${handback}` } });
     expect(parseTranscriptLine(typedHandback)?.segments).toEqual([{ kind: 'text', text: `Look:\n${handback}` }]);
   });
+
+  // Leading the message, or the whole of it, the paste was peeled off as
+  // harness: no bubble at all, or one without it, and "Failed to send".
+  it('keeps a pasted notification that leads the message, or is all of it', () => {
+    const block = AGENT_NOTICE.replace('completed', 'failed');
+    const echoOf = (text: string): ChatMessage =>
+      ({ id: 'echo', role: 'user', segments: [{ kind: 'text', text }], timestamp: null, agentLabel: null, isSidechain: false });
+    for (const typed of [block, `${block}\n\nWhat does this one mean?`]) {
+      for (const fields of [{ promptId: 'p1' }, { origin: { kind: 'human' } }]) {
+        const sent = parseTranscriptLine(JSON.stringify({ type: 'user', uuid: 'u1', ...fields, message: { role: 'user', content: typed } }));
+        expect(sent?.segments).toEqual([{ kind: 'text', text: typed }]);
+        expect(receiptKey(sent!)).toBe(receiptKey(echoOf(typed)));
+      }
+      const queued = parseTranscriptLine(JSON.stringify({
+        type: 'attachment', uuid: 'q1',
+        attachment: { type: 'queued_command', commandMode: 'prompt', prompt: typed, origin: { kind: 'human' } },
+      }));
+      expect(queued?.segments).toEqual([{ kind: 'text', text: typed }]);
+    }
+    // A pasted hand-back leading the message stays too.
+    const handback = '<agent-message from="a1">\n[Subagent hand-back] Done.\n</agent-message>';
+    const lead = JSON.stringify({ type: 'user', uuid: 'u2', promptId: 'p2', message: { role: 'user', content: `${handback}\nWhy?` } });
+    expect(parseTranscriptLine(lead)?.segments).toEqual([{ kind: 'text', text: `${handback}\nWhy?` }]);
+    // Context the harness attaches to a typed turn is still peeled, and a line
+    // with no structured fields (older versions) still hides a bare notice.
+    const withContext = JSON.stringify({
+      type: 'user', uuid: 'u3', promptId: 'p3',
+      message: { role: 'user', content: [{ type: 'text', text: '<ide_selection>x</ide_selection>' }, { type: 'text', text: 'Fix it' }] },
+    });
+    expect(parseTranscriptLine(withContext)?.segments).toEqual([{ kind: 'text', text: 'Fix it' }]);
+    expect(parseTranscriptLine(JSON.stringify({ type: 'user', uuid: 'u4', message: { role: 'user', content: block } }))).toBeNull();
+  });
 });
 
 // So a failure in the shell tests above is a shell problem, not a missing one.

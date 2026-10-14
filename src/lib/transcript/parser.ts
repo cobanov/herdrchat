@@ -1,6 +1,6 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
-import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine } from './harness';
+import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine, isClaudeTypedLine } from './harness';
 import { splitImages } from './images';
 import { parseHandback, parseTaskNotices } from '../subagents/taskNotice';
 import { ompEntry } from './omp';
@@ -188,7 +188,7 @@ function messageFrom(
       isSidechain: raw.isSidechain === true,
     };
   }
-  const segments = segmentsFrom(message?.content, role);
+  const segments = segmentsFrom(message?.content, role, role === 'user' && isClaudeTypedLine(raw));
   if (segments.length === 0) return null;
 
   return {
@@ -223,7 +223,7 @@ function queuedPrompt(
 ): ChatMessage | null {
   const attachment = asRecord(raw.attachment);
   if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'prompt') return null;
-  const segments = segmentsFrom(attachment.prompt, 'user');
+  const segments = segmentsFrom(attachment.prompt, 'user', isClaudeTypedLine({ origin: attachment.origin }));
   if (segments.length === 0) return null;
   return {
     id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
@@ -355,9 +355,9 @@ function roleOf(type: unknown): MessageRole | null {
  * `claudeUserText`, which unwraps pastes, turns slash and shell commands back
  * into what was typed, and drops harness elements.
  */
-function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
+function segmentsFrom(content: unknown, role: MessageRole, typed = false): MessageSegment[] {
   if (typeof content === 'string') {
-    if (role === 'user') return userTextSegments(content);
+    if (role === 'user') return userTextSegments(content, typed);
     return content.trim().length === 0 ? [] : [{ kind: 'text', text: content }];
   }
   if (!Array.isArray(content)) return [];
@@ -366,7 +366,7 @@ function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
   for (const block of content) {
     const value = asRecord(block);
     if (role === 'user' && value?.type === 'text') {
-      segments.push(...userTextSegments(typeof value.text === 'string' ? value.text : ''));
+      segments.push(...userTextSegments(typeof value.text === 'string' ? value.text : '', typed));
       continue;
     }
     if (role === 'user' && value?.type === 'image') {
@@ -384,8 +384,8 @@ function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
 }
 
 /** A user's text, harness removed, with the pictures it references as their own segments. */
-function userTextSegments(raw: string): MessageSegment[] {
-  const text = claudeUserText(raw);
+function userTextSegments(raw: string, byPerson: boolean): MessageSegment[] {
+  const text = claudeUserText(raw, byPerson);
   if (text === null) return [];
   const { text: typed, paths } = splitImages(text);
   return [
