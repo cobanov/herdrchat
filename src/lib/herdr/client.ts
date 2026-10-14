@@ -200,7 +200,7 @@ export class HerdrClient {
     try {
       output = await this.shell(shellCommand(machineListArgv(this.herdr)), POLL_TIMEOUT_MS);
     } catch (thrown) {
-      if (isUnknownSubcommand(thrown)) return { machines: [], skipped: [] };
+      if (isUnknownSubcommand(thrown)) return { machines: [], skipped: [], unreadIds: [], complete: true };
       throw thrown;
     }
     return parseMachineList(output);

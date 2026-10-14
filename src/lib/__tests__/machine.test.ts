@@ -19,7 +19,9 @@ import { shellQuote, untilChannelCloses, withPath } from '../herdr/shell';
 import {
   INSTALL_TIMEOUT_MS,
   JUMP_CONNECT_TIMEOUT_MS,
+  JUMP_CONTROL_PERSIST_MS,
   JUMP_DEADLINE_MARGIN_MS,
+  JUMP_HOST_START_MS,
   JUMP_KILL_GRACE_MS,
   LAUNCH_TIMEOUT_MS,
   POLL_TIMEOUT_MS,
@@ -309,13 +311,15 @@ describe('jumpStream', () => {
 // now stops its own `ssh` first.
 describe('the host-side bound', () => {
   it('keeps the native deadline above the bound, by more than the kill grace', () => {
-    expect(JUMP_DEADLINE_MARGIN_MS).toBeGreaterThan(JUMP_KILL_GRACE_MS);
+    // The native deadline also counts dialling the host and its login shell
+    // starting, which the bound never sees.
+    expect(JUMP_DEADLINE_MARGIN_MS).toBeGreaterThan(JUMP_HOST_START_MS + JUMP_KILL_GRACE_MS);
     for (const timeoutMs of [1, 1_000, POLL_TIMEOUT_MS, SEND_TIMEOUT_MS, TRANSCRIPT_TIMEOUT_MS, LAUNCH_TIMEOUT_MS, INSTALL_TIMEOUT_MS, 12_345]) {
       const { boundSeconds, nativeMs } = jumpDeadlines(timeoutMs);
       // The command keeps its own time, and the connect is not taken out of it.
       expect(boundSeconds * 1000).toBeGreaterThanOrEqual(timeoutMs + JUMP_CONNECT_TIMEOUT_MS);
       expect(nativeMs - boundSeconds * 1000).toBe(JUMP_DEADLINE_MARGIN_MS);
-      expect(nativeMs - boundSeconds * 1000).toBeGreaterThan(JUMP_KILL_GRACE_MS);
+      expect(nativeMs - boundSeconds * 1000).toBeGreaterThan(JUMP_HOST_START_MS + JUMP_KILL_GRACE_MS);
     }
   });
 
@@ -323,7 +327,8 @@ describe('the host-side bound', () => {
     const command = jumpCommand('klaw', 'herdr api snapshot', POLL_TIMEOUT_MS);
     expect(command).toContain('ControlMaster=auto');
     expect(command).toContain('"ControlPath=$hj_d/ssh-%C"');
-    expect(command).toContain('ControlPersist=60');
+    expect(command).toContain(`ControlPersist=${JUMP_CONTROL_PERSIST_MS / 1000}`);
+    expect(command).not.toMatch(/ControlPersist=\$/);
     expect(command).toContain('hj_d="$HOME/.cache/herdrchat"');
     // Run by sh, whatever the host's login shell is.
     expect(command).toMatch(/; sh -c '/);
@@ -376,7 +381,7 @@ describe('the host-side bound', () => {
       try {
         const { code, ms } = await runJump(host.env, jumpCommand('klaw', "trap '' TERM; sleep 6 >/dev/null 2>&1", ONE_SECOND));
         expect(code).toBe(JUMP_TIMED_OUT_EXIT);
-        expect(ms).toBeLessThan(1_000 + JUMP_DEADLINE_MARGIN_MS);
+        expect(ms).toBeLessThan(1_000 + JUMP_KILL_GRACE_MS + 1_000);
       } finally {
         host.cleanup();
       }
