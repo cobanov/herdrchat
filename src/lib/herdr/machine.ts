@@ -2,6 +2,7 @@ import type { ExecResult, SshFailureCode } from '../../../modules/herdr-ssh/src'
 import { shellQuote, untilChannelCloses, withPath } from './shell';
 import {
   JUMP_CONNECT_TIMEOUT_MS,
+  JUMP_CONTROL_PERSIST_MS,
   JUMP_DEADLINE_MARGIN_MS,
   JUMP_KEEPALIVE_MS,
   JUMP_KILL_GRACE_MS,
@@ -89,13 +90,14 @@ const CONTROL_DIR_MAX = 40;
  * login shell, which may be zsh or fish. Arguments: the bound in seconds (0 for
  * none), then the `ssh` command's words.
  *
- * Connection sharing: `ControlMaster=auto` with `ControlPersist=60`, so a
+ * Connection sharing: `ControlMaster=auto` with `ControlPersist` at
+ * `JUMP_CONTROL_PERSIST_MS`, so a
  * machine's polls reuse one login rather than each opening another: with the
  * event stream down, the poll alone was twenty logins a minute in the
  * machine's auth log. The first jump's `ssh` leaves a master in the
  * background (detached: not a child of anything here, so neither the bound nor
  * a stream's watcher stops it with the command), the rest attach to it, and it
- * goes after a minute unused. Every OpenSSH of the last decade has these
+ * goes after that long unused. Every OpenSSH of the last decade has these
  * options (`%C` since 6.7), so they are not probed for.
  *
  * The bound: `ssh` runs in the background with a watchdog beside it. At the
@@ -111,7 +113,7 @@ const JUMP_SCRIPT = [
   'hj_s=$1; hj_ssh=$2; shift 2',
   `hj_d="${CONTROL_DIR}"`,
   `if [ \${#hj_d} -le ${CONTROL_DIR_MAX} ] && mkdir -p "$hj_d" 2>/dev/null; then`,
-  '  set -- -o ControlMaster=auto -o "ControlPath=$hj_d/ssh-%C" -o ControlPersist=60 "$@"',
+  `  set -- -o ControlMaster=auto -o "ControlPath=$hj_d/ssh-%C" -o ControlPersist=${Math.round(JUMP_CONTROL_PERSIST_MS / 1000)} "$@"`,
   'fi',
   '[ "$hj_s" -gt 0 ] || exec "$hj_ssh" "$@"',
   '"$hj_ssh" "$@" </dev/null &',
@@ -141,7 +143,9 @@ function wrapJump(seconds: number | string, target: string, command: string): st
  * The host-side bound of a command whose own deadline is `timeoutMs`, and the
  * native deadline it is sent with. The bound is the command's own time plus the
  * jump's connect time; the native deadline stays `JUMP_DEADLINE_MARGIN_MS`
- * above it, so the host always stops its `ssh` first.
+ * above it, so the host always stops its `ssh` first. The native deadline
+ * starts on the phone, before the host is even dialled, so the margin also
+ * covers reaching the host (`JUMP_HOST_START_MS`).
  */
 export function jumpDeadlines(timeoutMs: number): { boundSeconds: number; nativeMs: number } {
   const boundSeconds = Math.max(1, Math.ceil((timeoutMs + JUMP_CONNECT_TIMEOUT_MS) / 1000));
