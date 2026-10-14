@@ -78,7 +78,7 @@ describe('grouped by tab', () => {
   // leading label carries it up to the card, so the row under it is not
   // `first` (its rail would overlap the label's, a darker step in dark mode).
   it("lists a workspace's rows tab by tab, the first labelled tab with no line", () => {
-    expect(shape(withTerminalRows(groupChats([{ ...w6(named), tabs: named }], '')))).toEqual([
+    expect(shape(withTerminalRows(groupChats([{ ...w6(named), tabs: named }], ''), true))).toEqual([
       'idle', 'w6',
       'tab w6:t1 "agents" first', 'pane w6:p1', 'pane w6:p5',
       'tab w6:t2', 'terminal w6:p4',
@@ -89,7 +89,7 @@ describe('grouped by tab', () => {
   // An unnamed first tab has nothing to draw: no line goes above the first tab.
   it('starts an unnamed first tab with no item', () => {
     const tabs = [tab('w6:t1', 1, '1'), tab('w6:t2', 2, 'server'), tab('w6:t3', 3, '')];
-    expect(shape(withTerminalRows(groupChats([{ ...w6(tabs), tabs }], '')))).toEqual([
+    expect(shape(withTerminalRows(groupChats([{ ...w6(tabs), tabs }], ''), true))).toEqual([
       'idle', 'w6', 'pane w6:p1 first', 'pane w6:p5',
       'tab w6:t2 "server"', 'terminal w6:p4',
       'tab w6:t3', 'pane w6:p2', 'terminal w6:p3 last',
@@ -100,7 +100,7 @@ describe('grouped by tab', () => {
   // unnamed tab after the first) is covered here and in TabDivider.test.
   // A herdr that sends no `tabs`: ordered by the number in the tab id, unlabelled.
   it('orders by the tab id without the snapshot\'s tabs', () => {
-    expect(shape(withTerminalRows(groupChats([w6([])], '')))).toEqual([
+    expect(shape(withTerminalRows(groupChats([w6([])], ''), true))).toEqual([
       'idle', 'w6', 'pane w6:p1 first', 'pane w6:p5',
       'tab w6:t2', 'terminal w6:p4',
       'tab w6:t3', 'pane w6:p2', 'terminal w6:p3 last',
@@ -110,7 +110,7 @@ describe('grouped by tab', () => {
   it('draws nothing for rows all in one tab', () => {
     const one = chat('w6', [inTab(paneSummary('w6:p1'), 'w6:t2'), inTab(paneSummary('w6:p2'), 'w6:t2')], [inTab(shell('w6:p3'), 'w6:t2')]);
     const tabs = [tab('w6:t1', 1, 'empty'), tab('w6:t2', 2, 'all')];
-    expect(shape(withTerminalRows(groupChats([{ ...one, tabs }], '')))).toEqual([
+    expect(shape(withTerminalRows(groupChats([{ ...one, tabs }], ''), true))).toEqual([
       'idle', 'w6', 'pane w6:p1 first', 'pane w6:p2', 'terminal w6:p3 last',
     ]);
   });
@@ -119,7 +119,7 @@ describe('grouped by tab', () => {
   it('draws nothing when a search leaves rows in one tab', () => {
     const searched = chat('w6', [inTab({ ...paneSummary('w6:p1'), agent: { ...agent('w6:p1'), agent: 'codex' } }, 'w6:t1'), inTab(paneSummary('w6:p2'), 'w6:t2')], [inTab(shell('w6:p3'), 'w6:t1')]);
     const tabs = [tab('w6:t1', 1, 'api'), tab('w6:t2', 2, 'web')];
-    expect(shape(withTerminalRows(groupChats([{ ...searched, tabs }], 'codex')))).toEqual([
+    expect(shape(withTerminalRows(groupChats([{ ...searched, tabs }], 'codex'), true))).toEqual([
       'idle', 'w6', 'pane w6:p1 first', 'terminal w6:p3 last',
     ]);
   });
