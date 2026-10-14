@@ -1,0 +1,35 @@
+# The private key field of the host editor stays reachable with the keyboard
+# up. The form claimed to inset itself for the keyboard and never did, so a
+# form that fit the sheet had nothing to scroll and the key sat under the keys.
+# Maestro does not know what the keyboard covers, so open the screenshot: the
+# key field must sit above the keyboard with its first line readable.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: server-switcher
+- extendedWaitUntil:
+    visible:
+      id: header-action
+    timeout: 10000
+- tapOn:
+    id: header-action
+- extendedWaitUntil:
+    visible:
+      id: field-name
+    timeout: 10000
+- tapOn: Private key
+- scrollUntilVisible:
+    element:
+      id: field-secret
+    direction: DOWN
+- tapOn:
+    id: field-secret
+- inputText: "-----BEGIN OPENSSH PRIVATE KEY-----"
+- waitForAnimationToEnd
+- assertVisible:
+    id: field-secret
+- assertVisible: .*BEGIN OPENSSH PRIVATE KEY.*
+- takeScreenshot: host-editor-key-${APPEARANCE}
+- tapOn:
+    id: header-close

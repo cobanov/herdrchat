@@ -15,6 +15,7 @@ let mockSessionMeta = { model: 'claude-opus-4-6', effort: null as string | null 
 jest.mock('@shopify/flash-list', () => ({ FlashList: (props: Parameters<typeof mockList>[0]) => mockList(props) }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
+jest.mock('react-native-keyboard-controller', () => jest.requireActual('react-native-keyboard-controller/jest'));
 jest.mock('expo-router', () => ({ useRouter: () => ({}), useFocusEffect: jest.fn() }));
 jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
 jest.mock('react-native-safe-area-context', () => ({
@@ -37,9 +38,10 @@ jest.mock('@/state/connections', () => ({
 let mockWorkspaceLabel: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
+let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
-    agents: [],
+    agents: mockAgents,
     workspaceLabel: mockWorkspaceLabel,
     offline: mockOffline,
     paused: mockPaused,
@@ -118,4 +120,50 @@ it.each([
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(new RegExp(`· ${word}$`));
   mockOffline = false;
   mockPaused = false;
+});
+
+// A workspace with several agents gives each its own chat. They share the
+// workspace's title, so the header has to say which agent this one is.
+it('names the agent of a pane chat in its header, and keeps its draft apart from the workspace chat', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'api';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: null };
+  mockAgents = [{ agent: 'codex', paneId: 'w6:p2', agentSession: null }];
+  const pane = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" />);
+  expect(pane.getByTestId('thread-title')).toHaveTextContent('api');
+  expect(pane.getByTestId('thread-meta')).toHaveTextContent(/^Codex · /);
+  await fireEvent.changeText(pane.getByTestId('composer-input'), 'only for the second agent');
+  await pane.unmount();
+  const workspace = await render(<ThreadScreen workspaceId="w6" />);
+  expect(workspace.getByTestId('thread-meta')).not.toHaveTextContent(/^Codex/);
+  expect(workspace.getByTestId('composer-input')).toHaveProp('value', '');
+  await workspace.unmount();
+  const again = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" />);
+  expect(again.getByTestId('composer-input')).toHaveProp('value', 'only for the second agent');
+  mockAgents = [];
+  mockWorkspaceLabel = null;
+});
+
+// The list had no keyboardDismissMode, so pulling the conversation down left the
+// keyboard up. And the controls' gap came from React Native's keyboard events,
+// which say nothing during that drag.
+it('lets the conversation pull the keyboard down, and keeps clearance for the controls where they sit', async () => {
+  mockLoading = false;
+  const keyboard = jest.requireMock<typeof import('react-native-keyboard-controller')>('react-native-keyboard-controller');
+  const screen = await render(<ThreadScreen workspaceId="w1" title="Chat" />);
+  const lastList = () => mockList.mock.lastCall?.[0] as unknown as Record<string, unknown> & { ListFooterComponent: ReactElement<{ style: { paddingBottom: number } }> };
+  expect(lastList().keyboardDismissMode).toBe('interactive');
+  // At rest the controls clear the 34pt home indicator, and the footer clears them.
+  expect(screen.getByTestId('thread-controls')).toHaveStyle({ paddingBottom: 34 });
+  await fireEvent(screen.getByTestId('thread-controls'), 'layout', { nativeEvent: { layout: { height: 100 } } });
+  expect(lastList().ListFooterComponent.props.style.paddingBottom).toBe(100 + 16);
+  // With a keyboard settled, the controls sit 22pt lower (34 less the 12pt
+  // gap they keep above the keys), so the footer reserves that much less.
+  jest.mocked(keyboard.useKeyboardState).mockImplementation(((select: (state: { height: number }) => unknown) => select({ height: 336 })) as never);
+  await screen.rerender(<ThreadScreen workspaceId="w1" title="Chat" />);
+  expect(lastList().ListFooterComponent.props.style.paddingBottom).toBe(100 - 22 + 16);
+  // An iPad's 55pt input-assistant bar counts as keyboard just the same.
+  jest.mocked(keyboard.useKeyboardState).mockImplementation(((select: (state: { height: number }) => unknown) => select({ height: 55 })) as never);
+  await screen.rerender(<ThreadScreen workspaceId="w1" title="Chat" />);
+  expect(lastList().ListFooterComponent.props.style.paddingBottom).toBe(100 - 22 + 16);
 });

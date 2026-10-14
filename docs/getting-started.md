@@ -87,6 +87,8 @@ Windows-native paths are not translated.
 3. Open **Chats** and choose a workspace. No session ID means no safe history
    lookup: the app will explain the missing integration instead of guessing
    which conversation belongs to you.
+   A workspace running more than one agent lists each one under it: tap an
+   agent to talk to it alone, or the workspace to read them all together.
 
 ## Build the iOS app
 
@@ -203,5 +205,15 @@ files.
 - Notifications need the relay's APNs key in place and have not yet been
   confirmed on a physical iPhone. Recovery from a real Tailscale interruption
   also still needs a device. Simulator checks are not proof of either.
+- Windows hosts are untested. With Windows OpenSSH, set Git for Windows bash
+  as `DefaultShell` (with `DefaultShellCommandOption` set to `-c`): PowerShell
+  and cmd cannot parse the commands the app runs. Windows Python has no Unix
+  sockets, so the python3 bridge cannot work there, and `herdr
+  remote-api-bridge` returns nothing on Windows herdr 0.9.3
+  ([herdrdev/herdr#5128](https://github.com/herdrdev/herdr/issues/5128)).
+  Until the connection test skips both, a `python3` on the PATH (including the
+  Microsoft Store alias) makes it fail; the workaround that gets the app onto
+  its polling fallback, without live events, is in
+  [#158](https://github.com/cobanov/herdrchat/issues/158).
 - Reconnect banners and waiting/live-preview presentation are being refined.
   Report problems in [issues](https://github.com/cobanov/herdrchat/issues).

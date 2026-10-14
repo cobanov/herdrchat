@@ -7,6 +7,7 @@ appId: dev.herdr.HerdrChat
     element:
       id: chat-row-w4
     direction: DOWN
+    centerElement: true
 - assertVisible: .*OMP.*
 - longPressOn:
     id: chat-row-w4
