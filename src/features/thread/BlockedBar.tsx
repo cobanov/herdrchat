@@ -45,6 +45,9 @@ export function BlockedBar({
   const busy = pending !== null;
   // The label's first line, so a checkbox centres on it rather than on the top edge.
   const labelLine = useScaledLine(typography.subhead.lineHeight);
+  // The question's, for the same reason: centred on the whole block, the mark
+  // drifted down beside a three-line question.
+  const questionLine = useScaledLine(typography.footnote.lineHeight);
 
   const press = (keys: readonly string[]) => {
     haptics.selection();
@@ -60,13 +63,15 @@ export function BlockedBar({
         padding: spacing.md,
         gap: spacing.sm,
       }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        <Icon
-          name="exclamationmark.bubble.fill"
-          size={14}
-          tintColor={colors.attention}
-          fallback={<Text variant="footnote" color="attention">!</Text>}
-        />
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+        <View style={{ height: questionLine, justifyContent: 'center' }}>
+          <Icon
+            name="exclamationmark.bubble.fill"
+            size={14}
+            tintColor={colors.attention}
+            fallback={<Text variant="footnote" color="attention">!</Text>}
+          />
+        </View>
         <Text variant="footnote" color="attention" weight="600" style={{ flex: 1 }}>
           {prompt?.question ?? 'Agent is waiting'}
         </Text>

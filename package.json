@@ -1,6 +1,6 @@
 {
   "name": "herdrchat",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "main": "expo-router/entry",
   "private": true,
   "workspaces": [
@@ -26,6 +26,7 @@
     "expo-constants": "~57.0.8",
     "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.3",
     "expo-haptics": "~57.0.3",
     "expo-image-manipulator": "~57.0.20",
@@ -43,6 +44,7 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-keyboard-controller": "1.21.9",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",

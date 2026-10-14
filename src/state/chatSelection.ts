@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 
-interface ChatSelection {
+export interface ChatSelection {
   connectionId: string;
   workspaceId: string;
   title: string;
+  /** Set when one agent of a workspace is open rather than the workspace chat. */
+  paneId?: string;
 }
 
 // Native tab presses reset route params. Keep the tablet selection outside the
