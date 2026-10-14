@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { HerdrError } from '@/lib/herdr/protocol';
-import type { HostMachine, MachineList } from '@/lib/herdr/machines';
+import { parseMachineList, type HostMachine, type MachineList } from '@/lib/herdr/machines';
 import { hostMachinesKey } from '../db';
 import {
   enabledMachines,
@@ -39,7 +39,7 @@ function fakeDb(initial: Record<string, string> = {}) {
 }
 
 const answering = (machines: HostMachine[]) => ({
-  machines: jest.fn(async (): Promise<MachineList> => ({ machines, skipped: [] })),
+  machines: jest.fn(async (): Promise<MachineList> => ({ machines, skipped: [], unreadIds: [], complete: true })),
 });
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -99,7 +99,7 @@ describe('refreshHostMachines', () => {
     const slow = { machines: () => new Promise<MachineList>((resolve) => { answer = resolve; }) };
     const asked = refreshHostMachines('h1', slow);
     useHostMachines.getState().clear('h1');
-    answer({ machines: [klaw], skipped: [] });
+    answer({ machines: [klaw], skipped: [], unreadIds: [], complete: true });
     await asked;
     expect(useHostMachines.getState().byHost.h1).toBeUndefined();
   });
@@ -206,5 +206,19 @@ describe('a machine the host stops listing', () => {
     await flush();
     stop();
     expect(deletedUnder()).toEqual([]);
+  });
+
+  it('forgets nothing of a machine the host still lists but whose row no longer reads', async () => {
+    const { db, deletedUnder } = recordingDb();
+    useHostMachines.getState().set('h1', [klaw, nuku]);
+    const stop = mirrorHostMachines(db);
+    const reshaped = { machines: jest.fn(async () => parseMachineList(JSON.stringify([klaw, { ...nuku, enabled: 'no' }]))) };
+    expect(await refreshHostMachines('h1', reshaped)).toBe(true);
+    const blank = { machines: jest.fn(async () => parseMachineList('')) };
+    expect(await refreshHostMachines('h1', blank)).toBe(true);
+    await flush();
+    stop();
+    expect(deletedUnder()).toEqual([]);
+    expect(useHostMachines.getState().byHost.h1).toEqual([klaw, nuku]);
   });
 });
