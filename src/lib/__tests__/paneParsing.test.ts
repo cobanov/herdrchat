@@ -216,10 +216,11 @@ describe('captured menus', () => {
  * with the command, its description and Claude's warning cut off by the blank
  * line above the question, so nobody could tell what they were approving.
  *
- * `permission-bash-tip-120` and `permission-heredoc-120` are captured from
- * Claude Code 2.1.299; `permission-bash-120`, `permission-bash-deadline-80`
- * and `permission-write-120` are written from those captures and the shapes
- * the maintainer captured on #170, and each file's `#|` header says how.
+ * `permission-bash-tip-120`, `permission-bash-tip-80`, `permission-heredoc-120`
+ * and `permission-write-120` are captured from Claude Code 2.1.299;
+ * `permission-bash-120` and `permission-bash-deadline-80` are written from
+ * those captures and the shapes the maintainer captured on #170 (the auto-deny
+ * line never appeared in a captured run), and each file's `#|` header says how.
  * `permission-bash` is a real 2.1.280 capture.
  */
 describe('prompt details', () => {
@@ -243,7 +244,21 @@ describe('prompt details', () => {
     expect(labels('permission-bash-tip-120')).toEqual(['1. Yes', '2. Yes, and switch to auto mode · auto mode handles these prompts for you', '3. No']);
   });
 
-  // At 80 columns the Tip, the command and the auto-deny line all wrap.
+  // At 80 columns the Tip and the command wrap, as Claude really draws them.
+  it('joins what wrapped in a captured 80-column prompt', () => {
+    const prompt = parseBlockedPrompt(screen('permission-bash-tip-80'));
+    expect(prompt.question).toBe('Do you want to proceed?');
+    expect(prompt.details).toEqual({
+      title: 'Bash command',
+      summary: 'Create cap directory, write and remove two temp files, print epoch time',
+      body: [COMMAND],
+      notes: [NOTE],
+      deadline: null,
+    });
+    expect(labels('permission-bash-tip-80')).toEqual(['1. Yes', '2. Yes, and switch to auto mode · auto mode handles these prompts for you', '3. No']);
+  });
+
+  // The auto-deny line wraps too, and its deadline goes in the notes.
   it('joins what wrapped at 80 columns, and keeps the deadline in the notes', () => {
     const prompt = parseBlockedPrompt(screen('permission-bash-deadline-80'));
     expect(prompt.details).toEqual({
@@ -295,11 +310,16 @@ describe('prompt details', () => {
     expect(prompt.question).toBe('Do you want to create new.txt?');
     expect(prompt.details).toEqual({
       title: 'Create file',
-      summary: 'cap/new.txt',
+      summary: 'new.txt',
       body: ['1 alpha', '2 beta', '3 gamma'],
       notes: [],
       deadline: null,
     });
+    expect(labels('permission-write-120')).toEqual([
+      '1. Yes',
+      '2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
+      '3. No',
+    ]);
   });
 
   // The description sits under the command there; copying the body must give

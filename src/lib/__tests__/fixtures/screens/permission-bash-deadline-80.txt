@@ -1,6 +1,6 @@
-#| Hand-written for Claude Code 2.1.299 at 80 columns, 2026-10-14, from the 120-column capture and the maintainer's
-#| description on #170: the Tip and the auto-deny line wrap at the pane's width, the command wraps inside its
-#| margin. The deadline did not appear in a captured run, so this case is not a capture.
+#| Hand-written for Claude Code 2.1.299 at 80 columns, 2026-10-14, from the 80-column capture (permission-bash-tip-80:
+#| the Tip wraps at the pane's width, the command inside its margin) and the maintainer's description on #170 of the
+#| auto-deny line. Not a capture: that line never appeared in a captured run, even after 95 s at the prompt.
 ⏺ Bash(cd /home/me/work/cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm…)
   ⎿  Waiting…
 
