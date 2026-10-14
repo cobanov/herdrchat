@@ -552,13 +552,14 @@ describe('the slash-command scan, riding on the list poll', () => {
   it('scans the host-wide part on the first poll, then at most every 10 minutes', async () => {
     const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
     expect(mockScanSlash).toHaveBeenCalledTimes(1);
-    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: [] });
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/test'] });
     // Polls every 3 s up to 597 s: none of them is due.
     await act(async () => { await jest.advanceTimersByTimeAsync(597_100); });
     expect(mockScanSlash).toHaveBeenCalledTimes(1);
-    // The poll at 600 s is.
+    // The poll at 600 s is, and reads the open chat's folder again with it.
     await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
     expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/test'] });
     await unmount();
   });
 
@@ -591,7 +592,25 @@ describe('the slash-command scan, riding on the list poll', () => {
   it('scans a machine\'s list under the machine\'s own id', async () => {
     const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
     expect(mockScanSlash).toHaveBeenCalledTimes(1);
-    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: [] });
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: ['/test'] });
+    await unmount();
+  });
+
+  // The review of #160: the 10-minute scan sent `cwds: []`, so a folder's
+  // commands were read once, on a thread's first open, and never again.
+  it('re-reads the folders of the open chats\' Claude agents, each once', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(decodeSnapshot({
+      version: '0.9.0',
+      workspaces: [{ workspace_id: 'a', label: 'A', number: 1, agent_status: 'idle' }, { workspace_id: 'b', label: 'B', number: 2, agent_status: 'idle' }],
+      agents: [
+        { workspace_id: 'a', pane_id: 'a1', agent: 'claude', agent_status: 'idle', cwd: '/srv/app' },
+        { workspace_id: 'a', pane_id: 'a2', agent: 'claude', agent_status: 'idle', cwd: '/srv/app' },
+        { workspace_id: 'b', pane_id: 'b1', agent: 'codex', agent_status: 'idle', cwd: '/srv/codex-only' },
+        { workspace_id: 'b', pane_id: 'b2', agent: 'claude', agent_status: 'idle', cwd: '/srv/notes' },
+      ],
+    }));
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/srv/app', '/srv/notes'] });
     await unmount();
   });
 

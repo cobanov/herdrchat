@@ -17,6 +17,7 @@ import {
   SLASH_END,
   SLASH_FILE,
   SLASH_FILE_END,
+  SLASH_FILES_CUT,
   SLASH_NO_BINARY,
   SLASH_PLUGIN,
 } from './discover';
@@ -490,8 +491,13 @@ export interface ScanResult {
   user: CatalogueCommand[] | null;
   /** Installed plugins' commands and skills; null when not asked. */
   plugins: CatalogueCommand[] | null;
-  /** Each folder scanned, with its commands and skills (an empty list for a folder with none). */
+  /**
+   * Each folder scanned, with its commands and skills (an empty list for a
+   * folder with none). A folder whose `find` was cut is left out: not read.
+   */
   projects: Record<string, CatalogueCommand[]>;
+  /** The grep over `binary` failed or hit its deadline (`SLASH_BUILTINS_FAILED`). */
+  grepFailed?: boolean;
 }
 
 /**
@@ -517,6 +523,8 @@ export function parseScanOutput(
     projects: Object.fromEntries(request.cwds.map((cwd) => [cwd, [] as CatalogueCommand[]])),
   };
   const pluginNames = new Map<string, string>();
+  /** `<source>\t<owner>` of each folder whose `find` hit the file phase's deadline. */
+  const cut = new Set<string>();
 
   for (let i = begin + 1; i < end; i += 1) {
     const line = lines[i]!;
@@ -534,6 +542,9 @@ export function parseScanOutput(
       // The held built-ins stay, and so does the held binary, so the next due
       // scan reads this one again.
       result.builtins = null;
+      result.grepFailed = true;
+    } else if (tag === SLASH_FILES_CUT && fields.length >= 3) {
+      cut.add(`${fields[1]!}\t${fields.slice(2).join('\t')}`);
     } else if (tag === SLASH_BUILTINS) {
       const close = lines.indexOf(SLASH_BUILTINS_END, i + 1);
       // Cut before its end: the built-ins did not arrive whole; keep the ones held.
@@ -564,6 +575,14 @@ export function parseScanOutput(
       else if (record.source === 'plugin') result.plugins?.push(command);
       else (result.projects[record.owner] ??= []).push(command);
     }
+  }
+  // A source the deadline cut sent only part of what it has: read as not
+  // read, so the phone keeps what it held for it and the next scan tries again.
+  for (const entry of cut) {
+    const [source, owner = ''] = entry.split('\t');
+    if (source === 'user') result.user = null;
+    else if (source === 'plugin') result.plugins = null;
+    else if (source === 'project') delete result.projects[owner];
   }
   return result;
 }

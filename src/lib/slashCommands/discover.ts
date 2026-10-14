@@ -12,7 +12,11 @@
  *   `~/.claude/plugins` itself: each installed plugin is reached through
  *   `installed_plugins.json`, and only its `commands/` and `skills/` are read.
  * - At most `MAX_FILES_PER_DIR` files per directory, `EXCERPT_BYTES` of each,
- *   and only up to the end of its frontmatter.
+ *   and only up to the end of its frontmatter. Every `find` runs under
+ *   `hs_bounded` with what is left of one deadline for the whole file phase
+ *   (`SLASH_SCAN_FILES_TIMEOUT_S`), since `-L` follows a symlink into any
+ *   tree; a folder it stopped or skipped is reported (`SLASH_FILES_CUT`), so
+ *   a partial list is never taken for a whole one.
  * - The Claude binary is grepped only when its path, size or mtime changed
  *   since the last read (`knownBinary`), so the grep over a large bundle runs
  *   once per Claude Code version. Each grep has a deadline the host enforces
@@ -30,7 +34,7 @@
  * unmatched one aborts zsh), no unquoted expansions that rely on splitting.
  */
 import { shellQuote, withPath } from '../herdr/shell';
-import { SLASH_SCAN_GREP_TIMEOUT_S } from '../herdr/timeouts';
+import { SLASH_SCAN_FILES_TIMEOUT_S, SLASH_SCAN_GREP_TIMEOUT_S } from '../herdr/timeouts';
 
 export const SLASH_BEGIN = 'HERDRCHAT_SLASH_BEGIN';
 export const SLASH_END = 'HERDRCHAT_SLASH_END';
@@ -49,6 +53,12 @@ export const SLASH_BUILTINS_END = 'HERDRCHAT_SLASH_BUILTINS_END';
  * next due scan tries again.
  */
 export const SLASH_BUILTINS_FAILED = 'HERDRCHAT_SLASH_BUILTINS_FAILED';
+/**
+ * `\t<source>\t<owner>`: a folder's `find` was stopped at the files' deadline
+ * (or skipped, the deadline already past), so what that source sent is not
+ * all it has. The phone keeps what it held for it (see `parseScanOutput`).
+ */
+export const SLASH_FILES_CUT = 'HERDRCHAT_SLASH_FILES_CUT';
 /** `\t<name>\t<installPath>`: an installed plugin. The name may be empty. */
 export const SLASH_PLUGIN = 'HERDRCHAT_SLASH_PLUGIN';
 /** `\t<kind>\t<source>\t<owner>\t<name>\t<path>`, then the excerpt, then `SLASH_FILE_END`. */
@@ -61,6 +71,8 @@ export const EXCERPT_BYTES = 4096;
 export const EXCERPT_LINES = 80;
 /** Files read from one commands or skills directory. */
 export const MAX_FILES_PER_DIR = 200;
+/** Project folders the periodic host-wide scan re-reads with it (`projectFoldersToScan`). */
+export const MAX_PROJECTS_PER_SCAN = 8;
 /** Plugins read from `installed_plugins.json`. */
 export const MAX_PLUGINS = 50;
 /** Bytes of `installed_plugins.json` and of a plugin's `plugin.json` that are looked at. */
@@ -120,6 +132,8 @@ export interface ScanRequest {
   knownBinary: string | null;
   /** The greps' deadline in seconds; `SLASH_SCAN_GREP_TIMEOUT_S` unless a test needs a short one. */
   grepDeadlineS?: number;
+  /** The file phase's deadline in seconds; `SLASH_SCAN_FILES_TIMEOUT_S` unless a test needs a short one. */
+  filesDeadlineS?: number;
 }
 
 /** How a binary is named in `knownBinary`: what the script compares against. */
@@ -155,17 +169,38 @@ const FUNCTIONS = [
   `  head -c ${EXCERPT_BYTES} "$5" 2>/dev/null | sed -n '1,/^---[[:space:]]*$/p' | head -n ${EXCERPT_LINES}`,
   `  printf '\\n${SLASH_FILE_END}\\n'`,
   '}',
+  // `hs_find <source> <owner> <find args…>`: the paths into `$hs_ft`, under
+  // what is left of the file phase's deadline (`hs_end`). Fails, and reports
+  // the source cut, when the deadline is past or stopped the find; `find`
+  // itself answers 0, or 1 for an unreadable entry, which is still a list.
+  // A clock that does not read leaves nothing to measure against: every
+  // folder then reads as cut, never as empty.
+  'hs_now() {',
+  '  hs_t0=$(date +%s 2>/dev/null) || hs_t0=',
+  "  case \"$hs_t0\" in ''|*[!0-9]*) echo 0 ;; *) echo \"$hs_t0\" ;; esac",
+  '}',
+  'hs_find() {',
+  '  hs_src=$1; hs_own=$2; shift 2',
+  '  hs_t1=$(hs_now)',
+  '  hs_left=$(( hs_end - hs_t1 ))',
+  `  if [ -z "$hs_ft" ] || [ "$hs_t1" -eq 0 ] || [ "$hs_left" -lt 1 ]; then printf '${SLASH_FILES_CUT}\\t%s\\t%s\\n' "$hs_src" "$hs_own"; return 1; fi`,
+  '  hs_bounded "$hs_left" find "$@" >"$hs_ft" 2>/dev/null',
+  `  if [ $? -gt 1 ]; then printf '${SLASH_FILES_CUT}\\t%s\\t%s\\n' "$hs_src" "$hs_own"; return 1; fi`,
+  '  return 0',
+  '}',
   // `<dir>/**/*.md`, three levels deep: `foo/bar.md` is `/foo:bar`.
   'hs_commands() {',
   '  [ -d "$1" ] || return 0',
-  `  find -L "$1" -maxdepth 3 -type f -name '*.md' 2>/dev/null | head -n ${MAX_FILES_PER_DIR} | while IFS= read -r hs_f; do`,
+  `  hs_find "$2" "$3" -L "$1" -maxdepth 3 -type f -name '*.md' || return 0`,
+  `  head -n ${MAX_FILES_PER_DIR} "$hs_ft" | while IFS= read -r hs_f; do`,
   '    hs_emit command "$2" "$3" "${hs_f#"$1"/}" "$hs_f"',
   '  done',
   '}',
   // `<dir>/*/SKILL.md`: the skill is its directory's name.
   'hs_skills() {',
   '  [ -d "$1" ] || return 0',
-  `  find -L "$1" -maxdepth 2 -type f -name SKILL.md 2>/dev/null | head -n ${MAX_FILES_PER_DIR} | while IFS= read -r hs_f; do`,
+  '  hs_find "$2" "$3" -L "$1" -maxdepth 2 -type f -name SKILL.md || return 0',
+  `  head -n ${MAX_FILES_PER_DIR} "$hs_ft" | while IFS= read -r hs_f; do`,
   '    hs_d=${hs_f%/SKILL.md}',
   '    [ "$hs_d" = "$1" ] && continue',
   '    hs_emit skill "$2" "$3" "${hs_d##*/}" "$hs_f"',
@@ -232,19 +267,26 @@ const FUNCTIONS = [
 /** The script itself, before it is wrapped for `sh -c`. Exposed for tests. */
 export function discoveryScript(request: ScanRequest): string {
   const calls: string[] = [];
+  const filesDeadline = Math.max(1, Math.round(request.filesDeadlineS ?? SLASH_SCAN_FILES_TIMEOUT_S));
   if (request.host) {
     const deadline = Math.max(1, Math.round(request.grepDeadlineS ?? SLASH_SCAN_GREP_TIMEOUT_S));
-    calls.push(`hs_builtins ${shellQuote(request.knownBinary ?? '')} ${deadline}`, 'hs_user', 'hs_plugins');
+    calls.push(`hs_builtins ${shellQuote(request.knownBinary ?? '')} ${deadline}`);
   }
+  // The file phase's one deadline starts after the greps, which have their own.
+  calls.push('hs_end=$(hs_now)', `hs_end=$(( hs_end + ${filesDeadline} ))`);
+  if (request.host) calls.push('hs_user', 'hs_plugins');
   for (const cwd of request.cwds) calls.push(`hs_project ${shellQuote(cwd)}`);
   return [
     // Bytes, not characters: the binary is not text, and `cut -c` must count bytes.
     'LC_ALL=C; export LC_ALL',
     'hs_c="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"',
+    // Where each `find` writes its list; none, and every folder reads as cut.
+    'hs_ft=$(mktemp 2>/dev/null) || hs_ft=',
     ...FUNCTIONS,
     `{ echo ${SLASH_BEGIN}`,
     ...calls.map((call) => `  ${call}`),
     `} | head -c ${MAX_OUTPUT_BYTES}`,
+    '[ -n "$hs_ft" ] && rm -f "$hs_ft"',
     // Outside the cut, so a cut answer still ends where the parser expects.
     `printf '\\n${SLASH_END}\\n'`,
   ].join('\n');

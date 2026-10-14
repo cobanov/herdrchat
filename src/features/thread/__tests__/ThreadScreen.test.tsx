@@ -362,7 +362,7 @@ describe('the / palette', () => {
   // Enter runs these in the terminal: an optional argument, and a computed hint.
   it.each([
     ['/mod', 'model'],
-    ['/compa', 'compact'],
+    ['/conte', 'context'],
     ['/effo', 'effort'],
   ])('sends a command whose argument is optional the moment it is picked (%s)', async (typed, name) => {
     mockAgents = [{ agent: 'claude', paneId: 'w26:p1', agentSession: null, focused: true, cwd: '/p' }];
@@ -373,13 +373,19 @@ describe('the / palette', () => {
     await screen.unmount();
   });
 
-  it('only fills a command that would end the agent, so a mis-tap never sends it', async () => {
+  // The review of #160 added the ones that commit, publish or rewrite.
+  it.each([
+    ['/exi', 'exit'],
+    ['/compa', 'compact'],
+    ['/commi', 'commit'],
+    ['/ini', 'init'],
+  ])('only fills a command that would end the agent or change things, so a mis-tap never sends it (%s)', async (typed, name) => {
     mockAgents = [{ agent: 'claude', paneId: 'w27:p1', agentSession: null, focused: true, cwd: '/p' }];
     const screen = await render(<ThreadScreen workspaceId="w27" />);
-    await fireEvent.changeText(screen.getByTestId('composer-input'), '/exi');
-    await fireEvent.press(screen.getByTestId('command-suggestion-exit'));
+    await fireEvent.changeText(screen.getByTestId('composer-input'), typed);
+    await fireEvent.press(screen.getByTestId(`command-suggestion-${name}`));
     expect(mockSend).not.toHaveBeenCalled();
-    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/exit');
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', `/${name}`);
     expect(screen.queryByTestId('composer-hint')).toBeNull();
     await screen.unmount();
   });

@@ -6,6 +6,7 @@ import {
   applyScan,
   deserializeCatalogueCache,
   emptyCatalogueCache,
+  knownBinaryFor,
   scanSlashCommands,
   serializeCatalogueCache,
   type SlashCatalogueCache,
@@ -170,8 +171,9 @@ async function drain(connectionId: string): Promise<void> {
       const result = await scanSlashCommands(entry.transport, {
         host: entry.host,
         cwds: [...entry.cwds],
-        // The binary already read, so an unchanged one is not grepped again.
-        knownBinary: held?.binary ?? null,
+        // The binary already read, so an unchanged one is not grepped again;
+        // or one whose grep just failed, so it is not retried every scan.
+        knownBinary: knownBinaryFor(held ?? null, Date.now()),
       });
       if (result !== null && generationOf(connectionId) === generation) {
         const current = useSlashCatalogues.getState().byConnection[connectionId] ?? emptyCatalogueCache();

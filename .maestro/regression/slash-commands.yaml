@@ -3,8 +3,9 @@
 # "binary", a user command with a hint (/review [pr]), a skill
 # (/release-notes), a project command in the notes folder (/notes:summarise)
 # and a plugin's (/demo-tools:lint). A pick does what Enter does in the
-# terminal: /compact and /review can do without their argument and run at
-# once; /add-dir cannot, and waits for its path with its hint showing.
+# terminal: /review can do without its argument and runs at once; /add-dir
+# cannot, and waits for its path with its hint showing. /compact rewrites the
+# conversation, so a pick only fills it, and the send is the person's own.
 #
 # Rows are `command-suggestion-<name>` with `:` as `-`; section headers are
 # `command-section-<builtin|skills|commands|plugins>`, shown for a bare `/`
@@ -94,8 +95,8 @@ appId: dev.herdr.HerdrChat
     visible: '.*/add-dir did nothing here.*'
     timeout: 10000
 
-# /compact's argument says it is optional: picked from a fresh `/`, it runs at
-# once and its note lands in the thread.
+# /compact rewrites the conversation: picked from a fresh `/`, it is filled in
+# with no hint and waits; the send is a deliberate second tap.
 - tapOn:
     id: composer-input
 - inputText: /
@@ -106,6 +107,12 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: command-suggestion-compact
     retryTapIfNoChange: true
+- assertVisible:
+    id: composer-input
+    text: '/compact'
+- assertNotVisible:
+    id: composer-hint
+- runFlow: _send.yaml
 - extendedWaitUntil:
     visible: '.*/compact did nothing here.*'
     timeout: 10000

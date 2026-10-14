@@ -12,9 +12,12 @@
  * panel, as Enter does in the terminal).
  *
  * One exception the terminal does not need: a command that ends the session
- * or the agent (`DESTRUCTIVE_COMMANDS`) is filled, never sent on a pick. In a
- * terminal it takes deliberate arrow keys and Enter; on a phone it is one tap
- * on a short scrolling list, and a mis-tap would end the chat.
+ * or the agent (`DESTRUCTIVE_COMMANDS`), or one that changes something beyond
+ * the chat (`SIDE_EFFECT_COMMANDS`, or a description that says it commits,
+ * pushes, resets, deletes or overwrites: `describesSideEffect`), is filled,
+ * never sent on a pick. In a terminal it takes deliberate arrow keys and
+ * Enter; on a phone it is one tap on a short scrolling list, and a mis-tap
+ * would end the chat, push a branch or rewrite a file.
  */
 import type { CatalogueCommand } from './types';
 
@@ -44,15 +47,46 @@ export const DESTRUCTIVE_COMMANDS: ReadonlySet<string> = new Set([
   'archive',
 ]);
 
+/**
+ * Commands that write or publish, or rewrite the conversation, by name:
+ * Claude's `/commit`, `/pr`, `/commit-push-pr` and `/compact`, and `/init`
+ * (Claude's writes CLAUDE.md, Codex's AGENTS.md), and Codex's `/new`, which
+ * starts over. The rule below catches the ones not named here.
+ */
+export const SIDE_EFFECT_COMMANDS: ReadonlySet<string> = new Set([
+  'commit',
+  'pr',
+  'commit-push-pr',
+  'compact',
+  'init',
+  'new',
+]);
+
+/**
+ * Whether a description says the command changes something beyond the chat:
+ * commits, pushes, resets, deletes or overwrites. A false positive only costs
+ * a second tap; a false negative is a mis-tap that pushes.
+ */
+export function describesSideEffect(description: string | null | undefined): boolean {
+  return /\b(commit|commits|push|pushes|reset|resets|delete|deletes|overwrite|overwrites)\b/i.test(description ?? '');
+}
+
+/** Whether a pick fills the command in for a deliberate send, rather than sending it. */
+export function fillsOnPick(command: { name: string; description?: string | null }): boolean {
+  return DESTRUCTIVE_COMMANDS.has(command.name) || SIDE_EFFECT_COMMANDS.has(command.name) || describesSideEffect(command.description);
+}
+
 /** Whether a hint names an argument the command cannot run without. */
 export function hintRequiresArgument(hint: string | null): boolean {
   const text = hint?.trim() ?? '';
   return text.startsWith('<') && !/\boptional\b/i.test(text);
 }
 
-export function pickSlashCommand(command: Pick<CatalogueCommand, 'name' | 'argumentHint'>): SlashPick {
+export function pickSlashCommand(
+  command: Pick<CatalogueCommand, 'name' | 'argumentHint'> & { description?: string | null }
+): SlashPick {
   const hint = command.argumentHint?.trim() ?? '';
   if (hintRequiresArgument(hint)) return { action: 'fill', text: `/${command.name} `, placeholder: hint };
-  if (DESTRUCTIVE_COMMANDS.has(command.name)) return { action: 'fill', text: `/${command.name}`, placeholder: '' };
+  if (fillsOnPick(command)) return { action: 'fill', text: `/${command.name}`, placeholder: '' };
   return { action: 'send', text: `/${command.name}` };
 }

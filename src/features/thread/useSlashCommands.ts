@@ -49,8 +49,9 @@ export function useSlashCommands(
  * is waiting on, and the client runs one command at a time, so a scan sent
  * with it would hold the transcript up. The reverted b704ec8 scanned on every
  * open, ahead of the read. A folder already scanned (an empty list counts) is
- * never scanned from here again; the chats list's poll keeps the host-wide
- * part fresh. A failed scan is not retried until the thread opens again.
+ * never scanned from here again; the chats list's poll keeps it fresh after
+ * that, with the host-wide part (`projectFoldersToScan`). A failed scan is not
+ * retried from here until the thread opens again.
  */
 export function useProjectSlashScan(
   connectionId: string | null,

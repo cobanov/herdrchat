@@ -8,7 +8,7 @@ import { useHostVersion } from '@/state/hostVersion';
 import { checkHostTheme } from '@/state/hostTheme';
 import { refreshHostMachines } from '@/state/hostMachines';
 import { scanSlashCatalogue } from '@/state/slashCommands';
-import { slashScanDue } from '@/lib/slashCommands';
+import { projectFoldersToScan, slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
 import { machineListDue, splitMachineConnectionId } from '@/lib/herdr/machines';
@@ -286,7 +286,9 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // that queued in front of everything else).
       if (connectionId !== null && slashScanDue(lastSlashScan.current, now)) {
         lastSlashScan.current = now;
-        void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: [] });
+        // The open chats' folders with it, so a project's commands are read
+        // again on the cadence, not only on a thread's first open.
+        void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: projectFoldersToScan(snapshot.agents) });
       }
       return false;
     } catch (thrown) {

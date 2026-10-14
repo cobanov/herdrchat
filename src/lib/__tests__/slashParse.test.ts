@@ -11,6 +11,7 @@ import {
   SLASH_END,
   SLASH_FILE,
   SLASH_FILE_END,
+  SLASH_FILES_CUT,
   SLASH_NO_BINARY,
   SLASH_PLUGIN,
 } from '../slashCommands/discover';
@@ -279,7 +280,27 @@ describe('the script’s answer', () => {
     );
     const result = parseScanOutput(stdout, { host: true, cwds: [] })!;
     expect(result.builtins).toBeNull();
+    expect(result.grepFailed).toBe(true);
+    expect(result.binary).toBe('/b/claude 1,2');
     expect(result.user?.map((command) => command.name)).toEqual(['review']);
+  });
+
+  // The review of #160: a find stopped at the file phase's deadline sent part
+  // of a folder; that part must not replace what the phone held for it.
+  it('reads a source whose find was cut as not read, the others as read', () => {
+    const stdout = frame(
+      [SLASH_BINARY, '/b/claude', '1,2'].join('\t'),
+      SLASH_BUILTINS_UNCHANGED,
+      ...record(['command', 'user', '-', 'review.md', '/h/.claude/commands/review.md'], 'Review'),
+      [SLASH_FILES_CUT, 'user', '-'].join('\t'),
+      ...record(['command', 'plugin', '/p/tools/1.0.0', 'lint.md', '/p/tools/1.0.0/commands/lint.md'], 'Lint'),
+      [SLASH_FILES_CUT, 'project', '/w'].join('\t'),
+    );
+    const result = parseScanOutput(stdout, { host: true, cwds: ['/w', '/v'] })!;
+    expect(result.user).toBeNull();
+    expect(result.plugins?.map((command) => command.name)).toEqual(['tools:lint']);
+    expect(result.projects).toEqual({ '/v': [] });
+    expect(result.grepFailed).toBeUndefined();
   });
 
   it('keeps the whole records of an answer cut short, and not the cut one', () => {

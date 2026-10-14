@@ -14,17 +14,26 @@ export { CLAUDE_BUILTINS, CODEX_BUILTINS } from './builtins';
 export { binaryKey, discoveryCommand, type ScanRequest } from './discover';
 export { parseScanOutput, type ScanResult } from './parse';
 export { filterCommands, paletteQuery, paletteSections, type PaletteSection } from './filter';
-export { DESTRUCTIVE_COMMANDS, hintRequiresArgument, pickSlashCommand, type SlashPick } from './pick';
+export {
+  DESTRUCTIVE_COMMANDS,
+  SIDE_EFFECT_COMMANDS,
+  describesSideEffect,
+  fillsOnPick,
+  hintRequiresArgument,
+  pickSlashCommand,
+  type SlashPick,
+} from './pick';
 export {
   applyScan,
   catalogueFor,
   deserializeCatalogueCache,
   emptyCatalogueCache,
+  knownBinaryFor,
   projectScanned,
   serializeCatalogueCache,
   type SlashCatalogueCache,
 } from './catalogue';
-export { scanSlashCommands, slashScanDue } from './client';
+export { projectFoldersToScan, scanSlashCommands, slashScanDue } from './client';
 
 /**
  * Whether a message is a slash command: `/name` at the very start, then

@@ -105,6 +105,34 @@ describe('scanning a connection', () => {
     expect(seen[1]?.command).toContain(binary!);
   });
 
+  // The review of #160: a grep that hit its deadline was retried on every
+  // ten-minute scan. Its binary is now sent as held, so the host skips it.
+  it('sends a binary whose grep failed as held, so the next scan does not grep it again', async () => {
+    const seen: string[] = [];
+    const answer = (body: string): ExecResult => ({
+      ok: true,
+      exitCode: 0,
+      stdout: ['HERDRCHAT_SLASH_BEGIN', 'HERDRCHAT_SLASH_BINARY\t/b/claude\t9,9', body, '', 'HERDRCHAT_SLASH_END', ''].join('\n'),
+      stderr: '',
+    });
+    let body = 'HERDRCHAT_SLASH_BUILTINS_FAILED';
+    const transport: HerdrTransport = {
+      exec: async (command) => {
+        seen.push(command);
+        return answer(body);
+      },
+      streamLines: async function* () {
+        yield* [];
+      },
+    };
+    await scanSlashCatalogue('h1', transport, { host: true, cwds: [] });
+    expect(useSlashCatalogues.getState().byConnection.h1?.grepFailed).toEqual({ binary: '/b/claude 9,9', at: expect.any(Number) });
+    body = 'HERDRCHAT_SLASH_BUILTINS_UNCHANGED';
+    await scanSlashCatalogue('h1', transport, { host: true, cwds: [] });
+    expect(seen[0]).not.toContain('/b/claude 9,9');
+    expect(seen[1]).toContain('/b/claude 9,9');
+  });
+
   // b704ec8: a scan queued in front of everything else. Never two at once.
   it('never runs two scans at once for one connection, and merges what waits', async () => {
     const gate = gated(new DemoHost());

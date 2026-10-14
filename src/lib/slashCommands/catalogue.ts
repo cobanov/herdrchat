@@ -4,9 +4,12 @@
  * is complete on the next launch before anything has run.
  *
  * The host-wide part (built-ins, the person's commands and skills, plugins) is
- * one scan per host every so often; projects are scanned per folder, the first
- * time a thread opens on one. A failed scan changes nothing here.
+ * one scan per host every so often, with the folders of the open chats; a
+ * folder is also scanned the first time a thread opens on it. A failed scan
+ * changes nothing here, and a failed grep is remembered (`grepFailed`) so it is
+ * not run again on every scan.
  */
+import { SLASH_GREP_RETRY_MS } from '../herdr/timeouts';
 import { CLAUDE_BUILTINS, CODEX_BUILTINS } from './builtins';
 import { dedupeCommands, type ScanResult } from './parse';
 import type { CatalogueAgent, CatalogueCommand, CommandSection, CommandSource } from './types';
@@ -30,10 +33,30 @@ export interface SlashCatalogueCache {
   projects: Record<string, CatalogueCommand[]>;
   /** When the host-wide part was last read; null for never. */
   hostScannedAt: number | null;
+  /**
+   * The binary whose grep last failed or hit its deadline, and when. Until
+   * `SLASH_GREP_RETRY_MS` has passed, a scan names it as the binary already
+   * read, so the host skips that grep (see `knownBinaryFor`). Null when the
+   * last grep worked.
+   */
+  grepFailed: { binary: string; at: number } | null;
 }
 
 export function emptyCatalogueCache(): SlashCatalogueCache {
-  return { version: 1, binary: null, builtins: [], user: [], plugins: [], projects: {}, hostScannedAt: null };
+  return { version: 1, binary: null, builtins: [], user: [], plugins: [], projects: {}, hostScannedAt: null, grepFailed: null };
+}
+
+/**
+ * The binary a scan tells the host it already holds (`ScanRequest.knownBinary`):
+ * the one its built-ins were read from, or, within `SLASH_GREP_RETRY_MS` of a
+ * failed grep, that binary, so a slow host is not grepped again every scan.
+ * A different binary (a new version) does not match either, and is read.
+ */
+export function knownBinaryFor(cache: SlashCatalogueCache | null, now: number): string | null {
+  if (cache === null) return null;
+  const failed = cache.grepFailed;
+  if (failed !== null && now - failed.at < SLASH_GREP_RETRY_MS) return failed.binary;
+  return cache.binary;
 }
 
 /** The cache after a scan. Parts the scan did not read are kept as they were. */
@@ -44,6 +67,10 @@ export function applyScan(cache: SlashCatalogueCache, scan: ScanResult, now: num
     // Kept even when the read found nothing, so a bundle the grep no longer
     // understands is not grepped again on every scan; the static list stands in.
     next.binary = scan.binary ?? null;
+    next.grepFailed = null;
+  } else if (scan.grepFailed === true && typeof scan.binary === 'string') {
+    // Held built-ins and binary stay; the failed one is not grepped again soon.
+    next.grepFailed = { binary: scan.binary, at: now };
   }
   if (scan.user !== null) next.user = scan.user;
   if (scan.plugins !== null) next.plugins = scan.plugins;
@@ -128,6 +155,11 @@ export function deserializeCatalogueCache(text: string | null | undefined): Slas
   if (builtins === null || user === null || plugins === null) return null;
   if (record.binary !== null && typeof record.binary !== 'string') return null;
   if (record.hostScannedAt !== null && typeof record.hostScannedAt !== 'number') return null;
+  // Absent in a cache stored before it existed: no failed grep.
+  const failed = record.grepFailed as { binary?: unknown; at?: unknown } | null | undefined;
+  const grepFailed = failed !== null && typeof failed === 'object' && typeof failed.binary === 'string' && typeof failed.at === 'number'
+    ? { binary: failed.binary, at: failed.at }
+    : null;
   if (typeof record.projects !== 'object' || record.projects === null || Array.isArray(record.projects)) return null;
   const projects: Record<string, CatalogueCommand[]> = {};
   for (const [cwd, list] of Object.entries(record.projects as Record<string, unknown>)) {
@@ -143,5 +175,6 @@ export function deserializeCatalogueCache(text: string | null | undefined): Slas
     plugins,
     projects,
     hostScannedAt: record.hostScannedAt,
+    grepFailed,
   };
 }

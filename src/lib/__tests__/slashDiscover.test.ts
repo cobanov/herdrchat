@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { binaryKey, discoveryCommand, discoveryScript, SLASH_BEGIN, SLASH_END, type ScanRequest } from '../slashCommands/discover';
+import { binaryKey, discoveryCommand, discoveryScript, SLASH_BEGIN, SLASH_END, SLASH_FILES_CUT, type ScanRequest } from '../slashCommands/discover';
 import { parseScanOutput, type ScanResult } from '../slashCommands/parse';
 import { dedupeCommands } from '../slashCommands/parse';
-import { SLASH_SCAN_GREP_TIMEOUT_S } from '../herdr/timeouts';
+import { SLASH_SCAN_FILES_TIMEOUT_S, SLASH_SCAN_GREP_TIMEOUT_S, SLASH_SCAN_TIMEOUT_MS } from '../herdr/timeouts';
 import { CLAUDE_BUILTINS } from '../slashCommands/builtins';
 
 const FIXTURES = join(__dirname, 'fixtures', 'slashCommands');
@@ -37,6 +37,25 @@ describe('the discovery script, as a string', () => {
     expect(script).toMatch(/\} \| head -c \d+\n/);
     // Nothing GNU-only, and no glob (an unmatched one aborts zsh).
     expect(script).not.toMatch(/-printf|grep -P|\bfor \w+ in /);
+  });
+
+  // The review of #160: only the greps were bounded, and `find -L` follows a
+  // symlink into any tree, so the file phase could reach the native deadline.
+  it('runs every find under what is left of the file phase\'s deadline', () => {
+    const script = discoveryScript({ host: true, cwds: ['/a', '/b'], knownBinary: null });
+    const finds = [...script.matchAll(/^.*\bfind\b.*$/gm)].map((line) => line[0]).filter((line) => !line.trim().startsWith('//'));
+    expect(finds.length).toBeGreaterThan(0);
+    for (const line of finds) expect(line).toMatch(/hs_find "\$2" "\$3" -L|hs_bounded "\$hs_left" find "\$@"|^hs_find\(\) \{$/);
+    // One budget, set after the greps, before the first folder.
+    const lines = script.split('\n').map((line) => line.trim());
+    const budget = lines.indexOf(`hs_end=$(( hs_end + ${SLASH_SCAN_FILES_TIMEOUT_S} ))`);
+    expect(budget).toBeGreaterThan(lines.findIndex((line) => line.startsWith('hs_builtins ')));
+    expect(budget).toBeLessThan(lines.indexOf('hs_user'));
+    expect(discoveryScript({ host: false, cwds: ['/a'], knownBinary: null, filesDeadlineS: 2 })).toContain('hs_end=$(( hs_end + 2 ))');
+  });
+
+  it('keeps the greps and the file phase together strictly inside the native deadline', () => {
+    expect(SLASH_SCAN_GREP_TIMEOUT_S + SLASH_SCAN_FILES_TIMEOUT_S).toBeLessThan(SLASH_SCAN_TIMEOUT_MS / 1000);
   });
 
   it('quotes a folder with a quote and a space in it', () => {
@@ -174,7 +193,7 @@ describe.each(SHELLS)('the discovery script under %s', (shell) => {
   // The review of 4d5c706: a grep cut by its deadline printed the built-ins'
   // end anyway, so a partial read was cached against the binary for good.
   describe('when the grep over the binary is slow', () => {
-    const tools = ['head', 'sed', 'find', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat'];
+    const tools = ['head', 'sed', 'find', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat', 'date'];
     let bin: string;
     beforeAll(() => {
       bin = join(host.home, `slow-${shell}`);
@@ -226,6 +245,58 @@ exec ${realGrep} "$@"
       expect(stdout).toContain('HERDRCHAT_SLASH_BUILTINS_FAILED');
       expect(result.builtins).toBeNull();
       expect(result.user?.length).toBe(4);
+    }, 20_000);
+  });
+
+  // The review of #160: a `find` that runs into a big tree is stopped at the
+  // file phase's deadline, and what it cut is read as not read.
+  describe('when a find is slow', () => {
+    const tools = ['head', 'sed', 'grep', 'stat', 'cut', 'tr', 'sort', 'awk', 'mktemp', 'rm', 'sleep', 'cat', 'date'];
+    let bin: string;
+    beforeAll(() => {
+      bin = join(host.home, `slow-find-${shell}`);
+      mkdirSync(bin, { recursive: true });
+      const realFind = execFileSync('sh', ['-c', 'command -v find'], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      // Slow only in the project; every other find is the real one.
+      writeFileSync(
+        join(bin, 'find'),
+        `#!/bin/sh
+for a in "$@"; do case "$a" in */work/*) exec sleep 30 ;; esac; done
+exec ${realFind} "$@"
+`
+      );
+      chmodSync(join(bin, 'find'), 0o755);
+      for (const tool of tools) {
+        const path = execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+        symlinkSync(path, join(bin, tool));
+      }
+    });
+
+    const scan = (path: string) => {
+      const request: ScanRequest = { host: true, cwds: [host.project], knownBinary: null, filesDeadlineS: 3 };
+      const started = Date.now();
+      const shellPath = execFileSync('sh', ['-c', `command -v ${shell}`], { encoding: 'utf8', env: { ...process.env, PATH: '/usr/bin:/bin' } }).trim();
+      const stdout = execFileSync(shellPath, ['-c', discoveryScript(request)], {
+        env: { ...process.env, HOME: host.home, CLAUDE_CONFIG_DIR: '', PATH: path },
+        encoding: 'utf8',
+      });
+      return { result: parseScanOutput(stdout, request)!, stdout, seconds: (Date.now() - started) / 1000 };
+    };
+
+    // This host's own way (timeout(1) or Perl), then the watchdog alone. The
+    // clock is read in whole seconds, so the deadline leaves the fast folders
+    // a second or two before the slow one.
+    it.each([
+      ['this host\'s way', () => `${bin}:/usr/bin:/bin`],
+      ['the watchdog', () => bin],
+    ])('stops it at the deadline with %s, and reads the folder as not read', (_, path) => {
+      const { result, stdout, seconds } = scan(path());
+      expect(seconds).toBeLessThan(10);
+      expect(stdout).toContain(`${SLASH_FILES_CUT}\tproject\t${host.project}`);
+      expect(result.projects).not.toHaveProperty([host.project]);
+      // What came before the cut arrived whole.
+      expect(result.user?.length).toBe(4);
+      expect(result.plugins?.length).toBe(2);
     }, 20_000);
   });
 

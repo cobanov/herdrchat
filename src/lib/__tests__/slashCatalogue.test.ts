@@ -1,7 +1,7 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import { DemoHost } from '../demo/host';
 import { DEMO_CLAUDE_BINARY, DEMO_CLAUDE_BINARY_STAT, DEMO_NOTES_CWD } from '../demo/slashCommands';
-import { SLASH_SCAN_INTERVAL_MS, SLASH_SCAN_TIMEOUT_MS } from '../herdr/timeouts';
+import { SLASH_GREP_RETRY_MS, SLASH_SCAN_INTERVAL_MS, SLASH_SCAN_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 import { CLAUDE_BUILTINS, CODEX_BUILTINS } from '../slashCommands/builtins';
 import {
@@ -9,15 +9,24 @@ import {
   catalogueFor,
   deserializeCatalogueCache,
   emptyCatalogueCache,
+  knownBinaryFor,
   MAX_CACHED_PROJECTS,
   projectScanned,
   serializeCatalogueCache,
   type SlashCatalogueCache,
 } from '../slashCommands/catalogue';
-import { scanSlashCommands, slashScanDue } from '../slashCommands/client';
+import { projectFoldersToScan, scanSlashCommands, slashScanDue } from '../slashCommands/client';
+import { MAX_PROJECTS_PER_SCAN } from '../slashCommands/discover';
 import { filterCommands, paletteQuery, paletteSections } from '../slashCommands/filter';
 import type { ScanResult } from '../slashCommands/parse';
-import { DESTRUCTIVE_COMMANDS, hintRequiresArgument, pickSlashCommand } from '../slashCommands/pick';
+import {
+  describesSideEffect,
+  DESTRUCTIVE_COMMANDS,
+  fillsOnPick,
+  hintRequiresArgument,
+  pickSlashCommand,
+  SIDE_EFFECT_COMMANDS,
+} from '../slashCommands/pick';
 import type { CatalogueCommand } from '../slashCommands/types';
 
 const command = (
@@ -104,7 +113,7 @@ describe('picking a command', () => {
 
   // Enter in the terminal runs these: their argument is one they can do without.
   it('sends one whose argument is optional, bracketed or said to be', () => {
-    expect(pickSlashCommand(command('compact', 'builtin', '', '<optional instructions for the summary>'))).toEqual({ action: 'send', text: '/compact' });
+    expect(pickSlashCommand(command('summarise', 'builtin', '', '<optional custom instructions>'))).toEqual({ action: 'send', text: '/summarise' });
     expect(pickSlashCommand(command('model', 'builtin', '', '[model]'))).toEqual({ action: 'send', text: '/model' });
     expect(pickSlashCommand(command('review', 'commands', '', '[pr]'))).toEqual({ action: 'send', text: '/review' });
     expect(pickSlashCommand(command('autocompact', 'builtin', '', '[auto|<tokens>]'))).toEqual({ action: 'send', text: '/autocompact' });
@@ -134,6 +143,46 @@ describe('picking a command', () => {
     for (const entry of [...CLAUDE_BUILTINS, ...CODEX_BUILTINS].filter((item) => DESTRUCTIVE_COMMANDS.has(item.name))) {
       expect(pickSlashCommand(entry).action).toBe('fill');
     }
+  });
+
+  // The review of #160: one tap committed, opened a PR, wrote CLAUDE.md or
+  // compacted the conversation.
+  it.each(['commit', 'pr', 'commit-push-pr', 'compact', 'init', 'new'])('fills /%s, which writes, publishes or rewrites', (name) => {
+    expect(pickSlashCommand(command(name, 'builtin', 'Something', '[guidance]'))).toEqual({ action: 'fill', text: `/${name}`, placeholder: '' });
+    expect(SIDE_EFFECT_COMMANDS.has(name)).toBe(true);
+  });
+
+  it('fills one whose description says it commits, pushes, resets, deletes or overwrites', () => {
+    for (const description of ['Commit the current changes', 'Push your components to the registry', 'Reset the sandbox', 'Deletes old branches', 'Overwrite the lockfile']) {
+      expect(describesSideEffect(description)).toBe(true);
+      expect(pickSlashCommand(command('custom', 'commands', description)).action).toBe('fill');
+    }
+    // Words that only contain one: not a side effect.
+    for (const description of ['See the uncommitted changes', 'Show the pushback log', 'Choose the model']) {
+      expect(describesSideEffect(description)).toBe(false);
+    }
+    expect(describesSideEffect(undefined)).toBe(false);
+  });
+
+  it('fills Claude’s /commit, /pr and /init, and Codex’s /new and /init, as either list gives them', () => {
+    const claude = (name: string) => CLAUDE_BUILTINS.find((entry) => entry.name === name)!;
+    const codex = (name: string) => CODEX_BUILTINS.find((entry) => entry.name === name)!;
+    for (const entry of [claude('commit'), claude('pr'), claude('init'), claude('compact'), codex('new'), codex('init')]) {
+      expect(fillsOnPick(entry)).toBe(true);
+      expect(pickSlashCommand(entry).action).toBe('fill');
+    }
+    expect(fillsOnPick(claude('model'))).toBe(false);
+  });
+});
+
+describe('the folders the periodic scan re-reads', () => {
+  const agent = (kind: 'claude' | 'codex' | null, cwd: string) => ({ agent: kind, cwd });
+
+  it('are the open Claude agents’ folders, each once, bounded', () => {
+    expect(projectFoldersToScan([agent('claude', '/a'), agent('claude', '/a'), agent('codex', '/c'), agent(null, '/n'), agent('claude', ''), agent('claude', '/b')]))
+      .toEqual(['/a', '/b']);
+    const many = Array.from({ length: MAX_PROJECTS_PER_SCAN + 3 }, (_, i) => agent('claude', `/p${i}`));
+    expect(projectFoldersToScan(many)).toHaveLength(MAX_PROJECTS_PER_SCAN);
   });
 });
 
@@ -186,6 +235,35 @@ describe('the cached catalogue', () => {
     expect(next.binary).toBe('b 1,1');
     expect(next.builtins).toEqual(held.builtins);
     expect(next.hostScannedAt).toBe(2);
+  });
+
+  // The review of #160: a grep that hit its deadline was not recorded, so the
+  // same slow grep ran again on every ten-minute scan.
+  it('records a failed grep with its time, and names that binary as held until the retry window passes', () => {
+    const held = applyScan(emptyCatalogueCache(), scan({ binary: 'b 1,1', builtins: { kind: 'read', commands: [command('compact')] }, user: [], plugins: [] }), 1);
+    expect(knownBinaryFor(held, 2)).toBe('b 1,1');
+    const failed = applyScan(held, scan({ binary: 'b 2,2', builtins: null, grepFailed: true, user: [], plugins: [] }), 1_000);
+    expect(failed.grepFailed).toEqual({ binary: 'b 2,2', at: 1_000 });
+    expect(failed.binary).toBe('b 1,1');
+    expect(failed.builtins).toEqual(held.builtins);
+    // The next scans tell the host it holds b 2,2: an unchanged binary skips the grep…
+    expect(knownBinaryFor(failed, 1_000 + SLASH_SCAN_INTERVAL_MS)).toBe('b 2,2');
+    const skipped = applyScan(failed, scan({ binary: 'b 2,2', builtins: { kind: 'unchanged' }, user: [], plugins: [] }), 1_000 + SLASH_SCAN_INTERVAL_MS);
+    expect(skipped.builtins).toEqual(held.builtins);
+    expect(skipped.grepFailed).toEqual(failed.grepFailed);
+    // …until the window has passed, when the binary read is named again and the grep retried.
+    expect(knownBinaryFor(skipped, 1_000 + SLASH_GREP_RETRY_MS)).toBe('b 1,1');
+    const read = applyScan(skipped, scan({ binary: 'b 2,2', builtins: { kind: 'read', commands: [command('model')] }, user: [], plugins: [] }), 1_000 + SLASH_GREP_RETRY_MS);
+    expect(read.grepFailed).toBeNull();
+    expect(read.binary).toBe('b 2,2');
+    expect(knownBinaryFor(null, 0)).toBeNull();
+  });
+
+  it('keeps a failed grep across a relaunch, and reads a cache stored before it existed', () => {
+    const failed = applyScan(emptyCatalogueCache(), scan({ binary: 'b 2,2', builtins: null, grepFailed: true, user: [], plugins: [] }), 7);
+    expect(deserializeCatalogueCache(serializeCatalogueCache(failed))?.grepFailed).toEqual({ binary: 'b 2,2', at: 7 });
+    const { grepFailed: _, ...older } = emptyCatalogueCache();
+    expect(deserializeCatalogueCache(JSON.stringify(older))?.grepFailed).toBeNull();
   });
 
   it('remembers the binary read even when it held no literals, so it is not grepped again', () => {
