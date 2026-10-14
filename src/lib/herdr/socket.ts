@@ -104,6 +104,46 @@ export class HerdrSocket {
   }
 
   /**
+   * The same request with each of `paramsList`, on ONE SSH channel: the host
+   * runs them one after another (`batchCommand`) and each answer comes back
+   * in its place, a failure as that entry's error rather than the batch's.
+   *
+   * For asks fanned out over many panes. One exec per pane, side by side,
+   * opened up to one channel per pane at once; OpenSSH allows 10 sessions on
+   * a connection (`MaxSessions`), the app already holds several, and a
+   * refused channel resets the whole client (PR #164 review). A batch too long
+   * for one command is split, and the parts still run one at a time.
+   *
+   * @throws {HerdrError} `socket_unavailable` when the host has no bridge, or
+   * the transport's failure when the first part cannot run at all. A later
+   * part that cannot run fails only its own entries.
+   */
+  async callEach(
+    method: string,
+    paramsList: readonly Record<string, unknown>[],
+    timeoutMs: number
+  ): Promise<BatchAnswer[]> {
+    if (paramsList.length === 0) return [];
+    const route = await this.detect();
+    if (route === null) {
+      throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
+    }
+    const commands = paramsList.map((params) => commandFor(route, this.encode(method, params), this.herdr));
+    const answers: BatchAnswer[] = [];
+    for (const part of batchParts(commands)) {
+      const result = await this.transport.exec(batchCommand(part), timeoutMs);
+      if (!result.ok) {
+        const error = transportError(result);
+        if (answers.length === 0) throw error;
+        for (let i = answers.length; i < commands.length; i += 1) answers.push({ ok: false, error });
+        return answers;
+      }
+      answers.push(...parseBatch(result.stdout, part.length));
+    }
+    return answers;
+  }
+
+  /**
    * Hold `events.subscribe` open and yield each event as it arrives.
    *
    * The first line the server sends is the `subscription_started` envelope;
@@ -176,6 +216,105 @@ export class HerdrSocket {
     if (!result.ok) return 'unreachable';
     return parseProbe(result.stdout);
   }
+}
+
+/** One entry of `callEach`: the envelope's result, or what went wrong for that entry alone. */
+export type BatchAnswer = { ok: true; result: unknown } | { ok: false; error: HerdrError };
+
+/** The line a batch prints before entry `index`'s output. */
+const BATCH_BEGIN = '@@hc-batch-begin';
+/** The line a batch prints after entry `index`'s output, with its exit status. */
+const BATCH_END = '@@hc-batch-end';
+
+/**
+ * Several bridge commands as one, run in order under `sh` (the login shell may
+ * be fish, which has no subshells), each between two marker lines that carry
+ * its index and its exit status. Its stderr is folded into its own section,
+ * since that is where the fork's bridge says what went wrong, and its stdin is
+ * closed, since the channel's is shared. One entry failing does not stop the
+ * next. The batch itself always exits 0.
+ *
+ * Exported for tests.
+ */
+export function batchCommand(commands: readonly string[]): string {
+  const script = commands
+    .map((command, index) =>
+      `printf '\\n${BATCH_BEGIN} %d\\n' ${index}; ( ${command} ) </dev/null 2>&1; printf '\\n${BATCH_END} %d %d\\n' ${index} "$?"`
+    )
+    .join('; ');
+  return `sh -c ${shellQuote(`${script}; exit 0`)}`;
+}
+
+/**
+ * The commands, packed in order into as few batches as fit in one command
+ * each (`MAX_COMMAND_BYTES`). A single command too long on its own was
+ * already refused by `commandFor`.
+ */
+export function batchParts(commands: readonly string[]): string[][] {
+  const parts: string[][] = [];
+  let current: string[] = [];
+  for (const command of commands) {
+    const next = [...current, command];
+    if (current.length > 0 && utf8Length(batchCommand(next)) > MAX_COMMAND_BYTES) {
+      parts.push(current);
+      current = [command];
+    } else {
+      current = next;
+    }
+  }
+  if (current.length > 0) parts.push(current);
+  return parts;
+}
+
+/**
+ * A batch's output, one answer per entry in order. An entry whose section is
+ * missing (the batch was cut short) or holds no envelope is a failure of its
+ * own; the others still answer.
+ *
+ * Exported for tests.
+ */
+export function parseBatch(stdout: string, count: number): BatchAnswer[] {
+  const sections = new Map<number, { lines: string[]; status: number | null }>();
+  let open: { lines: string[]; status: number | null } | null = null;
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trim();
+    const begin = line.startsWith(`${BATCH_BEGIN} `) ? Number(line.slice(BATCH_BEGIN.length + 1)) : null;
+    if (begin !== null && Number.isInteger(begin)) {
+      open = { lines: [], status: null };
+      sections.set(begin, open);
+      continue;
+    }
+    if (line.startsWith(`${BATCH_END} `)) {
+      const status = Number(line.split(' ')[2]);
+      if (open !== null) open.status = Number.isInteger(status) ? status : null;
+      open = null;
+      continue;
+    }
+    if (open !== null && line.length > 0) open.lines.push(line);
+  }
+  return Array.from({ length: count }, (_, index): BatchAnswer => {
+    const section = sections.get(index);
+    if (section === undefined || section.status === null) {
+      return { ok: false, error: new HerdrError('empty_response', 'The host stopped before answering this request.') };
+    }
+    const text = section.lines.join('\n');
+    const envelope = section.lines.find((line) => line.startsWith('{'));
+    if (section.status === 0 && envelope !== undefined) {
+      try {
+        return { ok: true, result: decodeEnvelope(envelope) };
+      } catch (thrown) {
+        if (thrown instanceof HerdrError) return { ok: false, error: thrown };
+        throw thrown;
+      }
+    }
+    return {
+      ok: false,
+      error:
+        herdrErrorFrom(text) ??
+        bridgeStderr(text) ??
+        new HerdrError('ssh_command_failed', `The socket bridge failed on the host (exit ${section.status}): ${firstLine(text)}`),
+    };
+  });
 }
 
 /** A way to reach the socket on a host, and where the socket is. */

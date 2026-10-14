@@ -1,4 +1,5 @@
 import { agentName, CONVERSATIONAL_AGENTS, type Pane } from '../herdr/models';
+import type { ListMode } from '../listModes';
 
 /**
  * Which panes get a terminal row in the chat list, and what the row says.
@@ -94,4 +95,14 @@ export function processNamesDue(
   return panes
     .filter((row) => sweep || known.get(row.paneId)?.terminalId !== row.pane.terminalId || !known.has(row.paneId))
     .map((row) => row.paneId);
+}
+
+/**
+ * Whether the chat list asks herdr for its panes' programs at all: only while
+ * it shows Spaces, the one view with terminal rows, and only where a terminal
+ * can open (iOS). Elsewhere the names would go nowhere, and each round is an
+ * SSH exec.
+ */
+export function processNamesWanted(listMode: ListMode, terminalAvailable: boolean): boolean {
+  return terminalAvailable && listMode === 'spaces';
 }

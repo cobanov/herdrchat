@@ -28,7 +28,9 @@ import {
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
 import { titleAgent } from '@/lib/chatTitle';
-import { decodeProcessName, processNamesDue, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
+import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
+import type { BatchAnswer } from '@/lib/herdr/socket';
+import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
@@ -232,6 +234,15 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   const processTick = useRef(0);
   /** A round of `refreshProcessNames` is still out: the next poll starts none. */
   const processNamesAsking = useRef(false);
+  /**
+   * Which view the list shows. Names are asked only for Spaces, the one view
+   * with terminal rows, and only where a terminal can open (`processNamesWanted`).
+   */
+  const listMode = useSettings((state) => state.listMode);
+  const listModeRef = useRef(listMode);
+  useEffect(() => {
+    listModeRef.current = listMode;
+  }, [listMode]);
   const alive = useRef(true);
 
   /** Resolves true when the poll failed, so the loop knows whether to back off. */
@@ -263,13 +274,17 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       const force = forcePreviews.current;
       forcePreviews.current = false;
       processTick.current += 1;
-      // Not awaited, and one round at a time: each ask is an SSH exec of its
-      // own, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you) must
-      // not wait on a program's name. What lands shows on the next poll.
-      if (!processNamesAsking.current) {
+      // Not awaited, and one round at a time: a round is one SSH exec for all
+      // the panes, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you)
+      // must not wait on a program's name. What lands shows on the next poll.
+      if (!processNamesAsking.current && processNamesWanted(listModeRef.current, isTerminalAvailable)) {
         processNamesAsking.current = true;
         void refreshProcessNames(
-          (paneId) => client.socket.call('pane.process_info', { pane_id: paneId }, POLL_TIMEOUT_MS),
+          (paneIds) => client.socket.callEach(
+            'pane.process_info',
+            paneIds.map((paneId) => ({ pane_id: paneId })),
+            POLL_TIMEOUT_MS
+          ),
           snapshot.panes,
           processNames.current,
           // Not on `force`: every host event forces the previews, and a
@@ -660,14 +675,17 @@ export interface CachedProcessName {
 
 /**
  * Ask herdr which program is in front in each terminal row's pane: one seen
- * for the first time now, all of them on a sweep. One socket request per pane
- * (the socket is single-shot), side by side, so the CLI-only host and the
- * Demo, which have no socket, keep the row's fallback ("Shell") instead.
- * Best-effort: a failed ask keeps what was known, and never becomes the
- * list's error.
+ * for the first time now, all of them on a sweep. All of them in ONE ask
+ * (`askAll`, the socket's `callEach`): one SSH channel however many panes
+ * there are, since a channel per pane, side by side, ran past the host's
+ * session limit and reset the connection under an open terminal (PR #164
+ * review). The CLI-only host and the Demo, which have no socket, keep the
+ * row's fallback ("Shell"). Best-effort: a failed ask keeps what was known,
+ * and never becomes the list's error; one pane failing leaves the others'
+ * answers standing.
  */
 export async function refreshProcessNames(
-  ask: (paneId: string) => Promise<unknown>,
+  askAll: (paneIds: readonly string[]) => Promise<readonly BatchAnswer[]>,
   panes: readonly Pane[],
   cache: Map<string, CachedProcessName>,
   sweep: boolean
@@ -678,16 +696,24 @@ export async function refreshProcessNames(
     if (live.get(paneId) !== cached.terminalId) cache.delete(paneId);
   }
   const due = processNamesDue(rows, cache, sweep);
-  await Promise.all(due.map(async (paneId) => {
+  if (due.length === 0) return;
+  let answers: readonly BatchAnswer[] = [];
+  try {
+    answers = await askAll(due);
+  } catch {
+    // Every pane unanswered, below.
+  }
+  due.forEach((paneId, index) => {
     const terminalId = live.get(paneId) ?? null;
-    try {
-      cache.set(paneId, { terminalId, name: decodeProcessName(await ask(paneId)) });
-    } catch {
+    const answer = answers[index];
+    if (answer?.ok === true) {
+      cache.set(paneId, { terminalId, name: decodeProcessName(answer.result) });
+    } else if (!cache.has(paneId)) {
       // A name known before is kept; none known is recorded as none, so the
       // pane waits for the sweep. The row says what it can without it.
-      if (!cache.has(paneId)) cache.set(paneId, { terminalId, name: null });
+      cache.set(paneId, { terminalId, name: null });
     }
-  }));
+  });
 }
 
 function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<string, string> {

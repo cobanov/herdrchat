@@ -5,6 +5,7 @@ import {
   isTerminalRow,
   processLabel,
   processNamesDue,
+  processNamesWanted,
   terminalPanes,
   UNKNOWN_PROCESS,
 } from '../rows';
@@ -108,5 +109,14 @@ describe('decodePane', () => {
     expect(decodePane({ pane_id: 'w1:p1', terminal_title: '✳ x', terminal_title_stripped: 'x', title: 'y' }).title).toBe('x');
     expect(decodePane({ pane_id: 'w1:p1', title: 'y' }).title).toBe('y');
     expect(decodePane({ pane_id: 'w1:p1' }).title).toBeNull();
+  });
+});
+
+describe('processNamesWanted', () => {
+  it('asks only for Spaces, and only where a terminal can open', () => {
+    expect(processNamesWanted('spaces', true)).toBe(true);
+    expect(processNamesWanted('agents', true)).toBe(false);
+    expect(processNamesWanted('spaces', false)).toBe(false);
+    expect(processNamesWanted('agents', false)).toBe(false);
   });
 });

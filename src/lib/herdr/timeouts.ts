@@ -253,8 +253,9 @@ export const TERMINAL_START_TIMEOUT_MS = 20_000;
 
 /**
  * How often the chat list asks herdr which program a shell pane is running
- * ("vim", "htop"), counted in the list's own polls. One socket call per shell
- * pane, so not every poll: a pane seen for the first time is asked at once,
- * and the rest on every this-many'th poll.
+ * ("vim", "htop"), counted in the list's own polls. One SSH exec for all the
+ * shell panes (`HerdrSocket.callEach`), but a socket request per pane inside
+ * it, so not every poll: a pane seen for the first time is asked at once, and
+ * the rest on every this-many'th poll.
  */
 export const PROCESS_NAME_SWEEP_POLLS = 5;
