@@ -61,6 +61,14 @@ appId: dev.herdr.HerdrChat
 - extendedWaitUntil:
     visible: 'Agent: Review the release notes wording, done.*'
     timeout: 20000
+# The row's preview catches up with the thread a moment after the reply: wait
+# for it on the row itself (its label ends with the preview), so the list and
+# the conversation beside it say the same thing.
+- extendedWaitUntil:
+    visible:
+      id: chat-row-w2
+      text: '.*The reviewer is done.*'
+    timeout: 20000
 - waitForAnimationToEnd
 - takeScreenshot: ipad-split-${APPEARANCE}
 
