@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
+import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -182,7 +183,9 @@ export default function FolderPickerScreen() {
         </ScrollView>
       )}
 
-      <View style={{ padding: screenPadding, gap: spacing.sm }}>
+      {/* The same footer as the sheet that opened this one, which also keeps
+          the button clear of the home indicator and Android's gesture bar. */}
+      <SheetFooter>
         <Button
           title="Use this folder"
           onPress={() => {
@@ -192,7 +195,7 @@ export default function FolderPickerScreen() {
           disabled={path.length === 0 || loading || error !== null}
           testID="folder-select"
         />
-      </View>
+      </SheetFooter>
     </Screen>
   );
 }
