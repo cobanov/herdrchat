@@ -35,6 +35,11 @@ appId: dev.herdr.HerdrChat
       id: toggle-tool-activity
     direction: DOWN
 - takeScreenshot: menu-settings-${APPEARANCE}
+# The Demo's w1 is blocked on a question, so the chats under this sheet count
+# one chat that wants you, and Done carries that count: with the menu button
+# covered by the sheet, it is the only sign of it while Settings is open.
+- assertVisible:
+    id: header-close-badge
 - tapOn:
     id: header-close
 - extendedWaitUntil:
@@ -51,6 +56,8 @@ appId: dev.herdr.HerdrChat
       ITEM: Hosts
 - assertVisible:
     id: server-demo
+- assertVisible:
+    id: header-close-badge
 - tapOn:
     id: header-close
 - extendedWaitUntil:
