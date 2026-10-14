@@ -4,6 +4,7 @@ import {
   droppedMachineIds,
   MACHINE_LIST_INTERVAL_MS,
   isUnderHost,
+  listedMachines,
   machineConnectionId,
   machineListDue,
   machineListCommand,
@@ -22,6 +23,8 @@ describe('parseMachineList', () => {
     expect(parseMachineList(MEASURED)).toEqual({
       machines: [{ id: '6eff1dfe9fc09961768a727981b54b98', label: 'klaw', target: 'klaw', session: 'default', enabled: true }],
       skipped: [],
+      unreadIds: [],
+      complete: true,
     });
   });
 
@@ -36,7 +39,7 @@ describe('parseMachineList', () => {
   });
 
   it('skips a bad row and reports it, keeping the rest', () => {
-    const { machines, skipped } = parseMachineList(
+    const { machines, skipped, unreadIds } = parseMachineList(
       JSON.stringify([
         { id: 'good', label: 'klaw', target: 'klaw' },
         { label: 'no id', target: 'x' },
@@ -56,11 +59,13 @@ describe('parseMachineList', () => {
       'machine 6: not an object',
       'machine 7: good is listed twice',
     ]);
+    // Still listed, so not removed; `good` was read, and `a/b` can never have been held.
+    expect(unreadIds).toEqual(['no-target', 'a/b', 'flag']);
   });
 
-  it('reads an empty list, and empty output, as no machines', () => {
-    expect(parseMachineList('[]')).toEqual({ machines: [], skipped: [] });
-    expect(parseMachineList('  \n')).toEqual({ machines: [], skipped: [] });
+  it('reads an empty list as no machines, and empty output as saying nothing', () => {
+    expect(parseMachineList('[]')).toEqual({ machines: [], skipped: [], unreadIds: [], complete: true });
+    expect(parseMachineList('  \n')).toEqual({ machines: [], skipped: [], unreadIds: [], complete: false });
   });
 
   it('accepts the list inside an envelope or under `machines`', () => {
@@ -117,7 +122,7 @@ describe('HerdrClient.machines', () => {
 
   it('reads a herdr with no machine verb as no machines, not a failure', async () => {
     const { transport } = host({ ok: true, stdout: '', stderr: "error: unrecognized subcommand 'machine'", exitCode: 2 });
-    await expect(new HerdrClient(transport).machines()).resolves.toEqual({ machines: [], skipped: [] });
+    await expect(new HerdrClient(transport).machines()).resolves.toEqual({ machines: [], skipped: [], unreadIds: [], complete: true });
   });
 
   it('keeps every other failure a failure', async () => {
@@ -141,5 +146,38 @@ describe('droppedMachineIds', () => {
     expect(droppedMachineIds([machine('a'), machine('b'), machine('c')], [machine('a'), machine('c', false)])).toEqual(['b']);
     expect(droppedMachineIds([], [machine('a')])).toEqual([]);
     expect(droppedMachineIds([machine('a')], [])).toEqual(['a']);
+  });
+});
+
+// #159 review: a row the host still listed but that no longer parsed (a field's
+// shape changed in a herdr update), or a blank answer, read as the machine
+// being removed, and its chats were forgotten for good.
+describe('listedMachines', () => {
+  const machine = (id: string) => ({ id, label: id, target: id, session: 'default', enabled: true });
+  const answer = (machines: ReturnType<typeof machine>[], unreadIds: string[] = [], complete = true) => ({
+    machines,
+    skipped: unreadIds.map((id) => `${id} unreadable`),
+    unreadIds,
+    complete,
+  });
+
+  it('keeps the last good row of a machine still listed but unreadable', () => {
+    const held = [machine('a'), machine('b'), machine('c')];
+    const kept = listedMachines(held, answer([machine('a')], ['b', 'z']));
+    expect(kept.map(({ id }) => id)).toEqual(['a', 'b']);
+    expect(kept[1]).toBe(held[1]);
+    expect(droppedMachineIds(held, kept)).toEqual(['c']);
+  });
+
+  it('keeps everything on an answer that says nothing, and drops nothing', () => {
+    const held = [machine('a')];
+    expect(listedMachines(held, parseMachineList(''))).toBe(held);
+    expect(listedMachines([], parseMachineList(''))).toEqual([]);
+    expect(listedMachines(undefined, parseMachineList(''))).toEqual([]);
+  });
+
+  it('takes the answer as it is otherwise, an empty list included', () => {
+    expect(listedMachines([machine('a')], answer([]))).toEqual([]);
+    expect(listedMachines(undefined, answer([machine('a')]))).toEqual([machine('a')]);
   });
 });

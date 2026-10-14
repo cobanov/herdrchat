@@ -215,8 +215,27 @@ export const JUMP_CONNECT_TIMEOUT_MS = 10_000;
 export const JUMP_SERVER_ALIVE_MS = 5_000;
 
 /**
+ * How long the phone's own connection to the host may take before the
+ * host-side bound even starts: re-dialling the host (after the app comes back
+ * to the foreground, say), opening the channel, and the host's login shell
+ * (`$SHELL -c`, slow with fish or a heavy `.zshenv`) starting `sh`. The native
+ * deadline counts all of that; the bound counts none of it.
+ */
+export const JUMP_HOST_START_MS = 10_000;
+
+/**
+ * How long the host-side bound waits, after asking the host's `ssh` to stop
+ * (TERM), before it kills it outright. Inside `JUMP_DEADLINE_MARGIN_MS`, so even
+ * an `ssh` that ignores the first signal is gone before the native deadline.
+ */
+export const JUMP_KILL_GRACE_MS = 2_000;
+
+/**
  * How far the native deadline of a jumped command stays above the host-side
- * bound on the host's `ssh` (see `jumpCommand`).
+ * bound on the host's `ssh` (see `jumpCommand`): the host's own start
+ * (`JUMP_HOST_START_MS`), which the native deadline includes and the bound does
+ * not, then the bound's kill grace, then a second for the bound's own `sleep`
+ * and the answer's way back.
  *
  * The bound has to fire first. When the native deadline fires instead, it
  * drops the phone's whole connection to the host (`resetClient()` on iOS,
@@ -225,14 +244,15 @@ export const JUMP_SERVER_ALIVE_MS = 5_000;
  * With the bound first, the host stops its `ssh` to the machine, the command
  * ends with the bound's status, and the host's connection never notices.
  */
-export const JUMP_DEADLINE_MARGIN_MS = 5_000;
+export const JUMP_DEADLINE_MARGIN_MS = JUMP_HOST_START_MS + JUMP_KILL_GRACE_MS + 1_000;
 
 /**
- * How long the host-side bound waits, after asking the host's `ssh` to stop
- * (TERM), before it kills it outright. Inside `JUMP_DEADLINE_MARGIN_MS`, so even
- * an `ssh` that ignores the first signal is gone before the native deadline.
+ * `ControlPersist` on the jump: how long the host keeps a machine's shared
+ * login open after its last command (see `JUMP_SCRIPT` in `machine.ts`). A
+ * minute outlasts the gap between two polls and the machine-list refresh, so
+ * a machine being looked at logs in once, and one left alone is let go.
  */
-export const JUMP_KILL_GRACE_MS = 2_000;
+export const JUMP_CONTROL_PERSIST_MS = 60_000;
 
 /**
  * How often a jumped stream's stdin hears a newline. The newline is what
