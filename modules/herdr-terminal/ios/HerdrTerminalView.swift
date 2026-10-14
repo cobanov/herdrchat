@@ -188,8 +188,10 @@ final class HerdrTerminalView: ExpoView, TerminalViewDelegate, UIGestureRecogniz
     ShellRegistry.shared.send(shellId, Data(data))
   }
 
+  // Reported, not sent: the host's pane is resized from JS once the size
+  // holds still (`useTerminalShell`), so the keyboard's animation sends one
+  // resize rather than one a frame. A shell bound later is sized in `bind`.
   func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
-    if let shellId { ShellRegistry.shared.resize(shellId, cols: newCols, rows: newRows) }
     reportSize()
   }
 

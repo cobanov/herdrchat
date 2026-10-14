@@ -24,8 +24,15 @@ export type ListItemWithTerminals<S extends ChatSummary = ChatSummary> = ChatLis
  *
  * For the workspaces view only. A view of agents lists agents; a shell is
  * not one, and its row would be under no card.
+ *
+ * None where no terminal can open (`terminalAvailable` false, Android): every
+ * row would lead to a screen saying so.
  */
-export function withTerminalRows<S extends ChatSummary>(rows: readonly ChatListItem<S>[]): ListItemWithTerminals<S>[] {
+export function withTerminalRows<S extends ChatSummary>(
+  rows: readonly ChatListItem<S>[],
+  terminalAvailable: boolean
+): ListItemWithTerminals<S>[] {
+  if (!terminalAvailable) return [...rows];
   const out: ListItemWithTerminals<S>[] = [];
   /** The workspace card whose rows are being listed, with its terminals still to place. */
   let open: S | null = null;

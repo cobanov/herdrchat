@@ -12,6 +12,11 @@ Citadel (https://github.com/orlandos-nl/Citadel)                   MIT
   SwiftNIO, SwiftNIO SSH, swift-crypto, swift-collections,
   swift-atomics, swift-log, swift-system, swift-asn1               Apache-2.0
   BigInt                                                           MIT
+SwiftTerm v1.18.0 (https://github.com/migueldeicaza/SwiftTerm)     MIT
+  Copyright (c) 2019-2026 Miguel de Icaza (https://github.com/migueldeicaza)
+  Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+  Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
+  Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
 
 Bundled at build time into the Android app
 ------------------------------------------

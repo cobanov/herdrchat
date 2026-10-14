@@ -24,6 +24,7 @@ import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
 import { terminalRowParams, type ListItemWithTerminals } from '@/features/terminal/listRows';
 import { chatListRows } from './chatListRows';
+import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { openTerminal } from '@/features/terminal/navigation';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { StarCard } from '@/features/welcome/StarCard';
@@ -137,7 +138,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     saveSetting(db, 'listMode', mode);
   }, [db]);
   const rows = useMemo(
-    () => chatListRows(listMode, summaries, query, prefs.pinnedAt),
+    () => chatListRows(listMode, summaries, query, prefs.pinnedAt, isTerminalAvailable),
     [listMode, summaries, query, prefs.pinnedAt]
   );
   // Whose reads to load, as a string so a rebuilt list of the same ids does

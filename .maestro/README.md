@@ -76,6 +76,13 @@ herdr open on the desktop as well, check each of these and what it should do:
   (expected "Ended", or "Ended with exit N"). Reconnect on the iPad is then
   refused, with Take over offered, until the phone leaves; after that it
   attaches again.
+- **Locked or backgrounded while attached.** Attach a shell pane's terminal,
+  then lock the phone (or go to the home screen). On the desktop the pane gets
+  its own size back within a second or two. Unlock: the terminal says "Hung
+  up" and does not reconnect by itself; Reconnect attaches again.
+- **The keyboard resizes the desktop pane once.** With the terminal open,
+  show and hide the keyboard: the desktop pane redraws once per show or hide,
+  not through the animation.
 - **The app killed while attached.** Attach a shell pane's terminal, then
   kill the app (swipe it away). On the desktop, check the pane got its own
   size back, and note how long that took. Reopen the app and the same pane's

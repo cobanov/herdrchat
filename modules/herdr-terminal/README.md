@@ -40,6 +40,11 @@ SwiftTerm produces (typing, keys, mouse reports, answers to the program's
 queries) straight back. JavaScript sees only the title, the bell, the size in
 cells and the font size.
 
+The view sizes a shell when it binds to one; after that it only REPORTS its
+size (`onSizeChange`), and `useTerminalShell` resizes the host's pane with
+`resizeShell` once the size holds still. The keyboard sliding in or out is a
+new size every frame, and each resize redraws the pane on the desktop too.
+
 ```tsx
 import { TerminalView, feed } from '../modules/herdr-terminal/src';
 
@@ -49,7 +54,7 @@ import { TerminalView, feed } from '../modules/herdr-terminal/src';
   theme={theme}                // src/lib/terminal/theme.ts
   fontSize={13} minFontSize={8} maxFontSize={28}   // from tokens; pinch zooms between
   controlModifier={ctrl}       // the accessory bar's sticky Ctrl for the next typed key
-  onSizeChange={({ cols, rows }) => {}}            // first layout: open the shell with it
+  onSizeChange={({ cols, rows }) => {}}            // first layout: open the shell with it; later: resizeShell
   onModifiersReset={() => setCtrl(false)}
 />;
 
@@ -72,6 +77,34 @@ feed(shellId, base64);         // the Demo's recorded screens, into an echo shel
   never reaches the pane's program (prefix then `q` detaches). Both attaches
   (`agent attach`, `terminal attach`) draw the one pane alone, with no herdr
   sidebar or header.
+
+## A shell rc that starts tmux or herdr
+
+The attach is TYPED into the host's login shell: Citadel, the SSH library,
+opens a PTY only together with an interactive login shell, so the app writes
+` exec /bin/sh -c '…'` into it once its rc files have run. An rc that starts
+tmux, screen or herdr itself on an SSH TTY takes over the terminal first, and
+the typed line lands in that program instead of the shell: the screen shows
+a tmux or herdr session of its own rather than the pane.
+
+The app cannot mark its shell for the rc to skip. It sends no environment
+variables (Citadel makes no `env` request, and sshd's `AcceptEnv` would drop
+one by default), and the shell it gets is an ordinary interactive login shell
+on a TTY with `TERM=xterm-256color`: `$SSH_TTY` is set and `case $- in *i*)`
+matches, exactly as for a person's own `ssh`. So a guard has to come from the
+other side, marking the sessions that SHOULD auto-start rather than the app's:
+
+```sh
+# ~/.zshrc or ~/.bashrc: auto-start only when the desktop asked for it
+if [ -n "$SSH_TTY" ] && [ -n "$AUTO_TMUX" ] && [ -z "$TMUX" ]; then
+  exec tmux new-session -A -s main
+fi
+```
+
+with `SetEnv AUTO_TMUX=1` in the desktop's `~/.ssh/config` for that host
+(OpenSSH 7.8 or later, and `AcceptEnv AUTO_TMUX` in the host's
+`sshd_config`), or simpler, `RemoteCommand tmux new -A -s main` plus
+`RequestTTY yes` in the desktop's ssh config instead of anything in the rc.
 
 What to check by hand on a device is listed in `.maestro/README.md`
 ("Terminal, by hand on a device").

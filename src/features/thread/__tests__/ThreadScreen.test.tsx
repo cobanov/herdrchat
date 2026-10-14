@@ -31,6 +31,12 @@ jest.mock('@/components/Glass', () => ({
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+let mockTerminalAvailable = true;
+jest.mock('../../../../modules/herdr-terminal/src', () => ({
+  get isTerminalAvailable() {
+    return mockTerminalAvailable;
+  },
+}));
 const mockOpenTerminal = jest.fn();
 jest.mock('@/features/terminal/navigation', () => ({ openTerminal: (...args: unknown[]) => mockOpenTerminal(...args) }));
 let mockConnection: unknown = null;
@@ -288,6 +294,14 @@ it('opens the agent\'s terminal from the header, on this chat\'s pane or its foc
   const empty = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
   expect(empty.queryByTestId('thread-terminal')).toBeNull();
   await empty.unmount();
+  // Android has no terminal: the button would lead only to a screen saying so.
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p1', terminalId: 'term_w6_p1', agentSession: null, focused: true }];
+  mockTerminalAvailable = false;
+  const android = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" paneId="w6:p1" title="api" />);
+  expect(android.queryByTestId('thread-terminal')).toBeNull();
+  await android.unmount();
+  mockTerminalAvailable = true;
+  mockAgents = [];
   mockHostConnection = null;
 });
 

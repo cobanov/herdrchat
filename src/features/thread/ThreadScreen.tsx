@@ -37,6 +37,7 @@ import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { DelegationScopeProvider, type DelegationScope } from '@/features/thread/delegation';
 import { openTerminal } from '@/features/terminal/navigation';
+import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { ThreadRow } from '@/features/thread/ThreadRow';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
@@ -795,8 +796,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   </View>
                 </View>
                 {/* The agent's own screen, for what the chat cannot show:
-                    a panel it does not know, a login prompt, a TUI. */}
-                {terminalPane !== undefined && connection !== null && (
+                    a panel it does not know, a login prompt, a TUI. Not where
+                    no terminal can open (Android): it would lead nowhere. */}
+                {isTerminalAvailable && terminalPane !== undefined && connection !== null && (
                   <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
                     <Pressable
                       onPress={() => {

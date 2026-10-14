@@ -1,7 +1,8 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { View as MockView, type ViewProps } from 'react-native';
+import { AppState, View as MockView, type AppStateStatus, type ViewProps } from 'react-native';
 
 import { DEMO_SHELL_SCREEN } from '@/lib/demo/terminal';
+import { TERMINAL_RESIZE_DEBOUNCE_MS } from '@/lib/herdr/timeouts';
 import TerminalScreen from '../TerminalScreen';
 
 type Closed = (event: { shellId: string; reason: string; exitCode?: number; message?: string }) => void;
@@ -9,12 +10,16 @@ type Closed = (event: { shellId: string; reason: string; exitCode?: number; mess
 const mockOpenShell = jest.fn();
 const mockCloseShell = jest.fn(async (_id: string) => undefined);
 const mockWrite = jest.fn(async (_id: string, _text: string) => ({ ok: true }));
+const mockResize = jest.fn(async (_id: string, _cols: number, _rows: number) => ({ ok: true }));
 let mockClosed: Closed | null = null;
+/** The view's size report, to change its size as a keyboard would. */
+let mockReportSize: ((size: { cols: number; rows: number }) => void) | undefined;
 let mockShellCount = 0;
 jest.mock('../../../../modules/herdr-ssh/src', () => ({
   openShell: (...args: unknown[]) => mockOpenShell(...args),
   closeShell: (id: string) => mockCloseShell(id),
   writeShellText: (id: string, text: string) => mockWrite(id, text),
+  resizeShell: (id: string, cols: number, rows: number) => mockResize(id, cols, rows),
   utf8Bytes: (text: string) => Uint8Array.from(Buffer.from(text, 'utf8')),
   base64FromBytes: (bytes: Uint8Array) => Buffer.from(bytes).toString('base64'),
 }));
@@ -28,6 +33,7 @@ jest.mock('../../../../modules/herdr-terminal/src', () => {
   const { View } = jest.requireActual('react-native');
   function FakeTerminal(props: { ref?: unknown; testID?: string; shellId: string | null; onSizeChange?: (size: { cols: number; rows: number }) => void }) {
     useImperativeHandle(props.ref, () => mockHandle);
+    mockReportSize = props.onSizeChange;
     useEffect(() => {
       props.onSizeChange?.({ cols: 80, rows: 24 });
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -262,4 +268,60 @@ it('takes its top and side insets where it sits, as the thread does in the same 
   expect(safe).toHaveProp('edges', ['top', 'left', 'right']);
   expect(safe).not.toHaveStyle({ paddingTop: 59 });
   await screen.unmount();
+});
+
+it('sends the host one resize once a keyboard animation settles, not one a frame', async () => {
+  mockConnection = host;
+  const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
+  await settle();
+  const shellId = (await mockOpenShell.mock.results[0]?.value).shellId as string;
+  jest.useFakeTimers();
+  try {
+    // The keyboard sliding in: a new height on every frame.
+    for (const rows of [23, 21, 19, 17, 15]) {
+      await act(async () => mockReportSize?.({ cols: 80, rows }));
+      await act(async () => { jest.advanceTimersByTime(16); });
+    }
+    expect(mockResize).not.toHaveBeenCalled();
+    await act(async () => { jest.advanceTimersByTime(TERMINAL_RESIZE_DEBOUNCE_MS); });
+    expect(mockResize).toHaveBeenCalledTimes(1);
+    expect(mockResize).toHaveBeenCalledWith(shellId, 80, 15);
+  } finally {
+    jest.useRealTimers();
+  }
+  await screen.unmount();
+});
+
+it('hangs up when the app goes to the background, and waits for Reconnect on coming back', async () => {
+  const listeners: ((state: AppStateStatus) => void)[] = [];
+  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+    listeners.push(listener as (state: AppStateStatus) => void);
+    return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+  });
+  try {
+    mockConnection = host;
+    const screen = await render(<TerminalScreen connectionId="srv-1" paneId="w6:p3" kind="shell" terminalId="term_w6_p3" title="Terminal" onBack={jest.fn()} />);
+    await settle();
+    const shellId = (await mockOpenShell.mock.results[0]?.value).shellId as string;
+    await act(async () => listeners.forEach((listener) => listener('inactive')));
+    // A pulled-down notification centre is not leaving.
+    expect(mockCloseShell).not.toHaveBeenCalled();
+    await act(async () => listeners.forEach((listener) => listener('background')));
+    expect(mockCloseShell).toHaveBeenCalledWith(shellId);
+    expect(screen.getByTestId('terminal-status')).toHaveTextContent('Hung up');
+    expect(screen.getByTestId('error-banner')).toHaveTextContent(/^Hung up while the app was in the background/);
+    // Its own hang-up reported back by the native side changes nothing.
+    await act(async () => mockClosed?.({ shellId, reason: 'connection_lost' }));
+    expect(screen.getByTestId('terminal-status')).toHaveTextContent('Hung up');
+    await act(async () => listeners.forEach((listener) => listener('active')));
+    await settle();
+    expect(mockOpenShell).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByTestId('terminal-reconnect'));
+    await settle();
+    expect(mockOpenShell).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('terminal-status')).toHaveTextContent('Connected');
+    await screen.unmount();
+  } finally {
+    spy.mockRestore();
+  }
 });

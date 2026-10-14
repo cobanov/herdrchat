@@ -53,7 +53,12 @@ export interface TerminalViewProps extends ViewProps {
   /** Apply Ctrl, or Alt as Meta, to the next key typed on the software keyboard. */
   controlModifier?: boolean;
   metaModifier?: boolean;
-  /** The size in cells: on first layout (open the shell with it) and on every change. */
+  /**
+   * The size in cells: on first layout (open the shell with it) and on every
+   * change. Only reported: the view sizes a shell when it binds to it, and
+   * after that the host's pane is resized with `resizeShell` (herdr-ssh), so
+   * the caller can wait for a keyboard animation to settle.
+   */
   onSizeChange?: (size: TerminalSize) => void;
   /** A pinch ended on a new size. */
   onFontSizeChange?: (fontSize: number) => void;

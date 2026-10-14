@@ -252,6 +252,15 @@ export const JUMP_KEEPALIVE_MS = 5_000;
 export const TERMINAL_START_TIMEOUT_MS = 20_000;
 
 /**
+ * How long the terminal's size in cells must hold still before the host's
+ * pane is resized to it. The keyboard sliding in or out changes the size on
+ * every frame of its animation, and each resize redraws the pane on the
+ * desktop too; this sends the one it settles on. The view's own layout is not
+ * held back, only what goes to the host.
+ */
+export const TERMINAL_RESIZE_DEBOUNCE_MS = 250;
+
+/**
  * How often the chat list asks herdr which program a shell pane is running
  * ("vim", "htop"), counted in the list's own polls. One SSH exec for all the
  * shell panes (`HerdrSocket.callEach`), but a socket request per pane inside

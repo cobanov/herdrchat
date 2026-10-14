@@ -53,6 +53,12 @@ jest.mock('@/state/connections', () => ({
   loadHostKeyPin: () => Promise.resolve(null),
   newConnection: () => ({ id: 'new' }),
 }));
+let mockTerminalAvailable = true;
+jest.mock('../../../../modules/herdr-terminal/src', () => ({
+  get isTerminalAvailable() {
+    return mockTerminalAvailable;
+  },
+}));
 jest.mock('@/state/db', () => ({ loadThreadReads: () => Promise.resolve(new Map()), setSetting: jest.fn() }));
 jest.mock('@/features/chats/useHostChats', () => ({ useHostChats: () => mockChats }));
 jest.mock('@/features/chats/useOutdatedIntegrations', () => ({
@@ -128,7 +134,20 @@ const selectedOf = (screen: Awaited<ReturnType<typeof render>>, testID: string) 
 const everyRow = ['chat-row-host-a-w6', 'chat-row-host-a/nuku-w6', 'pane-row-host-a-w6:p1', 'pane-row-host-a-w6:p2', 'terminal-row-w6:p3', 'terminal-row-nuku-w6:p3'];
 const lit = (screen: Awaited<ReturnType<typeof render>>) => everyRow.filter((id) => selectedOf(screen, id));
 
-beforeEach(() => useChatSelection.getState().select(null));
+beforeEach(() => {
+  useChatSelection.getState().select(null);
+  mockTerminalAvailable = true;
+});
+
+// Android has no terminal: its rows would only open the screen saying so.
+it('lists no terminal rows where no terminal can open', async () => {
+  mockTerminalAvailable = false;
+  const screen = await render(<ChatsList />);
+  expect(screen.queryByTestId('terminal-row-w6:p3')).toBeNull();
+  expect(screen.queryByTestId('terminal-row-nuku-w6:p3')).toBeNull();
+  expect(screen.getByTestId('pane-row-host-a-w6:p1')).toBeTruthy();
+  await screen.unmount();
+});
 
 it('lights the open terminal\'s row by its own connection and pane, and no chat or card', async () => {
   const screen = await render(<ChatsList selectedTerminal={{ connectionId: 'host-a', paneId: 'w6:p3' }} />);

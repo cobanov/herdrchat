@@ -1,6 +1,6 @@
 import { canReconnect, canTakeOver, phaseLabel, phaseMessage, type TerminalPhase } from '../status';
 
-const closed = (reason: 'exited' | 'connection_lost' | 'transport_failed', exitCode: number | null = null, message: string | null = null): TerminalPhase =>
+const closed = (reason: 'exited' | 'connection_lost' | 'transport_failed' | 'background', exitCode: number | null = null, message: string | null = null): TerminalPhase =>
   ({ kind: 'closed', reason, exitCode, message });
 
 it('says where the shell stands, and offers Reconnect only once it has gone', () => {
@@ -37,4 +37,11 @@ it('offers Take over only for an attach herdr refused', () => {
   expect(canTakeOver(closed('connection_lost', 1))).toBe(false);
   expect(canTakeOver(closed('transport_failed'))).toBe(false);
   expect([{ kind: 'open' } as const, { kind: 'opening' } as const, { kind: 'failed', message: 'x' } as const].some(canTakeOver)).toBe(false);
+});
+
+it('says the app hung up in the background, and offers Reconnect but not Take over', () => {
+  expect(phaseLabel(closed('background'))).toBe('Hung up');
+  expect(phaseMessage(closed('background'))).toMatch(/^Hung up while the app was in the background/);
+  expect(canReconnect(closed('background'))).toBe(true);
+  expect(canTakeOver(closed('background'))).toBe(false);
 });

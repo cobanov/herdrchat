@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import {
   base64FromBytes,
   closeShell,
   openShell,
+  resizeShell,
   utf8Bytes,
   writeShellText,
   type ShellClosedEvent,
 } from '../../../modules/herdr-ssh/src';
 import { feed, type TerminalSize } from '../../../modules/herdr-terminal/src';
 import { demoTerminalScreen } from '@/lib/demo/terminal';
+import { TERMINAL_RESIZE_DEBOUNCE_MS } from '@/lib/herdr/timeouts';
 import { isDemo, transportFor, type Connection } from '@/state/connections';
 import type { TerminalPhase } from './status';
 import { noLaunchMessage, terminalLaunch, type TerminalPaneRef } from './target';
@@ -18,8 +21,13 @@ import { noLaunchMessage, terminalLaunch, type TerminalPaneRef } from './target'
  * One pane's terminal shell, for as long as the screen is up.
  *
  * - It opens when the view first reports its size in cells (`onSizeChange`),
- *   since the remote pane is drawn at that size; the view resizes the channel
- *   itself after that.
+ *   since the remote pane is drawn at that size. Later sizes reach the host
+ *   once they hold still (`TERMINAL_RESIZE_DEBOUNCE_MS`): the keyboard's
+ *   animation is many sizes, and each resize redraws the desktop's pane too.
+ * - The app going to the background hangs it up, and coming back does not
+ *   reconnect: a locked phone must not hold the attach, nor keep the desktop
+ *   pane at the phone's size, and the pane is not resized under the person
+ *   while they are not looking. Reconnect is theirs to tap.
  * - It ends on its own (the attach exits, the connection drops on a route
  *   change), and then stays ended: `reconnect` opens a new shell, which the
  *   same view shows under the scrollback of the last one.
@@ -53,6 +61,12 @@ export function useTerminalShell({ connection, pane, onOpened }: {
   /** An open is under way: a second size report must not start another. */
   const starting = useRef(false);
   const mounted = useRef(true);
+  /** A resize waiting for the size to hold still. */
+  const pendingResize = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelResize = useCallback(() => {
+    if (pendingResize.current !== null) clearTimeout(pendingResize.current);
+    pendingResize.current = null;
+  }, []);
 
   const open = useCallback(async (takeover = false) => {
     const cells = size.current;
@@ -121,6 +135,12 @@ export function useTerminalShell({ connection, pane, onOpened }: {
         setPhase(closedPhase(early));
         return;
       }
+      if (AppState.currentState === 'background') {
+        // Opened while the app went away: hung up, as going away does.
+        void closeShell(result.shellId);
+        setPhase(BACKGROUND_PHASE);
+        return;
+      }
       live.current = result.shellId;
       setPhase({ kind: 'open' });
       onOpened?.();
@@ -138,8 +158,19 @@ export function useTerminalShell({ connection, pane, onOpened }: {
   const onSizeChange = useCallback((next: TerminalSize) => {
     const first = size.current === null;
     size.current = next;
-    if (first) void open();
-  }, [open]);
+    if (first) {
+      void open();
+      return;
+    }
+    // A shell that opens meanwhile is sized by the view when it binds.
+    cancelResize();
+    pendingResize.current = setTimeout(() => {
+      pendingResize.current = null;
+      const id = live.current;
+      const cells = size.current;
+      if (id !== null && cells !== null) void resizeShell(id, cells.cols, cells.rows);
+    }, TERMINAL_RESIZE_DEBOUNCE_MS);
+  }, [open, cancelResize]);
 
   /** A new shell after the last ended; `takeover` only from the person's Take over. */
   const reopen = useCallback((takeover: boolean) => {
@@ -158,14 +189,28 @@ export function useTerminalShell({ connection, pane, onOpened }: {
   }, []);
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'background') return;
+      cancelResize();
+      const id = live.current;
+      if (id === null) return;
+      live.current = null;
+      void closeShell(id);
+      if (mounted.current) setPhase(BACKGROUND_PHASE);
+    });
+    return () => subscription.remove();
+  }, [cancelResize]);
+
+  useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      cancelResize();
       const id = live.current;
       live.current = null;
       if (id !== null) void closeShell(id);
     };
-  }, []);
+  }, [cancelResize]);
 
   // A pane no command can be written for never opens; said as a failure that
   // offers no Reconnect, since `open` has nothing to run.
@@ -174,6 +219,9 @@ export function useTerminalShell({ connection, pane, onOpened }: {
     : phase;
   return { phase: shown, shellId, onSizeChange, reconnect, takeOver, send };
 }
+
+/** What the screen shows after the app hung up on going to the background. */
+const BACKGROUND_PHASE: TerminalPhase = { kind: 'closed', reason: 'background', exitCode: null, message: null };
 
 function closedPhase(event: ShellClosedEvent): TerminalPhase {
   return { kind: 'closed', reason: event.reason, exitCode: event.exitCode ?? null, message: event.message ?? null };

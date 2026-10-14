@@ -31,6 +31,8 @@ src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
 modules/herdr-keys/     iOS only: Command-Return on the composer (a UIKeyCommand view)
+modules/herdr-terminal/ iOS only: a pane's terminal, SwiftTerm in a native view (see its README)
+modules/herdr-shell-registry/  the open terminal shells, shared by herdr-ssh and herdr-terminal
 relay/                  the push relay, a Cloudflare Worker (see RELEASING.md)
                         (the SwiftUI and Compose apps this replaced are not in
                          the tree — they live in git history before the rewrite)

@@ -36,7 +36,7 @@ it("lists a workspace's terminals after its agents, on one rail", () => {
     chat('w6', [paneSummary('w6:p1'), paneSummary('w6:p2')], [shell('w6:p3'), shell('w6:p4')]),
     chat('w7', [paneSummary('w7:p1')], [shell('w7:p2')]),
     chat('w8', [paneSummary('w8:p1')], []),
-  ], ''));
+  ], ''), true);
   expect(shape(rows)).toEqual([
     'idle',
     'w6', 'pane w6:p1 first', 'pane w6:p2', 'terminal w6:p3', 'terminal w6:p4 last',
@@ -48,7 +48,13 @@ it("lists a workspace's terminals after its agents, on one rail", () => {
 
 it('adds nothing to a workspace with no other panes', () => {
   const rows = groupChats([chat('w6', [paneSummary('w6:p1'), paneSummary('w6:p2')], [])], '');
-  expect(withTerminalRows(rows)).toEqual(rows);
+  expect(withTerminalRows(rows, true)).toEqual(rows);
+});
+
+// Android: a terminal row would only open the screen saying there is none.
+it('adds no terminal rows where no terminal can open', () => {
+  const rows = groupChats([chat('w6', [paneSummary('w6:p1')], [shell('w6:p3')])], '');
+  expect(withTerminalRows(rows, false)).toEqual(rows);
 });
 
 // A shell pane is attached by its own terminal id, so the row must hand it on;

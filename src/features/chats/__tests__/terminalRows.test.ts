@@ -174,15 +174,22 @@ describe('chatListRows', () => {
   };
 
   it("hangs a workspace's shell pane under its card in Spaces", async () => {
-    const rows = chatListRows('spaces', await listed(), '', new Map());
+    const rows = chatListRows('spaces', await listed(), '', new Map(), true);
     const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.terminal.paneId}`]));
     expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3']);
+  });
+
+  // Android has no terminal: a row would only open the screen saying so.
+  it('lists no terminal rows where no terminal can open', async () => {
+    const rows = chatListRows('spaces', await listed(), '', new Map(), false);
+    expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
+    expect(rows.some((row) => row.kind === 'pane' && row.pane.paneId === 'w6:p2')).toBe(true);
   });
 
   // Every agent row carries its workspace's `shellPanes`; the view of agents
   // must still list none of them.
   it('lists no terminal rows in Agents', async () => {
-    const rows = chatListRows('agents', await listed(), '', new Map());
+    const rows = chatListRows('agents', await listed(), '', new Map(), true);
     expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
     expect(rows.some((row) => row.kind === 'chat' && row.summary.workspaceId === 'w6')).toBe(true);
   });

@@ -9,7 +9,11 @@ export type TerminalPhase =
   | { kind: 'waiting' }
   | { kind: 'opening' }
   | { kind: 'open' }
-  | { kind: 'closed'; reason: ShellCloseReason; exitCode: number | null; message: string | null }
+  /**
+   * `background`: the app hung up as it went to the background (a locked
+   * phone must not hold the attach, or keep the desktop pane at its size).
+   */
+  | { kind: 'closed'; reason: ShellCloseReason | 'background'; exitCode: number | null; message: string | null }
   /**
    * `retryable: false` when no command can be written for the pane (a herdr
    * too old to send a terminal id): Reconnect could only do nothing, and the
@@ -46,6 +50,7 @@ export function phaseLabel(phase: TerminalPhase): string {
       return 'Not connected';
     case 'closed':
       if (phase.reason === 'connection_lost') return 'Connection lost';
+      if (phase.reason === 'background') return 'Hung up';
       if (phase.reason === 'transport_failed') return 'Disconnected';
       // herdr's attach ends 0 when the pane closes or herdr detaches it.
       return phase.exitCode === null || phase.exitCode === 0 ? 'Ended' : `Ended with exit ${phase.exitCode}`;
@@ -65,6 +70,7 @@ export function phaseMessage(phase: TerminalPhase): string | null {
   if (phase.kind === 'failed') return phase.message;
   if (phase.kind !== 'closed') return null;
   if (phase.reason === 'connection_lost') return 'The connection to the host dropped. Reconnect to pick up where the pane is now.';
+  if (phase.reason === 'background') return 'Hung up while the app was in the background. Reconnect to pick up where the pane is now.';
   if (phase.reason === 'transport_failed') return phase.message ?? 'The terminal channel failed.';
   if (phase.exitCode === 127) return "herdr isn't installed where this pane is, or isn't on the PATH.";
   if (canTakeOver(phase)) return 'herdr could not attach. Another client may be attached to this pane, or it may have closed.';
