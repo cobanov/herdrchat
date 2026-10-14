@@ -201,7 +201,11 @@ function RootStack() {
             see SpaceLayoutSheet. */}
         <Stack.Screen
           name="space-layout"
-          options={{ presentation: 'formSheet', sheetAllowedDetents: 'fitToContents' }}
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: 'fitToContents',
+            sheetCornerRadius: Platform.OS === 'android' ? radius.lg : undefined,
+          }}
         />
       </Stack>
       {/* Android's action sheets, above every screen. Renders nothing on iOS,

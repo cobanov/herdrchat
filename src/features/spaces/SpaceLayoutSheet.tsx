@@ -66,8 +66,10 @@ export default function SpaceLayoutSheet() {
       </>
     );
   }
+  // Android: a bottom sheet sized to its content, so no status-bar band over
+  // the title, and the sheet's rounded top (root layout) left showing.
   return (
-    <Screen presentation="sheet">
+    <Screen presentation="form-sheet">
       {header}
       {boxes}
     </Screen>
