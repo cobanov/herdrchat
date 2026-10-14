@@ -96,11 +96,12 @@ export function useChatActions({
       haptics.medium();
       showActionSheet({
         // The row's own title, so the sheet names what was pressed. Rename
-        // still prefills the workspace label, since that is what it renames.
+        // says workspace, and prefills its label, since that is what it
+        // renames: a row titled by its session no longer shows that label.
         title: rowTitle(summary),
         actions: [
           ...extra,
-          { label: 'Rename…', onPress: () => renameChat(summary) },
+          { label: 'Rename workspace…', onPress: () => renameChat(summary) },
           { label: 'Close chat', destructive: true, onPress: () => closeChat(summary) },
         ],
       });

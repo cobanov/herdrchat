@@ -326,7 +326,11 @@ function sessionTitle(value: Record<string, unknown>): string | null {
   const title = optionalStr(value.title);
   const stripped = optionalStr(value.terminal_title_stripped);
   if (value.agent !== 'codex') return title ?? stripped;
-  const named = stripped?.replace(/ \| [^|]*$/, '').trim() ?? '';
+  // Until the thread has a name, Codex's default title is the project's
+  // folder alone ("kenneth"), which names no thread; a spinner or a
+  // microphone dot may lead either form.
+  const parts = stripped?.match(/^(.*) \| [^|]*$/);
+  const named = parts?.[1]?.replace(/^[^\p{L}\p{N}]+/u, '').trim() ?? '';
   return named !== '' ? named : title;
 }
 

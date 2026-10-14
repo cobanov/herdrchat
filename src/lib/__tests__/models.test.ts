@@ -101,6 +101,22 @@ describe('snapshot decoding', () => {
     expect(untitled?.title).toBe('fix the build');
   });
 
+  // Codex 0.162 titles the terminal with the project's folder alone until the
+  // thread has a name ("activity", "thread-name", "project-name" by default),
+  // so a title with no ` | ` is the folder, not a thread.
+  it('does not title a Codex agent by its folder before the thread has a name', () => {
+    const [fresh, prompted, working] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'codex', terminal_title: 'kenneth', terminal_title_stripped: 'kenneth' },
+        { pane_id: 'p2', agent: 'codex', title: 'Reply with exactly: ok', terminal_title_stripped: 'kenneth' },
+        { pane_id: 'p3', agent: 'codex', terminal_title_stripped: '⠋ Reply ok | kenneth' },
+      ],
+    }).agents;
+    expect(fresh?.title).toBeNull();
+    expect(prompted?.title).toBe('Reply with exactly: ok');
+    expect(working?.title).toBe('Reply ok');
+  });
+
   // The session's own title names the chat; `terminal_title` keeps a status
   // glyph in front, so only the clean fields are read.
   it('reads the agent name and the session title', () => {

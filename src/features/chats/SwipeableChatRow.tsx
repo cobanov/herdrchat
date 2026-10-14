@@ -151,7 +151,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   const rowActions = [
     ...(onTogglePin !== undefined ? [{ name: 'pin', label: pinned ? 'Unpin' : 'Pin', run: onTogglePin }] : []),
     ...(onToggleMute !== undefined ? [{ name: 'mute', label: muted ? 'Unmute notifications' : 'Mute notifications', run: onToggleMute }] : []),
-    { name: 'rename', label: 'Rename', run: onRename },
+    { name: 'rename', label: 'Rename workspace', run: onRename },
     { name: 'close', label: 'Close chat', run: onClose },
   ];
 

@@ -65,3 +65,13 @@ it('names the chat by its session in the sheet and the close confirmation', asyn
   expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].title).toBe('Close Notes?');
   expect(jest.mocked(confirmDestructive).mock.calls[1]?.[0].message).toMatch(/^Every tab, pane/);
 });
+
+// Rename renames the workspace, whose label a row titled by its session no
+// longer shows, so the menu says which name it changes and prefills that one.
+it('offers to rename the workspace, prefilled with its label', async () => {
+  const titled: ChatSummary = { ...summary, sessionTitle: 'Release notes summary' };
+  const { result } = await renderHook(() => useChatActions({ client, connectionId: 'demo', db, refresh: jest.fn() }));
+  await act(() => result.current.manageChat(titled));
+  const labels = jest.mocked(showActionSheet).mock.calls[0]?.[0].actions.map((action) => action.label);
+  expect(labels).toEqual(['Rename workspace…', 'Close chat']);
+});

@@ -49,14 +49,14 @@ it('offers its swipe actions to assistive technology', async () => {
       unread={false}
       onPress={jest.fn()}
       actions={[
-        { name: 'rename', label: 'Rename', run: rename },
+        { name: 'rename', label: 'Rename workspace', run: rename },
         { name: 'close', label: 'Close chat', run: close },
       ]}
     />
   );
   const row = screen.getByTestId('chat-row-w1');
   expect(row).toHaveProp('accessibilityActions', [
-    { name: 'rename', label: 'Rename' },
+    { name: 'rename', label: 'Rename workspace' },
     { name: 'close', label: 'Close chat' },
   ]);
   await fireEvent(row, 'accessibilityAction', { nativeEvent: { actionName: 'close' } });
