@@ -183,9 +183,11 @@ describe('chatListRows', () => {
   });
 
   // Android has no terminal: a row would only open the screen saying so.
+  // Without the shells, w6's agents share one tab and nothing divides them.
   it('lists no terminal rows where no terminal can open', async () => {
     const rows = chatListRows('spaces', await listed(), '', new Map(), false);
     expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
+    expect(rows.some((row) => row.kind === 'tab')).toBe(false);
     expect(rows.some((row) => row.kind === 'pane' && row.pane.paneId === 'w6:p2')).toBe(true);
   });
 
