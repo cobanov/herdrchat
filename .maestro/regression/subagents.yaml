@@ -1,0 +1,112 @@
+# Subagents and workflows in the thread (the Demo notes chat, w2): an Agent
+# call is a card of its own that runs, then says done; its chevron opens the
+# agent's own transcript, read only; a Workflow call's card opens its run,
+# with its phases and agents. Before, an Agent call was one line in a folded
+# run and a Workflow call a generic tool, and neither could be opened.
+#
+# The open agent screen reads its own end from the transcript the call was
+# made in: the chat underneath stops reading while covered, and its card
+# could not tell it.
+#
+# "delegate the review" (src/lib/demo/scenarios.ts) starts a foreground
+# subagent that works for about five seconds: its call and meta at +1.5 s,
+# its transcript growing at +4 s, its result at +6.5 s.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+- tapOn:
+    id: composer-input
+- inputText: delegate the review
+- runFlow: _send.yaml
+# The card lands with the call, running. Its id is the scenario's generated
+# call id, so it is found by what it says: its description, then its state,
+# both in its accessibility label.
+- extendedWaitUntil:
+    visible: 'Agent: Review the release notes wording, running.*'
+    timeout: 15000
+- assertVisible:
+    id: 'subagent-open-toolu_demo_demo-.*'
+- takeScreenshot: subagent-running-${APPEARANCE}
+
+# Open it while it runs: the chat underneath stops reading while covered, so
+# the screen must learn the end itself. Its header goes from running to done
+# and the answer arrives, with no card in view to say so.
+- tapOn:
+    id: 'subagent-open-toolu_demo_demo-.*'
+- extendedWaitUntil:
+    visible:
+      id: subagent-title
+      text: Review the release notes wording
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: state-done
+    timeout: 20000
+- extendedWaitUntil:
+    visible: .*pinned on first contact.*
+    timeout: 15000
+- assertVisible:
+    id: subagent-meta
+    text: .*general-purpose.*
+- assertNotVisible:
+    id: composer-input
+- takeScreenshot: subagent-thread-${APPEARANCE}
+- tapOn:
+    id: subagent-back
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 10000
+# Back in the chat, its card says done too.
+- extendedWaitUntil:
+    visible: 'Agent: Review the release notes wording, done.*'
+    timeout: 15000
+
+# The review workflow, above the summary the chat opens on: still running,
+# two phases, the last agent mid-way.
+- scrollUntilVisible:
+    element:
+      id: workflow-open-toolu_demo_review
+    direction: UP
+    timeout: 20000
+    centerElement: true
+- assertVisible: 'Workflow: release-review, running.*'
+- tapOn:
+    id: workflow-open-toolu_demo_review
+- extendedWaitUntil:
+    visible:
+      id: workflow-phase-Check
+    timeout: 10000
+- assertVisible:
+    id: workflow-title
+    text: release-review
+- assertVisible:
+    id: workflow-phase-Review
+- assertVisible:
+    id: 'workflow-agent-review:wording'
+    text: 'review:wording, running.*'
+- takeScreenshot: workflow-${APPEARANCE}
+
+# A workflow agent opens its own transcript too.
+- tapOn:
+    id: 'workflow-agent-check:links'
+- extendedWaitUntil:
+    visible:
+      id: subagent-title
+      text: 'check:links'
+    timeout: 10000
+- tapOn:
+    id: subagent-back
+- tapOn:
+    id: workflow-back
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 10000

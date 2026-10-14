@@ -32,6 +32,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 - **Pick up where you left off.** Read Claude Code, Codex and OMP history, including replies started at your desk.
 - **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
+- **Watch the agents it hands work to.** When Claude Code starts a subagent or a workflow, it shows in the chat as a card that says what it was asked and where it stands, then what it handed back. Open a subagent to read its own conversation as it works, or a workflow to see each phase and each agent in it.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
 - **Every slash command, as the terminal has them.** Type `/` for the commands the agent on that machine actually has: Claude Code's built-ins for the version installed there, your own commands and skills, the project's, and your plugins', each with what it does and what it takes. Codex chats get Codex's own menu. A command that takes nothing runs when you tap it; one that takes something fills in and shows what goes after it. The list is read from the machine in the background, every ten minutes at most, and kept on the phone.
 - **Show it, don't describe it.** Add a screenshot or photo to a message; it goes to your machine over SSH and the agent opens it there.

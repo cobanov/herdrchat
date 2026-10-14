@@ -1,7 +1,8 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
 import { codexEntry } from './codex';
-import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine } from './harness';
+import { claudeCommandOutput, claudeUserText, isClaudeHarnessLine, isClaudeTypedLine } from './harness';
 import { splitImages } from './images';
+import { parseHandback, parseTaskNotices } from '../subagents/taskNotice';
 import { ompEntry } from './omp';
 import type { SessionMeta } from './sessionMeta';
 
@@ -158,12 +159,24 @@ function messageFrom(
   line: string,
   agentLabel: string | null
 ): ChatMessage | null {
-  if (raw.type === 'attachment') return queuedPrompt(raw, line, agentLabel);
+  if (raw.type === 'attachment') {
+    return queuedHandback(raw, line, agentLabel) ?? queuedPrompt(raw, line, agentLabel) ?? queuedNotice(raw, line, agentLabel);
+  }
   const role = roleOf(raw.type);
   if (role === null) return null;
-  if (role === 'user' && isClaudeHarnessLine(raw)) return null;
-
   const message = asRecord(raw.message);
+  if (role === 'user' && isClaudeHarnessLine(raw)) {
+    // Before the harness rule hides it: a background task's end is the
+    // harness's turn, and the only sign that a background subagent or
+    // workflow finished. So is a background subagent's report, which arrives
+    // as the agent's own turn. Only on a harness line: a person who pastes a
+    // whole <task-notification> into a message sent a message, and read as a
+    // notice its bubble vanished, its echo never confirmed, and the id it
+    // quotes finished someone else's card.
+    return noticeMessage(raw, message?.content, line, agentLabel) ??
+      handbackMessage(raw, raw.origin, message?.content, line, agentLabel);
+  }
+
   const output = role === 'user' ? commandOutput(message?.content) : null;
   if (output !== null) {
     return {
@@ -175,7 +188,7 @@ function messageFrom(
       isSidechain: raw.isSidechain === true,
     };
   }
-  const segments = segmentsFrom(message?.content, role);
+  const segments = segmentsFrom(message?.content, role, role === 'user' && isClaudeTypedLine(raw));
   if (segments.length === 0) return null;
 
   return {
@@ -210,7 +223,7 @@ function queuedPrompt(
 ): ChatMessage | null {
   const attachment = asRecord(raw.attachment);
   if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'prompt') return null;
-  const segments = segmentsFrom(attachment.prompt, 'user');
+  const segments = segmentsFrom(attachment.prompt, 'user', isClaudeTypedLine({ origin: attachment.origin }));
   if (segments.length === 0) return null;
   return {
     id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
@@ -220,6 +233,82 @@ function queuedPrompt(
     agentLabel,
     isSidechain: raw.isSidechain === true,
   };
+}
+
+/**
+ * A user turn that is a `<task-notification>`, as one message of `taskNotice`
+ * segments: nothing a person reads, so it never becomes a bubble, but the
+ * thread finishes the card of the call it names. Null for any other turn.
+ */
+function noticeMessage(
+  raw: Record<string, unknown>,
+  content: unknown,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const notices = parseTaskNotices(contentText(content));
+  if (notices.length === 0) return null;
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role: 'user',
+    segments: notices.map((notice) => ({
+      kind: 'taskNotice' as const,
+      notice: { ...notice, result: notice.result === null ? null : capped(notice.result) },
+    })),
+    timestamp: parseTimestamp(raw.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
+/** A turn's text, whether it is a string or text blocks. */
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((block) => {
+    const value = asRecord(block);
+    return value?.type === 'text' && typeof value.text === 'string' ? value.text : '';
+  }).join('\n');
+}
+
+/**
+ * A user turn that is a background subagent's hand-back, as one `handback`
+ * segment: never a bubble (it is the harness's turn, not yours), but the
+ * report the agent's card folds open onto. Null for any other turn.
+ */
+function handbackMessage(
+  raw: Record<string, unknown>,
+  origin: unknown,
+  content: unknown,
+  line: string,
+  agentLabel: string | null
+): ChatMessage | null {
+  const found = parseHandback(origin, contentText(content));
+  if (found === null) return null;
+  return {
+    id: typeof raw.uuid === 'string' ? raw.uuid : fallbackId(line),
+    role: 'user',
+    segments: [{ kind: 'handback', agentId: found.agentId, report: capped(found.report) }],
+    timestamp: parseTimestamp(raw.timestamp),
+    agentLabel,
+    isSidechain: raw.isSidechain === true,
+  };
+}
+
+/** A hand-back that arrived while Claude was busy, recorded only as a queued attachment. */
+function queuedHandback(raw: Record<string, unknown>, line: string, agentLabel: string | null): ChatMessage | null {
+  const attachment = asRecord(raw.attachment);
+  // The agent's own turn, never a prompt someone typed: that one says so in
+  // its origin, and a pasted hand-back in it is only text.
+  if (attachment?.type !== 'queued_command' || !isClaudeHarnessLine({ origin: attachment.origin })) return null;
+  return handbackMessage({ ...raw, timestamp: raw.timestamp ?? attachment.timestamp }, attachment.origin, attachment.prompt, line, agentLabel);
+}
+
+/** A task notification that arrived while Claude was busy, recorded only as an attachment. */
+function queuedNotice(raw: Record<string, unknown>, line: string, agentLabel: string | null): ChatMessage | null {
+  const attachment = asRecord(raw.attachment);
+  if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'task-notification') return null;
+  return noticeMessage({ ...raw, timestamp: raw.timestamp ?? attachment.timestamp }, attachment.prompt, line, agentLabel);
 }
 
 function metaFrom(raw: Record<string, unknown>): SessionMeta | null {
@@ -266,9 +355,9 @@ function roleOf(type: unknown): MessageRole | null {
  * `claudeUserText`, which unwraps pastes, turns slash and shell commands back
  * into what was typed, and drops harness elements.
  */
-function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
+function segmentsFrom(content: unknown, role: MessageRole, typed = false): MessageSegment[] {
   if (typeof content === 'string') {
-    if (role === 'user') return userTextSegments(content);
+    if (role === 'user') return userTextSegments(content, typed);
     return content.trim().length === 0 ? [] : [{ kind: 'text', text: content }];
   }
   if (!Array.isArray(content)) return [];
@@ -277,7 +366,7 @@ function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
   for (const block of content) {
     const value = asRecord(block);
     if (role === 'user' && value?.type === 'text') {
-      segments.push(...userTextSegments(typeof value.text === 'string' ? value.text : ''));
+      segments.push(...userTextSegments(typeof value.text === 'string' ? value.text : '', typed));
       continue;
     }
     if (role === 'user' && value?.type === 'image') {
@@ -295,8 +384,8 @@ function segmentsFrom(content: unknown, role: MessageRole): MessageSegment[] {
 }
 
 /** A user's text, harness removed, with the pictures it references as their own segments. */
-function userTextSegments(raw: string): MessageSegment[] {
-  const text = claudeUserText(raw);
+function userTextSegments(raw: string, byPerson: boolean): MessageSegment[] {
+  const text = claudeUserText(raw, byPerson);
   if (text === null) return [];
   const { text: typed, paths } = splitImages(text);
   return [

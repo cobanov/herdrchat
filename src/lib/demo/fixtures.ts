@@ -8,6 +8,8 @@
  */
 
 import { splitImages } from '../transcript/images';
+import { projectDirName } from '../transcript/parser';
+import { delegationSeed } from './subagents';
 
 /** One agent pane on the demo host. */
 export interface DemoPane {
@@ -116,6 +118,18 @@ export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
 
 export const DEMO_HOME = '/home/demo';
 
+/**
+ * A Claude demo pane's session folder, where its subagents and workflow runs
+ * live: the transcript path without `.jsonl`. Null for a pane with no Claude
+ * session (the OMP one).
+ */
+export function demoSessionDir(paneId: string): string | null {
+  const pane = DEMO_WORKSPACES.flatMap(demoPanes).find((candidate) => candidate.paneId === paneId);
+  const session = DEMO_SESSION_IDS[paneId];
+  if (pane === undefined || session === undefined || pane.agent === 'omp') return null;
+  return `${DEMO_HOME}/.claude/projects/${projectDirName(pane.cwd)}/${session}`;
+}
+
 // MARK: - Transcripts
 //
 // Claude Code's own JSONL, one object per line, so the real parser handles it
@@ -192,6 +206,9 @@ const SEEDS: Readonly<Record<string, readonly string[]>> = {
     }),
   ],
   'w2:p1': [
+    // A subagent that finished and a workflow still running, before the summary
+    // the chat has always opened on (src/lib/demo/subagents.ts).
+    ...delegationSeed(demoSessionDir('w2:p1') ?? ''),
     line({
       type: 'user',
       uuid: 'd2-1',

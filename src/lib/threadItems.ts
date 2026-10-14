@@ -13,7 +13,10 @@
  * `tool_group_summary`): "Ran 13 commands · called 6 tools · 3 failed".
  */
 
-import type { ChatMessage, MessageSegment } from './transcript/message';
+import { handbackPointer, isFailedStatus } from './subagents/taskNotice';
+import { scriptMeta, WORKFLOW_FALLBACK_NAME } from './subagents/scriptMeta';
+import { runIdFromResult } from './subagents/workflowRun';
+import type { ChatMessage, MessageSegment, TaskNotice } from './transcript/message';
 
 export type ToolKind = 'command' | 'edit' | 'read' | 'search' | 'fetch' | 'todo' | 'question' | 'agent' | 'tool';
 
@@ -45,7 +48,52 @@ export type ThreadItem =
    * or closed.
    */
   | { kind: 'tools'; key: string; runKey: string; calls: ToolCall[]; thoughts: string[] }
-  | { kind: 'subagent'; key: string; call: ToolCall };
+  /**
+   * Work handed to a second agent (`Agent`, `Task` in older transcripts) or
+   * to a workflow of them (`Workflow`): a card of its own where the call
+   * sits, never a line in "called N tools". `call.id` is the tool use id the
+   * agent's meta names.
+   */
+  | { kind: 'subagent'; key: string; call: ToolCall; delegation: Delegation }
+  | {
+      kind: 'workflow';
+      key: string;
+      call: ToolCall;
+      delegation: Delegation;
+      /** From the call's result, `Run ID: wf_…`; null until the result lands. */
+      runId: string | null;
+      /** The script's own name, or "Workflow"; the run file's name wins once it is read. */
+      name: string;
+      description: string | null;
+    };
+
+export type DelegationState = 'running' | 'done' | 'failed';
+
+/**
+ * Where a subagent's or a workflow's work stands, as far as the main
+ * transcript can tell.
+ *
+ * A foreground agent runs until its `tool_result` arrives. A background one
+ * (and every workflow) gets a result at once that only says it launched; it
+ * runs until a `<task-notification>` names its call. Reading the launch as
+ * the end showed every background agent "done" the moment it started.
+ */
+export interface Delegation {
+  state: DelegationState;
+  /** The call's result only said it launched; the end comes as a notification. */
+  background: boolean;
+  /** The agent's id, when the launch result reported it (a background agent). */
+  agentId: string | null;
+  /** What the work handed back, once it ended; null while it runs or when it said nothing. */
+  result: string | null;
+  /** When the call was made and when its end arrived, epoch ms, when the transcript said. */
+  startedAt: number | null;
+  endedAt: number | null;
+  /** How long it ran: the notification's own figure, else the time between the two lines. */
+  durationMs: number | null;
+  tokens: number | null;
+  toolUses: number | null;
+}
 
 /** Which of those is the first of its turn, so the list can open a gap above it. */
 export interface PlacedItem {
@@ -63,6 +111,22 @@ export function threadItems(
   let run: Extract<ThreadItem, { kind: 'tools' }> | null = null;
   const open = new Map<string, ToolCall>();
   let unmatched: ToolCall[] = [];
+  /** Calls that are cards, with when they were made and when their result came. */
+  const delegated: { item: Extract<ThreadItem, { kind: 'subagent' | 'workflow' }>; at: number | null }[] = [];
+  const resultAt = new Map<ToolCall, number | null>();
+  const notices = new Map<string, Noticed>();
+  /**
+   * The same, by task: a resumed agent's next notification names the
+   * `SendMessage` that resumed it, not the call that started it; its task id
+   * is still the agent's.
+   */
+  const noticesByTask = new Map<string, Noticed>();
+  /** Background agents' reports, by agent id: the last one each handed back. */
+  const handbacks = new Map<string, { report: string; seq: number }>();
+  /** When each agent was last resumed by `SendMessage`, as a position in the window. */
+  const resumes = new Map<string, number>();
+  let at: number | null = null;
+  let seq = 0;
 
   const flush = () => {
     if (run !== null && (run.calls.length > 0 || run.thoughts.length > 0)) items.push(run);
@@ -79,12 +143,29 @@ export function threadItems(
     if (call === undefined) return;
     call.result = segment.text;
     call.failed = segment.isError === true || call.failed;
+    resultAt.set(call, at);
     if (call.id !== null) open.delete(call.id);
     unmatched = unmatched.filter((candidate) => candidate !== call);
   };
 
   for (const message of messages) {
     if (message.isSidechain && !options.showSidechain) continue;
+    at = message.timestamp;
+    seq += 1;
+    // A background task's end: kept by the call it names, never a row. The
+    // same task can notify more than once (an agent resumed); the last wins.
+    // Its report and a resume are kept by the agent they name.
+    for (const segment of message.segments) {
+      if (segment.kind === 'taskNotice') {
+        notices.set(segment.notice.toolUseId, { notice: segment.notice, at, seq });
+        if (segment.notice.taskId !== null) noticesByTask.set(segment.notice.taskId, { notice: segment.notice, at, seq });
+      }
+      if (segment.kind === 'handback') handbacks.set(segment.agentId, { report: segment.report, seq });
+      if (segment.kind === 'toolResult') {
+        const resumed = resumedAgent(segment.text);
+        if (resumed !== null) resumes.set(resumed, seq);
+      }
+    }
 
     if (message.role === 'system') {
       flush();
@@ -127,6 +208,9 @@ export function threadItems(
         case 'toolResult':
           attach(segment);
           return;
+        case 'taskNotice':
+        case 'handback':
+          return;
         case 'toolUse': {
           emitProse(index);
           const call: ToolCall = {
@@ -140,10 +224,14 @@ export function threadItems(
           };
           if (call.id !== null) open.set(call.id, call);
           else unmatched.push(call);
-          if (call.kind === 'agent') {
+          if (call.kind === 'agent' || isWorkflowTool(call.name)) {
             // A subagent is its own card, never folded into "called N tools".
             flush();
-            items.push({ kind: 'subagent', key: call.key, call });
+            const item: Extract<ThreadItem, { kind: 'subagent' | 'workflow' }> = call.kind === 'agent'
+              ? { kind: 'subagent', key: call.key, call, delegation: RUNNING }
+              : { kind: 'workflow', key: call.key, call, delegation: RUNNING, runId: null, ...workflowTitle(call.input) };
+            items.push(item);
+            delegated.push({ item, at });
           } else {
             runFor(call.key).calls.push(call);
           }
@@ -154,6 +242,14 @@ export function threadItems(
     emitProse(message.segments.length);
   }
   flush();
+
+  // Results and notices arrive after the card was placed, so its state is
+  // settled once the whole window has been read.
+  for (const { item, at: startedAt } of delegated) {
+    const notice = item.call.id === null ? undefined : notices.get(item.call.id);
+    item.delegation = delegationOf(item.call, startedAt, resultAt.get(item.call) ?? null, notice, { handbacks, resumes, noticesByTask });
+    if (item.kind === 'workflow') item.runId = runIdFromResult(item.call.result);
+  }
 
   return items.map((item, index) => {
     const previous = items[index - 1];
@@ -166,8 +262,15 @@ export function threadItems(
   });
 }
 
-/** "Ran 13 commands · edited 2 files · called 6 tools · 3 failed". */
-export function toolRunSummary(calls: readonly ToolCall[], thoughts: number): string {
+/**
+ * "Ran 13 commands · edited 2 files · called 6 tools · 3 failed".
+ *
+ * Subagents and workflows are cards of their own and never counted here,
+ * failures included: "1 failed" under a run whose every call succeeded sent
+ * the reader looking for a failure that was in the card below.
+ */
+export function toolRunSummary(allCalls: readonly ToolCall[], thoughts: number): string {
+  const calls = allCalls.filter((call) => call.kind !== 'agent' && !isWorkflowTool(call.name));
   const count = (kind: ToolKind) => calls.filter((call) => call.kind === kind).length;
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const edited = new Set(calls.filter((call) => call.kind === 'edit').map((call) => editedPath(call) ?? call.key)).size;
@@ -229,7 +332,109 @@ export function toolKind(name: string): ToolKind {
   return 'tool';
 }
 
+/**
+ * Claude's `Workflow` tool, which runs many subagents under phases. Its calls
+ * keep the generic `tool` kind (a chip, were one ever drawn) and become a card.
+ */
+export function isWorkflowTool(name: string): boolean {
+  return name === 'Workflow';
+}
+
+/**
+ * The subagent's own fields from an `Agent` call's input: what it was asked
+ * to do, which kind of agent, which model. Null where the call did not say.
+ */
+export function subagentInput(call: ToolCall): { description: string | null; agentType: string | null; model: string | null } {
+  return {
+    description: inputField(call.input, 'description'),
+    agentType: inputField(call.input, 'subagent_type'),
+    model: inputField(call.input, 'model'),
+  };
+}
+
 // MARK: - Internals
+
+const RUNNING: Delegation = {
+  state: 'running', background: false, agentId: null, result: null,
+  startedAt: null, endedAt: null, durationMs: null, tokens: null, toolUses: null,
+};
+
+/** "Async agent launched successfully…", "Workflow launched in background…". */
+const LAUNCHED = /^\s*(?:Async agent launched|Workflow launched)\b/;
+
+interface Noticed {
+  notice: TaskNotice;
+  at: number | null;
+  /** Where in the window it came, to order it against a resume. */
+  seq: number;
+}
+
+/** The agent a `SendMessage` result says it resumed: `{"resumedAgentId":"ad5da24…"}`. */
+function resumedAgent(text: string): string | null {
+  if (!text.includes('resumedAgentId')) return null;
+  return /"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"/.exec(text)?.[1] ?? null;
+}
+
+function delegationOf(
+  call: ToolCall,
+  startedAt: number | null,
+  resultAt: number | null,
+  noticed: Noticed | undefined,
+  { handbacks, resumes, noticesByTask }: {
+    handbacks: ReadonlyMap<string, { report: string; seq: number }>;
+    resumes: ReadonlyMap<string, number>;
+    noticesByTask: ReadonlyMap<string, Noticed>;
+  }
+): Delegation {
+  const background = call.result !== null && LAUNCHED.test(call.result);
+  const agentId = background ? /\bagentId: ([A-Za-z0-9_-]+)/.exec(call.result ?? '')?.[1] ?? null : null;
+  const base = { ...RUNNING, background, agentId, startedAt };
+  const elapsed = (end: number | null) => (end !== null && startedAt !== null && end >= startedAt ? end - startedAt : null);
+
+  if (call.result === null) return base;
+  // A foreground agent's result is its end. So is a launch that failed outright
+  // (refused, the classifier timed out): an error result, not a launch.
+  if (!background) {
+    return {
+      ...base,
+      state: call.failed ? 'failed' : 'done',
+      result: call.result,
+      endedAt: resultAt,
+      durationMs: elapsed(resultAt),
+    };
+  }
+  // The agent's latest notification, whichever call it names.
+  const byTask = agentId === null ? undefined : noticesByTask.get(agentId);
+  const latest = byTask !== undefined && (noticed === undefined || byTask.seq > noticed.seq) ? byTask : noticed;
+  if (latest === undefined) return base;
+  const { notice, at, seq } = latest;
+  // Claude Code 2.1.294 hands the report back as a message of its own and
+  // the notification only points to it.
+  const pointer = handbackPointer(notice.result);
+  const handedBack = handbacks.get(pointer ?? agentId ?? '');
+  // Resumed with `SendMessage` after it last reported: working again until
+  // it reports again: its next notification (by its task id) or hand-back.
+  const resumed = agentId === null ? undefined : resumes.get(agentId);
+  if (resumed !== undefined && resumed > seq && (handedBack === undefined || handedBack.seq < resumed)) return base;
+  // The report: the hand-back the notification points to, or one that came
+  // after it (a resumed agent's); else what the notification itself carries.
+  const report = handedBack !== undefined && (pointer !== null || handedBack.seq > seq) ? handedBack.report : null;
+  return {
+    ...base,
+    state: isFailedStatus(notice.status) ? 'failed' : 'done',
+    result: report ?? (pointer === null ? notice.result : null) ?? notice.summary,
+    endedAt: at,
+    durationMs: notice.durationMs ?? elapsed(at),
+    tokens: notice.tokens,
+    toolUses: notice.toolUses,
+  };
+}
+
+/** A workflow card's title before its run file is read: the script's meta, or "Workflow". */
+function workflowTitle(input: string | null): { name: string; description: string | null } {
+  const meta = scriptMeta(input);
+  return { name: meta.name ?? WORKFLOW_FALLBACK_NAME, description: meta.description };
+}
 
 /** Tool names, lower-cased: Claude's, Codex's and OMP's. */
 const COMMAND_TOOLS = new Set(['bash', 'bashoutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin']);
