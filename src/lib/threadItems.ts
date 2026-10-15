@@ -506,7 +506,7 @@ function workflowTitle(input: string | null): { name: string; description: strin
 /** Tool names, lower-cased: Claude's, Codex's and OMP's. */
 const COMMAND_TOOLS = new Set(['bash', 'bashoutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin', 'run_terminal_command']);
 const EDIT_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'search_replace']);
-const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search', 'list_dir']);
+const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search', 'tool_search', 'list_dir']);
 const FETCH_TOOLS = new Set(['webfetch', 'fetch', 'web_fetch']);
 const TODO_TOOLS = new Set(['todowrite', 'taskcreate', 'taskupdate', 'update_plan', 'todo']);
 
