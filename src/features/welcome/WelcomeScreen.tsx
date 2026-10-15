@@ -176,7 +176,7 @@ function Intro() {
   const { colors } = useTheme();
   return (
     <>
-      <Heading eyebrow="Claude Code · Codex · OMP" accent={<Text variant="largeTitle">{'\n'}More conversation.</Text>}>
+      <Heading eyebrow="Claude Code · Codex · Pi · OMP" accent={<Text variant="largeTitle">{'\n'}More conversation.</Text>}>
         <Text variant="largeTitle" style={{ fontFamily: monoFamily, color: colors.tint }}>
           Less terminal.
         </Text>
@@ -268,7 +268,7 @@ function Requirements() {
       <View style={{ gap: spacing.lg }}>
         <Row icon="desktopcomputer" title="Your computer" detail="A Mac or Linux machine you can reach over SSH, with a password or a key." />
         <Row icon="terminal" title="herdr, running" detail="It turns each agent into a workspace the app can read. Install it from" mono="herdr.dev" />
-        <Row icon="sparkles" title="An agent" detail="Claude Code, Codex or OMP, installed and signed in on that computer." />
+        <Row icon="sparkles" title="An agent" detail="Claude Code, Codex, Pi or OMP, installed and signed in on that computer." />
         <Row icon="network" title="Tailscale, recommended" detail="Reach the computer from anywhere, privately, without opening a port." />
       </View>
       <Pressable

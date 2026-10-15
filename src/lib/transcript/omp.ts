@@ -4,9 +4,9 @@ import type { TranscriptEntry } from './parser';
 import type { SessionMeta } from './sessionMeta';
 
 /**
- * Maps OMP's append-only JSONL journal to chat bubbles. This deliberately reads
- * records in file order: OMP's parent links describe a branch tree, but the
- * transcript reader does not reconstruct that tree.
+ * Maps the append-only JSONL journal Pi and OMP (a Pi fork) both write to chat
+ * bubbles. This deliberately reads records in file order: the parent links
+ * describe a branch tree, but the transcript reader does not reconstruct it.
  */
 export function ompEntry(
   raw: Record<string, unknown>,
@@ -16,13 +16,14 @@ export function ompEntry(
   switch (raw.type) {
     case 'message':
       return messageEntry(raw, fallbackId, agentLabel);
-    case 'model_change':
+    case 'model_change': {
+      // OMP writes `model: "provider/id"`; Pi writes `provider` and `modelId`.
+      const model = raw.model ?? raw.modelId;
       return {
         message: null,
-        meta: typeof raw.model === 'string' && raw.model.length > 0
-          ? { model: raw.model, contextTokens: null }
-          : null,
+        meta: typeof model === 'string' && model.length > 0 ? { model, contextTokens: null } : null,
       };
+    }
     case 'thinking_level_change':
       return {
         message: null,
@@ -38,6 +39,9 @@ export function ompEntry(
       return typeof raw.summary === 'string' ? boundaryEntry(raw, fallbackId, agentLabel, 'Branch summary') : EMPTY_ENTRY;
     case 'reset_boundary':
       return boundaryEntry(raw, fallbackId, agentLabel, 'Context reset');
+    case 'compaction':
+      // The summary is the model's context, not conversation; mark the cut only.
+      return boundaryEntry(raw, fallbackId, agentLabel, 'Context compacted');
     default:
       // Session headers, custom extension state, labels, and all other
       // non-message journal records are not conversation bubbles.
@@ -169,6 +173,8 @@ function contextTokensFrom(message: Record<string, unknown>): number | null {
   const promptTokens = snapshot?.promptTokens;
   if (finiteCount(promptTokens)) return promptTokens;
 
+  // An aborted or failed turn reports zero usage, not an empty context.
+  if (message.stopReason === 'aborted' || message.stopReason === 'error') return null;
   const usage = record(message.usage);
   if (usage === null) return null;
   const counts = [usage.input, usage.cacheRead, usage.cacheWrite].filter(finiteCount);

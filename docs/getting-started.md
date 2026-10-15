@@ -4,7 +4,7 @@
 
 You need an iPhone or iPad running iOS 17+ with
 [HerdrChat from the App Store](https://apps.apple.com/app/herdrchat/id6791874615), and a computer you administer. That computer
-runs [herdr](https://herdr.dev) and Claude Code, Codex or [OMP](https://omp.sh/). The phone connects over
+runs [herdr](https://herdr.dev) and Claude Code, Codex, [Pi](https://pi.dev) or [OMP](https://omp.sh/). The phone connects over
 SSH, usually through your existing Tailscale network. Keep SSH on your private
 network; there is no need to expose it to the internet.
 
@@ -50,31 +50,37 @@ For manual host setup, run `herdr integration install codex` and install this
 repo's [named launcher](../scripts/herdr-codex.sh) as `herdrchat-codex` on the
 host's PATH. The helper needs Python 3 and Codex.
 
-### OMP (Oh My Pi)
+### Pi and OMP (Oh My Pi)
 
-On the host, install Herdr's built-in OMP extension:
+Pi and OMP, a Pi fork, write the same session journal, so HerdrChat reads both
+the same way. On the host, install Herdr's built-in extension for the one you
+use (or both):
 
 ```sh
+herdr integration install pi
 herdr integration install omp
 ```
 
-If your Herdr version does not recognize `omp`, update Herdr first. Start or
-resume OMP inside a Herdr pane after installation; an already-running agent
-must load the extension before it can identify its session. You can also
-choose **OMP** when creating a chat in HerdrChat. OMP keeps its own permission
-settings; the app does not pass Claude permission flags.
+If your Herdr version does not recognize `pi` or `omp`, update Herdr first.
+Start or resume the agent inside a Herdr pane after installation; an
+already-running agent must load the extension before it can identify its
+session. You can also choose **Pi** or **OMP** when creating a chat in
+HerdrChat. Pi and OMP take permission settings from their configuration. The
+app does not pass them Claude's permission flags.
 
 The extension reports the exact session file, so custom `--session-dir`
 locations and profile paths do not require guessing a folder. Install the
-extension into the same OMP agent directory used by that session (set
-`PI_CODING_AGENT_DIR` when needed). An id-only report is looked up by exact
+extension into the same agent directory used by that session (set
+`PI_CODING_AGENT_DIR` when needed). An id-only OMP report is looked up by exact
 filename and checked against its session header; ambiguous matches are
-refused. No session reference means no history lookup.
+refused. No session reference means no history lookup, and a Pi chat started
+with `--no-session` doesn't write a journal.
 
-OMP history shows saved journal records in chronological order, including
-thinking and tool activity. Branch summaries and context resets appear as
-journal boundaries; this is not OMP's active-branch tree view. Replies appear
-when OMP persists them, not token by token. The existing SSH transcript reader
+History shows saved journal records in chronological order, including
+thinking and tool activity. Branch summaries, compactions and context resets
+appear as journal boundaries. The thread does not reproduce the active-branch
+tree view. Replies appear
+when the agent persists them, not token by token. The existing SSH transcript reader
 requires a POSIX host shell and absolute POSIX paths without `..` segments;
 Windows-native paths are not translated.
 

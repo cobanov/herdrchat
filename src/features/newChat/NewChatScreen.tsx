@@ -26,12 +26,13 @@ import { useRemembered, useStartChat, type NewChatAgent } from './useNewChat';
 const AGENTS: readonly { value: NewChatAgent; label: string }[] = [
   { value: 'claude', label: 'Claude Code' },
   { value: 'codex', label: 'Codex' },
+  { value: 'pi', label: 'Pi' },
   { value: 'omp', label: 'OMP' },
 ];
 
 /**
  * Start a new conversation: create a workspace on the host at a chosen working
- * directory and launch Claude Code, Codex, or OMP in it.
+ * directory and launch Claude Code, Codex, Pi, or OMP in it.
  */
 export default function NewChatScreen() {
   const router = useRouter();
@@ -179,7 +180,7 @@ export default function NewChatScreen() {
           </Text>
         )}
         <Button
-          title={creating ? 'Starting…' : agent === 'codex' ? 'Start Codex' : 'Start Claude Code'}
+          title={creating ? 'Starting…' : `Start ${AGENTS.find((item) => item.value === agent)?.label ?? 'Claude Code'}`}
           onPress={() => void onStart()}
           loading={creating}
           disabled={cwd.trim().length === 0}

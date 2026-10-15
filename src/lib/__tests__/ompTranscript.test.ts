@@ -80,6 +80,8 @@ describe('OMP journal transcript', () => {
   it('reports model and thinking changes as metadata without resetting effort', () => {
     expect(assistantMeta(journal('model_change', { model: 'openai/gpt-5.6', role: 'default' })))
       .toEqual({ model: 'openai/gpt-5.6', contextTokens: null });
+    expect(assistantMeta(journal('model_change', { provider: 'anthropic', modelId: 'claude-opus-4-5' })))
+      .toEqual({ model: 'claude-opus-4-5', contextTokens: null });
     expect(assistantMeta(journal('thinking_level_change', { thinkingLevel: 'low', configured: 'auto' })))
       .toEqual({ model: null, effort: 'low', contextTokens: null });
     expect(assistantMeta(journal('thinking_level_change', { thinkingLevel: null, configured: null })))
@@ -98,18 +100,20 @@ describe('OMP journal transcript', () => {
     expect(receiptKey(parsed)).toBe('Look at this\u00001');
   });
 
-  it('shows persisted branch and reset journal boundaries in file order', () => {
+  it('shows persisted branch, compaction and reset journal boundaries in file order', () => {
     const history = [
       journal('message', { id: 'before', message: { role: 'user', timestamp: 1, content: 'Before branch' } }),
       journal('branch_summary', { id: 'branch', summary: 'Kept the implementation approach.' }),
+      journal('compaction', { id: 'compact', summary: 'Model-facing context.', firstKeptEntryId: 'branch', tokensBefore: 180000 }),
       journal('reset_boundary', { id: 'reset' }),
       journal('message', { id: 'after', message: { role: 'user', timestamp: 2, content: 'After reset' } }),
     ].join('\n');
     const messages = parseTranscript(history);
-    expect(messages.map(message => message.role)).toEqual(['user', 'system', 'system', 'user']);
+    expect(messages.map(message => message.role)).toEqual(['user', 'system', 'system', 'system', 'user']);
     expect(messages.map(displayText)).toEqual([
       'Before branch',
       'Branch summary (journal entry)\n\nKept the implementation approach.',
+      'Context compacted (journal entry)',
       'Context reset (journal entry)',
       'After reset',
     ]);

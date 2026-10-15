@@ -47,6 +47,7 @@ import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
 import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import type { IntegrationName } from '@/lib/herdr/client';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
@@ -319,9 +320,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const integrationKind = thread.agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
     ?? thread.agents.find(agent => agent.agentSession === null)
     ?? thread.agents[0];
-  const agentKind: 'claude' | 'codex' | 'omp' = integrationKind?.agent === 'codex'
-    ? 'codex'
-    : integrationKind?.agent === 'omp' ? 'omp' : 'claude';
+  const agentKind: IntegrationName = integrationKind?.agent === 'codex' ||
+    integrationKind?.agent === 'pi' || integrationKind?.agent === 'omp'
+    ? integrationKind.agent
+    : 'claude';
   const installIntegration = useCallback(() => {
     if (client === null || installing) return;
     setInstalling(true);

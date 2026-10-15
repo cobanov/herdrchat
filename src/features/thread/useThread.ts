@@ -14,6 +14,7 @@ import { titleAgent } from '@/lib/chatTitle';
 import {
   hasSessionReference,
   isConversationalAgent,
+  isPiFamily,
   sessionSignature,
   type AgentInfo,
   type AgentStatus,
@@ -437,7 +438,7 @@ export function useThread(
       [key]: {
         model: next.model ?? prev[key]?.model ?? null,
         // Model and effort belong to one turn, never to a sibling agent.
-        effort: key.startsWith('omp:')
+        effort: key.startsWith('pi:') || key.startsWith('omp:')
           ? next.effort !== undefined ? next.effort : prev[key]?.effort
           : next.model !== null ? next.effort ?? null : prev[key]?.effort ?? null,
         contextTokens: next.contextTokens ?? prev[key]?.contextTokens ?? null,
@@ -633,16 +634,17 @@ export function useThread(
           const id = agent.agentSession!.value!;
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
-          let path = agent.agent === 'omp'
+          let path = isPiFamily(agent.agent)
             ? await store.ompTranscriptPath(id, agent.agentSession!.kind)
             : agent.agent === 'codex'
               ? await store.codexTranscriptPath(id)
               : await store.claudeTranscriptPath(agent.cwd, id);
-          if (path === null) throw new Error(agent.agent === 'omp'
-            ? 'The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.'
-            : agent.agent === 'codex'
-              ? 'The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.'
-              : 'The agent reported an invalid session id. Resume the session on the host, then reload.');
+          if (path === null) {
+            if (agent.agent === 'pi') throw new Error('The Pi session could not be located. Pi does not save a chat started with pi --no-session. Otherwise, resume that exact session on the host, then reload.');
+            if (agent.agent === 'omp') throw new Error('The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.');
+            if (agent.agent === 'codex') throw new Error('The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.');
+            throw new Error('The agent reported an invalid session id. Resume the session on the host, then reload.');
+          }
           let probe = await store.fileProbe(path);
           if (probe.kind === 'absent' && agent.agent === 'claude') {
             // Not under the folder the pane's cwd names. The same session id may
@@ -655,7 +657,7 @@ export function useThread(
           }
           if (probe.kind === 'absent') {
             if (agent.agent === 'codex') store.forgetCodexTranscript(id);
-            if (agent.agent === 'omp' && agent.agentSession!.kind === 'id') store.forgetOmpTranscript(id);
+            if (isPiFamily(agent.agent) && agent.agentSession!.kind === 'id') store.forgetOmpTranscript(id);
             const previous = absentRetry.current.get(key);
             const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
             absentRetry.current.set(key, { at: Date.now() + delay, delay });
@@ -663,7 +665,7 @@ export function useThread(
             return null; // A new agent can receive its first prompt before writing a file.
           }
           if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
-          if (agent.agent === 'omp') await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
+          if (isPiFamily(agent.agent)) await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
           absentRetry.current.delete(key);
           const cached = await tailCursor(db, connectionId, cacheKey, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
@@ -723,7 +725,7 @@ export function useThread(
               ...prev,
               [source.key]: {
                 model: prev[source.key]?.model ?? seeded.model,
-                effort: source.agent === 'omp'
+                effort: isPiFamily(source.agent)
                   ? prev[source.key]?.effort !== undefined ? prev[source.key]?.effort : seeded.effort
                   : prev[source.key]?.model != null ? prev[source.key]?.effort : seeded.effort,
                 contextTokens: prev[source.key]?.contextTokens ?? seeded.contextTokens,
