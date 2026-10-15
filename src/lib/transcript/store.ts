@@ -321,10 +321,20 @@ export class TranscriptStore {
    * on the host, a schema this was not written against) nothing is opened.
    */
   private async findCodexTranscript(sessionId: string): Promise<string | null> {
-    const paths = await this.findCodexRollouts(
-      [`rollout-*-${sessionId}.jsonl`, `rollout-*-${sessionId}_*.jsonl`],
-      new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl$`)
+    const found = await this.findCodexRollouts(
+      [`rollout-*-${sessionId}.jsonl`, `rollout-*-${sessionId}_*.jsonl`,
+        `rollout-*-${sessionId}.jsonl.zst`, `rollout-*-${sessionId}_*.jsonl.zst`],
+      new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl(?:\\.zst)?$`)
     );
+    // Codex can compress a rollout untouched for 7 days (`.jsonl.zst`,
+    // rollout/src/compression.rs, off by default at 0.163). `head` and the
+    // tail cannot read one, and "not found" would send the reader looking
+    // for a file that is there.
+    const paths = found.filter(path => path.endsWith('.jsonl'));
+    if (paths.length === 0 && found.length > 0) {
+      throw new HerdrError('codex_session_compressed',
+        "Codex compressed this chat's history on the host, and HerdrChat can't read a compressed Codex history yet. Read it in Codex on the host.");
+    }
     if (paths.length === 0) return null;
     const path = paths.length === 1 ? paths[0]! : await this.currentCodexRollout(sessionId, paths);
     const header = await this.shell(`head -n 1 ${shellQuote(path)}`);
