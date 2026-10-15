@@ -53,6 +53,34 @@ describe('Codex rollout history', () => {
       channel: 'analysis', content: [{ type: 'output_text', text: 'internal reasoning' }] }))).toBeNull();
   });
 
+  // Codex 0.157+ marks a reply with `phase`; the TUI shows every phase, and
+  // only the older `channel: 'analysis'` is internal.
+  it('shows a reply in every phase', () => {
+    for (const phase of ['commentary', 'partial_answer', 'final_answer']) {
+      const reply = parseTranscriptLine(line('response_item', { type: 'message', role: 'assistant', phase,
+        content: [{ type: 'output_text', text: `in ${phase}` }] }));
+      expect(displayText(reply!)).toBe(`in ${phase}`);
+    }
+  });
+
+  // Recorded since before 0.155 and dropped until now (codex-rs/protocol/src/models.rs).
+  it('shows the local shell, web search, tool search and image calls', () => {
+    const item = (payload: Record<string, unknown>) => parseTranscriptLine(line('response_item', payload))!.segments[0];
+    expect(item({ type: 'local_shell_call', call_id: 'c1', status: 'completed',
+      action: { type: 'exec', command: ['git', 'status', '--short'] } }))
+      .toEqual({ kind: 'toolUse', name: 'local_shell', input: '{"command":"git status --short"}', id: 'c1' });
+    expect(item({ type: 'web_search_call', id: 'ws_1', status: 'completed', action: { type: 'search', query: 'herdr api' } }))
+      .toEqual({ kind: 'toolUse', name: 'web_search', input: '{"query":"herdr api"}', id: 'ws_1' });
+    expect(item({ type: 'web_search_call', id: 'ws_2', status: 'completed', action: { type: 'open_page', url: 'https://herdr.dev' } }))
+      .toMatchObject({ input: '{"query":"https://herdr.dev"}' });
+    expect(item({ type: 'tool_search_call', call_id: 't1', execution: 'client', arguments: { query: 'figma' } }))
+      .toEqual({ kind: 'toolUse', name: 'tool_search', input: '{"query":"figma"}', id: 't1' });
+    expect(item({ type: 'tool_search_output', call_id: 't1', status: 'completed', execution: 'client', tools: [{}, {}] }))
+      .toEqual({ kind: 'toolResult', text: 'Found 2 tools', toolUseId: 't1' });
+    expect(item({ type: 'image_generation_call', id: 'ig_1', status: 'completed', revised_prompt: 'a red fox', result: 'AAAA' }))
+      .toEqual({ kind: 'toolUse', name: 'image_generation', input: '{"prompt":"a red fox"}', id: 'ig_1' });
+  });
+
   it('filters the shared app-server harness blocks without hiding a real prompt beside them', () => {
     const input = (content: unknown[]) => line('response_item', { type: 'message', role: 'user', content });
     const harness = [
