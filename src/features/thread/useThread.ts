@@ -403,6 +403,8 @@ export function useThread(
     path: string;
     label: string | null;
     anchor: number;
+    /** Codex only: a rewound or forked rollout goes on in the file it was cut from. */
+    codexBase: boolean;
   } | null>(null);
   const boundSig = useRef<string | null>(null);
   /** The panes the bound session was seen in, sorted and joined. */
@@ -523,7 +525,7 @@ export function useThread(
     if (client === null || paging.current) return;
     if (Date.now() - olderFailedAt.current < OLDER_RETRY_MS) return;
     const source = olderSource.current;
-    if (source === null || source.anchor <= 0) return;
+    if (source === null || (source.anchor <= 0 && !source.codexBase)) return;
     const sig = boundSig.current;
 
     paging.current = true;
@@ -532,7 +534,22 @@ export function useThread(
       const store = new TranscriptStore(client.transport);
       for (let page = 0; page < OLDER_EMPTY_PAGES; page += 1) {
         const current = olderSource.current;
-        if (current === null || current.anchor <= 0) break;
+        if (current === null) break;
+        if (current.anchor <= 0) {
+          // The start of this file. A rewound or forked Codex rollout holds
+          // only its own turns, and its first line names the file the earlier
+          // ones are in: page on there, from where the inherited part ends.
+          const base = current.codexBase ? await store.codexHistoryBase(current.path) : null;
+          if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
+          olderSource.current = base === null
+            ? { ...current, codexBase: false }
+            : { ...current, path: base.path, anchor: base.endByte };
+          if (base === null) {
+            setReachedStart(true);
+            break;
+          }
+          continue;
+        }
 
         const older = await store.older(current.path, current.label, current.anchor, OLDER_LINES);
         if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
@@ -545,7 +562,7 @@ export function useThread(
           rebuild();
         }
 
-        if (older.reachedStart) {
+        if (older.reachedStart && !current.codexBase) {
           setReachedStart(true);
           break;
         }
@@ -717,8 +734,9 @@ export function useThread(
         if (!current()) return;
         if (olderSource.current === null) {
           const anchor = source.recent?.startByte ?? source.cached!;
-          olderSource.current = { path: source.path, label: source.label, anchor };
-          setReachedStart(anchor <= 0);
+          const codexBase = source.agent === 'codex';
+          olderSource.current = { path: source.path, label: source.label, anchor, codexBase };
+          setReachedStart(anchor <= 0 && !codexBase);
         }
         if (!metaSeeded.current.has(source.key)) {
           metaSeeded.current.add(source.key);

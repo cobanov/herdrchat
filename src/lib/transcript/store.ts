@@ -244,6 +244,55 @@ export class TranscriptStore {
     });
   }
 
+  /**
+   * Codex rollouts whose file name matches one of `names`, in the live and the
+   * archived sessions. Each path must match `own`, or the host is not trusted.
+   */
+  private async findCodexRollouts(names: readonly string[], own: RegExp): Promise<string[]> {
+    const output = await this.shell(
+      'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
+      'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
+      'if [ -d "$codex_dir" ]; then ' +
+      `find "$codex_dir" -type f \\( ${names.map((name) => `-name ${shellQuote(name)}`).join(' -o ')} \\) || exit $?; ` +
+      'fi; done'
+    );
+    const paths = [...new Set(output.split('\n').filter(path => path.length > 0))];
+    if (paths.some(path => !path.startsWith('/') || !own.test(path) || path.includes('\0'))) {
+      throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
+    }
+    return paths;
+  }
+
+  /**
+   * Where the earlier history of a rewound or forked Codex rollout lives. Its
+   * first line, `session_meta`, names the prefix file in `history_base` by
+   * rollout id (a thread id, or the `_<rollout id>` of a rewind) and the byte
+   * where the inherited part ends. Null when the file has none, or when the
+   * prefix is not exactly one file: never a guess.
+   */
+  async codexHistoryBase(path: string): Promise<{ path: string; endByte: number } | null> {
+    let rolloutId: unknown;
+    let endByte: unknown;
+    try {
+      const raw: unknown = JSON.parse(await this.shell(`head -n 1 ${shellQuote(path)}`));
+      const payload = typeof raw === 'object' && raw !== null && 'payload' in raw ? raw.payload : null;
+      const base = typeof payload === 'object' && payload !== null && 'history_base' in payload ? payload.history_base : null;
+      if (typeof base !== 'object' || base === null) return null;
+      rolloutId = 'thread_id' in base ? base.thread_id : null;
+      endByte = 'end_byte_offset' in base ? base.end_byte_offset : null;
+    } catch {
+      return null;
+    }
+    if (typeof rolloutId !== 'string' || !/^[A-Za-z0-9-]+$/.test(rolloutId)) return null;
+    if (typeof endByte !== 'number' || !Number.isInteger(endByte) || endByte <= 0) return null;
+    const prefixes = await this.findCodexRollouts(
+      [`rollout-*-${rolloutId}.jsonl`, `rollout-*_${rolloutId}.jsonl`],
+      new RegExp(`[-_]${rolloutId}\\.jsonl$`)
+    );
+    const prefix = prefixes.length === 1 ? prefixes[0] : undefined;
+    return prefix === undefined || prefix === path ? null : { path: prefix, endByte };
+  }
+
   /** Which of a thread's rollout files Codex is writing, by its own state database. */
   private async currentCodexRollout(sessionId: string, paths: readonly string[]): Promise<string> {
     const output = await this.shell(
@@ -272,20 +321,11 @@ export class TranscriptStore {
    * on the host, a schema this was not written against) nothing is opened.
    */
   private async findCodexTranscript(sessionId: string): Promise<string | null> {
-    const output = await this.shell(
-      'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
-      'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
-      'if [ -d "$codex_dir" ]; then ' +
-      `find "$codex_dir" -type f \\( -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} ` +
-      `-o -name ${shellQuote(`rollout-*-${sessionId}_*.jsonl`)} \\) || exit $?; ` +
-      'fi; done'
+    const paths = await this.findCodexRollouts(
+      [`rollout-*-${sessionId}.jsonl`, `rollout-*-${sessionId}_*.jsonl`],
+      new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl$`)
     );
-    const paths = [...new Set(output.split('\n').filter(path => path.length > 0))];
     if (paths.length === 0) return null;
-    const own = new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl$`);
-    if (paths.some(path => !path.startsWith('/') || !own.test(path) || path.includes('\0'))) {
-      throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
-    }
     const path = paths.length === 1 ? paths[0]! : await this.currentCodexRollout(sessionId, paths);
     const header = await this.shell(`head -n 1 ${shellQuote(path)}`);
     let valid = false;
