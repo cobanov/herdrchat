@@ -113,6 +113,17 @@ export function isConversationalAgent(agent: AgentInfo): boolean {
 }
 
 /**
+ * The pane a chat sends to: an agent whose transcript the thread shows, the
+ * focused one first. Focus alone sent a Claude chat's message to a focused
+ * agent the app cannot read, so the echo never confirmed ("Failed to send").
+ * Any other agent only when the chat has no conversational one.
+ */
+export function sendTarget(agents: readonly AgentInfo[]): AgentInfo | null {
+  const pick = (pool: readonly AgentInfo[]) => pool.find((a) => a.focused) ?? pool[0] ?? null;
+  return pick(agents.filter(isConversationalAgent)) ?? pick(agents.filter((a) => a.agent !== null));
+}
+
+/**
  * How the agents herdr detects are named to a person. Letta Code joined in
  * herdr 0.9.1 (#120); anything else shows herdr's own id.
  */

@@ -15,6 +15,7 @@ import {
   hasSessionReference,
   isConversationalAgent,
   isPiFamily,
+  sendTarget,
   sessionSignature,
   type AgentInfo,
   type AgentStatus,
@@ -1158,10 +1159,7 @@ export function useThread(
           ? 'unknown'
           : 'idle';
 
-  const primaryPane =
-    agents.find((a) => a.focused && a.agent !== null) ??
-    agents.find((a) => a.agent !== null) ??
-    null;
+  const primaryPane = sendTarget(agents);
   const sessionMeta = primaryPane === null ? null
     : sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
 
@@ -1193,12 +1191,7 @@ export function useThread(
       try {
         const snapshot = await client.snapshot();
         const live = chatAgents(snapshot.agents, workspaceId, pane);
-        return (
-          live.find((a) => a.focused && a.agent !== null) ??
-          live.find((a) => a.agent !== null) ??
-          live[0] ??
-          fallback
-        );
+        return sendTarget(live) ?? live[0] ?? fallback;
       } catch {
         return fallback;
       }
