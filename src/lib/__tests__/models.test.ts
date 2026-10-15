@@ -9,6 +9,7 @@ import {
   isConversationalAgent,
   agentName,
   needsAttention,
+  sendTarget,
   sessionSignature,
   toAgentStatus,
   type AgentInfo,
@@ -261,6 +262,17 @@ describe('session signature', () => {
     expect(['claude', 'codex', 'omp'].map((name) => isConversationalAgent(agent({ agent: name })))).toEqual([true, true, true]);
     expect(isConversationalAgent(agent({ agent: null }))).toBe(false);
     expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
+  });
+
+  // A focused agent the app cannot read used to take a Claude chat's message.
+  it('sends to the agent whose transcript the chat shows, even when another is focused', () => {
+    const claude = agent({ paneId: 'p1' });
+    const other = agent({ paneId: 'p2', agent: 'opencode', focused: true });
+    const shell = agent({ paneId: 'p3', agent: null, focused: true });
+    expect(sendTarget([other, claude])?.paneId).toBe('p1');
+    expect(sendTarget([claude, agent({ paneId: 'p4', focused: true })])?.paneId).toBe('p4');
+    expect(sendTarget([shell, other])?.paneId).toBe('p2');
+    expect(sendTarget([shell])).toBeNull();
   });
 
   it('deduplicates agents reporting the same session', () => {
