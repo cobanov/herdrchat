@@ -119,6 +119,7 @@ else
 echo "==> Prebuilding ios/ from app.json ($VERSION build $BUILD_NUMBER)…"
 npx expo prebuild --platform ios --clean
 python3 scripts/check_ios_scene.py "ios/$SCHEME/Info.plist"
+scripts/ensure-metal-toolchain.sh
 
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p "$BUILD_DIR"

@@ -19,7 +19,8 @@ export function returnToChats() {
 
 /**
  * Opens a chat: the workspace's, or with `paneId` the one agent in that pane.
- * iPad selects a detail inside Chats, even in a narrow multitasking window.
+ * iPad selects a detail inside Chats, even in a narrow multitasking window,
+ * in place of whatever detail was there (another chat, or a pane's terminal).
  *
  * Either way the chats come to the top first. A phone pushing the chat while a
  * sheet was open put it UNDER the sheet (react-native-screens places a push

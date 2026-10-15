@@ -74,7 +74,24 @@ export type SshFailureCode =
    * loops that drive this app re-arm in a `finally`, so "forever" meant the
    * loop stopped and the screen froze with no error at all.
    */
-  | 'timeout';
+  | 'timeout'
+  /**
+   * The host's own ssh, jumping to one of its machines, could not log in to
+   * it without a prompt. Raised in TypeScript (`withMachine`).
+   */
+  | 'machine_auth_failed'
+  /** The host's own ssh does not trust a machine's host key. Raised in TypeScript (`withMachine`). */
+  | 'machine_host_key'
+  /**
+   * The host stopped its own ssh to a machine at the command's deadline, before
+   * the native one could reset the host's connection. Raised in TypeScript
+   * (`withMachine`).
+   */
+  | 'machine_timeout'
+  /** Input or a resize for a terminal shell that has already ended. */
+  | 'shell_closed'
+  /** Bytes for a terminal shell that were not valid base64. */
+  | 'bad_input';
 
 export interface SshFailure {
   ok: false;
@@ -129,6 +146,28 @@ export interface StreamErrorEvent {
   message: string;
 }
 
+export type OpenShellResult = { ok: true; shellId: string } | SshFailure;
+
+export type ShellWriteResult = { ok: true } | SshFailure;
+
+/**
+ * Why a terminal shell ended on its own. Closing it from the app
+ * (`closeShell`) reports nothing.
+ *
+ * - `exited`: the command ended; its status is in `exitCode`.
+ * - `connection_lost`: the SSH connection under it went (a route change, the
+ *   host gone, `disconnect`). The shell is not reopened by itself.
+ * - `transport_failed`: the channel failed while the connection stayed up.
+ */
+export type ShellCloseReason = 'exited' | 'connection_lost' | 'transport_failed';
+
+export interface ShellClosedEvent {
+  shellId: string;
+  reason: ShellCloseReason;
+  exitCode?: number;
+  message?: string;
+}
+
 /**
  * A type alias rather than an interface: Expo's `NativeModule<T>` constrains T
  * to `EventsMap`, which carries an index signature, and an interface has no
@@ -138,4 +177,5 @@ export type HerdrSshEvents = {
   onStreamLine: (event: StreamLineEvent) => void;
   onStreamEnd: (event: StreamEndEvent) => void;
   onStreamError: (event: StreamErrorEvent) => void;
+  onShellClosed: (event: ShellClosedEvent) => void;
 };

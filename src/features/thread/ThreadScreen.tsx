@@ -32,13 +32,17 @@ import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
+import { ShellHint } from '@/features/thread/ShellHint';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
 import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { DelegationScopeProvider, type DelegationScope } from '@/features/thread/delegation';
+import { openTerminal } from '@/features/terminal/navigation';
+import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { ThreadRow } from '@/features/thread/ThreadRow';
 import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlaceholders';
 import { useThread } from '@/features/thread/useThread';
+import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/thread/useSlashCommands';
 import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
@@ -48,13 +52,22 @@ import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/lib/haptics';
-import { CLAUDE_COMMANDS, commandSuggestions } from '@/lib/slashCommands';
+import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
+import { isShellDraft } from '@/lib/shellMode';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
+import {
+  clientFor,
+  isMachineConnection,
+  useConnectionFor,
+  useConnections,
+  useSelectedConnection,
+} from '@/state/connections';
+import { splitMachineConnectionId } from '@/lib/herdr/machines';
 import { markThreadRead } from '@/state/db';
 import { sessionDir } from '@/lib/subagents/paths';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
+import { useHostMachines } from '@/state/hostMachines';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
@@ -63,7 +76,13 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayo
  * One conversation: a workspace's, or with `paneId` the one agent in that pane
  * of a workspace that holds several.
  */
-export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
+export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
+  /**
+   * The connection the chat is on: a host, or one of a host's machines
+   * (`${hostId}/${machineId}`). Absent (a notification, an older link): the
+   * selected host.
+   */
+  connectionId?: string;
   workspaceId: string;
   /** Absent: the workspace chat, every agent in it. */
   paneId?: string;
@@ -74,8 +93,16 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const connection = useSelectedConnection();
+  // From the route, not the selected host: a chat on one of the host's
+  // machines is read, followed and sent to through the machine's client,
+  // whose transport jumps through the host. `useThread` and the transcript
+  // store see only a transport, so nothing below knows the difference.
+  const selected = useSelectedConnection();
+  const wantedId = connectionId !== undefined && connectionId !== '' ? connectionId : selected?.id ?? null;
+  const connection = useConnectionFor(wantedId);
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
+  /** The machine's label, which leads the subtitle, when the chat is on one. */
+  const machineLabel = connection !== null && isMachineConnection(connection) ? connection.name : null;
   const listRef = useRef<FlashListRef<PlacedItem>>(null);
   const historyInteraction = useRef<number | null>(null);
 
@@ -90,6 +117,15 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
    */
   const hydrated = useConnections((state) => state.hydrated);
   const hostGone = hydrated && connection === null;
+  // A machine is gone when its host is still here but no longer lists it as
+  // enabled; the placeholder then says so, rather than that the host is gone.
+  const machineIds = wantedId === null ? null : splitMachineConnectionId(wantedId);
+  const viaHost = useConnectionFor(machineIds?.hostId ?? null);
+  const machineGone = hostGone && viaHost !== null;
+  // A disabled machine stays in its host's cached list, so its label is
+  // usually still known, for the command that brings it back.
+  const goneLabel = useHostMachines((state) =>
+    machineIds === null ? null : state.byHost[machineIds.hostId]?.find((item) => item.id === machineIds.machineId)?.label ?? null);
 
   const showSidechain = useSettings((state) => state.showSidechain);
 
@@ -168,15 +204,40 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   const linkTitle = title?.trim() ?? '';
   const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
 
+  // The pane the header's Terminal opens: this chat's own, or for a
+  // workspace's chat the agent herdr has focused (the first, when none is).
+  const terminalPane = paneId !== undefined && paneId !== ''
+    ? paneId
+    : (thread.agents.find((agent) => agent.focused) ?? thread.agents[0])?.paneId;
+
   const key = draftKey(connection?.id ?? '', chat);
   const sessionSig = sessionSignature(thread.agents);
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
-  // Only Claude's built-ins are offered; a Codex chat still sends what is typed.
-  const suggestions = thread.agents.some((agent) => agent.agent === 'claude')
-    ? commandSuggestions(draft, CLAUDE_COMMANDS)
-    : [];
+  /**
+   * The `/` palette: what the agent's own terminal offers for the same `/`,
+   * for the agent the thread sends to (Claude's catalogue as read off this
+   * connection, Codex's fixed list, nothing for OMP). The folder's own
+   * commands are read once the first window is on screen, never before it.
+   */
+  const palette = paletteAgent(thread.agents);
+  const commands = useSlashCommands(connection?.id ?? null, palette?.kind ?? null, palette?.cwd ?? null);
+  useProjectSlashScan(
+    connection?.id ?? null,
+    client?.transport ?? null,
+    palette?.kind ?? null,
+    palette?.cwd ?? null,
+    !thread.loading
+  );
+  const sections = useMemo(() => paletteSections(draft, commands), [draft, commands]);
+  /**
+   * The last command a pick filled in, with its argument hint: the composer
+   * shows the hint after it while the draft is exactly that, as the terminal
+   * does until something is typed.
+   */
+  const [filled, setFilled] = useState<{ text: string; placeholder: string } | null>(null);
+  const composerHint = filled !== null && filled.placeholder !== '' && draft === filled.text ? filled.placeholder : undefined;
 
   // Pictures waiting to go with the next message. They stay until a send is
   // taken, so a failed upload leaves them in place with the draft.
@@ -214,6 +275,27 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
         { label: 'Photo Library', onPress: () => void addAttachments('library') },
         { label: 'Paste Picture', onPress: () => void addAttachments('paste') },
       ],
+    });
+  };
+  /**
+   * A pick in the palette, the terminal's way (`pickSlashCommand`): a command
+   * that can run as it is is sent at once, as Enter on it does; one that
+   * needs an argument, one that would end the agent or the session, or one
+   * that commits, pushes or rewrites (`fillsOnPick`), is filled in to wait for the person's own send. A send the thread refuses
+   * puts back what was typed.
+   */
+  const pickCommand = (command: CatalogueCommand) => {
+    const pick = pickSlashCommand(command);
+    if (pick.action === 'fill') {
+      setFilled({ text: pick.text, placeholder: pick.placeholder });
+      setDraft(pick.text);
+      return;
+    }
+    const typed = draft;
+    setDraft('');
+    scroll.followEnd(false);
+    void thread.send(pick.text).then((accepted) => {
+      if (!accepted) setDraft(typed);
     });
   };
   const sendWithAttachments = async (text: string) => {
@@ -272,20 +354,27 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
   const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
   const subtitle = [
+    // The machine first: the same folder on two computers is two chats.
+    machineLabel,
     workspaceLine,
     paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
     // The folder, unless it is the workspace's own name already said first:
-    // the line is one line, and the status word at its end is what gets cut.
+    // the line is one line, and the less said the less of it is cut.
     sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
-    // The connection before the agent: "online" under a banner saying the
-    // chat is offline or paused contradicted it (#4 acceptance).
-    thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ');
+  /**
+   * The connection before the agent: "online" under a banner saying the chat
+   * is offline or paused contradicted it (#4 acceptance). Its own text after
+   * the line, which never shrinks: at the end of one truncated line it was the
+   * first word cut, and a machine's label in front made that the usual case,
+   * leaving the dot's colour as the only status on a phone.
+   */
+  const statusText = thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status);
 
   // A command's panel needs the room the keyboard takes, and nothing typed
   // goes to it: its rows and actions are taps.
@@ -435,7 +524,12 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
           */}
           {hostGone ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
-              <MissingHost onBack={onBack} onHosts={() => router.navigate('/hosts')} />
+              <MissingHost
+                machine={machineGone ? { label: goneLabel, host: viaHost.name } : null}
+                onBack={onBack}
+                onHosts={() => router.navigate('/hosts')}
+                onChats={() => router.navigate('/')}
+              />
             </View>
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
@@ -623,9 +717,10 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                   onKeys={(keys) => void thread.sendOverlayKeys(keys)}
                 />
               )}
-              {suggestions.length > 0 && thread.overlay === null && (
-                <CommandSuggestions commands={suggestions} onPick={(command) => setDraft(`/${command.name} `)} />
+              {sections.length > 0 && thread.overlay === null && (
+                <CommandSuggestions sections={sections} onPick={pickCommand} />
               )}
+              {isShellDraft(draft, palette?.kind ?? null) && thread.overlay === null && <ShellHint />}
               {thread.isBlocked && (
                 <BlockedBar
                   prompt={thread.blockedPrompt}
@@ -647,6 +742,7 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                 onRemoveAttachment={(name) => setAttachments((previous) => previous.filter((item) => item.name !== name))}
                 uploading={preparing || (thread.isSending && attachments.length > 0)}
                 onPasteImage={() => void addAttachments('paste')}
+                placeholder={composerHint}
               />
             </Animated.View>
           )}
@@ -689,16 +785,44 @@ export default function ThreadScreen({ workspaceId, paneId, title, onBack }: {
                   <Text testID="thread-title" variant="headline" numberOfLines={1}>
                     {heading}
                   </Text>
-                  {subtitle.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                    <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: thread.offline || thread.paused ? colors.secondaryLabel : statusColor(thread.status, colors) }} />
+                    {subtitle.length > 0 && (
                       <Text testID="thread-meta" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 1 }} numberOfLines={1}>
                         {subtitle}
                       </Text>
-                      {thread.status === 'working' && <TypingDots size={3.5} />}
-                    </View>
-                  )}
+                    )}
+                    <Text testID="thread-status" variant="caption" color={thread.status === 'blocked' ? 'attention' : 'secondary'} style={{ flexShrink: 0 }} numberOfLines={1}>
+                      {subtitle.length > 0 ? `· ${statusText}` : statusText}
+                    </Text>
+                    {thread.status === 'working' && <TypingDots size={3.5} />}
+                  </View>
                 </View>
+                {/* The agent's own screen, for what the chat cannot show:
+                    a panel it does not know, a login prompt, a TUI. Not where
+                    no terminal can open (Android): it would lead nowhere. */}
+                {isTerminalAvailable && terminalPane !== undefined && connection !== null && (
+                  <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+                    <Pressable
+                      onPress={() => {
+                        haptics.selection();
+                        Keyboard.dismiss();
+                        openTerminal({
+                          connectionId: connection.id,
+                          paneId: terminalPane,
+                          kind: 'agent',
+                          terminalId: thread.agents.find((agent) => agent.paneId === terminalPane)?.terminalId ?? '',
+                          title: heading,
+                        });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Terminal"
+                      testID="thread-terminal"
+                      style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="terminal" size={size.headerGlyph} tintColor={colors.label} fallback={<Text>{'>_'}</Text>} />
+                    </Pressable>
+                  </Glass>
+                )}
                 <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
                   {thread.status === 'working' ? (

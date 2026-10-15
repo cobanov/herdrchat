@@ -1,0 +1,104 @@
+import { Pressable, View } from 'react-native';
+
+import { ErrorBanner } from '@/components/ErrorBanner';
+import { Glass } from '@/components/Glass';
+import { Icon } from '@/components/Icon';
+import { Text } from '@/components/Text';
+import { haptics } from '@/lib/haptics';
+import { useTheme } from '@/theme/ThemeProvider';
+import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { TERMINAL_BACK, type TerminalBackControl } from './backControl';
+import { canReconnect, canTakeOver, phaseLabel, phaseMessage, type TerminalPhase } from './status';
+
+/**
+ * The terminal's header: back, the pane's name with where it is and whether
+ * it is connected, and Reconnect once the shell has gone. When herdr refused
+ * the attach (another client may hold the pane), Take over beside it: the
+ * only way the app ever takes a pane from another client, and the person's.
+ *
+ * In the flow above the terminal, not floating over it like the thread's: a
+ * terminal's top rows are its screen, and a header over them would hide the
+ * one line `htop` or `vim` puts its title on.
+ */
+export function TerminalHeader({ title, place, phase, back = TERMINAL_BACK, onBack, onReconnect, onTakeOver }: {
+  title: string;
+  /** The machine's label, for a pane on one of the host's machines. */
+  place: string | null;
+  phase: TerminalPhase;
+  /** How the leading control draws: Back, unless the iPad's column says otherwise (`terminalBackControl`). */
+  back?: TerminalBackControl;
+  onBack: () => void;
+  onReconnect: () => void;
+  onTakeOver: () => void;
+}) {
+  const { colors } = useTheme();
+  const subtitle = [place, phaseLabel(phase)].filter((part): part is string => part !== null).join(' · ');
+  // Gone, whether or not a Reconnect could bring it back.
+  const gone = phase.kind === 'closed' || phase.kind === 'failed';
+  const dot = phase.kind === 'open' ? colors.positive : gone ? colors.attention : colors.tertiaryLabel;
+  const message = phaseMessage(phase);
+  return (
+    <View testID="terminal-header">
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: screenPadding, paddingVertical: spacing.sm }}>
+        <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+          <Pressable
+            onPress={onBack}
+            accessibilityRole="button"
+            accessibilityLabel={back.label}
+            testID="terminal-back"
+            style={{ width: minTouchTarget, height: minTouchTarget, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name={back.symbol} size={size.headerGlyph} tintColor={colors.label} fallback={<Text>{back.symbol === 'xmark' ? '✕' : '‹'}</Text>} />
+          </Pressable>
+        </Glass>
+        <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
+          <Text testID="terminal-title" variant="headline" numberOfLines={1}>
+            {title}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: dot }} />
+            <Text testID="terminal-status" variant="caption" color={gone ? 'attention' : 'secondary'} numberOfLines={1} style={{ flexShrink: 1 }}>
+              {subtitle}
+            </Text>
+          </View>
+        </View>
+        {canTakeOver(phase) && (
+          <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+            <Pressable
+              onPress={() => {
+                haptics.light();
+                onTakeOver();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Take over"
+              accessibilityHint="Takes this pane from the other client attached to it"
+              testID="terminal-takeover"
+              style={{ height: minTouchTarget, paddingHorizontal: spacing.lg, flexDirection: 'row', alignItems: 'center' }}>
+              <Text variant="subhead" weight="600" color="tint">
+                Take over
+              </Text>
+            </Pressable>
+          </Glass>
+        )}
+        {canReconnect(phase) && (
+          <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
+            <Pressable
+              onPress={() => {
+                haptics.light();
+                onReconnect();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Reconnect"
+              testID="terminal-reconnect"
+              style={{ height: minTouchTarget, paddingHorizontal: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+              <Icon name="arrow.clockwise" size={size.rowBadgeGlyph} tintColor={colors.tint} fallback={<Text color="tint">↻</Text>} />
+              <Text variant="subhead" weight="600" color="tint">
+                Reconnect
+              </Text>
+            </Pressable>
+          </Glass>
+        )}
+      </View>
+      {message !== null && <ErrorBanner message={message} />}
+    </View>
+  );
+}

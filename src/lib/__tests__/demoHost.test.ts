@@ -1,8 +1,17 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
-import { DEMO_SESSION_IDS, DEMO_WORKSPACES, HISTORY_DAYS, transcriptFor } from '../demo/fixtures';
+import {
+  DEMO_NUKU_SESSION_IDS,
+  DEMO_NUKU_WORKSPACES,
+  DEMO_SESSION_IDS,
+  DEMO_WORKSPACES,
+  HISTORY_DAYS,
+  transcriptFor,
+} from '../demo/fixtures';
+import { withMachine } from '../herdr/machine';
+import { DEMO_GIT_STATUS, DEMO_LS_OUTPUT, DEMO_PHRASES } from '../demo/scenarios';
 import { parseBlockedPrompt } from '../transcript/blockedPrompt';
-import { displayText } from '../transcript/message';
+import { displayText, receiptKey } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
 import { threadItems, toolRunSummary } from '../threadItems';
@@ -32,7 +41,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -40,7 +49,9 @@ describe('DemoHost as a herdr host', () => {
     const client = new HerdrClient(new DemoHost());
     const snapshot = await client.snapshot();
     const api = snapshot.workspaces?.find((w) => w.workspaceId === 'w6');
-    expect(api).toMatchObject({ label: 'api', number: 6, paneCount: 2, agentStatus: 'working' });
+    // Four panes in two tabs: the two agents and a shell, then a dev server's
+    // shell alone in the second tab; each shell is a terminal row in the list.
+    expect(api).toMatchObject({ label: 'api', number: 6, paneCount: 4, tabCount: 2, agentStatus: 'working' });
     const agents = snapshot.agents.filter((a) => a.workspaceId === 'w6');
     expect(agents.map((a) => [a.paneId, a.agent, a.cwd, a.agentStatus, a.agentSession?.value])).toEqual([
       ['w6:p1', 'claude', '/home/demo/api', 'idle', DEMO_SESSION_IDS['w6:p1']],
@@ -48,8 +59,8 @@ describe('DemoHost as a herdr host', () => {
     ]);
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
-    // The other five keep the one pane they always had.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1]);
+    // The first five keep the one pane they always had; site's agent has a shell beside it.
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2]);
   });
 
   // Scratch and the OMP ledger have no session title, so the Demo also shows
@@ -65,6 +76,7 @@ describe('DemoHost as a herdr host', () => {
       ['w5:p1', 'Daily screen journal'],
       ['w6:p1', 'Archived projects migration'],
       ['w6:p2', 'Save button wrap'],
+      ['w7:p1', 'Landing page copy'],
     ]);
   });
 
@@ -76,6 +88,26 @@ describe('DemoHost as a herdr host', () => {
 });
 
 describe('DemoHost as a filesystem', () => {
+  // The chat list's last-message line. The Demo used to answer the batch with
+  // nothing, so every row read its status and a reply never reached its row
+  // (regression/multi-agent and regression/machines could not pass).
+  it("answers the chat list's preview batch, one last message per agent", async () => {
+    const host = new DemoHost();
+    const agents = (await new HerdrClient(host).snapshot()).agents.filter((agent) => agent.agentSession !== null);
+    const previews = await new TranscriptStore(host).latestMessages(
+      agents.map((agent) => ({
+        workspaceId: agent.workspaceId,
+        key: agent.paneId,
+        cwd: agent.cwd,
+        sessionId: agent.agentSession!.value,
+        sessionKind: agent.agentSession!.kind,
+        agent: agent.agent ?? undefined,
+      }))
+    );
+    expect([...previews.keys()].sort()).toEqual(agents.map((agent) => agent.paneId).sort());
+    expect(displayText(previews.get('w6:p1')!)).toMatch(/archived_at/);
+  });
+
   it('reports a home directory, so transcript paths can be built', async () => {
     const store = new TranscriptStore(new DemoHost());
     await expect(store.homeDirectory()).resolves.toBe('/home/demo');
@@ -174,7 +206,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {
@@ -408,6 +440,42 @@ describe('DemoHost scenarios', () => {
     expect(run.kind === 'tools' && toolRunSummary(run.calls, run.thoughts.length)).toBe('Ran 2 commands · edited 1 file · read 1 file · 1 failed');
     expect(items.at(-1)!.item.kind).toBe('agent');
   });
+
+  it('opens the notes chat with a ! command and its two lines of output', async () => {
+    const items = threadItems(await messagesOf(new DemoHost(), 1), { showSidechain: false });
+    const shell = items.map((placed) => placed.item).find((item) => item.kind === 'shell');
+    expect(shell).toMatchObject({ key: 'd2-0g', command: DEMO_GIT_STATUS.command, stdout: DEMO_GIT_STATUS.stdout, stderr: '', running: false });
+    expect(DEMO_GIT_STATUS.stdout.split('\n')).toHaveLength(2);
+  });
+
+  it('runs a sent ! line in its shell: the command at once, its listing a beat later', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    await client.sendPrompt('w2:p1', '! ls');
+    const shellOf = async () => threadItems(await messagesOf(host, 1), { showSidechain: false }).at(-1)!.item;
+    const sent = await shellOf();
+    expect(sent).toMatchObject({ kind: 'shell', command: 'ls', running: true });
+    // The echo of `! ls` is confirmed by what was recorded.
+    const recorded = (await messagesOf(host, 1)).at(-1)!;
+    expect(receiptKey(recorded)).toBe(receiptKey({ ...recorded, segments: [{ kind: 'text', text: '! ls' }] }));
+
+    now += 10_000;
+    expect(await shellOf()).toMatchObject({ kind: 'shell', command: 'ls', running: false, stdout: DEMO_LS_OUTPUT, stderr: '' });
+    expect(DEMO_LS_OUTPUT.split('\n')).toHaveLength(3);
+    // The model never saw it, so the agent never answered it.
+    expect((await client.agents()).find((agent) => agent.paneId === 'w2:p1')?.agentStatus).toBe('idle');
+  });
+
+  it('says on stderr that any other ! line did not run', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    await new HerdrClient(host).sendPrompt('w2:p1', '!rm -rf /');
+    now += 10_000;
+    const last = threadItems(await messagesOf(host, 1), { showSidechain: false }).at(-1)!.item;
+    expect(last).toMatchObject({ kind: 'shell', command: 'rm -rf /', stdout: '' });
+    expect(last.kind === 'shell' && last.stderr).toMatch(/nothing ran/);
+  });
 });
 
 // OMP reports its journal's path, and the real OMP reader and header check read it.
@@ -472,5 +540,107 @@ describe('DemoHost with two agents in one workspace', () => {
       expect(workspace.morePanes).toBeUndefined();
     }
     expect(transcriptFor('w6:p1')).not.toBe(transcriptFor('w6:p2'));
+  });
+});
+
+// The demo host has a machine saved on it, so the chats list shows a machine's
+// chat on the Demo, through the same jump a real host's `ssh` would run.
+describe('DemoHost machine nuku', () => {
+  const nuku = (host: DemoHost) => withMachine(host, 'nuku', { host: 'Demo', machine: 'nuku' });
+
+  it('lists its one machine, enabled', async () => {
+    const { machines, skipped } = await new HerdrClient(new DemoHost()).machines();
+    expect(machines).toEqual([{ id: 'demo-nuku', label: 'nuku', target: 'nuku', session: 'default', enabled: true }]);
+    expect(skipped).toEqual([]);
+  });
+
+  it("answers a jumped snapshot with the machine's own chat", async () => {
+    const snapshot = await new HerdrClient(nuku(new DemoHost())).snapshot();
+    expect(snapshot.workspaces?.map((w) => [w.workspaceId, w.label])).toEqual([['w1', 'kenneth-bot']]);
+    expect(snapshot.agents.map((a) => [a.paneId, a.agent, a.title, a.agentStatus, a.agentSession?.value])).toEqual([
+      ['w1:p1', 'claude', 'Nightly digest', 'idle', DEMO_NUKU_SESSION_IDS['w1:p1']],
+    ]);
+  });
+
+  it("reads the machine's transcript, not the host's", async () => {
+    const store = new TranscriptStore(nuku(new DemoHost()));
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_NUKU_WORKSPACES[0]!.cwd, DEMO_NUKU_SESSION_IDS['w1:p1']!)!;
+    const { messages } = await store.recent(path, 'claude', 262_144);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(JSON.stringify(messages[1]?.segments)).toContain('Digest is out');
+  });
+
+  it('follows a jumped tail, so a reply on the machine lands live', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const machine = nuku(host);
+    const store = new TranscriptStore(machine);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_NUKU_WORKSPACES[0]!.cwd, DEMO_NUKU_SESSION_IDS['w1:p1']!)!;
+    const probe = await store.fileProbe(path);
+    const size = probe.kind === 'size' ? probe.bytes : 0;
+
+    await new HerdrClient(machine).sendPrompt('w1:p1', 'hello nuku');
+    now += 10_000;
+
+    const received: string[] = [];
+    const controller = new AbortController();
+    for await (const { message } of store.tail(path, 'claude', size, controller.signal)) {
+      if (message !== null) received.push(`${message.role}: ${JSON.stringify(message.segments)}`);
+      if (received.length === 2) break;
+    }
+    expect(received[0]).toContain('user: ');
+    expect(received[0]).toContain('hello nuku');
+    expect(received[1]).toContain('assistant: ');
+    // The host's own chats never heard it.
+    const hostStore = new TranscriptStore(host);
+    const hostPath = hostStore.sessionTranscriptPath(await hostStore.homeDirectory(), DEMO_WORKSPACES[0]!.cwd, DEMO_SESSION_IDS['w1:p1']!)!;
+    expect(JSON.stringify((await hostStore.recent(hostPath, 'claude', 262_144)).messages)).not.toContain('hello nuku');
+  }, 15_000);
+
+  // The list's line for a machine the host cannot reach had nothing in the
+  // Demo to show it, so no flow could check it was there.
+  it('goes off the network when a host chat asks, and the jump says so', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const machine = new HerdrClient(nuku(host), 'herdr', { host: 'Demo', machine: 'nuku' });
+    await expect(machine.snapshot()).resolves.toBeTruthy();
+    await new HerdrClient(host).sendPrompt('w2:p1', `please ${DEMO_PHRASES.unplug}`);
+    // Not before the reply lands.
+    await expect(new HerdrClient(nuku(host)).ping()).resolves.toBeUndefined();
+    now += 10_000;
+    await new HerdrClient(host).snapshot();
+    await expect(new HerdrClient(nuku(host)).snapshot()).rejects.toMatchObject({
+      code: 'connect_failed',
+      message: "Demo can't reach nuku right now.",
+    });
+    const lines: string[] = [];
+    for await (const line of nuku(host).streamLines('tail -c +1 -f x', 1_000)) lines.push(line);
+    expect(lines).toEqual([]);
+    // The host itself is fine, and its chat has the reply.
+    const store = new TranscriptStore(host);
+    const path = store.sessionTranscriptPath(await store.homeDirectory(), DEMO_WORKSPACES[1]!.cwd, DEMO_SESSION_IDS['w2:p1']!)!;
+    expect(JSON.stringify((await store.recent(path, 'claude', 262_144)).messages)).toContain('nuku is off the network');
+  });
+});
+
+// The layout view draws the Demo's w6 as two tabs: its agents side by side
+// with the shell under the first, then a dev server alone. w2 is one pane.
+describe("the Demo's tabs and layouts", () => {
+  it('sends a tab and a layout for each tab, the panes where they sit', async () => {
+    const snapshot = await new HerdrClient(new DemoHost()).snapshot();
+    expect(snapshot.tabs?.filter((tab) => tab.workspaceId === 'w6').map((tab) => [tab.tabId, tab.number, tab.label, tab.paneCount])).toEqual([
+      ['w6:t1', 1, 'api', 3], ['w6:t2', 2, 'server', 1],
+    ]);
+    const w6 = snapshot.layouts?.filter((layout) => layout.workspaceId === 'w6') ?? [];
+    expect(w6.map((layout) => layout.panes.map((pane) => [pane.paneId, pane.rect.x, pane.rect.y, pane.rect.width, pane.rect.height]))).toEqual([
+      [['w6:p1', 0, 0, 80, 32], ['w6:p3', 0, 32, 80, 16], ['w6:p2', 80, 0, 80, 48]],
+      [['w6:p4', 0, 0, 160, 48]],
+    ]);
+    expect(w6[0]?.focusedPaneId).toBe('w6:p2');
+    expect(snapshot.panes.find((pane) => pane.paneId === 'w6:p4')).toMatchObject({ tabId: 'w6:t2', title: 'npm run dev' });
+    expect(snapshot.workspaces?.find((w) => w.workspaceId === 'w6')).toMatchObject({ tabCount: 2, activeTabId: 'w6:t1' });
+    const w2 = snapshot.layouts?.filter((layout) => layout.workspaceId === 'w2') ?? [];
+    expect(w2.map((layout) => layout.panes.map((pane) => pane.paneId))).toEqual([['w2:p1']]);
+    expect(snapshot.tabs?.find((tab) => tab.workspaceId === 'w2')).toMatchObject({ label: 'notes', paneCount: 1 });
   });
 });

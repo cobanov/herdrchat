@@ -11,6 +11,9 @@ let package = Package(
     dependencies: [.product(name: "Citadel", package: "Citadel")],
     path: ".",
     exclude: ["android", "src", "README.md", "expo-module.config.json", "ios/HerdrSshModule.swift", "ios/HerdrSsh.podspec"],
-    sources: ["ios/SshConnection.swift", "ios/HostKeyPin.swift", "tests/NativeChecks.swift"]
+    sources: [
+      "ios/SshConnection.swift", "ios/HostKeyPin.swift", "ios/ShellLaunch.swift",
+      "ios/SshShell.swift", "tests/NativeChecks.swift",
+    ]
   )]
 )

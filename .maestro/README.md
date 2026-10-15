@@ -15,14 +15,31 @@ where regressions are found.
 | `regression/new-chat` | Start reachable with the keyboard up, Cancel |
 | `regression/omp` | an OMP chat read by its journal path, its folded tool run and provider-free model name, a reply, mute and unmute |
 | `regression/welcome` | the four welcome pages (Next and a swipe), the setup guide link, the star card, closing on the Demo, and its two Settings rows |
-| `regression/thread` | effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider, a Bash permission prompt showing its tool, description, command, warning and auto-deny time above the question (`blocked-details` screenshot) |
-| `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
-| `regression/composer-keys` | the software keyboard's Return in the composer starts a new line and sends nothing, with Settings > "Return sends" on and off; the setting put back. Hardware Return, Shift-Return, Option-Return and Command-Return are key commands Maestro cannot press: jest covers them (`composerKeys.test.ts`, `Composer.test.tsx`) and the hand checks below |
-| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
+| `regression/thread` | the row and the header titled by the Claude session with the workspace below, effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider, a Bash permission prompt showing its tool, description, command, warning and auto-deny time above the question (`blocked-details` screenshot) |
 | `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
+| `regression/composer-keys` | the software keyboard's Return in the composer starts a new line and sends nothing, with Settings > "Return sends" on and off; the setting put back. Hardware Return, Shift-Return, Option-Return and Command-Return are key commands Maestro cannot press: jest covers them (`composerKeys.test.ts`, `Composer.test.tsx`) and the hand checks below |
+| `regression/menu` | the Chats menu: its rows, Settings, Hosts and New chat each opening as a sheet and Done landing back on the same list, and a cold `herdrchat://settings` link whose Done lands on the chats (screenshot `menu-<appearance>` with the menu open) |
+| `regression/list-modes` | the chats title as a picker: Agents listing each agent as a row of its own (`chat-row-w2` for the one-agent w2, `chat-row-w6:p1` and `chat-row-w6:p2` for w6's two, by `agentTestKey`), titled by its session with its workspace on its line, a row opening that agent's own thread, and no terminal row (`terminal-row-w6:p3`) among them, and Spaces bringing back w6's card with its two agents and its shell pane's terminal row under it; `scripts/e2e.sh` clears the saved choice around it (screenshots `list-agents-<appearance>`, `list-spaces-<appearance>`) |
+| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
-| `regression/multi-agent` | a workspace with two agents: a row for each under it, a thread with only that agent's lines and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
+| `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
+| `regression/machines` | a machine saved on the host (the Demo's `nuku`) listing its chat in the host's list as `chat-row-demo-nuku-w1`, its line led by the machine, its thread titled by its session with the machine leading the header, a reply sent through the jump landing on its row and not on the host's `w1`, which stays its own row; then the Demo's unplug scenario taking `nuku` off the network, and the list keeping its row and saying so in `machine-notice-demo-nuku` rather than as its error (screenshots `machines-list-<appearance>`, `machines-<appearance>`, `machines-unplugged-<appearance>`) |
 | `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
+| `regression/subagents` | a subagent's card in the thread running, then done; its chevron opening the agent's own transcript, read only, with its type and its answer; the review workflow's card opening its run with both phases and an agent still running; a workflow agent opening its transcript (screenshots `subagent-running`, `subagent-thread`, `workflow`) |
+| `regression/slash-commands` | the `/` palette from the Demo's catalogue: Built-in and Skills sections, a built-in's hint (`/model [model]`), the hidden built-in left out, narrowing to one headerless ranked list (`/release-notes`, then `/review`), `/review` (optional `[pr]`) sent at once and answered, `/add-dir` filling in with its required `<path>` hint after it until something is typed, `/compact` (it rewrites the conversation) only filled from a fresh `/`, then sent by hand with its note in the thread, the notes folder's own `/notes:summarise` (screenshots `slash-palette-<appearance>`, `slash-filled-<appearance>`: the hint must start right after the caret) |
+| `regression/shell-commands` | a `!` command as one block in the thread: the Demo notes chat's seeded `! git status --short` with its two lines of output, the hint above the composer once `!` is typed in a Claude chat, a sent `! ls` landing as a block with the Demo's three-file listing under it and its echo confirmed rather than "Failed to send" (screenshots `shell-seeded-<appearance>`, `shell-<appearance>`: the output box must read as a terminal, stdout in the label colour) |
+| `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect, no Take over), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
+| `regression/space-layout` | Spaces: w6 "api" as a space card titled by its label with its stats (`2 agents, 1 working · 2 tabs · 4 panes · demo/api`), its two agents' rows and its shells' terminal rows (`w6:p3`, and `w6:p4` "npm run dev") under it, grouped by tab: the agents and the shell under their tab's name (`tab-header-w6:t1`, "api"), the dev server after a line and its tab's name (`tab-header-w6:t2`, "server"), w7's one tab with neither; its layout button (`space-layout-w6`) opening the sheet with both tabs and every pane as a box (`layout-pane-w6:p3`), that box closing the sheet and opening the shell's terminal, the card itself opening the same sheet and Done closing it; w2 "notes" (one agent, nothing else) still a chat card titled by its session, with no layout button and no agent row; w7 "site" (one agent and one shell) a space card (`1 agent · 1 tab · 2 panes · demo/site`) with its agent's row (`pane-row-w7:p1`, opening the workspace's chat) and its terminal row under it, and its layout drawing the agent above the shell (screenshots `space-tab-groups-<appearance>`: "api" over the agents and the shell, a hairline inset to the rows' text, then "server" over the dev server, both quieter than the rows, the rail unbroken; `space-layout-<appearance>`: two tabs, the agents side by side with the shell under the first, the dev server alone in the second; `space-agent-shell-<appearance>`: w7's card, agent row and terminal row) |
+
+The shell block against a real Claude Code, checked by hand on a phone
+(Gimel), in light and dark, since the Demo cannot reproduce a real record:
+
+- `! pwd` and `!pwd` from the phone, and `!pwd` typed in the desktop TUI: one
+  block each, the echo confirmed, never "Failed to send".
+- `! ls -la | head`: symlinks read `->`, not `-&gt;`.
+- `! ls /nope`: the error in the attention colour.
+- `! seq 1 200`: folded with "Show all 200 lines", opening and closing.
+- `! sleep 3; echo done`: "Running" until `done` lands.
 
 Maestro cannot press hardware-keyboard key commands, so these are checked by
 hand on an iPad (or an iPhone) with a keyboard, after a native build:
@@ -51,29 +68,176 @@ hand on an iPad (or an iPhone) with a keyboard, after a native build:
 On an iPhone or an Android phone, with no hardware keyboard: the keyboard's
 Return key reads return and starts a new line, with the setting on and off; it
 never sends. On Android, Settings has no "Return sends" row.
-| `regression/thread` | the row and the header titled by the Claude session with the workspace below, effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
-| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
-| `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
-| `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
-| `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
-| `regression/subagents` | a subagent's card in the thread running, then done; its chevron opening the agent's own transcript, read only, with its type and its answer; the review workflow's card opening its run with both phases and an agent still running; a workflow agent opening its transcript (screenshots `subagent-running`, `subagent-thread`, `workflow`) |
+
+### Terminal, by hand on a device
+
+The Demo's terminal is an echo shell fed a recording, so the flow above proves
+the screen, not the attach. After a native build, on a real host (Gimel), with
+herdr open on the desktop as well, check each of these and what it should do:
+
+- **Nothing moves on the desktop.** On Gimel, note which workspace, tab and
+  pane the desktop shows, and its sidebar. Open a shell pane's Terminal row
+  from the iPad: the iPad shows that pane alone (no herdr sidebar, no
+  header), and on the desktop nothing zoomed, focus did not move and the
+  sidebar did not change. Type in it and back out: still nothing moved on the
+  desktop. The pane's size follows the iPad while attached and comes back on
+  leaving; that is the only shared effect.
+- **Two of our clients on one pane.** While the iPad holds a shell pane's
+  terminal, open the same pane from the phone: the phone's banner says "herdr
+  could not attach. Another client may be attached to this pane, or it may
+  have closed." with Take over beside Reconnect, and the iPad is untouched.
+  Reconnect on the phone is refused the same way. Tap Take over: the phone
+  shows the pane, and the iPad's terminal ends; record what its header says
+  (expected "Ended", or "Ended with exit N"). Reconnect on the iPad is then
+  refused, with Take over offered, until the phone leaves; after that it
+  attaches again.
+- **Locked or backgrounded while attached.** Attach a shell pane's terminal,
+  then lock the phone (or go to the home screen). On the desktop the pane gets
+  its own size back within a second or two. Unlock: the terminal says "Hung
+  up" and does not reconnect by itself; Reconnect attaches again.
+- **The keyboard resizes the desktop pane once.** With the terminal open,
+  show and hide the keyboard: the desktop pane redraws once per show or hide,
+  not through the animation.
+- **The app killed while attached.** Attach a shell pane's terminal, then
+  kill the app (swipe it away). On the desktop, check the pane got its own
+  size back, and note how long that took. Reopen the app and the same pane's
+  Terminal row: record whether it attaches without Take over, or is refused
+  ("Another client may be attached") because herdr still holds the dead
+  client, and if so how long until a Reconnect attaches. A refusal here means
+  the person has to take the pane from their own ghost session.
+- **Leaving while connecting.** Open a shell pane's Terminal row and tap Back
+  while the header still says Connecting…. Then do the same checks: the
+  desktop's pane has its own size, nothing else moved, and opening the pane
+  again attaches without Take over (record how long, if not at once).
+- **An agent pane through a chat's header Terminal.** Watch the desktop: does
+  the agent's pane shrink to the phone's size while the phone is attached
+  (`agent attach` draws it at the client's size), and get its size back on
+  leaving? Nothing else on the desktop should move.
+- **Phone upright, on its side, and the iPad.** The pane alone at every
+  width: no herdr sidebar or header, whatever the size (on iPad, the width of
+  the detail column).
+- **Scrolling.** After `git log` (or in an agent's pane), a one-finger swipe up
+  scrolls herdr's history of the pane, a swipe down comes back; it does not
+  select text or drag a split. A tap still clicks. A pinch
+  changes the font size and moves nothing in herdr. On an iPad with a
+  trackpad, a two-finger scroll does the same as the swipe (it is an
+  indirect scroll event, which the wheel gesture accepts).
+- **Programs.** `htop` (colours, live, `q` quits), `vim` (arrows, Esc from the
+  bar, `:q`), a `git log` with colours, the agent's own `/model` panel through
+  the header Terminal.
+- **iPad with a keyboard.** Right after opening, without a tap: Ctrl-C stops a
+  running command, the arrows move, Option acts as Meta, Command-K clears the
+  scrollback. Ctrl-B is herdr's prefix and does not reach the program.
+- **Rotation.** Rotate the iPad: the pane redraws at the new size, nothing
+  left over from the old one.
+- **Light and dark.** Screenshot a shell pane and an agent pane in both: what
+  herdr draws should sit on the app's terminal background, not clash with it.
+- **klaw through the machine jump.** Open a shell pane on klaw: the same
+  private attach, through the host, with the header naming klaw (klaw's herdr
+  must be 0.9 or newer, or the screen says so).
+- **iPad: beside the sidebar, not over it.** In Spaces, open a shell pane's
+  Terminal row: the terminal fills the detail column with the chats still on
+  the left, that row lit as an open agent's row is, and no workspace card or
+  chat row lit. Its header sits where a chat's does in the same column, with
+  no gap on its left. Its leading control is an ✕, Close, not a Back
+  chevron: it shows "Select a conversation" again.
+- **iPad: a chat's Terminal swaps the detail.** Open a chat, tap its header's
+  Terminal: the terminal replaces the chat in the column (the chat's row is no
+  longer lit). Its Back is labelled with that chat's name and brings it
+  back. Open another pane's Terminal row while a terminal is open: it
+  replaces it, Back still goes to that chat, and the desktop shows the first
+  pane got its own size back (its shell hung up). Close a workspace from the
+  sidebar while a terminal on one of its panes is open: the terminal goes
+  too.
+- **iPad: narrow and upright.** Rotate to portrait, then narrow the app with
+  Split View to its smallest: the terminal goes on alone, its Back still goes
+  where it came from. At the narrowest two-column split (the column is
+  448pt) the accessory bar shows Esc, Tab, Ctrl and Alt without a scroll,
+  the rest scrolling sideways, Paste and the keyboard control still beside
+  it. At Split View's one third (320pt) Alt scrolls in, as it does on a
+  320pt phone (`barFit.test.ts` pins both). At the widest two-column split
+  and the narrowest, the pane redraws at the column's size.
+- **iPad: klaw in the column.** Open a shell pane on klaw from the sidebar:
+  the same, with the header naming klaw and its row lit.
+- **iPad: a link.** There is no documented `herdrchat://` terminal link; if
+  one is added, it must land in the column (the route hands over to the
+  detail), never as a second screen over the split.
+
+### Spaces cards, by hand on a device
+
+Maestro has no pointer and no real host, so after a build, with the app on
+Gimel, check these on the iPad (with a trackpad or mouse) and on the phone, in
+light and dark:
+
+- **Hover on iPad.** Rest the pointer on the layout button of `herdrchat`'s
+  card: after a moment the layout card appears beside the list, level with
+  the button, at its full width, and moving the pointer away (not onto the
+  card) makes it vanish. Moving straight from the button onto the card keeps
+  it. Sweeping the pointer down the list across several buttons does not
+  flash a card at each one, and the card never covers the buttons below.
+  Hover goes through the native `HerdrHover` view (React Native's own
+  `onHoverIn` never fires on iOS in this build), so it needs a native build
+  with it; on an older build only a tap shows the card.
+- **Pinned on iPad.** Tap the button (or the card): the layout card stays
+  when the pointer leaves. A tap anywhere outside it closes it, on the list
+  or in the open thread beside it (that tap does not also land in the
+  composer); so does its Close, and so does Esc on a hardware keyboard (this
+  needs the native build with `HerdrEscape`; on an older build Esc does
+  nothing and the other two still work). With the composer focused before
+  the card was pinned, closing the card gives the composer its focus back:
+  typing goes on without tapping the field.
+- **Narrow iPad window** (Split View, the list alone): the card hangs under
+  or over the button inside the list instead.
+- **A box opens its pane.** In the card, tap an agent's box: the box dims
+  under the finger, the card closes and that agent's chat opens beside the
+  list. Tap a shell's box: its terminal opens, attached privately as its
+  terminal row does. Then the cases that used to swallow the tap: with the
+  composer focused and typing, show the card by hover and click a box (one
+  click opens it, it does not just put the keyboard away); and hold a click
+  on a box of a hovered, unpinned card for a second before letting go (the
+  card stays and the pane opens).
+- **The phone.** The button and the card open the layout as a sheet sized to
+  its tabs; Done closes it; a box dims under the finger, the sheet slides
+  away and then its pane opens, every time, for an agent's box and a
+  shell's.
+- **All tabs.** `play` (four tabs) draws all four, each titled by herdr's tab
+  label, the active one ringed, side by side two to a row.
+- **A machine.** A workspace on klaw draws its one tab, titled `klaw · <label>`
+  on its card.
+- **One agent and nothing else** (a workspace with no shell pane) is still a
+  chat card titled by its session, with no layout button; the same workspace
+  with a shell split beside the agent becomes a space card with the agent as
+  a row under it, then the terminal.
+- **Rows grouped by tab.** `play` (four tabs): the rows under its card come
+  tab by tab in the tabs' order, each tab's agents then its terminals; a
+  hairline between tabs, inset to the rows' text, with the rail running
+  unbroken through it; a small, quiet header with the tab's name above each
+  named tab's rows (the first tab's too, with no line above it), and only the
+  line for a tab herdr labels with its number. A search that leaves rows in
+  one tab shows no line; a one-tab workspace shows neither. Check light and
+  dark.
+- **Agents view unchanged.** Switch to Agents: every agent is its own row as
+  before, titled by its session, no terminal rows, no layout buttons.
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
-The app opens on Chats; Hosts, Settings and New chat sit behind its "…" menu
+`regression/_open-settings.yaml` and `_close-settings.yaml` wrap the menu for
+flows that only need Settings.
+
+The app opens on the chats list, titled by its view (Spaces or Agents, picked
+by tapping the title, `chats-view`); Hosts, Settings and New chat sit behind its "…" menu
 (`chats-menu`) and open as sheets closed by Done (`header-close`). Flows reach
 them through `regression/_menu.yaml` with `ITEM` set to the row's text, never
 by tapping a screen's name on its own: the name is also a menu row and a sheet
 title, so assert something only that screen renders. Leaving a sheet is
 proved the same way: assert the sheet's own element is gone, since the chats'
 title is still in the hierarchy behind a page sheet.
-`regression/_open-settings.yaml` and `_close-settings.yaml` wrap the menu for
-flows that only need Settings.
 
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
 `/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
-"restyle the app".
+"restyle the app", "unplug the machine" (typed into a host chat: the Demo's machine
+`nuku` goes off the network).
 
 
 Run against a booted simulator with the app installed and Metro running:
@@ -102,11 +266,41 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `blocked-replies` | that a parsed option is tappable and delivers | **yes**, blocked |
 | `codex-thread` | exact Codex history, same-folder isolation, reload and phone delivery | **yes**, two disposable Codex sessions |
 | `tablet-demo` | iPad split chats/settings, rotation, composer, reply and action sheets (cancelled) | no, selects Demo explicitly |
+| `screenshots-ipad` | the README's iPad screenshots, in landscape on the Demo: the list beside a chat with a subagent card (`ipad-split`), `w6`'s layout as the floating card (`ipad-layout`), the shell `w6:p3`'s terminal beside the list (`ipad-terminal`), the list on Agents (`ipad-agents`) | no, selects Demo explicitly |
 
 Run `tablet-demo` on an iPad simulator with `-e APPEARANCE=Dark`, then `Light`.
 Use `--test-output-dir` outside the repository and open its screenshots: the
 keyboard must not cover the composer or final reply, and content must stay
 readable in portrait and landscape. This is demo acceptance, not an SSH test.
+
+### The README's screenshots
+
+`docs/screenshots/` holds the pictures the top-level README shows, copied
+from a suite run on an iPhone 17 Pro simulator and from `screenshots-ipad` on
+an iPad Pro 13-inch simulator, in dark:
+
+```bash
+E2E_DEVICE=<iphone udid> E2E_OUT=<out> npm run e2e
+maestro --device <ipad udid> test -e APPEARANCE=Dark --test-output-dir <out> .maestro/screenshots-ipad.yaml
+# Landscape is saved on its side with an EXIF orientation tag; turn the pixels
+# upright and drop the tag, so every viewer shows it the same way:
+ffmpeg -noautorotate -i <out>/.../ipad-split-Dark.png -vf transpose=2 docs/screenshots/ipad-split-dark.png
+exiftool -overwrite_original -all= docs/screenshots/ipad-split-dark.png
+# ipad-layout-dark.png is the left of its shot: -vf transpose=2,crop=1380:2064:0:0
+```
+
+| README image | Flow | Its screenshot |
+|--------------|------|----------------|
+| `chats-dark.png` | `regression/list-modes` | `list-spaces-Dark` |
+| `thread-subagents-dark.png` | `regression/shell-commands` | `shell-seeded-Dark` |
+| `ipad-split-dark.png` | `screenshots-ipad` | `ipad-split-Dark`, rotated |
+| `ipad-terminal-dark.png` (also in Terminal) | `screenshots-ipad` | `ipad-terminal-Dark`, rotated |
+| `ipad-layout-dark.png` | `screenshots-ipad` | `ipad-layout-Dark`, rotated, its left 1380 px |
+| `agents-dark.png` | `regression/list-modes` | `list-agents-Dark` |
+| `slash-palette-dark.png` | `regression/slash-commands` | `slash-palette-Dark` |
+
+Open each before copying it: a flow that passes can still have caught the
+screen mid-animation.
 
 `maestro test .maestro/` runs `add-server` and `thread-back` too, and fails
 without a host, that is those flows doing their job, not a broken suite.

@@ -3,8 +3,11 @@ import {
   HerdrSocket,
   MAX_COMMAND_BYTES,
   base64,
+  batchCommand,
+  batchParts,
   commandFor,
   decodeEvent,
+  parseBatch,
   parseProbe,
   probeScript,
 } from '../herdr/socket';
@@ -318,5 +321,83 @@ describe('remote-api-bridge', () => {
     };
     const socket = new HerdrSocket(transport, 'herdr');
     await expect(socket.call('ping', {}, 1000)).rejects.toMatchObject({ code: 'server_not_running' });
+  });
+});
+
+describe('callEach', () => {
+  const section = (index: number, body: string, status = 0) =>
+    `\n@@hc-batch-begin ${index}\n${body}\n@@hc-batch-end ${index} ${status}\n`;
+
+  it('runs every request in one exec, one after another', async () => {
+    const { socket, commands } = host(PYTHON_PROBE, section(0, '{"id":"a","result":{"n":1}}') + section(1, '{"id":"b","result":{"n":2}}'));
+    const answers = await socket.callEach('pane.process_info', [{ pane_id: 'w1:p2' }, { pane_id: 'w1:p3' }], 1000);
+    expect(requests(commands)).toHaveLength(1);
+    expect(answers).toEqual([{ ok: true, result: { n: 1 } }, { ok: true, result: { n: 2 } }]);
+    const [command] = requests(commands);
+    expect(command).toContain('w1:p2');
+    expect(command).toContain('w1:p3');
+    expect(command?.startsWith('sh -c ')).toBe(true);
+  });
+
+  it('asks nothing for no requests', async () => {
+    const { socket, commands } = host(PYTHON_PROBE, '');
+    expect(await socket.callEach('pane.process_info', [], 1000)).toEqual([]);
+    expect(commands).toEqual([]);
+  });
+
+  it('says why when the host has no bridge', async () => {
+    const { socket } = host('BRIDGE none\nSOCK /tmp/h.sock\n', '');
+    await expect(socket.callEach('pane.process_info', [{ pane_id: 'w1:p2' }], 1000)).rejects.toMatchObject({ code: 'socket_unavailable' });
+  });
+});
+
+describe('parseBatch', () => {
+  const section = (index: number, body: string, status = 0) =>
+    `\n@@hc-batch-begin ${index}\n${body}\n@@hc-batch-end ${index} ${status}\n`;
+
+  it('answers each entry in its place when one in the middle fails', () => {
+    const stdout =
+      section(0, '{"id":"a","result":{"n":1}}') +
+      section(1, '{"id":"bridge","error":{"code":"pane_not_found","message":"no pane w1:p3"}}', 1) +
+      section(2, '{"id":"c","result":{"n":3}}');
+    const answers = parseBatch(stdout, 3);
+    expect(answers[0]).toEqual({ ok: true, result: { n: 1 } });
+    expect(answers[1]).toMatchObject({ ok: false, error: { code: 'pane_not_found' } });
+    expect(answers[2]).toEqual({ ok: true, result: { n: 3 } });
+  });
+
+  it('reads an error envelope that exited 0, and a bridge that said nothing useful', () => {
+    const answers = parseBatch(
+      section(0, '{"id":"a","error":{"code":"invalid_request","message":"unknown method"}}') + section(1, 'Traceback: boom', 2),
+      2
+    );
+    expect(answers[0]).toMatchObject({ ok: false, error: { code: 'invalid_request' } });
+    expect(answers[1]).toMatchObject({ ok: false, error: { code: 'ssh_command_failed' } });
+  });
+
+  it('fails only the entries a cut-short batch never reached', () => {
+    const answers = parseBatch(section(0, '{"id":"a","result":{"n":1}}') + '\n@@hc-batch-begin 1\n{"id":"b"', 3);
+    expect(answers[0]).toEqual({ ok: true, result: { n: 1 } });
+    expect(answers[1]).toMatchObject({ ok: false, error: { code: 'empty_response' } });
+    expect(answers[2]).toMatchObject({ ok: false, error: { code: 'empty_response' } });
+  });
+});
+
+describe('batchCommand', () => {
+  it('marks each entry with its index and its exit status, and never stops early', () => {
+    const command = batchCommand(['echo one', 'false', 'echo three']);
+    expect(command).toContain('@@hc-batch-begin %d');
+    expect(command).toContain('( echo one ) </dev/null 2>&1');
+    expect(command).toContain('"$?"');
+    expect(command).not.toContain('&&');
+    expect(command).toContain('exit 0');
+  });
+
+  it('splits a batch too long for one command, in order', () => {
+    const long = 'x'.repeat(50 * 1024);
+    const parts = batchParts([`echo ${long}`, `echo ${long}`, `echo ${long}`]);
+    expect(parts.map((part) => part.length)).toEqual([2, 1]);
+    for (const part of parts) expect(batchCommand(part).length).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
+    expect(batchParts(['a', 'b'])).toEqual([['a', 'b']]);
   });
 });

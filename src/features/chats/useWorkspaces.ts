@@ -6,8 +6,12 @@ import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
 import { checkHostTheme } from '@/state/hostTheme';
+import { refreshHostMachines } from '@/state/hostMachines';
+import { scanSlashCatalogue } from '@/state/slashCommands';
+import { projectFoldersToScan, slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
+import { machineListDue, splitMachineConnectionId } from '@/lib/herdr/machines';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -18,11 +22,18 @@ import {
   isConversationalAgent,
   type AgentInfo,
   type AgentStatus,
+  type Pane,
   type RestoreError,
+  type Tab,
+  type TabLayout,
   type Workspace,
 } from '@/lib/herdr/models';
 import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcript/store';
 import { titleAgent } from '@/lib/chatTitle';
+import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
+import type { BatchAnswer } from '@/lib/herdr/socket';
+import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
+import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -79,6 +90,25 @@ export interface ChatSummary {
    * workspace with two or more of them lists each as a chat of its own.
    */
   panes: PaneSummary[];
+  /**
+   * Every pane that is not a chat, in herdr's order: shells, builds, and
+   * agents the app cannot converse with. Each is a terminal row under the
+   * workspace's card in the Spaces view (`src/lib/terminal/rows.ts`).
+   */
+  shellPanes: TerminalPane[];
+  /**
+   * The workspace's tabs, as the snapshot's `tabs` lists them; empty from a
+   * herdr that does not send them. What its card's layout view titles each
+   * tab by (`spaceLayoutModel`).
+   */
+  tabs: Tab[];
+  /** Each of its tabs' pane geometry, from the snapshot's `layouts`; empty when herdr sent none. */
+  layouts: TabLayout[];
+  /** The tab its workspace shows, which the layout view marks. */
+  activeTabId: string | null;
+  /** herdr's own counts for the workspace, shells included: its card's stats. */
+  tabCount: number;
+  paneCount: number;
   /** The newest of the panes' last messages: what the workspace row shows. */
   preview: ChatPreview | null;
   /**
@@ -185,11 +215,28 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   useEffect(() => {
     themeEnabled.current = useHostThemes;
   }, [useHostThemes]);
+  /**
+   * When the host's machine list was last asked for, the same way: null asks
+   * on the next poll that works (the first after connecting, a pull, coming
+   * back to the app), and otherwise once a minute (`machineListDue`).
+   */
+  const lastMachineCheck = useRef<number | null>(null);
+  /**
+   * When the slash-command catalogue was last scanned, the same way again:
+   * null scans on the next poll that works (the first after connecting, a
+   * pull), and otherwise every ten minutes (`slashScanDue`). Not on coming
+   * back to the app: a command installed meanwhile can wait for the cadence
+   * or a pull, and the scan is the heaviest of these side tasks.
+   */
+  const lastSlashScan = useRef<number | null>(null);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
+  // A machine may have been added at the host meanwhile, too.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') lastThemeCheck.current = null;
+      if (state !== 'active') return;
+      lastThemeCheck.current = null;
+      lastMachineCheck.current = null;
     });
     return () => subscription.remove();
   }, []);
@@ -197,6 +244,20 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
   const seqs = useRef(new Map<string, number>());
+  /** The program in front in each terminal row's pane, asked for now and then (`refreshProcessNames`). */
+  const processNames = useRef(new Map<string, CachedProcessName>());
+  const processTick = useRef(0);
+  /** A round of `refreshProcessNames` is still out: the next poll starts none. */
+  const processNamesAsking = useRef(false);
+  /**
+   * Which view the list shows. Names are asked only for Spaces, the one view
+   * with terminal rows, and only where a terminal can open (`processNamesWanted`).
+   */
+  const listMode = useSettings((state) => state.listMode);
+  const listModeRef = useRef(listMode);
+  useEffect(() => {
+    listModeRef.current = listMode;
+  }, [listMode]);
   const alive = useRef(true);
 
   /** Resolves true when the poll failed, so the loop knows whether to back off. */
@@ -213,8 +274,12 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // there genuinely are none, and asking again would be pointless.
       const snapshot = await client.snapshot();
       // Rides along with the poll that already runs. Settings reads this rather
-      // than asking the host itself — see `state/hostVersion`.
-      useHostVersion.getState().setVersion(snapshot.version);
+      // than asking the host itself — see `state/hostVersion`. The host's
+      // only: a machine's poll (a connection id with a slash) runs alongside
+      // it and would otherwise overwrite it with the machine's herdr.
+      if (connectionId === null || splitMachineConnectionId(connectionId) === null) {
+        useHostVersion.getState().setVersion(snapshot.version);
+      }
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
       // Unmounted mid-flight: not a failure, just nothing left to do with it.
       if (!alive.current) return false;
@@ -223,10 +288,39 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
       forcePreviews.current = false;
+      processTick.current += 1;
+      // Not awaited, and one round at a time: a round is one SSH exec for all
+      // the panes, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you)
+      // must not wait on a program's name. What lands shows on the next poll.
+      if (!processNamesAsking.current && processNamesWanted(listModeRef.current, isTerminalAvailable)) {
+        processNamesAsking.current = true;
+        void refreshProcessNames(
+          (paneIds) => client.socket.callEach(
+            'pane.process_info',
+            paneIds.map((paneId) => ({ pane_id: paneId })),
+            POLL_TIMEOUT_MS
+          ),
+          snapshot.panes,
+          processNames.current,
+          // Not on `force`: every host event forces the previews, and a
+          // busy agent would turn that into a socket call per shell pane.
+          processTick.current % PROCESS_NAME_SWEEP_POLLS === 1
+        ).finally(() => {
+          processNamesAsking.current = false;
+        });
+      }
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(workspaces, snapshot.agents, previews.current, snapshot.restoreErrors));
+      setSummaries(buildSummaries(
+        workspaces,
+        snapshot.agents,
+        previews.current,
+        snapshot.restoreErrors,
+        snapshot.panes,
+        processNameMap(processNames.current),
+        { tabs: snapshot.tabs, layouts: snapshot.layouts }
+      ));
       setPaneIds(snapshot.agents.map((agent) => agent.paneId));
       setError(null);
       setErrorCode(null);
@@ -236,10 +330,34 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // After the list is published, and not awaited: the theme is a side
       // task of this poll, and a slow or failing check must neither delay the
       // rows nor turn into the list's error. `checkHostTheme` never rejects.
+      //
+      // Both are the HOST's. A machine's list (a connection id with a slash)
+      // asks neither: the host's theme applies to its machines, and a
+      // machine's own machines are not federated a second hop.
       const now = Date.now();
-      if (connectionId !== null && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
+      const isHost = connectionId !== null && splitMachineConnectionId(connectionId) === null;
+      if (isHost && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
         lastThemeCheck.current = now;
         void checkHostTheme(connectionId, client.transport);
+      }
+      // The same side task for the machines saved on the host: a failed ask
+      // keeps the last list and never reaches this list's error.
+      // `refreshHostMachines` never rejects.
+      if (isHost && machineListDue(lastMachineCheck.current, now)) {
+        lastMachineCheck.current = now;
+        void refreshHostMachines(connectionId, client);
+      }
+      // The slash commands, a side task the same way: after the rows, not
+      // awaited, never the list's error. Every connection's, a machine's
+      // too: each has its own Claude Code and its own home folder, read
+      // through its own client. `scanSlashCatalogue` never rejects, and never
+      // runs two at once for one connection (b704ec8 was reverted for a scan
+      // that queued in front of everything else).
+      if (connectionId !== null && slashScanDue(lastSlashScan.current, now)) {
+        lastSlashScan.current = now;
+        // The open chats' folders with it, so a project's commands are read
+        // again on the cadence, not only on a thread's first open.
+        void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: projectFoldersToScan(snapshot.agents) });
       }
       return false;
     } catch (thrown) {
@@ -325,6 +443,8 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       failures.current = 0;
       forcePreviews.current = true;
       lastThemeCheck.current = null;
+      lastMachineCheck.current = null;
+      lastSlashScan.current = null;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),
@@ -355,7 +475,11 @@ export function buildSummaries(
   workspaces: readonly Workspace[],
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
-  restoreErrors: readonly RestoreError[] = []
+  restoreErrors: readonly RestoreError[] = [],
+  allPanes: readonly Pane[] = [],
+  processNames: ReadonlyMap<string, string> = new Map(),
+  /** The snapshot's tabs and layouts, for each card's layout view; null where herdr sent none. */
+  geometry: { tabs: readonly Tab[] | null; layouts: readonly TabLayout[] | null } = { tabs: null, layouts: null }
 ): ChatSummary[] {
   const byWorkspace = groupByWorkspace(agents);
 
@@ -381,6 +505,12 @@ export function buildSummaries(
         status: panes.length >= 2 ? groupStatus(panes, herdrStatus) : herdrStatus,
         agents: group,
         panes,
+        shellPanes: terminalPanes(allPanes, workspace.workspaceId, processNames),
+        tabs: (geometry.tabs ?? []).filter((tab) => tab.workspaceId === workspace.workspaceId),
+        layouts: (geometry.layouts ?? []).filter((layout) => layout.workspaceId === workspace.workspaceId),
+        activeTabId: workspace.activeTabId,
+        tabCount: workspace.tabCount,
+        paneCount: workspace.paneCount,
         preview: sessionSig === null ? null : newestPreview(electionOrder(panes)),
         sessionSig,
         restoreError:
@@ -553,6 +683,64 @@ export function dropStalePreviews(
     const agent = byPane.get(paneId);
     if (agent === undefined || sessionSignature([agent]) !== cached.sessionSig) previews.delete(paneId);
   }
+}
+
+/**
+ * A terminal row's program, with the terminal it was read from (herdr
+ * recycles pane ids). `name` is null when herdr gave none (an older herdr
+ * without `pane.process_info`, nothing in front): kept so that pane is asked
+ * again only on a sweep, not on every poll.
+ */
+export interface CachedProcessName {
+  terminalId: string | null;
+  name: string | null;
+}
+
+/**
+ * Ask herdr which program is in front in each terminal row's pane: one seen
+ * for the first time now, all of them on a sweep. All of them in ONE ask
+ * (`askAll`, the socket's `callEach`): one SSH channel however many panes
+ * there are, since a channel per pane, side by side, ran past the host's
+ * session limit and reset the connection under an open terminal (PR #164
+ * review). The CLI-only host and the Demo, which have no socket, keep the
+ * row's fallback ("Shell"). Best-effort: a failed ask keeps what was known,
+ * and never becomes the list's error; one pane failing leaves the others'
+ * answers standing.
+ */
+export async function refreshProcessNames(
+  askAll: (paneIds: readonly string[]) => Promise<readonly BatchAnswer[]>,
+  panes: readonly Pane[],
+  cache: Map<string, CachedProcessName>,
+  sweep: boolean
+): Promise<void> {
+  const rows = panes.flatMap((pane) => terminalPanes([pane], pane.workspaceId));
+  const live = new Map(rows.map((row) => [row.paneId, row.pane.terminalId]));
+  for (const [paneId, cached] of cache) {
+    if (live.get(paneId) !== cached.terminalId) cache.delete(paneId);
+  }
+  const due = processNamesDue(rows, cache, sweep);
+  if (due.length === 0) return;
+  let answers: readonly BatchAnswer[] = [];
+  try {
+    answers = await askAll(due);
+  } catch {
+    // Every pane unanswered, below.
+  }
+  due.forEach((paneId, index) => {
+    const terminalId = live.get(paneId) ?? null;
+    const answer = answers[index];
+    if (answer?.ok === true) {
+      cache.set(paneId, { terminalId, name: decodeProcessName(answer.result) });
+    } else if (!cache.has(paneId)) {
+      // A name known before is kept; none known is recorded as none, so the
+      // pane waits for the sweep. The row says what it can without it.
+      cache.set(paneId, { terminalId, name: null });
+    }
+  });
+}
+
+function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<string, string> {
+  return new Map([...cache].flatMap(([paneId, cached]) => (cached.name === null ? [] : [[paneId, cached.name] as const])));
 }
 
 export function summaryNeedsAttention(summary: ChatSummary): boolean {

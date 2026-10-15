@@ -10,16 +10,24 @@ appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
 # p2 is working, so the workspace sits under Working with both agents below it.
-- scrollUntilVisible:
-    element:
-      id: pane-row-w6:p2
-    direction: DOWN
-    centerElement: true
+# Checked at the top of the list, before any scroll: the card's tab groups and
+# terminal rows make it tall enough that scrolling p2 to the middle took the
+# Working header off the screen. Then the card is brought to the middle, where
+# it and both agents' rows are on screen together.
 - assertVisible:
     id: chat-group-working
 - assertVisible:
     id: chat-row-w6
-    text: 'api, .*2 agents · Claude.*'
+    below:
+      id: chat-group-working
+- scrollUntilVisible:
+    element:
+      id: chat-row-w6
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: chat-row-w6
+    text: 'api, 2 agents, 1 working · 2 tabs · 4 panes · demo/api.*'
 - assertVisible:
     id: pane-row-w6:p1
     text: Archived projects migration, Claude in api, demo/api.*

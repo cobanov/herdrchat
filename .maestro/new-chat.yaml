@@ -11,7 +11,8 @@ appId: dev.herdr.HerdrChat
 - launchApp
 - runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 # `header-action` is the compose button. Matched by id, not by glyph: it renders
 # an SF Symbol with a "+" text fallback, so the visible label depends on whether
@@ -41,7 +42,8 @@ appId: dev.herdr.HerdrChat
 # swipe, the button is the path VoiceOver and Switch Control actually have.
 - tapOn:
     id: "header-close"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 # Reopening must not resurrect what was typed into the sheet that was dismissed.
 - tapOn:
@@ -50,4 +52,5 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible: "/tmp/maestro-new-chat"
 - tapOn:
     id: "header-close"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"

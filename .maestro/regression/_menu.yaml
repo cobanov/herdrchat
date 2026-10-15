@@ -6,10 +6,11 @@
 # The menu is the system action sheet (a centred card on iOS 26, a popover on
 # iPad), so its rows have no testIDs and are matched by their text. With the
 # tab bar gone, nothing on the chats screen itself reads "Settings", so waiting
-# for that row proves the sheet is up. "New chat" is not unique: the "+" beside
-# the menu carries it as its label, so the row is tapped `below` the menu
-# control, which the "+" shares a line with. Every screen a row opens is a
-# sheet closed by `header-close`.
+# for that row proves the sheet is up. While the sheet is up the screen under
+# it, "…" and "+" included, is out of the accessibility tree, so the row is
+# matched by its text alone: a `below: chats-menu` finds nothing to be below,
+# and the "+" (labelled "New chat") is not there to be confused with the row.
+# Every screen a row opens is a sheet closed by `header-close`.
 appId: dev.herdr.HerdrChat
 ---
 - tapOn:
@@ -19,6 +20,4 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 - tapOn:
     text: ${ITEM}
-    below:
-      id: chats-menu
 - waitForAnimationToEnd

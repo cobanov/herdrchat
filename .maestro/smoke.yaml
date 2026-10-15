@@ -11,7 +11,8 @@ appId: dev.herdr.HerdrChat
 - launchApp
 - runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 # The host switcher sits under the title and is the quickest way to change
 # hosts from the primary screen. It presents Hosts as a sheet over the chats,
@@ -24,14 +25,15 @@ appId: dev.herdr.HerdrChat
     id: "server-demo"
 - tapOn:
     id: "header-close"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 - assertNotVisible:
     id: "server-demo"
 
 # Everything else is behind the menu, the "…" beside "+". Each destination is
 # asserted by something only it renders, not by its name: the name is also a
 # row of the menu, so it would pass against a sheet that never opened. Leaving
-# is checked the same way: "Chats" is still in the hierarchy behind a page
+# is checked the same way: the chats title is still in the hierarchy behind a page
 # sheet, so the sheet's own element has to be gone, not just the title there.
 - runFlow:
     file: regression/_menu.yaml
@@ -48,7 +50,8 @@ appId: dev.herdr.HerdrChat
     id: "toggle-tool-activity"
 - tapOn:
     id: "header-close"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 - assertNotVisible:
     id: "toggle-tool-activity"
 
@@ -60,6 +63,7 @@ appId: dev.herdr.HerdrChat
     id: "server-demo"
 - tapOn:
     id: "header-close"
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 - assertNotVisible:
     id: "server-demo"

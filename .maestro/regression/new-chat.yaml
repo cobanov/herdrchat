@@ -29,4 +29,5 @@ appId: dev.herdr.HerdrChat
     timeout: 10000
 - assertVisible: .*your own host.*
 - tapOn: Cancel
-- assertVisible: Chats
+- assertVisible:
+    id: chats-view

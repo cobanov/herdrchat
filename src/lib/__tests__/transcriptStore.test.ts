@@ -255,6 +255,18 @@ describe('list previews', () => {
     expect(previewText(message)).toBe('Done All three tests pass.');
   });
 
+  it('drops Markdown list markers rather than showing them as text', () => {
+    const message = {
+      id: 'm3',
+      role: 'assistant' as const,
+      segments: [{ kind: 'text' as const, text: '- Host keys are pinned\n* The cursor\n  + nested\n1. First\n2) Second\n-5 stays' }],
+      timestamp: null,
+      agentLabel: null,
+      isSidechain: false,
+    };
+    expect(previewText(message)).toBe('Host keys are pinned The cursor nested First Second -5 stays');
+  });
+
   it('is null for a turn with nothing to show', () => {
     expect(
       previewText({

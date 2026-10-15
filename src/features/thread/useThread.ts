@@ -20,7 +20,7 @@ import {
 } from '@/lib/herdr/models';
 import { TranscriptStore } from '@/lib/transcript/store';
 import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
-import { displayText, imagePaths, receiptKey } from '@/lib/transcript/message';
+import { displayText, ECHO_ID_PREFIX, imagePaths, receiptKey } from '@/lib/transcript/message';
 import { promptWithImages } from '@/lib/transcript/images';
 import { uploadImage, type OutgoingImage } from '@/lib/attachments/upload';
 import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
@@ -1377,7 +1377,7 @@ export function useThread(
           ...paths.map((path) => ({ kind: 'image' as const, path })),
         ];
         const echo: ChatMessage = {
-          id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: `${ECHO_ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}`,
           role: 'user',
           segments,
           timestamp: Date.now(),

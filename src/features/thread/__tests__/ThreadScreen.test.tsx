@@ -31,9 +31,28 @@ jest.mock('@/components/Glass', () => ({
   useGlassAvailable: () => false,
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+let mockTerminalAvailable = true;
+jest.mock('../../../../modules/herdr-terminal/src', () => ({
+  get isTerminalAvailable() {
+    return mockTerminalAvailable;
+  },
+}));
+const mockOpenTerminal = jest.fn();
+jest.mock('@/features/terminal/navigation', () => ({ openTerminal: (...args: unknown[]) => mockOpenTerminal(...args) }));
+let mockConnection: unknown = null;
+let mockHostConnection: unknown = null;
+let mockHydrated = false;
+const mockWantedIds: (string | null)[] = [];
 jest.mock('@/state/connections', () => ({
-  useConnections: () => false,
+  useConnections: (select: (state: { hydrated: boolean }) => unknown) => select({ hydrated: mockHydrated }),
   useSelectedConnection: () => null,
+  useConnectionFor: (id: string | null) => {
+    mockWantedIds.push(id);
+    if (id === null) return null;
+    return id.includes('/') ? mockConnection : mockHostConnection;
+  },
+  isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
+  clientFor: () => null,
 }));
 let mockWorkspaceLabel: string | null = null;
 let mockSessionTitle: string | null = null;
@@ -41,7 +60,8 @@ let mockAgentName: string | null = null;
 let mockOffline = false;
 let mockPaused = false;
 let mockWorkingDirName = 'project-with-a-long-folder-name';
-let mockAgents: { agent: string | null; paneId: string; agentSession: null }[] = [];
+let mockAgents: { agent: string | null; paneId: string; agentSession: null; focused?: boolean; cwd?: string; terminalId?: string }[] = [];
+const mockSend = jest.fn(async (_text: string) => true);
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: mockAgents,
@@ -57,7 +77,7 @@ jest.mock('@/features/thread/useThread', () => ({
     isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
     reachedStart: true, failedIds: new Set(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
-    reload: mockReload, clearError: mockClearError,
+    reload: mockReload, clearError: mockClearError, send: mockSend,
   }),
 }));
 
@@ -95,7 +115,8 @@ it('extends header material to the window edge, insets only controls, and reserv
   expect(screen.getByTestId('composer-input')).toBeOnTheScreen();
   mockSessionMeta = { model: 'gpt-5.6', effort: 'high' };
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name · online');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name');
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
 });
 
 it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {
@@ -123,7 +144,8 @@ it.each([
   mockOffline = state.offline;
   mockPaused = state.paused;
   const screen = await render(<ThreadScreen workspaceId="w1" title="Chat" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent(new RegExp(`· ${word}$`));
+  expect(screen.getByTestId('thread-status')).toHaveTextContent(`· ${word}`);
+  expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/online|offline|reconnecting/);
   mockOffline = false;
   mockPaused = false;
 });
@@ -218,6 +240,71 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   mockAgents = [];
 });
 
+// A chat on one of the host's machines is opened for that machine's
+// connection, from the route, and its line says which machine first: the
+// same folder on two computers is two chats.
+it('resolves a machine chat from its route and leads its line with the machine', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'kenneth-bot';
+  mockWorkingDirName = 'kenneth-bot';
+  mockSessionTitle = 'Nightly digest';
+  mockSessionMeta = { model: 'claude-opus-4-6', effort: null };
+  mockAgents = [{ agent: 'claude', paneId: 'w1:p1', agentSession: null }];
+  mockConnection = { kind: 'machine', id: 'demo/demo-nuku', name: 'nuku', via: 'demo' };
+  mockWantedIds.length = 0;
+  const screen = await render(<ThreadScreen connectionId="demo/demo-nuku" workspaceId="w1" title="Nightly digest" />);
+  expect(mockWantedIds).toContain('demo/demo-nuku');
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('Nightly digest');
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^nuku · kenneth-bot · /);
+  // The status is its own text that never shrinks: the machine in front made
+  // the one line long enough that the word at its end was the first cut.
+  expect(screen.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
+  expect(screen.getByTestId('thread-meta')).toHaveStyle({ flexShrink: 1 });
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
+  expect(screen.getByTestId('thread-status')).toHaveStyle({ flexShrink: 0 });
+  await screen.unmount();
+  mockConnection = null;
+  mockSessionTitle = null;
+  mockWorkingDirName = 'project-with-a-long-folder-name';
+  mockAgents = [];
+});
+
+// The chat cannot show everything an agent draws (a panel it does not parse, a
+// login prompt). Its header opens the agent's own screen: the pane of a pane
+// chat, and for a workspace chat the agent herdr has focused.
+it('opens the agent\'s terminal from the header, on this chat\'s pane or its focused agent', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = null;
+  mockHostConnection = { id: 'srv-1' };
+  mockAgents = [
+    { agent: 'claude', paneId: 'w6:p1', terminalId: 'term_w6_p1', agentSession: null, focused: false },
+    { agent: 'codex', paneId: 'w6:p2', terminalId: 'term_w6_p2', agentSession: null, focused: true },
+  ];
+  const workspace = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
+  await fireEvent.press(workspace.getByRole('button', { name: 'Terminal' }));
+  // The agent's terminal id travels with it.
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith({ connectionId: 'srv-1', paneId: 'w6:p2', kind: 'agent', terminalId: 'term_w6_p2', title: 'api' });
+  await workspace.unmount();
+  const pane = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" paneId="w6:p1" title="api" />);
+  await fireEvent.press(pane.getByTestId('thread-terminal'));
+  expect(mockOpenTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ paneId: 'w6:p1', kind: 'agent', terminalId: 'term_w6_p1' }));
+  await pane.unmount();
+  // No agent bound yet: nothing to attach to, so no button.
+  mockAgents = [];
+  const empty = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" title="api" />);
+  expect(empty.queryByTestId('thread-terminal')).toBeNull();
+  await empty.unmount();
+  // Android has no terminal: the button would lead only to a screen saying so.
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p1', terminalId: 'term_w6_p1', agentSession: null, focused: true }];
+  mockTerminalAvailable = false;
+  const android = await render(<ThreadScreen connectionId="srv-1" workspaceId="w6" paneId="w6:p1" title="api" />);
+  expect(android.queryByTestId('thread-terminal')).toBeNull();
+  await android.unmount();
+  mockTerminalAvailable = true;
+  mockAgents = [];
+  mockHostConnection = null;
+});
+
 // herdr names a workspace after its folder, so the label leading the line and
 // the folder near its end are usually one word. Said twice, it pushed the
 // status off a phone's header.
@@ -229,11 +316,135 @@ it('says a workspace named after its folder once in the line', async () => {
   mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
   mockAgents = [{ agent: 'claude', paneId: 'w6:p1', agentSession: null }];
   const screen = await render(<ThreadScreen workspaceId="w6" />);
-  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort · online$/);
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^herdrchat · .*high effort$/);
+  expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
   expect(screen.getByTestId('thread-meta')).not.toHaveTextContent(/HerdrChat/);
   await screen.unmount();
   mockWorkingDirName = 'project-with-a-long-folder-name';
   mockWorkspaceLabel = null;
   mockSessionTitle = null;
   mockAgents = [];
+});
+
+// A machine the host no longer lists: the host is still here, so the screen
+// says the machine is gone, names it from the host's cached list, and leads
+// back to the chats rather than to Hosts, where machines are not.
+it('says a chat\'s machine is gone, by name, when its host is still here', async () => {
+  const { useHostMachines } = jest.requireActual<typeof import('@/state/hostMachines')>('@/state/hostMachines');
+  useHostMachines.setState({ byHost: { gimel: [{ id: 'm-klaw', label: 'klaw', target: 'klaw', session: 'default', enabled: false }] } });
+  mockHydrated = true;
+  mockConnection = null;
+  mockHostConnection = { id: 'gimel', name: 'Gimel' };
+  const screen = await render(<ThreadScreen connectionId="gimel/m-klaw" workspaceId="w1" title="Chat" />);
+  expect(screen.getByText("This chat's machine is gone")).toBeOnTheScreen();
+  expect(screen.getByTestId('thread-machine-enable')).toHaveTextContent(/herdr machine enable klaw on Gimel/);
+  expect(screen.queryByTestId('thread-open-hosts')).toBeNull();
+  await screen.unmount();
+  mockHydrated = false;
+  mockHostConnection = null;
+  useHostMachines.setState({ byHost: {} });
+});
+
+// The palette offers what the terminal offers, and a pick does what Enter on
+// it does there: a command that takes nothing runs, one that takes something
+// waits for it with the hint showing.
+describe('the / palette', () => {
+  beforeEach(() => {
+    mockLoading = false;
+    mockSend.mockClear();
+  });
+
+  it('lists a Claude chat\'s built-ins and skills in sections, and narrows as you type', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w20:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w20" />);
+    expect(screen.queryByTestId('command-suggestions')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/');
+    expect(screen.getByTestId('command-section-builtin')).toHaveTextContent('BUILT-IN');
+    expect(screen.getByTestId('command-section-skills')).toBeOnTheScreen();
+    expect(screen.getByTestId('command-suggestion-model-hint')).toHaveTextContent('[model]');
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    expect(screen.getByTestId('command-suggestion-usage')).toBeOnTheScreen();
+    expect(screen.queryByTestId('command-suggestion-model')).toBeNull();
+    // A space ends the name: the arguments are being typed.
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usage ');
+    expect(screen.queryByTestId('command-suggestions')).toBeNull();
+    await screen.unmount();
+  });
+
+  it('sends a command that takes nothing the moment it is picked', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w21:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w21" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    await fireEvent.press(screen.getByTestId('command-suggestion-usage'));
+    expect(mockSend).toHaveBeenCalledWith('/usage');
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '');
+    await screen.unmount();
+  });
+
+  it('puts back what was typed when the send is refused', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w22:p1', agentSession: null, focused: true, cwd: '/p' }];
+    mockSend.mockResolvedValueOnce(false);
+    const screen = await render(<ThreadScreen workspaceId="w22" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/usa');
+    await fireEvent.press(screen.getByTestId('command-suggestion-usage'));
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/usa');
+    await screen.unmount();
+  });
+
+  it('fills a command that cannot run without its argument, with its hint after it until something is typed', async () => {
+    mockAgents = [{ agent: 'claude', paneId: 'w23:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w23" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/add-d');
+    await fireEvent.press(screen.getByTestId('command-suggestion-add-dir'));
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', '/add-dir ');
+    expect(screen.getByTestId('composer-hint')).toHaveTextContent('/add-dir <path>');
+    await fireEvent.changeText(screen.getByTestId('composer-input'), '/add-dir ~/src');
+    expect(screen.queryByTestId('composer-hint')).toBeNull();
+    await screen.unmount();
+  });
+
+  // Enter runs these in the terminal: an optional argument, and a computed hint.
+  it.each([
+    ['/mod', 'model'],
+    ['/conte', 'context'],
+    ['/effo', 'effort'],
+  ])('sends a command whose argument is optional the moment it is picked (%s)', async (typed, name) => {
+    mockAgents = [{ agent: 'claude', paneId: 'w26:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w26" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), typed);
+    await fireEvent.press(screen.getByTestId(`command-suggestion-${name}`));
+    expect(mockSend).toHaveBeenCalledWith(`/${name}`);
+    await screen.unmount();
+  });
+
+  // The review of #160 added the ones that commit, publish or rewrite.
+  it.each([
+    ['/exi', 'exit'],
+    ['/compa', 'compact'],
+    ['/commi', 'commit'],
+    ['/ini', 'init'],
+  ])('only fills a command that would end the agent or change things, so a mis-tap never sends it (%s)', async (typed, name) => {
+    mockAgents = [{ agent: 'claude', paneId: 'w27:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const screen = await render(<ThreadScreen workspaceId="w27" />);
+    await fireEvent.changeText(screen.getByTestId('composer-input'), typed);
+    await fireEvent.press(screen.getByTestId(`command-suggestion-${name}`));
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('composer-input')).toHaveProp('value', `/${name}`);
+    expect(screen.queryByTestId('composer-hint')).toBeNull();
+    await screen.unmount();
+  });
+
+  it('offers Codex its own menu, and an OMP chat nothing', async () => {
+    mockAgents = [{ agent: 'codex', paneId: 'w24:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const codex = await render(<ThreadScreen workspaceId="w24" />);
+    await fireEvent.changeText(codex.getByTestId('composer-input'), '/');
+    expect(codex.getByTestId('command-suggestion-model')).toHaveTextContent(/choose what model/);
+    await codex.unmount();
+    mockAgents = [{ agent: 'omp', paneId: 'w25:p1', agentSession: null, focused: true, cwd: '/p' }];
+    const omp = await render(<ThreadScreen workspaceId="w25" />);
+    await fireEvent.changeText(omp.getByTestId('composer-input'), '/');
+    expect(omp.queryByTestId('command-suggestions')).toBeNull();
+    await omp.unmount();
+  });
 });

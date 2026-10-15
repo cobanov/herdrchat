@@ -1,56 +1,111 @@
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
-import type { SlashCommand } from '@/lib/slashCommands';
+import type { CatalogueCommand, CommandSection, PaletteSection } from '@/lib/slashCommands';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, spacing } from '@/theme/tokens';
+import { radius, size, spacing } from '@/theme/tokens';
+
+const SECTION_TITLES: Record<CommandSection, string> = {
+  builtin: 'Built-in',
+  skills: 'Skills',
+  commands: 'Commands',
+  plugins: 'Plugins',
+};
 
 /**
- * The slash commands that match what is being typed, above the composer.
+ * A command's `testID`: `command-suggestion-<name>`, with the `:` of a
+ * namespaced name (`notes:summarise`, `demo-tools:lint`) as `-`, so a Maestro
+ * flow can name it without escaping.
+ */
+export function commandTestID(name: string): string {
+  return `command-suggestion-${name.replace(/:/g, '-')}`;
+}
+
+/**
+ * The `/` palette above the composer: every command the agent's terminal
+ * would list for what has been typed. A bare `/` shows them in their sections
+ * (Built-in, Skills, Commands, Plugins), each under its header; a typed name
+ * shows one ranked list with no header (`paletteSections`). It scrolls past
+ * `size.commandPaletteMaxHeight`, or a share of the window on a small phone.
  *
- * A pick fills the composer rather than sending: `/effort` takes an argument,
- * and a command sent by a tap nobody meant is a panel opened on the terminal.
+ * Each row is the name, the argument hint after it when the command takes
+ * one, and its description. What a pick does is the caller's
+ * (`pickSlashCommand`): a command that takes nothing is sent, one that takes
+ * something is filled in.
+ *
+ * Taps never take the keyboard down (`keyboardShouldPersistTaps`): the
+ * composer keeps its focus, so a filled command is ready for its argument.
  */
 export function CommandSuggestions({
-  commands,
+  sections,
   onPick,
 }: {
-  commands: readonly SlashCommand[];
-  onPick: (command: SlashCommand) => void;
+  sections: readonly PaletteSection[];
+  onPick: (command: CatalogueCommand) => void;
 }) {
   const { colors } = useTheme();
+  const { height } = useWindowDimensions();
+  const maxHeight = Math.min(size.commandPaletteMaxHeight, height * size.commandPaletteMaxWindowFraction);
   return (
-    <Glass testID="command-suggestions" style={{ borderRadius: radius.lg, overflow: 'hidden', paddingVertical: spacing.xs }}>
-      {commands.map((command) => (
-        <Pressable
-          key={command.name}
-          onPress={() => {
-            haptics.selection();
-            onPick(command);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`/${command.name}. ${command.detail}`}
-          testID={`command-suggestion-${command.name}`}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'baseline',
-            gap: spacing.md,
-            paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.sm,
-            backgroundColor: pressed ? colors.fillSubtle : 'transparent',
-          })}>
-          <Text variant="subhead" weight="600" mono>
-            /{command.name}
-          </Text>
-          <View style={{ flex: 1 }}>
-            <Text variant="footnote" color="secondary" numberOfLines={1}>
-              {command.detail}
-            </Text>
+    <Glass testID="command-suggestions" style={{ borderRadius: radius.lg, overflow: 'hidden' }}>
+      <ScrollView
+        testID="command-palette"
+        style={{ maxHeight }}
+        contentContainerStyle={{ paddingVertical: spacing.xs }}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none">
+        {sections.map(({ section, commands }) => (
+          <View key={section ?? 'matches'}>
+            {section !== null && (
+              <Text
+                testID={`command-section-${section}`}
+                variant="caption"
+                weight="600"
+                color="tertiary"
+                accessibilityRole="header"
+                style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxs }}>
+                {SECTION_TITLES[section].toUpperCase()}
+              </Text>
+            )}
+            {commands.map((command) => (
+              <Pressable
+                key={`${command.source}:${command.name}`}
+                onPress={() => {
+                  haptics.selection();
+                  onPick(command);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={[`/${command.name}`, command.argumentHint, command.description]
+                  .filter((part): part is string => part !== null && part !== '')
+                  .join('. ')}
+                testID={commandTestID(command.name)}
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.lg,
+                  paddingVertical: spacing.xs,
+                  backgroundColor: pressed ? colors.fillSubtle : 'transparent',
+                })}>
+                <Text variant="subhead" numberOfLines={1}>
+                  <Text variant="subhead" weight="600" mono>
+                    /{command.name}
+                  </Text>
+                  {command.argumentHint !== null && (
+                    <Text variant="subhead" color="tertiary" mono testID={`${commandTestID(command.name)}-hint`}>
+                      {` ${command.argumentHint}`}
+                    </Text>
+                  )}
+                </Text>
+                {command.description !== '' && (
+                  <Text variant="footnote" color="secondary" numberOfLines={1}>
+                    {command.description}
+                  </Text>
+                )}
+              </Pressable>
+            ))}
           </View>
-        </Pressable>
-      ))}
+        ))}
+      </ScrollView>
     </Glass>
   );
 }

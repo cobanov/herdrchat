@@ -146,6 +146,16 @@ function RootStack() {
             accident that happened to be right. `.maestro/thread-back.yaml`
             checks it still works. */}
         <Stack.Screen name="chat/[workspaceId]" options={{ gestureEnabled: true }} />
+        {/* What a chat's subagent and workflow cards open: pushed over the
+            chat, on iPad over the split, with the same swipe back. */}
+        <Stack.Screen name="chat/agent" options={{ gestureEnabled: true }} />
+        <Stack.Screen name="chat/workflow" options={{ gestureEnabled: true }} />
+        {/* A pane's terminal on a phone: pushed the same way, over the chats
+            or a chat. On iPad it is the detail beside the chats instead, and
+            a link here hands over to that. The edge swipe still goes back;
+            SwiftTerm's own gestures (scroll, select, pinch) start inside the
+            screen, not at its edge. */}
+        <Stack.Screen name="chat/terminal" options={{ gestureEnabled: true }} />
         {/* Hosts and Settings are places you visit and come back from, so they
             are presented like the other full-height screens here rather than
             pushed: a sheet says "this goes away and you are back in your
@@ -181,6 +191,20 @@ function RootStack() {
             system's own corner. */}
         <Stack.Screen
           name="rename-chat"
+          options={{
+            presentation: 'formSheet',
+            sheetAllowedDetents: 'fitToContents',
+            sheetCornerRadius: Platform.OS === 'android' ? radius.lg : undefined,
+          }}
+        />
+        {/* A workspace's layout on a phone, sized to its tabs like the rename
+            sheet. iPad shows the same drawing as a floating card level with
+            the layout button instead, beside the list when there is room
+            (`LayoutPeekOverlay`, src/features/spaces/LayoutPeek.tsx). Its
+            scroll view must be the sheet's second child, after the title:
+            see SpaceLayoutSheet. */}
+        <Stack.Screen
+          name="space-layout"
           options={{
             presentation: 'formSheet',
             sheetAllowedDetents: 'fitToContents',

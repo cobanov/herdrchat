@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
+import { useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { buildSummaries, refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
@@ -20,13 +21,29 @@ jest.mock('../../useHostEvents', () => ({
   },
 }));
 let mockHostThemes = true;
+let mockListMode = 'spaces';
 jest.mock('@/state/settings', () => ({
-  useSettings: (select: (state: { pollScale: number; useHostThemes: boolean }) => unknown) =>
-    select({ pollScale: 1, useHostThemes: mockHostThemes }),
+  useSettings: (select: (state: { pollScale: number; useHostThemes: boolean; listMode: string }) => unknown) =>
+    select({ pollScale: 1, useHostThemes: mockHostThemes, listMode: mockListMode }),
+}));
+let mockTerminalAvailable = true;
+jest.mock('../../../../modules/herdr-terminal/src', () => ({
+  get isTerminalAvailable() {
+    return mockTerminalAvailable;
+  },
 }));
 const mockCheckTheme = jest.fn(async (_connectionId: string, _transport: unknown) => true);
 jest.mock('@/state/hostTheme', () => ({
   checkHostTheme: (connectionId: string, transport: unknown) => mockCheckTheme(connectionId, transport),
+}));
+const mockRefreshMachines = jest.fn(async (_hostId: string, _client: unknown) => true);
+jest.mock('@/state/hostMachines', () => ({
+  refreshHostMachines: (hostId: string, client: unknown) => mockRefreshMachines(hostId, client),
+}));
+const mockScanSlash = jest.fn(async (_connectionId: string, _transport: unknown, _ask: unknown) => undefined);
+jest.mock('@/state/slashCommands', () => ({
+  scanSlashCatalogue: (connectionId: string, transport: unknown, ask: unknown) =>
+    mockScanSlash(connectionId, transport, ask),
 }));
 jest.mock('@/lib/transcript/store', () => ({
   previewText: (message: ChatMessage) =>
@@ -71,6 +88,10 @@ beforeEach(() => {
   mockHostThemes = true;
   mockCheckTheme.mockReset();
   mockCheckTheme.mockResolvedValue(true);
+  mockRefreshMachines.mockReset();
+  mockRefreshMachines.mockResolvedValue(true);
+  mockScanSlash.mockReset();
+  mockScanSlash.mockResolvedValue(undefined);
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -441,6 +462,178 @@ describe('the host theme check, riding on the list poll', () => {
   });
 });
 
+describe('the host\'s machine list, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('asks on the first poll, then at most every 60 s', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
+    expect(mockRefreshMachines).toHaveBeenLastCalledWith('host', client);
+    // Polls every 3 s up to 57 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(57_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
+    // The poll at 60 s is.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('asks again on a pull to refresh and on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockRefreshMachines).toHaveBeenCalledTimes(3);
+    await unmount();
+  });
+
+  it('never asks after a poll that failed, or without a host to file it under', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const failed = await renderHook(() => useWorkspaces(client, 'host'));
+    await failed.unmount();
+    expect(mockRefreshMachines).not.toHaveBeenCalled();
+  });
+
+  // A machine's own list: the host's theme applies to it, and its own
+  // machines are not federated a second hop.
+  it('asks neither the machines nor the theme for a machine\'s list', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    expect(mockRefreshMachines).not.toHaveBeenCalled();
+    expect(mockCheckTheme).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  // Settings shows the host's herdr version, which the host's poll records.
+  // A machine's poll runs beside it and used to overwrite it with the
+  // machine's own.
+  it('leaves the host\'s herdr version to the host\'s poll', async () => {
+    useHostVersion.setState({ version: null });
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(useHostVersion.getState().version).toBeNull();
+    await unmount();
+    const host = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(useHostVersion.getState().version).toBe('0.9.0');
+    await host.unmount();
+  });
+
+  // The list never waits on the ask or reports it.
+  it('keeps a failed or hanging ask out of the list', async () => {
+    mockRefreshMachines.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    mockRefreshMachines.mockResolvedValue(false);
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
+// b704ec8 scanned on every thread open and queued in front of everything
+// else. The scan now rides this poll like the theme check: the first poll
+// after connecting, then every ten minutes, and a pull.
+describe('the slash-command scan, riding on the list poll', () => {
+  beforeEach(() => {
+    mockLive = false; // a poll every 3 s
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  });
+
+  it('scans the host-wide part on the first poll, then at most every 10 minutes', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/test'] });
+    // Polls every 3 s up to 597 s: none of them is due.
+    await act(async () => { await jest.advanceTimersByTimeAsync(597_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    // The poll at 600 s is, and reads the open chat's folder again with it.
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/test'] });
+    await unmount();
+  });
+
+  it('scans again on a pull to refresh, not on coming back to the foreground', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await result.current.refresh(); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await act(async () => { onChange('active'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
+    expect(mockScanSlash).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+
+  it('never scans after a poll that failed, or without a connection to file it under', async () => {
+    const anonymous = await renderHook(() => useWorkspaces(client));
+    await anonymous.unmount();
+    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
+    const failed = await renderHook(() => useWorkspaces(client, 'host'));
+    await failed.unmount();
+    expect(mockScanSlash).not.toHaveBeenCalled();
+  });
+
+  // A machine has its own Claude Code and home folder: its own scan,
+  // through its own client, filed under its own connection id.
+  it('scans a machine\'s list under the machine\'s own id', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    expect(mockScanSlash).toHaveBeenCalledTimes(1);
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: ['/test'] });
+    await unmount();
+  });
+
+  // The review of #160: the 10-minute scan sent `cwds: []`, so a folder's
+  // commands were read once, on a thread's first open, and never again.
+  it('re-reads the folders of the open chats\' Claude agents, each once', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(decodeSnapshot({
+      version: '0.9.0',
+      workspaces: [{ workspace_id: 'a', label: 'A', number: 1, agent_status: 'idle' }, { workspace_id: 'b', label: 'B', number: 2, agent_status: 'idle' }],
+      agents: [
+        { workspace_id: 'a', pane_id: 'a1', agent: 'claude', agent_status: 'idle', cwd: '/srv/app' },
+        { workspace_id: 'a', pane_id: 'a2', agent: 'claude', agent_status: 'idle', cwd: '/srv/app' },
+        { workspace_id: 'b', pane_id: 'b1', agent: 'codex', agent_status: 'idle', cwd: '/srv/codex-only' },
+        { workspace_id: 'b', pane_id: 'b2', agent: 'claude', agent_status: 'idle', cwd: '/srv/notes' },
+      ],
+    }));
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(mockScanSlash).toHaveBeenLastCalledWith('host', client.transport, { host: true, cwds: ['/srv/app', '/srv/notes'] });
+    await unmount();
+  });
+
+  // The list never waits on the scan or reports it.
+  it('keeps a failed or hanging scan out of the list', async () => {
+    mockScanSlash.mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+    await act(async () => { await jest.advanceTimersByTimeAsync(601_000); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await unmount();
+  });
+});
+
 // A chat is titled by its session, not its slot: the summaries carry what
 // herdr reports for each agent, and the workspace's label stays its label.
 it('carries each agent\'s session title and name from the snapshot', () => {
@@ -467,4 +660,50 @@ it('titles a one-agent workspace chat by that agent\'s session', () => {
   const [summary] = buildSummaries(titled.workspaces ?? [], titled.agents, new Map());
   expect([summary?.title, summary?.sessionTitle, summary?.agentName]).toEqual(['Test', 'Feke animation smoothness', 'feke-pm']);
   expect(summary?.panes[0]?.sessionTitle).toBe('Feke animation smoothness');
+});
+
+describe("a shell pane's program name, riding on the list poll", () => {
+  const withShell = decodeSnapshot({
+    version: '0.9.0',
+    workspaces: [{ workspace_id: 'chat', label: 'Test', number: 1, agent_status: 'idle' }],
+    agents: [],
+    panes: [{ pane_id: 'chat:p2', workspace_id: 'chat', terminal_id: 'term_p2', cwd: '/test' }],
+  });
+
+  afterEach(() => {
+    mockListMode = 'spaces';
+    mockTerminalAvailable = true;
+  });
+
+  // A round is an SSH exec: one that hangs must not hold the statuses, and
+  // the next poll must not pile a second round on top of it.
+  it('never holds the list on a hanging ask, nor starts another while one is out', async () => {
+    jest.spyOn(client, 'snapshot').mockResolvedValue(withShell);
+    const one = jest.spyOn(client.socket, 'call');
+    const ask = jest.spyOn(client.socket, 'callEach').mockImplementation(() => new Promise(() => undefined));
+    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    expect(result.current.summaries.map((summary) => summary.shellPanes.map((row) => row.paneId))).toEqual([['chat:p2']]);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith('pane.process_info', [{ pane_id: 'chat:p2' }], expect.any(Number));
+    // Never a channel per pane.
+    expect(one).not.toHaveBeenCalledWith('pane.process_info', expect.anything(), expect.anything());
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toBeNull();
+    await unmount();
+  });
+
+  it.each([
+    ['the Agents view, which has no terminal rows', 'agents', true],
+    ['Android, where a terminal cannot open', 'spaces', false],
+  ])('asks nothing in %s', async (_label, mode, available) => {
+    mockListMode = mode;
+    mockTerminalAvailable = available;
+    jest.spyOn(client, 'snapshot').mockResolvedValue(withShell);
+    const ask = jest.spyOn(client.socket, 'callEach').mockResolvedValue([]);
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
+    expect(ask).not.toHaveBeenCalled();
+    await unmount();
+  });
 });

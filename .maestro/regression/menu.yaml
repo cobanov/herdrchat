@@ -67,8 +67,9 @@ appId: dev.herdr.HerdrChat
 - assertNotVisible:
     id: server-demo
 
-# New chat: the same sheet "+" opens. The "+" is labelled "New chat" too, so
-# _menu.yaml taps the row below the header line, never the "+".
+# New chat: the same sheet "+" opens. The "+" is labelled "New chat" too, but
+# it is out of the accessibility tree while the menu is up, so only the row
+# matches.
 - runFlow:
     file: _menu.yaml
     env:
@@ -88,6 +89,13 @@ appId: dev.herdr.HerdrChat
 # chats under it: Done lands on them instead of having nothing to go back to.
 - stopApp
 - openLink: herdrchat://settings?section=conversations
+# The simulator asks before a custom scheme opens an app (Open in
+# "HerdrChat"?); a phone tapping a link does too, once.
+- runFlow:
+    when:
+      visible: Open in .HerdrChat.\?
+    commands:
+      - tapOn: Open
 - extendedWaitUntil:
     visible:
       id: header-close

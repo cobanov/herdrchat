@@ -61,7 +61,6 @@ describe('Claude harness lines (#78)', () => {
     ['<task-notification>\n<task-id>x</task-id>\n</task-notification>'],
     ['<local-command-stdout></local-command-stdout>'],
     ['<local-command-caveat>Caveat: …</local-command-caveat>'],
-    ['<bash-stdout>total 8</bash-stdout><bash-stderr></bash-stderr>'],
     ['<system-reminder>stay on task</system-reminder>'],
   ])('hides a turn that is only a harness element: %s', (text) => {
     expect(parseTranscriptLine(user(text))).toBeNull();

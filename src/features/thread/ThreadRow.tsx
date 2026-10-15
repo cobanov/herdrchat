@@ -1,6 +1,7 @@
 import { Bubble } from '@/components/Bubble';
 import { Text } from '@/components/Text';
 import { CommandNote } from '@/features/thread/CommandNote';
+import { ShellRun } from '@/features/thread/ShellRun';
 import { SubagentCard } from '@/features/thread/SubagentCard';
 import { ToolRun } from '@/features/thread/ToolRun';
 import { WorkflowCard } from '@/features/thread/WorkflowCard';
@@ -9,7 +10,7 @@ import { spacing } from '@/theme/tokens';
 
 /**
  * One placed item of a transcript, drawn: a bubble, a folded tool run, a
- * command's note, a subagent's or a workflow's card. The main thread and a
+ * command's note, a `!` command's block, a subagent's or a workflow's card. The main thread and a
  * subagent's read-only thread draw their rows with this, so a subagent's own
  * subagents are cards there exactly as they are here.
  *
@@ -39,6 +40,8 @@ export function ThreadRow({ placed }: { placed: PlacedItem }) {
         />
       ) : item.kind === 'note' ? (
         <CommandNote message={item.message} />
+      ) : item.kind === 'shell' ? (
+        <ShellRun item={item} timeLabel={formatTime(item.timestamp)} />
       ) : (
         <Bubble
           message={item.message}

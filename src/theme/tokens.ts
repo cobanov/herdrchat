@@ -50,8 +50,9 @@ export const size = {
   tabletSidebarWidth: 320,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
-  /** Compact provider badge in the grouped chat cards. */
+  /** Compact provider badge in the grouped chat cards, and the glyph in it. */
   chatBadge: 40,
+  chatBadgeGlyph: 22,
   /** The unread / attention dot on an avatar. */
   unreadDot: 14,
   /** The status dot beside a thread's subtitle. */
@@ -81,6 +82,8 @@ export const size = {
    * one and the other two follow.
    */
   segmented: { inset: 3, height: 36 },
+  /** The chevron after a header title that opens a menu (Chats: Spaces or Agents). */
+  titleMenuChevron: 16,
   /**
    * Android's switch, drawn to Material 3's measurements because the platform
    * switch React Native renders is the older one, a knob hanging off a thin
@@ -117,6 +120,18 @@ export const size = {
   /** How tall a panel's list of rows may grow before it scrolls. */
   panelOptionsMaxHeight: 240,
   /**
+   * How tall the `/` palette above the composer may grow before it scrolls:
+   * about five commands with their descriptions, so the thread keeps most of
+   * the room above it with the keyboard up.
+   */
+  commandPaletteMaxHeight: 260,
+  /**
+   * …and never more than this share of the window's height, so on a small
+   * phone (an iPhone SE's 667 points: about 200, three or four commands) the
+   * keyboard, the composer and the palette still leave some thread in view.
+   */
+  commandPaletteMaxWindowFraction: 0.3,
+  /**
    * A folded run of tool calls: its summary line, each call's row, and the
    * rail the rows hang off (the branch is `toolRail` wide and curves at
    * `radius.xs`). Rows are a thumb's height apart, not a full touch target:
@@ -134,6 +149,12 @@ export const size = {
    * above the composer; past this it would push the choices off a phone.
    */
   blockedBodyLines: 8,
+  /**
+   * How many lines of a `!` command's output show before "Show all": more
+   * than a tool's, since the person asked to see this, but `seq 1 200` still
+   * folds rather than taking several screens.
+   */
+  shellOutputLines: 16,
   /** The pin and muted marks beside a chat row's title. */
   rowBadgeGlyph: 12,
   /**
@@ -280,6 +301,75 @@ export const threadLayout = {
   initialControlsHeight: 96,
 } as const;
 
+/**
+ * A pane's terminal (`src/features/terminal`). The font is SwiftTerm's own
+ * monospace at `fontSize` points until a pinch picks another, held between
+ * `minFontSize` and `maxFontSize`: below 8 a cell is unreadable on a phone,
+ * above 28 an 80-column line no longer fits an iPad held upright. The
+ * accessory bar's keys are touch targets, as wide as they are tall at least,
+ * `keyGap` apart so a thumb on one does not graze the next.
+ */
+export const terminal = {
+  fontSize: 13,
+  minFontSize: 8,
+  maxFontSize: 28,
+  keyGap: spacing.xxs,
+  /** The paste and keyboard glyphs beside the keys. */
+  glyph: 18,
+  /** A key with no shell to send to. */
+  disabledOpacity: 0.4,
+  /** The scroll room past the last key, so it can come clear of the paste and keyboard controls. */
+  barTail: spacing.sm,
+  /**
+   * A key label's advance per character (the mono subhead, 15pt, at about
+   * 0.6em): only for checking what fits the bar (`src/lib/terminal/barFit.ts`),
+   * never for drawing.
+   */
+  keyLabelAdvance: 9,
+} as const;
+
+/**
+ * A workspace's layout view (`src/features/spaces`): each tab a rounded
+ * rectangle with its panes as boxes inside, where they sit on the desktop.
+ *
+ * `cellAspect` is a terminal cell's width over its height. herdr measures
+ * panes in cells, which are about twice as tall as wide, so a tab of 160 × 48
+ * cells is drawn 160 × 48 × 0.5 wide over tall, not 160 × 48. Clamped between
+ * `minAspect` and `maxAspect` so a very wide or very tall terminal still
+ * draws as a shape with room for its labels.
+ */
+export const spaceLayout = {
+  cellAspect: 0.5,
+  minAspect: 0.9,
+  maxAspect: 2.4,
+  /** A tab herdr sent no geometry for: a plain landscape shape. */
+  fallbackAspect: 1.6,
+  /** Between two tabs, across and down. */
+  tabGap: spacing.md,
+  /** Between a tab's title and its shape. */
+  titleGap: spacing.xs,
+  /** From a tab's outline to its pane boxes, and between two boxes. */
+  tabInset: spacing.xs,
+  paneGap: spacing.xs,
+  tabRadius: radius.xs,
+  paneRadius: nestedRadius(radius.xs, spacing.xs),
+  /** The ring round the focused pane. */
+  focusRing: 2,
+  /** A pane's box under a finger. */
+  pressedOpacity: 0.7,
+  /** The mark on a tab zoomed on one pane. */
+  zoomGlyph: 12,
+  /** Tabs side by side from this many, so a four-tab workspace still fits on a phone. */
+  twoColumnsFrom: 2,
+  /** The floating card on iPad, beside the layout button. */
+  popoverWidth: 340,
+  popoverMaxHeight: 520,
+  /** The phone's sheet never covers more of the window than this; past it, the tabs scroll. */
+  sheetMaxWindowFraction: 0.8,
+  /** The layout button's glyph on a space card. */
+  buttonGlyph: 20,
+} as const;
+
 /** System navigation material, continuous through the status-bar safe area. */
 export const glass = {
   chromeIntensity: 100,
@@ -350,6 +440,12 @@ export const connecting = {
   skeletonDim: 0.45,
 } as const;
 
+/**
+ * The prompt a `!` command's block leads with, as a terminal draws one: it
+ * says "this ran in a shell" before the command is read.
+ */
+export const shellPrompt = '$';
+
 /** Minimum touch target, per the HIG. Nothing interactive may be smaller. */
 export const minTouchTarget = 44;
 
@@ -378,6 +474,14 @@ export const motion = {
   enter: { damping: 20, stiffness: 180, mass: 1 },
   fade: 200,
   fadeFast: 120,
+  /**
+   * A pointer resting on a space card's layout button (iPad with a trackpad
+   * or mouse) shows the layout after `hoverIn`, so moving across the list
+   * does not flash a card under every button it passes; leaving hides it
+   * after `hoverOut`, long enough to reach the card itself.
+   */
+  hoverIn: 300,
+  hoverOut: 200,
   /** How long a finger rests on a message before its copy sheet opens. */
   longPress: 400,
   /**

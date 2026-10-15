@@ -4,7 +4,8 @@ appId: dev.herdr.HerdrChat
 - stopApp
 - launchApp
 - runFlow: regression/_skip-welcome.yaml
-- assertVisible: Chats
+- assertVisible:
+    id: chats-view
 - tapOn:
     id: server-switcher
 - tapOn:

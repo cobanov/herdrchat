@@ -30,7 +30,11 @@ src/lib/                pure logic, no React — this is what tests cover
 src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
-modules/herdr-keys/     iOS only: Command-Return on the composer (a UIKeyCommand view)
+modules/herdr-keys/     iOS only: Command-Return on the composer, Esc on the
+                        iPad's layout card (UIKeyCommand views), and pointer
+                        hover (Pressable's onHoverIn never fires on iOS here)
+modules/herdr-terminal/ iOS only: a pane's terminal, SwiftTerm in a native view (see its README)
+modules/herdr-shell-registry/  the open terminal shells, shared by herdr-ssh and herdr-terminal
 relay/                  the push relay, a Cloudflare Worker (see RELEASING.md)
                         (the SwiftUI and Compose apps this replaced are not in
                          the tree — they live in git history before the rewrite)
@@ -72,6 +76,17 @@ Claude Code turns that line into `[Image #1]` plus an `[Image: source: …]`
 block; Codex keeps it as typed. `splitImages` must leave exactly what was
 typed, or the echo is never confirmed and the bubble says "Failed to send".
 Matching text alone confirmed a picture-only message with any tool result.
+
+**A `!` line is a shell exchange, not a message.** Claude records it as two
+user turns back to back, `<bash-input> cmd</bash-input>` then
+`<bash-stdout>…</bash-stdout><bash-stderr>…</bash-stderr>`; `threadItems` pairs
+only those two turns into one shell block, adjacent in their own transcript
+(by `agentLabel`; an echo is in none), never across another line of it: a
+workspace thread merges two agents' lines, and the output is written seconds
+after the command. Claude escapes `&`, `<`, `>` in the output (not the command)
+except inside `<persisted-output>`. It records the command with or without a
+leading space, depending on its version, so the receipt trims both sides
+through `shellReceiptText`; never strip exactly one space.
 
 **Only `useThreadScroll` moves the thread list.** The rules are one pure
 function (`src/lib/threadScroll.ts`): the reader is following the end or
@@ -129,6 +144,9 @@ npx expo prebuild --clean     # regenerate ios/ and android/
 npx expo run:ios --device "iPhone 17 Pro"
 npx expo start --dev-client
 ```
+
+The iOS build needs Xcode's Metal toolchain (SwiftTerm compiles a shader);
+`scripts/ensure-metal-toolchain.sh` installs it when missing.
 
 Changes under `modules/*/ios` or `.../android` need a native rebuild;
 Fast Refresh does not reload native code.

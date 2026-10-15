@@ -21,7 +21,7 @@ const p2: PaneSummary = {
 };
 const api: ChatSummary = {
   workspaceId: 'w6', title: 'api', number: 6, status: 'idle', agents: [p1.agent, p2.agent], panes: [p1, p2],
-  preview: p2.preview, sessionSig: 'ab', restoreError: null, sessionTitle: null, agentName: null,
+  preview: p2.preview, sessionSig: 'ab', shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 };
 
 it('names its agent and folder, and the workspace it belongs to for VoiceOver', async () => {
@@ -62,4 +62,23 @@ it('falls back to the herdr name, and with neither leads with its provider', asy
   const bare = await render(<PaneRow summary={api} pane={p1} unread={false} onPress={jest.fn()} />);
   expect(bare.queryByText('api')).toBeNull();
   expect(bare.getByTestId('pane-row-w6:p1').props.accessibilityLabel).toMatch(/^Claude in api, /);
+});
+
+// On one of the host's machines the card above says which machine, so the
+// row does not repeat it on screen; VoiceOver, which reads the row alone, still
+// hears it. Its testID carries the machine's id: the pane id repeats the host's.
+it('names its machine to VoiceOver only, and keeps a testID apart from the host\'s pane', async () => {
+  const onNuku = { ...api, machine: { id: 'demo-nuku', label: 'nuku' } };
+  const screen = await render(<PaneRow summary={onNuku} pane={p2} unread={false} onPress={jest.fn()} />);
+  expect(screen.getByText('Codex · api/web')).toBeOnTheScreen();
+  expect(screen.queryByText(/nuku/)).toBeNull();
+  const row = screen.getByTestId('pane-row-demo-nuku-w6:p2');
+  expect(row.props.accessibilityLabel).toBe('Codex in api on nuku, api/web, Idle, Fixed the toolbar');
+});
+
+// Pinned or muted from its row in Agents, or by its card: the row under the
+// card says so, as its Agents row does.
+it('says when its agent is pinned or muted', async () => {
+  const screen = await render(<PaneRow summary={api} pane={p2} unread={false} pinned muted onPress={jest.fn()} />);
+  expect(screen.getByTestId('pane-row-w6:p2').props.accessibilityLabel).toBe('Pinned, Muted, Codex in api, api/web, Idle, Fixed the toolbar');
 });

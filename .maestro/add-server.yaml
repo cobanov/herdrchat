@@ -11,7 +11,8 @@ appId: dev.herdr.HerdrChat
 - launchApp
 - runFlow: regression/_skip-welcome.yaml
 - waitForAnimationToEnd
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 
 - tapOn:
     id: "server-switcher"
@@ -91,7 +92,8 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: "save-server"
 # Saving dismisses every sheet (Hosts and the editor) onto the chats.
-- assertVisible: "Chats"
+- assertVisible:
+    id: "chats-view"
 - assertVisible:
     id: "server-switcher"
 # The title is still in the hierarchy behind a page sheet; the editor's own

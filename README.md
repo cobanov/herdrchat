@@ -21,22 +21,44 @@ Your agents keep running on your computer. HerdrChat turns their
 connected directly over SSH. No HerdrChat account. No relay server.
 
 <p align="center">
-  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode agent cards grouped by status, with chat search" width="280"></a>
-  <a href="docs/screenshots/thread-blocked-dark.png"><img src="docs/screenshots/thread-blocked-dark.png" alt="Dark-mode conversation with a tool call and tappable approval choices" width="280"></a>
+  <a href="docs/screenshots/chats-dark.png"><img src="docs/screenshots/chats-dark.png" alt="Dark-mode Spaces list: a chat that needs you, then the api space with its two agents and two terminals grouped under its tabs" width="280"></a>
+  <a href="docs/screenshots/thread-subagents-dark.png"><img src="docs/screenshots/thread-subagents-dark.png" alt="Dark-mode conversation with a subagent card, a workflow card, a link and a git status shell block" width="280"></a>
   <br>
-  <sub>Demo conversations, captured in the iOS simulator. Tap a screenshot to zoom.</sub>
+  <sub>Demo conversations, captured in the iOS simulator on iPhone. Tap a screenshot to zoom.</sub>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/ipad-split-dark.png"><img src="docs/screenshots/ipad-split-dark.png" alt="Dark-mode iPad: the Spaces list beside a conversation with subagent cards" width="420"></a>
+  <a href="docs/screenshots/ipad-terminal-dark.png"><img src="docs/screenshots/ipad-terminal-dark.png" alt="Dark-mode iPad: the Spaces list beside a shell pane's terminal" width="420"></a>
+  <br>
+  <sub>And on iPad, the list beside the conversation or the terminal.</sub>
 </p>
 
 ## Less terminal. More conversation.
 
 - **Pick up where you left off.** Read Claude Code, Codex and OMP history, including replies started at your desk.
-- **See what needs you.** Search chats grouped by Needs you, Working and Idle. On iPad, keep the list beside your conversation.
+- **See what needs you.** Search chats grouped by Needs you, Working and Idle. The title switches between **Spaces**, a card per herdr workspace that lists its agents and its terminals grouped by tab, and **Agents**, every agent a row of its own. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Watch the agents it hands work to.** When Claude Code starts a subagent or a workflow, it shows in the chat as a card that says what it was asked and where it stands, then what it handed back. Open a subagent to read its own conversation as it works, or a workflow to see each phase and each agent in it.
 - **Give an agent a nudge.** Send a follow-up or tap a supported approval choice.
+- **Every slash command, as the terminal has them.** Type `/` for the commands the agent on that machine actually has: Claude Code's built-ins for the version installed there, your own commands and skills, the project's, and your plugins', each with what it does and what it takes. Codex chats get Codex's own menu. A command that takes nothing runs when you tap it; one that takes something fills in and shows what goes after it. The list is read from the machine in the background, every ten minutes at most, and kept on the phone.
 - **Show it, don't describe it.** Add a screenshot or photo to a message; it goes to your machine over SSH and the agent opens it there.
 - **Type like on a Mac.** With a hardware keyboard on an iPad or iPhone, Return sends, Shift-Return or Option-Return starts a new line, Command-Return sends either way, and Command-V attaches a copied picture. The on-screen keyboard's Return always starts a new line. Settings > Conversations > Return sends turns a hardware Return back into a new line too (iOS; on Android, Return is a new line).
 - **Keep your machine yours.** Connect over SSH, usually through Tailscale. Credentials stay in the iOS Keychain; host keys are pinned.
+
+## Spaces
+
+A space card says what the workspace holds (agents, how many are working,
+tabs, panes) and lists it underneath. The layout button on the card draws the
+workspace's tabs and panes as herdr arranges them, in a sheet on a phone; tap
+a pane to open its chat or its terminal. On iPad the layout floats beside the list: a pointer resting
+on the button shows it, a tap keeps it up.
+
+<p align="center">
+  <a href="docs/screenshots/ipad-layout-dark.png"><img src="docs/screenshots/ipad-layout-dark.png" alt="Dark-mode iPad: the api space's layout floating beside the list, two tabs, its two agents and a shell in the first, the dev server alone in the second" width="220"></a>
+  <a href="docs/screenshots/agents-dark.png"><img src="docs/screenshots/agents-dark.png" alt="Dark-mode Agents view: every agent a row of its own, grouped by status" width="220"></a>
+  <a href="docs/screenshots/slash-palette-dark.png"><img src="docs/screenshots/slash-palette-dark.png" alt="Dark-mode / palette over the composer, with built-in commands and skills and what each takes" width="220"></a>
+</p>
 
 ## Try it
 
@@ -51,6 +73,57 @@ For your own agents:
 **On the App Store** for iPhone and iPad, iOS 17+. Android is experimental.
 Push notifications need extra setup on your host. See
 [setup and limitations](docs/getting-started.md).
+
+## Machines
+
+If herdr on your host has other computers saved as machines
+(`herdr machine add <ssh-target>`), their chats show up in that host's chat
+list too, each row starting with the machine's name. There is nothing to set
+up on the phone: the app reaches each machine through the host, with the
+host's own `ssh` and its `~/.ssh/config`, so the machine never has to be
+reachable from the phone. Opening, following and sending work as they do for
+the host's own chats. Disabled machines are left out. Push notifications
+cover only the host's own chats for now, and a machine uses its host's theme.
+
+The host's `ssh` runs without a terminal (`BatchMode=yes`), inside the SSH
+session the app opened, so it has to reach the machine on its own: with a key
+file that the host's `~/.ssh/config` names for the machine (`IdentityFile`),
+not an agent that asks for approval on the host's screen or one only its
+desktop login has, and with the machine already in the host's
+`~/.ssh/known_hosts`. An interactive `ssh klaw` on the host can pass where this
+fails, so check it from another computer:
+`ssh <host> 'ssh -o BatchMode=yes klaw true'`. If that fails, add the key to the
+host's config, or run `ssh klaw` once on the host to accept its host key. The
+list says which of the two it is under the chats. herdr must also be where a
+non-interactive SSH session on the machine looks (`~/.local/bin`, `~/bin`,
+`/opt/homebrew/bin` or `/usr/local/bin`); one in `~/.cargo/bin` needs a link
+into `~/.local/bin`.
+
+## Terminal
+
+<p align="center">
+  <a href="docs/screenshots/ipad-terminal-dark.png"><img src="docs/screenshots/ipad-terminal-dark.png" alt="Dark-mode iPad terminal on a shell pane beside the Spaces list: ls and a coloured git status, with Esc, Tab, Ctrl and the arrows in the bar" width="560"></a>
+</p>
+
+Every herdr pane has a terminal, not only the ones running an agent you can
+chat with. A pane with a shell, a build, `vim` or `htop` in it is listed under
+its workspace as a **Terminal** row, with the program herdr reports and its
+folder; an agent's chat opens its own pane from **Terminal** in its header,
+for whatever the chat cannot show (a panel, a login prompt, a full-screen
+tool). On iPad it opens beside the chats, like a conversation. It is a real emulator ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)):
+colours, cursor, mouse, selection, a swipe that scrolls back through the
+pane's history (herdr's own), pinch to change the size, a
+hardware keyboard with Ctrl and Option, and a bar over the software keyboard
+with Esc, Tab, sticky Ctrl and Alt, the arrows, Home and End, and Paste. It
+runs on the host's SSH connection: an agent pane through `herdr agent attach`,
+any other pane through `herdr terminal attach` (herdr 0.9 or newer). Both draw
+that one pane to the phone alone: no zoom, focus or sidebar moves on the host,
+so a desktop on the same session carries on as it was. The one thing shared is
+the pane's size, which follows the phone while it is attached and comes back on
+leaving. A pane another phone or terminal is already attached to is refused;
+**Take over** then takes it, and only when you tap it. Leaving hangs up:
+nothing keeps running.
+iPhone and iPad only for now.
 
 ## Theming
 

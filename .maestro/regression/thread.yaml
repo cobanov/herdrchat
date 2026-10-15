@@ -123,11 +123,11 @@ appId: dev.herdr.HerdrChat
     id: composer-input
 - inputText: /
 - waitForAnimationToEnd
+# Its argument is optional, so the tap sends it at once (as the palette does
+# for every such command, regression/slash-commands); it no longer fills the
+# composer for a Send.
 - tapOn:
     id: command-suggestion-model
-    retryTapIfNoChange: true
-- assertVisible: /model.*
-- runFlow: _send.yaml
 - extendedWaitUntil:
     visible:
       id: command-panel
