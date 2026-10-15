@@ -1,23 +1,23 @@
 import { useEffect, useMemo } from 'react';
 
-import type { AgentInfo } from '@/lib/herdr/models';
+import { sendTarget, type AgentInfo } from '@/lib/herdr/models';
 import { SLASH_SCAN_AFTER_OPEN_DELAY_MS } from '@/lib/herdr/timeouts';
 import type { HerdrTransport } from '@/lib/herdr/transport';
-import { catalogueFor, projectScanned, type CatalogueAgent, type CatalogueCommand } from '@/lib/slashCommands';
+import { catalogueFor, isCatalogueAgent, projectScanned, type CatalogueAgent, type CatalogueCommand } from '@/lib/slashCommands';
 import { scanSlashCatalogue, useSlashCatalogues } from '@/state/slashCommands';
 
 const NONE: readonly CatalogueCommand[] = [];
 
 /**
- * The agent a thread's `/` palette is for: the one its messages go to, which
- * `useThread` picks the same way (the focused agent, else the first). Its kind
- * decides the catalogue (Claude's, Codex's, or none for OMP and plain panes),
+ * The agent a thread's `/` palette is for: the one its messages go to,
+ * picked by the same `sendTarget` as `useThread`. Its kind
+ * decides the catalogue (Claude's, Codex's, Grok's, or none for OMP and plain panes),
  * and its folder the project's own commands.
  */
 export function paletteAgent(agents: readonly AgentInfo[]): { kind: CatalogueAgent; cwd: string | null } | null {
-  const agent = agents.find((a) => a.focused && a.agent !== null) ?? agents.find((a) => a.agent !== null);
-  if (agent === undefined) return null;
-  if (agent.agent === 'claude' || agent.agent === 'codex') return { kind: agent.agent, cwd: agent.cwd === '' ? null : agent.cwd };
+  const agent = sendTarget(agents);
+  if (agent === null) return null;
+  if (isCatalogueAgent(agent.agent)) return { kind: agent.agent, cwd: agent.cwd === '' ? null : agent.cwd };
   return null;
 }
 
