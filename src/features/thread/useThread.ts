@@ -988,7 +988,7 @@ export function useThread(
             const parsed = parseBlockedPrompt(raw);
             if (parsed.options.length > 0) {
               blocked = pendingInput;
-              parsedPrompt = { ...parsed, submitWithEnter: pendingInput.agent !== 'claude' };
+              parsedPrompt = { ...parsed, submitWithEnter: agentSpec(pendingInput.agent)?.digitAnswers !== true };
             }
           }
         } else if (blocked !== undefined) {
@@ -1004,7 +1004,7 @@ export function useThread(
             // Claude answers on the digit alone; see `optionKeys`.
             parsedPrompt = parsed.options.length === 0
               ? null
-              : { ...parsed, submitWithEnter: blocked.agent !== 'claude' };
+              : { ...parsed, submitWithEnter: agentSpec(blocked.agent)?.digitAnswers !== true };
           }
         }
         setBlockedPrompt(parsedPrompt);
