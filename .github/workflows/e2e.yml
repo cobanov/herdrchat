@@ -51,9 +51,10 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Boot a simulator and install the app
+        # The newest iPhone Pro by number: simctl lists newest first, and an old short screen pushes rows the flows tap below the fold.
         run: |
           runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["isAvailable"] and x["platform"]=="iOS"]; print(r[-1]["identifier"])')
-          type=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; t=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if x["name"].startswith("iPhone") and "Pro" in x["name"] and "Max" not in x["name"]]; print(t[-1])')
+          type=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; t=[x for x in json.load(sys.stdin)["devicetypes"] if x["name"].startswith("iPhone") and "Pro" in x["name"] and "Max" not in x["name"]]; print(max(t, key=lambda x: int(x["name"].split()[1]))["identifier"])')
           udid=$(xcrun simctl create e2e "$type" "$runtime")
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
