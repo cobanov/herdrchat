@@ -50,6 +50,11 @@ For manual host setup, run `herdr integration install codex` and install this
 repo's [named launcher](../scripts/herdr-codex.sh) as `herdrchat-codex` on the
 host's PATH. The helper needs Python 3 and Codex.
 
+**If a Codex chat says "Can't identify this chat":** Codex runs a hook only
+after you trust it, and the Herdr hook is what reports the session id. On the
+host, open Codex, run `/hooks` and trust the Herdr hook, then exit and resume
+the session. `herdr integration status` should list `codex` as current.
+
 ### Grok
 
 On the host:
