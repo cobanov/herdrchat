@@ -100,6 +100,14 @@ describe('exact Codex transcript resolution', () => {
     expect(host.commands.length).toBe(before + 1);
   });
 
+  it('says a compressed rollout is there but unreadable, rather than not found', async () => {
+    const host = new CodexHost();
+    host.matches = `${path}.zst\n`;
+    await expect(new TranscriptStore(host).codexTranscriptPath(id)).rejects.toMatchObject({ code: 'codex_session_compressed' });
+    host.matches = `${path}\n${path}.zst\n`;
+    expect(await new TranscriptStore(host).codexTranscriptPath(id)).toBe(path);
+  });
+
   it('opens a lone rewound file without asking the database', async () => {
     const host = new CodexHost();
     const rewound = path.replace(`-${id}.jsonl`, `-${id}_0199aa00-0000-7000-8000-000000000001.jsonl`);
