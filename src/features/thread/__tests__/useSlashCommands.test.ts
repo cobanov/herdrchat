@@ -33,6 +33,12 @@ describe('paletteAgent', () => {
     expect(paletteAgent([agent({ agent: null }), agent({ agent: 'claude', cwd: '/a' })])).toEqual({ kind: 'claude', cwd: '/a' });
   });
 
+  it("offers Grok its own menu, and follows the send target past an agent with none", () => {
+    expect(paletteAgent([agent({ agent: 'grok', cwd: '/g' })])).toEqual({ kind: 'grok', cwd: '/g' });
+    expect(paletteAgent([agent({ agent: 'opencode', focused: true }), agent({ agent: 'claude', cwd: '/a' })]))
+      .toEqual({ kind: 'claude', cwd: '/a' });
+  });
+
   it('has none for OMP, a plain pane, or no agent yet', () => {
     expect(paletteAgent([agent({ agent: 'omp' })])).toBeNull();
     expect(paletteAgent([agent({ agent: null })])).toBeNull();

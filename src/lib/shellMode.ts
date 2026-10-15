@@ -9,7 +9,7 @@
  */
 
 /** True when `draft` would run in the agent's shell: Claude only, `!` first, as the terminal reads it. */
-export function isShellDraft(draft: string, agent: 'claude' | 'codex' | null): boolean {
+export function isShellDraft(draft: string, agent: string | null): boolean {
   return agent === 'claude' && draft.startsWith('!');
 }
 

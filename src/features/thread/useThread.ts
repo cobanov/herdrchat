@@ -39,7 +39,7 @@ import {
 import { extractLivePreview } from '@/lib/transcript/livePreview';
 import { screenText } from '@/lib/transcript/screen';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
-import { isSlashCommand } from '@/lib/slashCommands';
+import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
@@ -1277,16 +1277,16 @@ export function useThread(
       try {
         const pane = await currentPane(polled);
 
-        if ((pane.agent === 'claude' || pane.agent === 'codex') && isSlashCommand(text)) {
+        if (isCatalogueAgent(pane.agent) && isSlashCommand(text)) {
           // Never `sendPrompt` and never a second Enter: see `sendCommand`.
           const sentAt = Date.now();
           await client.sendCommand(pane.paneId, text);
           if (!current()) return;
           watchOverlay(pane.paneId);
-          // Codex writes nothing to its transcript for a command, so there is
-          // no receipt to wait for and silence proves nothing; its panels
-          // still show when they open.
-          if (pane.agent === 'codex') return;
+          // Codex and Grok write nothing to their transcripts for a command,
+          // so there is no receipt to wait for and silence proves nothing;
+          // Codex's panels still show when they open.
+          if (pane.agent !== 'claude') return;
           const ran = () => confirmed() || overlaySeenAt.current >= sentAt;
           while (current() && !ran() && Date.now() - sentAt < COMMAND_CONFIRM_MS) {
             await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));

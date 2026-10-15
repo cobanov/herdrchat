@@ -10,7 +10,7 @@
  * not run again on every scan.
  */
 import { SLASH_GREP_RETRY_MS } from '../herdr/timeouts';
-import { CLAUDE_BUILTINS, CODEX_BUILTINS } from './builtins';
+import { CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from './builtins';
 import { dedupeCommands, type ScanResult } from './parse';
 import type { CatalogueAgent, CatalogueCommand, CommandSection, CommandSource } from './types';
 
@@ -91,7 +91,7 @@ export function projectScanned(cache: SlashCatalogueCache | null, cwd: string): 
 }
 
 /**
- * Everything the palette offers in a pane: Codex's fixed list, or Claude's
+ * Everything the palette offers in a pane: Codex's or Grok's fixed list, or Claude's
  * built-ins, the folder's own commands and skills, the person's and plugins',
  * one per name, in palette order. Null cache: the static built-ins alone.
  */
@@ -101,6 +101,7 @@ export function catalogueFor(
   cwd: string | null
 ): CatalogueCommand[] {
   if (agent === 'codex') return [...CODEX_BUILTINS];
+  if (agent === 'grok') return [...GROK_BUILTINS];
   const builtins = cache === null || cache.builtins.length === 0 ? CLAUDE_BUILTINS : cache.builtins;
   if (cache === null) return dedupeCommands(builtins);
   const project = cwd === null ? [] : (cache.projects[cwd] ?? []);
