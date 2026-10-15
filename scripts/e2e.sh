@@ -27,6 +27,11 @@ mkdir -p "$OUT"
 xcrun simctl spawn "$DEVICE" defaults write com.apple.keyboard.preferences KeyboardAutocorrection -bool false >/dev/null 2>&1
 xcrun simctl spawn "$DEVICE" defaults write com.apple.keyboard.preferences KeyboardPrediction -bool false >/dev/null 2>&1
 
+# Reduce Motion stills the Demo's working spinners (the app honours it). A
+# spinner never settles, so every tap and waitForAnimationToEnd ran to its
+# timeout: four to six minutes a flow instead of about one.
+xcrun simctl spawn "$DEVICE" defaults write com.apple.Accessibility ReduceMotionEnabled -bool true >/dev/null 2>&1
+
 # tool-activity tests the default, so the stored choice goes first.
 DB="$(xcrun simctl get_app_container "$DEVICE" dev.herdr.HerdrChat data 2>/dev/null)/Documents/SQLite/herdrchat.db"
 reset_tool_setting() {

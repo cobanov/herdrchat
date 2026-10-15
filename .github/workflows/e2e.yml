@@ -16,7 +16,7 @@ concurrency:
 jobs:
   ios:
     runs-on: macos-26
-    # 24 flows at 4-6 minutes each on a hosted runner, after a 40-minute build.
+    # 24 flows in two appearances after a 40-minute build; 90 minutes no longer fit.
     timeout-minutes: 240
     env:
       LANG: en_US.UTF-8
@@ -65,8 +65,6 @@ jobs:
       - name: Run the flows
         env:
           E2E_OUT: ${{ github.workspace }}/e2e-output
-          # Dark only here, to fit the runner; Light runs in `npm run e2e` before shipping.
-          E2E_APPEARANCES: Dark
         run: sh scripts/e2e.sh
 
       - name: Keep the screenshots
