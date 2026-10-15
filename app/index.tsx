@@ -5,10 +5,20 @@ import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import ChatsList from '@/features/chats/ChatsList';
 import ThreadScreen from '@/features/thread/ThreadScreen';
+import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
 import { useSelectedConnection } from '@/state/connections';
 import { useChatSelection } from '@/state/chatSelection';
 
+/**
+ * The app's root: the chats, and on iPad the open conversation beside them.
+ *
+ * Nothing else is a peer of this screen. Hosts and Settings are presented above
+ * it from the menu in its header (see `src/lib/mainMenu.ts`), so this is also
+ * the one screen that is always underneath, which is why the welcome gate runs
+ * here.
+ */
 export default function ChatsScreen() {
+  useWelcomeGate();
   const wide = useTabletLayout();
   const connection = useSelectedConnection();
   const selection = useChatSelection((state) => state.selection);

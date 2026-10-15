@@ -1,5 +1,5 @@
 # Shared start for the regression flows: a cold launch, the Demo host, the
-# appearance under test, and back on Chats.
+# appearance under test (Settings, from the Chats menu), and back on Chats.
 appId: dev.herdr.HerdrChat
 ---
 - stopApp
@@ -28,13 +28,17 @@ appId: dev.herdr.HerdrChat
     timeout: 10000
 - tapOn:
     id: server-demo
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       text: '${APPEARANCE}'
     direction: DOWN
 - tapOn: '${APPEARANCE}'
-- tapOn: Chats
+- tapOn:
+    id: header-close
 - extendedWaitUntil:
     visible:
       id: chat-row-w2

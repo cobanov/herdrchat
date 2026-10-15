@@ -2,6 +2,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
 import { SegmentedField } from '@/components/Field';
@@ -20,12 +21,12 @@ import { useSelectedConnection } from '@/state/connections';
 import { NotificationsSection } from '@/features/settings/NotificationsSection';
 import { SupportSection } from '@/features/settings/SupportSection';
 import { useLinkedSection } from '@/features/settings/useLinkedSection';
-import { useTabPressHaptic } from '@/features/useTabPressHaptic';
+import { useBadge } from '@/state/badge';
 import { cachedMessageCount } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { useSettings, type PollScale, type Settings } from '@/state/settings';
 import { useTheme, type ThemePreference } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 
 const SECTION_TITLES: Record<SettingsSection, string> = {
   connection: 'Connection', appearance: 'Appearance', conversations: 'Conversations',
@@ -54,7 +55,13 @@ export default function SettingsScreen() {
   const settings = useSettings();
   const connection = useSelectedConnection();
   const { colors } = useTheme();
-  useTabPressHaptic();
+  const insets = useSafeAreaInsets();
+  // How many chats want you, from the list under this sheet: see Hosts.
+  const waiting = useBadge((state) => state.count);
+  // A presented sheet: Done closes it. On iPad the control goes on the detail
+  // column's header, at the sheet's trailing edge where a person looks for it,
+  // not on the sidebar's.
+  const close = () => router.back();
 
   const [cached, setCached] = useState<number | null>(null);
   const refreshCacheSize = useCallback(() => {
@@ -68,7 +75,7 @@ export default function SettingsScreen() {
 
   return (
     <AdaptiveColumns sidebar={
-      <Screen>
+      <Screen presentation="sheet">
         <Header title="Settings" />
         <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.xs }}>
           {SETTINGS_SECTIONS.map((value) => (
@@ -90,8 +97,8 @@ export default function SettingsScreen() {
         </ScrollView>
       </Screen>
     }>
-      <Screen>
-        <Header title={wide ? SECTION_TITLES[selected] : 'Settings'} />
+      <Screen presentation="sheet">
+        <Header title={wide ? SECTION_TITLES[selected] : 'Settings'} onClose={close} closeBadge={waiting} />
 
         <ScrollView
           key={wide ? selected : 'all'}
@@ -99,7 +106,9 @@ export default function SettingsScreen() {
           contentContainerStyle={{
             padding: screenPadding,
             gap: spacing.xl,
-            paddingBottom: size.floatingBarClearance,
+            // The sheet runs to the bottom edge; the last row clears the
+            // home indicator.
+            paddingBottom: insets.bottom + spacing.xl,
           }}>
           {/* The anchor. There is no account to show, the app signs in to nothing
              , so this answers the question an account header actually answers:

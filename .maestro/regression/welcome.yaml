@@ -5,7 +5,10 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-- tapOn: Settings
+- runFlow:
+    file: _menu.yaml
+    env:
+      ITEM: Settings
 - scrollUntilVisible:
     element:
       id: support-welcome
@@ -53,4 +56,5 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 - assertVisible:
     id: support-welcome
-- tapOn: Chats
+- tapOn:
+    id: header-close

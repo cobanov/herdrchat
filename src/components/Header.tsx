@@ -1,25 +1,33 @@
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 
 import { Text } from './Text';
+import { attentionBadge } from '@/lib/attentionBadge';
 import { haptics } from '@/lib/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { headerTitleLine, minTouchTarget, screenPadding, spacing, useScaledLine } from '@/theme/tokens';
+import { headerTitleLine, minTouchTarget, radius, screenPadding, size, spacing, useScaledLine } from '@/theme/tokens';
 
 /**
- * The screen header: a large title, an optional server line under it, and at
- * most one trailing control.
+ * The screen header: a large title, an optional server line under it, and up to
+ * two trailing glyph controls (an action and a menu) plus a dismiss control for
+ * a sheet, which goes outermost.
  *
  * The title sits at the SAME y on every screen. That is the whole reason this
  * is one component rather than per-screen markup — the previous version
  * bottom-aligned the row, so a screen with a subtitle (Chats) and one without
- * (Settings, Hosts) put their titles at different heights, and switching tabs
- * made the heading jump. Here the title is pinned to the top of a fixed-height
+ * (Settings, Hosts) put their titles at different heights, and moving between
+ * them made the heading jump. Here the title is pinned to the top of a fixed-height
  * line and the subtitle hangs beneath it, so adding or removing a subtitle
  * changes what is under the title, never where the title is.
  *
  * Trailing controls are centred on that same line, so they align with the title
  * rather than with whatever happens to be the tallest thing in the row.
+ *
+ * Two glyphs, not a slot for any number: Chats needs "+" and the menu that
+ * replaced the tab bar, and a third control on a phone-width title line starts
+ * truncating the title. The menu sits outermost of the glyphs, where the trailing edge of a
+ * system navigation bar puts its "more" control, so the "+" keeps the place it
+ * has always had relative to the title.
  */
 export function Header({
   title,
@@ -28,8 +36,16 @@ export function Header({
   actionSymbol,
   actionLabel,
   onAction,
+  // Each platform's own "more": the circled ellipsis of an iOS bar, and
+  // Material's vertical overflow, not the `pending` clock-ish circle that
+  // `ellipsis.circle` maps to there.
+  menuSymbol = Platform.OS === 'android' ? 'ellipsis' : 'ellipsis.circle',
+  menuLabel = 'Menu',
+  menuTestID = 'header-menu',
+  onMenu,
   onClose,
   closeLabel = 'Done',
+  closeBadge = 0,
 }: {
   title: string;
   subtitle?: string | null;
@@ -37,6 +53,11 @@ export function Header({
   actionSymbol?: IconName;
   actionLabel?: string;
   onAction?: () => void;
+  /** A second trailing control, outermost: the screen's menu. */
+  menuSymbol?: IconName;
+  menuLabel?: string;
+  menuTestID?: string;
+  onMenu?: () => void;
   /**
    * Dismiss control for a modal screen. iOS gives sheets a drag-to-dismiss, but
    * that gesture is not reachable with VoiceOver or Switch Control, so a
@@ -49,9 +70,17 @@ export function Header({
    * filled a new host, tapped Done and lost it.
    */
   closeLabel?: string;
+  /**
+   * How many chats want you, beside the dismiss control of a sheet over them.
+   * Nothing at zero (see `attentionBadge`).
+   */
+  closeBadge?: number;
 }) {
   const { colors } = useTheme();
+  const badge = attentionBadge(closeBadge);
   const titleLine = useScaledLine(headerTitleLine);
+  const hasAction = actionSymbol !== undefined && onAction !== undefined;
+  const hasGlyph = hasAction || onMenu !== undefined;
 
   return (
     <View style={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
@@ -61,6 +90,24 @@ export function Header({
         </Text>
         <View style={{ flex: 1 }} />
 
+        {hasAction && (
+          <GlyphButton symbol={actionSymbol} label={actionLabel ?? 'Action'} testID="header-action" fallback="+" onPress={onAction} />
+        )}
+
+        {/* Twice the glyphs' hitSlop apart, so their 44pt targets meet at the
+            midpoint instead of overlapping: a tap between "+" and the menu
+            goes to whichever glyph it is nearer. */}
+        {onMenu !== undefined && (
+          <View style={{ marginLeft: hasAction ? spacing.xl : 0 }}>
+            <GlyphButton symbol={menuSymbol} label={menuLabel} testID={menuTestID} fallback="…" onPress={onMenu} />
+          </View>
+        )}
+
+        {/* Done goes outermost, where iOS puts a sheet's confirming control,
+            and the glyphs sit inboard of it. Spaced like the glyphs are from
+            each other: "Done" flush against "+" (Hosts has both) let the
+            glyph's hitSlop reach over the end of the word, so a tap meant to
+            close the sheet opened "Add a host". */}
         {onClose !== undefined && (
           <Pressable
             onPress={onClose}
@@ -69,50 +116,41 @@ export function Header({
             // "Close" here while the screen said "Done" left "Tap Done" with
             // nothing to find (#112).
             accessibilityLabel={closeLabel}
+            // The count is a value, not part of the label, so "Tap Done"
+            // still finds it whatever the count is.
+            accessibilityValue={badge === null ? undefined : { text: badge.spoken }}
             testID="header-close"
             hitSlop={spacing.sm}
             style={({ pressed }) => ({
+              marginLeft: hasGlyph ? spacing.xl : 0,
               minWidth: minTouchTarget,
               height: minTouchTarget,
-              alignItems: 'flex-end',
-              justifyContent: 'center',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: spacing.xs,
               opacity: pressed ? 0.5 : 1,
             })}>
+            {badge !== null && (
+              <View
+                testID="header-close-badge"
+                style={{
+                  minWidth: size.countBadge,
+                  minHeight: size.countBadge,
+                  borderRadius: radius.full,
+                  paddingHorizontal: spacing.xs,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.attentionMuted,
+                }}>
+                <Text variant="caption2" weight="700" color="attention">
+                  {badge.text}
+                </Text>
+              </View>
+            )}
             <Text variant="headline" color="tint">
               {closeLabel}
             </Text>
-          </Pressable>
-        )}
-
-        {actionSymbol !== undefined && onAction !== undefined && (
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              onAction();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={actionLabel ?? 'Action'}
-            testID="header-action"
-            // The 44pt target is met with hitSlop rather than a 44pt box, so the
-            // glyph itself can sit flush with the screen margin the title uses.
-            // A padded box would inset it by 11pt and break that alignment.
-            hitSlop={spacing.md}
-            style={({ pressed }) => ({
-              height: minTouchTarget,
-              alignItems: 'flex-end',
-              justifyContent: 'center',
-              opacity: pressed ? 0.5 : 1,
-            })}>
-            <Icon
-              name={actionSymbol}
-              size={24}
-              tintColor={colors.tint}
-              fallback={
-                <Text variant="title3" color="tint">
-                  +
-                </Text>
-              }
-            />
           </Pressable>
         )}
       </View>
@@ -147,5 +185,53 @@ export function Header({
         </Pressable>
       )}
     </View>
+  );
+}
+
+/** One trailing glyph control. Felt as a selection, like every header action. */
+function GlyphButton({
+  symbol,
+  label,
+  testID,
+  fallback,
+  onPress,
+}: {
+  symbol: IconName;
+  label: string;
+  testID: string;
+  fallback: string;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.selection();
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={testID}
+      // The 44pt target is met with hitSlop rather than a 44pt box, so the
+      // glyph itself can sit flush with the screen margin the title uses.
+      // A padded box would inset it by 11pt and break that alignment.
+      hitSlop={spacing.md}
+      style={({ pressed }) => ({
+        height: minTouchTarget,
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        opacity: pressed ? 0.5 : 1,
+      })}>
+      <Icon
+        name={symbol}
+        size={24}
+        tintColor={colors.tint}
+        fallback={
+          <Text variant="title3" color="tint">
+            {fallback}
+          </Text>
+        }
+      />
+    </Pressable>
   );
 }

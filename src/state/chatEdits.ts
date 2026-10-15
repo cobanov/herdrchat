@@ -13,7 +13,7 @@ import { create } from 'zustand';
  * first time herdr normalised or rejected one.
  *
  * The alternative — refreshing on every focus — would cost an SSH round-trip
- * each time you switch tabs, which is exactly the traffic the poll-rate
+ * each time a sheet above the list closes, which is exactly the traffic the poll-rate
  * preference exists to control.
  */
 interface ChatEdits {

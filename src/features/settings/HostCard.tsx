@@ -19,6 +19,11 @@ import { radius, spacing } from '@/theme/tokens';
  * am I configuring right now* — because almost everything below either belongs
  * to a host or is about talking to one. So the anchor is the selected host, at
  * the same place and doing the same job.
+ *
+ * A tap presents Hosts as a second sheet above Settings rather than replacing
+ * it: a person who opens Hosts to look, and leaves with Done, lands back in
+ * Settings where they were. Picking a host dismisses both, since a new host
+ * is a new list of chats to read (see `HostsScreen`).
  */
 export function HostCard() {
   const router = useRouter();
@@ -28,7 +33,7 @@ export function HostCard() {
   if (connection === null) {
     return (
       <Pressable
-        onPress={() => router.push('/hosts')}
+        onPress={() => router.navigate('/hosts')}
         accessibilityRole="button"
         accessibilityLabel="No host selected. Add one."
         testID="settings-host-empty"
@@ -56,7 +61,7 @@ export function HostCard() {
 
   return (
     <Pressable
-      onPress={() => router.push('/hosts')}
+      onPress={() => router.navigate('/hosts')}
       accessibilityRole="button"
       accessibilityLabel={`Connected to ${connection.name} as ${connection.username}. Switch hosts.`}
       testID="settings-host"

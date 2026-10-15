@@ -90,7 +90,14 @@ appId: dev.herdr.HerdrChat
     direction: DOWN
 - tapOn:
     id: "save-server"
-- assertVisible: "Hosts"
-- tapOn: "Chats"
+# Saving dismisses every sheet (Hosts and the editor) onto the chats.
+- assertVisible: "Chats"
 - assertVisible:
     id: "server-switcher"
+# The title is still in the hierarchy behind a page sheet; the editor's own
+# button and the Hosts list's Demo row being gone is what proves both
+# sheets closed.
+- assertNotVisible:
+    id: "save-server"
+- assertNotVisible:
+    id: "server-demo"

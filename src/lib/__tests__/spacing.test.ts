@@ -103,7 +103,6 @@ describe('the spacing scale', () => {
     // number, it is that the number now has somewhere to live and something to
     // say for itself.
     expect(size.bubbleGutterMin).toBe(44);
-    expect(size.floatingBarClearance).toBe(96);
     expect(size.headerControl).toBe(32);
   });
 });

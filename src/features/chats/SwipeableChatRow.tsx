@@ -21,7 +21,7 @@ import type { ChatSummary } from './useWorkspaces';
  * `ChatRow` stays presentational — it does not know it can be swiped, which is
  * what lets it keep being used wherever a row is drawn without one.
  *
- * The leading side is safe here because the chats list is a tab root (and the
+ * The leading side is safe here because the chats list is the app's root (and the
  * iPad sidebar) with no back gesture to fight: a leading action would begin in
  * the left-edge strip an interactive pop owns. Reusing this row on a pushed
  * screen means dropping `onTogglePin` and `onToggleMute`, which removes them.

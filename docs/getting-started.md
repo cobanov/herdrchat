@@ -80,11 +80,12 @@ Windows-native paths are not translated.
 
 ## Connect the phone
 
-1. Open **Hosts** and add the computer's reachable address, SSH username and
+1. Open **Hosts** (the **…** menu at the top of Chats, or the host name under
+   its title) and add the computer's reachable address, SSH username and
    password or existing OpenSSH private key.
 2. Test the connection and verify the host fingerprint before saving. If herdr
    is not on the SSH session's PATH, enter its full executable path.
-3. Open **Chats** and choose a workspace. No session ID means no safe history
+3. Back on **Chats**, choose a workspace. No session ID means no safe history
    lookup: the app will explain the missing integration instead of guessing
    which conversation belongs to you.
    A workspace running more than one agent lists each one under it: tap an
@@ -120,7 +121,8 @@ a native rebuild. See [conventions](../CLAUDE.md) and [release setup](../RELEASI
 
 ## Optional notifications
 
-Turn on **Settings → Notifications**. The app registers this phone's push token
+Turn on **Settings → Notifications** (Settings is in the **…** menu at the top
+of Chats). The app registers this phone's push token
 on the selected host over SSH, then offers to install the watcher there. The
 watcher is a small Python script
 ([`scripts/herdr-apns-notifier.py`](../scripts/herdr-apns-notifier.py)) that the

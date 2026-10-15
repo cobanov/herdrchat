@@ -44,7 +44,7 @@ For your own agents:
 
 1. Install HerdrChat from the [App Store](https://apps.apple.com/app/herdrchat/id6791874615) (free), or [build it locally](docs/getting-started.md#build-the-ios-app).
 2. Set up herdr and the [Claude, Codex or OMP integration](docs/getting-started.md#prepare-your-computer) on your computer.
-3. Add that computer in **Hosts**, test the SSH connection, and open a chat.
+3. Add that computer in **Hosts** (in the **…** menu on Chats), test the SSH connection, and open a chat.
 
 **On the App Store** for iPhone and iPad, iOS 17+. Android is experimental.
 Push notifications need extra setup on your host. See

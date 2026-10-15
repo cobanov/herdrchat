@@ -3,7 +3,7 @@ import { create } from 'zustand';
 /**
  * The herdr version the selected host last reported.
  *
- * Same shape as the tab badge, for the same reason: the chat list already pulls
+ * Same shape as the attention count (`badge.ts`), for the same reason: the chat list already pulls
  * a snapshot every few seconds and the version rides along in it, so publishing
  * what is already in hand costs nothing. Settings polling for it separately
  * would be a second SSH round-trip to learn something the screen behind it knew.

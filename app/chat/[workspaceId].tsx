@@ -15,7 +15,7 @@ export default function ThreadRoute() {
   const hydrated = useConnections((state) => state.hydrated);
   const tablet = Platform.OS === 'ios' && Platform.isPad;
   // Keep existing notification/deep-link URLs valid without opening a second
-  // tablet navigation shell above the tabs.
+  // tablet navigation shell above the root chats.
   useFocusEffect(useCallback(() => {
     if (tablet && hydrated) openChat(connection?.id ?? '', workspaceId, title, paneId);
   }, [tablet, hydrated, connection?.id, workspaceId, title, paneId]));
