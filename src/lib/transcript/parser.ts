@@ -1,4 +1,5 @@
 import type { ChatMessage, MessageRole, MessageSegment } from './message';
+import { acpEntry, isAcpUpdate } from './acp';
 import { codexEntry } from './codex';
 import { claudeCommandOutput, claudeShell, claudeUserText, isClaudeHarnessLine, isClaudeTypedLine } from './harness';
 import { splitImages } from './images';
@@ -54,6 +55,7 @@ export function parseTranscriptEntry(
   if (raw === null) return EMPTY_ENTRY;
   if (isCodex(raw)) return codexEntry(raw, fallbackId(line), agentLabel);
   if (isOmp(raw)) return ompEntry(raw, fallbackId(line), agentLabel);
+  if (isAcpUpdate(raw)) return acpEntry(raw, fallbackId(line), agentLabel);
   return { message: messageFrom(raw, line, agentLabel), meta: metaFrom(raw) };
 }
 
@@ -82,6 +84,7 @@ export function assistantMeta(line: string): SessionMeta | null {
   const raw = parseJson(line);
   if (raw === null) return null;
   if (isCodex(raw)) return codexEntry(raw, '', null).meta;
+  if (isAcpUpdate(raw)) return acpEntry(raw, '', null).meta;
   return isOmp(raw) ? ompEntry(raw, '', null).meta : metaFrom(raw);
 }
 

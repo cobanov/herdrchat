@@ -63,6 +63,9 @@ jest.mock('@/state/threadCache', () => ({
 }));
 jest.mock('@/lib/transcript/store', () => ({
   TranscriptStore: class {
+    // The real dispatch by agent, over the per-agent lookups mocked below.
+    transcriptPath = jest.requireActual('@/lib/transcript/store').TranscriptStore.prototype.transcriptPath;
+    forgetTranscript = jest.requireActual('@/lib/transcript/store').TranscriptStore.prototype.forgetTranscript;
     homeDirectory = async () => '/test';
     sessionTranscriptPath = (_home: string, _cwd: string, id: string) => `/test/${id}.jsonl`;
     claudeTranscriptPath = async (_cwd: string, id: string) => `/test/${id}.jsonl`;
@@ -72,6 +75,7 @@ jest.mock('@/lib/transcript/store', () => ({
     ompTranscriptPath = async (value: string) => value;
     verifyOmpTranscript = async () => undefined;
     forgetCodexTranscript = jest.fn();
+    forgetOmpTranscript = jest.fn();
     fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
     recent = mockRecent;
     older = mockOlder;

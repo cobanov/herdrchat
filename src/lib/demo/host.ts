@@ -41,6 +41,8 @@ import {
   commandLines,
   DEMO_BLOCKED_SCREEN,
   ompLine,
+  grokLine,
+  demoGrokPath,
   DEMO_HOME,
   DEMO_HOST,
   DEMO_TAB_COLUMNS,
@@ -311,6 +313,8 @@ export class DemoHost implements HerdrTransport {
       this.transcripts.set(pane.paneId, fixtures.transcript(pane.paneId));
       const ompPath = fixtures.ompPaths[pane.paneId];
       if (ompPath !== undefined) this.paths.set(ompPath, pane.paneId);
+      const grokSession = fixtures.grokSessions[pane.paneId];
+      if (grokSession !== undefined) this.paths.set(demoGrokPath(pane.cwd, grokSession), pane.paneId);
       const session = fixtures.sessionIds[pane.paneId];
       if (session !== undefined) {
         const dir = projectDirName(pane.cwd);
@@ -338,9 +342,7 @@ export class DemoHost implements HerdrTransport {
         for (const written of due.lines(() => this.uuid(), this.stamp())) this.append(due.paneId, written);
       } else {
         const text = due.answer === undefined ? replyFor(due.prompt) : answeredReply(due.answer);
-        this.append(due.paneId, this.isOmp(due.paneId)
-          ? ompLine('assistant', text, this.uuid(), this.stamp())
-          : replyLine(text, this.uuid(), this.stamp()));
+        this.append(due.paneId, this.lineFor(due.paneId, 'assistant', text));
       }
       this.statuses.set(due.paneId,
         this.pending.some(reply => reply.paneId === due.paneId) ? 'working' : 'idle');
@@ -507,6 +509,14 @@ export class DemoHost implements HerdrTransport {
       if (commands !== null) return out(commands);
     }
 
+    // Grok's session folder, found by its exact id (`TranscriptStore.grokTranscriptPath`).
+    const grokFind = /find "\$grok_dir" -mindepth 2 -maxdepth 2 -type d -name '([A-Za-z0-9-]+)'$/.exec(body);
+    if (grokFind !== null) {
+      const suffix = `/${grokFind[1]!}/updates.jsonl`;
+      const found = [...this.paths.keys()].find((path) => path.startsWith(`${DEMO_HOME}/.grok/sessions/`) && path.endsWith(suffix));
+      return out(found === undefined ? '' : `${found.slice(0, -'/updates.jsonl'.length)}\n`);
+    }
+
     // The OMP header check reads the first two records.
     const head = /^head -n (\d+) '(.+?)'$/.exec(body);
     if (head !== null) {
@@ -596,8 +606,16 @@ export class DemoHost implements HerdrTransport {
     return this.herdrchatDir.get(name)?.text ?? null;
   }
 
-  private isOmp(paneId: string): boolean {
-    return this.fixtures.ompPaths[paneId] !== undefined;
+  /** True for a pane running Claude, the only agent with commands, shell mode and subagents here. */
+  private isClaude(paneId: string): boolean {
+    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined;
+  }
+
+  /** A prompt or reply in the pane's own agent's format. */
+  private lineFor(paneId: string, role: 'user' | 'assistant', text: string): string {
+    if (this.fixtures.ompPaths[paneId] !== undefined) return ompLine(role, text, this.uuid(), this.stamp());
+    if (this.fixtures.grokSessions[paneId] !== undefined) return grokLine(role, text, this.uuid(), this.stamp());
+    return role === 'user' ? userLine(text, this.uuid(), this.stamp()) : replyLine(text, this.uuid(), this.stamp());
   }
 
   private focusedWorkspaceId(): string {
@@ -645,7 +663,9 @@ export class DemoHost implements HerdrTransport {
       ...(this.trusting.has(pane.paneId) ? { input_pending: true, input_prompt_kind: 'unknown' } : {}),
       agent_session: pane.agent === 'omp'
         ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: this.fixtures.ompPaths[pane.paneId] ?? null }
-        : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
+        : pane.agent === 'grok'
+          ? { agent: 'grok', kind: 'id', source: 'herdr:grok', value: this.fixtures.grokSessions[pane.paneId] ?? null }
+          : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
     })));
   }
 
@@ -782,16 +802,16 @@ export class DemoHost implements HerdrTransport {
           message: `agent ${paneId} has a pending unknown input prompt; chat prompt was not written`,
         } }));
       }
-      if (text.trim().startsWith('/') && !this.isOmp(paneId)) return this.command(paneId, text);
-      if (text.startsWith('!') && !this.isOmp(paneId)) return this.shell(paneId, text.slice(1));
-      this.append(paneId, this.isOmp(paneId) ? ompLine('user', text, this.uuid(), this.stamp()) : userLine(text, this.uuid(), this.stamp()));
+      if (text.trim().startsWith('/') && this.isClaude(paneId)) return this.command(paneId, text);
+      if (text.startsWith('!') && this.isClaude(paneId)) return this.shell(paneId, text.slice(1));
+      this.append(paneId, this.lineFor(paneId, 'user', text));
       const asked = text.toLowerCase();
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
       if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
-      if (asked.includes(DEMO_PHRASES.delegate) && !this.isOmp(paneId)) return this.delegate(paneId);
+      if (asked.includes(DEMO_PHRASES.delegate) && this.isClaude(paneId)) return this.delegate(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();

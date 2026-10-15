@@ -7,6 +7,8 @@
  * throw.
  */
 
+import { agentSpec, READABLE_AGENTS } from './agents';
+
 /** Semantic agent state as reported by herdr (socket API `AgentStatus`). */
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
@@ -88,7 +90,7 @@ export interface AgentInfo {
  * Herdr integrations report its exact path. One reader serves both.
  */
 export function isPiFamily(agent: string | null | undefined): boolean {
-  return agent === 'pi' || agent === 'omp';
+  return agentSpec(agent)?.reader === 'pi';
 }
 
 /**
@@ -102,7 +104,7 @@ export function hasSessionReference(agent: AgentInfo): boolean {
 }
 
 /** The agents whose transcripts this app reads and whose panes it talks to. */
-export const CONVERSATIONAL_AGENTS: readonly string[] = ['claude', 'codex', 'pi', 'omp'];
+export const CONVERSATIONAL_AGENTS: readonly string[] = READABLE_AGENTS;
 
 /**
  * True for a pane holding an agent the app can hold a conversation with. A
@@ -123,21 +125,9 @@ export function sendTarget(agents: readonly AgentInfo[]): AgentInfo | null {
   return pick(agents.filter(isConversationalAgent)) ?? pick(agents.filter((a) => a.agent !== null));
 }
 
-/**
- * How the agents herdr detects are named to a person. Letta Code joined in
- * herdr 0.9.1 (#120); anything else shows herdr's own id.
- */
-export const AGENT_NAMES: Readonly<Record<string, string>> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  pi: 'Pi',
-  omp: 'OMP',
-  letta: 'Letta',
-};
-
-/** A pane's agent by name: "Claude", herdr's own id for one not named above, "Terminal" for a shell. */
+/** A pane's agent by name: "Claude", herdr's own id for one `AGENTS` doesn't name, "Terminal" for a shell. */
 export function agentName(kind: string | null): string {
-  return kind === null ? 'Terminal' : AGENT_NAMES[kind] ?? kind;
+  return kind === null ? 'Terminal' : agentSpec(kind)?.name ?? kind;
 }
 
 /**
@@ -150,11 +140,12 @@ export function agentName(kind: string | null): string {
 export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
     .filter((agent) => agent.agent !== null && hasSessionReference(agent))
+    // Claude's id stands bare, as it always has: cached chats are keyed by it.
     .map((agent) => isPiFamily(agent.agent)
       ? `${agent.agent}:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
-      : agent.agent === 'codex'
-        ? `codex:${agent.agentSession?.value ?? ''}`
-        : agent.agentSession?.value ?? '')
+      : agent.agent === 'claude'
+        ? agent.agentSession?.value ?? ''
+        : `${agent.agent}:${agent.agentSession?.value ?? ''}`)
     .filter((value) => value !== '');
   if (ids.length === 0) return null;
   return [...new Set(ids)].sort().join(',');
