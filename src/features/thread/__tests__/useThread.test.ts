@@ -26,6 +26,7 @@ const mockRecent = jest.fn(async (_path: string, _label: string | null, _bytes: 
 const mockOlder = jest.fn(async (_path: string, _label: string | null, _anchor: number, _bytes: number) => ({
   messages: [] as ChatMessage[], startByte: 0, reachedStart: true,
 }));
+const mockHistoryBase = jest.fn<Promise<{ path: string; endByte: number } | null>, [string]>(async () => null);
 const mockTailStarts: { path: string; from: number }[] = [];
 const mockTailSignals: (AbortSignal | undefined)[] = [];
 const mockSessionMeta = jest.fn<Promise<SessionMeta | null>, [string, string | null]>();
@@ -79,6 +80,7 @@ jest.mock('@/lib/transcript/store', () => ({
     fileProbe = async (path: string) => mockProbeFor?.(path) ?? mockProbe;
     recent = mockRecent;
     older = mockOlder;
+    codexHistoryBase = mockHistoryBase;
     sessionMeta = mockSessionMeta;
     tail = mockTail;
   },
@@ -138,6 +140,7 @@ beforeEach(() => {
     messages: mockRecentMessages, consumedBytes: mockProbe.kind === 'size' ? mockProbe.bytes : 0, startByte: 0,
   }));
   mockOlder.mockReset().mockResolvedValue({ messages: [], startByte: 0, reachedStart: true });
+  mockHistoryBase.mockReset().mockResolvedValue(null);
   jest.mocked(seedMessages).mockResolvedValue([]);
   jest.mocked(tailCursor).mockResolvedValue(null);
   mockTailStarts.length = 0;
@@ -778,6 +781,28 @@ it.each(['claude', 'codex'])('opens a stale %s cache with one recent window, not
   await act(async () => { await result.current.loadOlder(); });
   expect(mockOlder).toHaveBeenCalledWith(expect.any(String), null, 7_900_000, 200);
   expect(result.current.messages[0]?.id).toBe('last-visit');
+  await unmount();
+});
+
+// A rewound Codex rollout holds only its own turns; the earlier ones are in
+// the file its first line names (`history_base`).
+it('pages a rewound Codex chat back into the file it was cut from', async () => {
+  mockProbe = { kind: 'size', bytes: 400 };
+  mockRecentMessages = [turn('after-rewind', 5)];
+  mockHistoryBase.mockResolvedValueOnce({ path: '/test/prefix.jsonl', endByte: 9_000 });
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'codex' }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.reachedStart).toBe(false);
+  mockOlder.mockResolvedValueOnce({ messages: [turn('before-rewind', 1)], startByte: 0, reachedStart: true });
+  await act(async () => { await result.current.loadOlder(); });
+  expect(mockHistoryBase).toHaveBeenCalledWith('/test/codex.jsonl');
+  expect(mockOlder).toHaveBeenCalledWith('/test/prefix.jsonl', null, 9_000, 200);
+  expect(result.current.messages.map((message) => message.id)).toEqual(['before-rewind', 'after-rewind']);
+  expect(result.current.reachedStart).toBe(false);
+  // The prefix file names no earlier one: that is the start of the thread.
+  await act(async () => { await result.current.loadOlder(); });
+  expect(mockHistoryBase).toHaveBeenLastCalledWith('/test/prefix.jsonl');
+  expect(result.current.reachedStart).toBe(true);
   await unmount();
 });
 

@@ -81,6 +81,25 @@ describe('exact Codex transcript resolution', () => {
     expect(script).not.toMatch(/ls -t|sort|newest/);
   });
 
+  it('finds the file a rewound rollout was cut from, by its exact rollout id and never by guess', async () => {
+    const host = new CodexHost();
+    const rolloutId = '0199aa00-0000-7000-8000-000000000001';
+    const prefix = path.replace(`-${id}.jsonl`, `-${id}_${rolloutId}.jsonl`);
+    const meta = (base: unknown) => JSON.stringify({ type: 'session_meta', payload: { id, history_base: base } });
+    host.header = meta({ thread_id: rolloutId, end_ordinal_exclusive: 12, end_byte_offset: 4096 });
+    host.matches = `${prefix}\n`;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toEqual({ path: prefix, endByte: 4096 });
+    expect(host.commands.at(-1)).toContain(`rollout-*_${rolloutId}.jsonl`);
+    host.matches = `${prefix}\n${prefix.replace('/sessions/', '/archived_sessions/')}\n`;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    host.header = header;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    host.header = meta({ thread_id: '../x', end_byte_offset: 10 });
+    const before = host.commands.length;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    expect(host.commands.length).toBe(before + 1);
+  });
+
   it('opens a lone rewound file without asking the database', async () => {
     const host = new CodexHost();
     const rewound = path.replace(`-${id}.jsonl`, `-${id}_0199aa00-0000-7000-8000-000000000001.jsonl`);
