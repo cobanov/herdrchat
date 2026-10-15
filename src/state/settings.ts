@@ -22,6 +22,15 @@ export interface Settings {
   showSidechain: boolean;
   /** Haptic feedback on sends, taps and confirmations. */
   haptics: boolean;
+  /**
+   * Return on a hardware keyboard sends, and Shift-Return or Option-Return
+   * starts a new line, the way a chat app on a Mac behaves. On by default,
+   * since it only ever applies to a hardware keyboard: the on-screen
+   * keyboard's Return is a newline either way (#155). Off restores #113:
+   * Return is a newline and Command-Return sends. iOS only; Android has no
+   * key commands, so Return is a newline there always.
+   */
+  returnSends: boolean;
   /** Push notifications when an agent blocks or finishes. */
   notifications: boolean;
   /**
@@ -83,6 +92,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   showToolActivity: false,
   showSidechain: false,
   haptics: true,
+  returnSends: true,
   notifications: false,
   pollScale: 1,
   seenSwipeHint: false,
@@ -114,6 +124,7 @@ export function settingsSnapshot(): Settings {
     showToolActivity: state.showToolActivity,
     showSidechain: state.showSidechain,
     haptics: state.haptics,
+    returnSends: state.returnSends,
     notifications: state.notifications,
     pollScale: state.pollScale,
     seenSwipeHint: state.seenSwipeHint,

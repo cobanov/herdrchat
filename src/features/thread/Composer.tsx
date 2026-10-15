@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Glass } from '@/components/Glass';
 import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
+import { followCaret, insertNewline, pasteAction, returnAction } from '@/lib/composerKeys';
+import { MAX_ATTACHMENTS } from './attachments';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
+import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
   composerMaxHeight,
@@ -49,6 +52,7 @@ export function Composer({
   onAttach,
   onRemoveAttachment,
   uploading = false,
+  onPasteImage,
 }: {
   /** Resolves `false` when the message was not taken, and the draft comes back. */
   onSend: (text: string) => Promise<boolean> | void;
@@ -61,6 +65,12 @@ export function Composer({
   /** Pictures are on their way to the host: the send control shows it. */
   uploading?: boolean;
   /**
+   * Attach the picture on the pasteboard, for Command-V on a hardware
+   * keyboard. At `MAX_ATTACHMENTS` the composer stops offering it, and
+   * Command-V is the text field's own paste and nothing else.
+   */
+  onPasteImage?: () => void;
+  /**
    * The draft lives in the parent so a prompt-history chip can fill it. Kept
    * controlled rather than exposing an imperative `setText` handle, because the
    * parent already needs to know whether the composer is empty — that is what
@@ -72,7 +82,23 @@ export function Composer({
   const { colors, reduceMotion } = useTheme();
   const minHeight = useComposerMinHeight();
   const [focused, setFocused] = useState(false);
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !disabled;
+  const draftEmpty = draft.trim().length === 0 && attachments.length === 0;
+  const canSend = !draftEmpty && !disabled;
+  const returnSends = useSettings((state) => state.returnSends);
+  const input = useRef<TextInput>(null);
+  // Where the caret is, for Shift-Return to put its newline. Only the native
+  // side knows; it reports every move, and nothing renders from it.
+  const selection = useRef({ start: 0, end: 0 });
+  // The text the field last showed, so a draft replaced from JS (a picked `/`
+  // command, a send, a refused send) can move the caret the way the field does
+  // without reporting it; see `followCaret`.
+  const shown = useRef(draft);
+  useEffect(() => {
+    if (draft === shown.current) return;
+    selection.current = followCaret(shown.current, selection.current, draft);
+    shown.current = draft;
+  }, [draft]);
+  const room = attachments.length < MAX_ATTACHMENTS;
 
   const sendScale = useSharedValue(1);
   const sendStyle = useAnimatedStyle(() => ({ transform: [{ scale: sendScale.get() }] }));
@@ -90,10 +116,53 @@ export function Composer({
     });
   };
 
+  const newline = () => {
+    const { start, end } = selection.current;
+    const next = insertNewline(draft, { start, end });
+    selection.current = { start: next.caret, end: next.caret };
+    shown.current = next.text;
+    onDraftChange(next.text);
+    // The field keeps the caret's distance from the end of the text, which is
+    // right after a newline typed at a caret but not after one that replaced a
+    // selection. Then put it where it belongs, once the new text is on screen.
+    if (start !== end) requestAnimationFrame(() => input.current?.setSelection(next.caret, next.caret));
+  };
+
+  // Every hardware Return asks the one table in `composerKeys`. The software
+  // keyboard's Return never comes through here: it is the field's own newline.
+  const pressReturn = (modifiers: { shift?: boolean; option?: boolean; command?: boolean }) => {
+    const action = returnAction({
+      source: 'hardware',
+      returnSends,
+      shift: modifiers.shift ?? false,
+      option: modifiers.option ?? false,
+      command: modifiers.command ?? false,
+      draftEmpty,
+      disabled: disabled || uploading,
+    });
+    if (action === 'send') send();
+    else if (action === 'newline') newline();
+  };
+
   return (
-    // Command-Return sends from an iPad's hardware keyboard, where Return alone
-    // has to stay a newline (#113).
-    <SubmitShortcutView onSubmitShortcut={send}>
+    // Command-Return sends from a hardware keyboard whichever way the setting
+    // points (#113). While Return sends, a hardware Return, Shift-Return and
+    // Option-Return come through here too; they are key commands, which fire
+    // for hardware keys only, so a phone's own Return stays a newline (#155).
+    <SubmitShortcutView
+      onSubmitShortcut={() => pressReturn({ command: true })}
+      onReturnShortcut={returnSends ? () => pressReturn({}) : undefined}
+      onNewlineShortcut={returnSends ? (modifiers) => pressReturn(modifiers) : undefined}
+      // Command-V with a lone picture attaches it; text still pastes as text.
+      // Not while a send or upload is in flight, the same as the picture button,
+      // and not at MAX_ATTACHMENTS: then Command-V is the text field's alone.
+      onPasteShortcut={
+        onPasteImage !== undefined && !disabled && !uploading && room
+          ? (pasteboard) => {
+              if (pasteAction({ ...pasteboard, room }) === 'image') onPasteImage();
+            }
+          : undefined
+      }>
       <Glass
         variant="regular"
         style={{
@@ -181,15 +250,28 @@ export function Composer({
             </Pressable>
           )}
           <TextInput
+            ref={input}
             testID="composer-input"
             accessibilityLabel="Message"
             placeholder="Message"
             placeholderTextColor={colors.tertiaryLabel}
             value={draft}
-            onChangeText={onDraftChange}
+            onChangeText={(text) => {
+              shown.current = text;
+              onDraftChange(text);
+            }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
+            onSelectionChange={(event) => {
+              selection.current = event.nativeEvent.selection;
+            }}
             multiline
+            // The field's own Return is always a newline, on every platform and
+            // whatever the setting: a hardware Return that sends is a key
+            // command on the view around it, and the software keyboard has no
+            // Shift-Return to fall back on (#155).
+            submitBehavior="newline"
+            returnKeyType="default"
             style={{
               flex: 1,
               minHeight,

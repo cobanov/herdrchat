@@ -1,0 +1,92 @@
+# The on-screen keyboard's Return in the composer starts a new line and sends
+# nothing, with Settings > Conversations > "Return sends" on (the default) and
+# off (#155: on a phone it sent a half-written prompt). A hardware Return,
+# Shift-Return, Option-Return, Command-Return and Command-V with a picture are
+# key commands the simulator's Maestro cannot press; jest covers their rules
+# (composerKeys.test.ts, Composer.test.tsx) and they are checked by hand on a
+# device with a keyboard (see .maestro/README.md).
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- tapOn:
+    id: chat-row-w2
+# Send stays off until the thread has loaded; wait for its history first.
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+# Setting on: Return is a newline, the draft stays, and the button sends both lines.
+- tapOn:
+    id: composer-input
+- inputText: first line
+- extendedWaitUntil:
+    visible:
+      id: composer-send
+      enabled: true
+    timeout: 15000
+- pressKey: Enter
+- inputText: second line
+- waitForAnimationToEnd
+# The bubble's label, not the text: the text alone also matches an unsent draft.
+- assertNotVisible: 'Your message\. first line.*'
+- assertVisible:
+    id: composer-send
+    enabled: true
+- takeScreenshot: composer-keys-${APPEARANCE}
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: 'Your message\. first line\s+second line.*'
+    timeout: 15000
+
+# Setting off: the same, Return keeps the draft and sends nothing.
+- tapOn:
+    id: thread-back
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: toggle-return-sends
+    direction: DOWN
+- tapOn:
+    id: toggle-return-sends
+- assertVisible:
+    id: toggle-return-sends
+    checked: false
+- tapOn: Chats
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 15000
+- tapOn:
+    id: composer-input
+- inputText: kept as a draft
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertNotVisible: 'Your message\. kept as a draft.*'
+- assertVisible:
+    id: composer-send
+    enabled: true
+- takeScreenshot: composer-keys-off-${APPEARANCE}
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: composer-send
+      enabled: false
+    timeout: 15000
+
+# Put the default back for the flows after this one.
+- tapOn:
+    id: thread-back
+- tapOn: Settings
+- scrollUntilVisible:
+    element:
+      id: toggle-return-sends
+    direction: DOWN
+- tapOn:
+    id: toggle-return-sends
+- assertVisible:
+    id: toggle-return-sends
+    checked: true
+- tapOn: Chats

@@ -156,6 +156,20 @@ export default function SettingsScreen() {
                 onChange={(next) => update('haptics', next)}
                 testID="toggle-haptics"
               />
+              {/* iOS only: the hardware Return is a key command in herdr-keys,
+                  which has no Android side, so there Return is always a newline. */}
+              {Platform.OS === 'ios' && (
+                <>
+                  <Divider />
+                  <Toggle
+                    label="Return sends"
+                    detail="With a hardware keyboard, Return sends; Shift-Return or Option-Return starts a new line. Command-Return always sends. The on-screen keyboard's Return always starts a new line."
+                    value={settings.returnSends}
+                    onChange={(next) => update('returnSends', next)}
+                    testID="toggle-return-sends"
+                  />
+                </>
+              )}
             </Section>
           </HighlightOnLink>
 
