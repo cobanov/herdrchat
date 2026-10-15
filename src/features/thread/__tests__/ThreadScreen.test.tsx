@@ -49,6 +49,7 @@ jest.mock('@/features/thread/useThread', () => ({
     sessionTitle: mockSessionTitle,
     agentName: mockAgentName,
     offline: mockOffline,
+    transcriptPaths: [],
     paused: mockPaused,
     messages: [{ id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'Hello' }], timestamp: null, agentLabel: null, isSidechain: false }],
     sessionMeta: mockSessionMeta,

@@ -36,6 +36,18 @@ export function isClaudeHarnessLine(raw: Record<string, unknown>): boolean {
 }
 
 /**
+ * A Claude user turn its structured fields mark as typed by a person: it
+ * carries a `promptId` or an `origin` of kind `human`, and is not a harness
+ * line. Absent both (older versions), only the tags can tell.
+ */
+export function isClaudeTypedLine(raw: Record<string, unknown>): boolean {
+  if (isClaudeHarnessLine(raw)) return false;
+  if (typeof raw.promptId === 'string' && raw.promptId.length > 0) return true;
+  const origin = raw.origin;
+  return typeof origin === 'object' && origin !== null && (origin as Record<string, unknown>).kind === 'human';
+}
+
+/**
  * The text a Claude user turn should show, or null to show nothing.
  *
  * - `<pasted_content id="N">…</pasted_content id="N">` (2.1.278+) is unwrapped,
@@ -45,8 +57,16 @@ export function isClaudeHarnessLine(raw: Record<string, unknown>): boolean {
  * - Shell mode (`<bash-input>ls</bash-input>`) becomes `! ls`.
  * - A turn made only of harness elements (command output, a caveat, a task
  *   notification, a system reminder) shows nothing.
+ *
+ * `typed`: the line is one a person typed (`isClaudeTypedLine`). A
+ * `<task-notification>` or `<agent-message>` there was pasted, since the
+ * harness writes those only as its own turns, so it stays in the text. Peeled,
+ * a message that was only the paste had no bubble, and one that led with it
+ * lost it, and either way the phone's echo never confirmed ("Failed to send").
+ * Context the harness does attach to a typed turn (IDE selections, reminders)
+ * is still peeled.
  */
-export function claudeUserText(text: string): string | null {
+export function claudeUserText(text: string, typed = false): string | null {
   const unwrapped = text.replace(PASTED, (_match, _id: string, inner: string) =>
     inner.replace(/^\n|\n$/g, '')
   );
@@ -60,7 +80,7 @@ export function claudeUserText(text: string): string | null {
   const shell = element(unwrapped, 'bash-input');
   if (shell !== null) return `! ${shell.trim()}`;
 
-  const rest = peelHarness(unwrapped);
+  const rest = peelHarness(unwrapped, typed ? OWN_TURN_TAGS : NO_TAGS);
   return rest.length === 0 ? null : rest;
 }
 
@@ -137,16 +157,22 @@ function isHarnessTag(tag: string): boolean {
 
 const SINGLE_WORD_HARNESS_TAGS = new Set(['heartbeat', 'image']);
 
+/** Tags the harness writes only as a turn of its own, never inside a typed one. */
+const OWN_TURN_TAGS: ReadonlySet<string> = new Set(['task-notification', 'agent-message']);
+
+const NO_TAGS: ReadonlySet<string> = new Set();
+
 /**
  * `text` with harness elements peeled off its front, trimmed. Empty when the
  * text was nothing else (`<bash-stdout>…</bash-stdout><bash-stderr></bash-stderr>`
  * is two of them).
  */
-function peelHarness(text: string): string {
+function peelHarness(text: string, keep: ReadonlySet<string> = NO_TAGS): string {
   let rest = text.trim();
   for (;;) {
     const lead = LEADING_ELEMENT.exec(rest);
-    if (lead === null || !isHarnessTag(lead[1] ?? '')) return rest;
+    const tag = lead?.[1] ?? '';
+    if (lead === null || !isHarnessTag(tag) || keep.has(tag)) return rest;
     rest = rest.slice(lead[0].length).trim();
   }
 }

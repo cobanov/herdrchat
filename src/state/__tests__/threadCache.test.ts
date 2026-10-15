@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { forgetWorkspace } from '../threadCache';
+import { cacheStamp } from '@/lib/transcript/cacheVersion';
+import { forgetWorkspace, rebind } from '../threadCache';
 
 /**
  * A real SQLite, from Node's own `node:sqlite`, behind the few calls the cache
@@ -47,5 +48,28 @@ itWithSqlite('forgets every agent chat of a closed workspace, and nothing of its
   for (const table of TABLES) {
     const left = raw.prepare(`SELECT connection_id || ':' || workspace_id AS k FROM ${table} ORDER BY k`).all() as { k: string }[];
     expect(left.map((row) => row.k)).toEqual(['host:w60', 'host:w60/w60:p1', 'host:wx/w6:p1', 'other:w6/w6:p1']);
+  }
+});
+
+// A row an older parser made is dropped, with its tail cursor, so the
+// transcript is read again rather than shown as it was parsed then.
+itWithSqlite('drops rows an older parser cached, and keeps its own', async () => {
+  const raw = new sqlite!.DatabaseSync(':memory:');
+  raw.exec('CREATE TABLE messages (connection_id TEXT, workspace_id TEXT, session_sig TEXT)');
+  raw.exec('CREATE TABLE tail_cursors (connection_id TEXT, workspace_id TEXT)');
+  raw.prepare('INSERT INTO messages VALUES (?, ?, ?)').run('host', 'w1', 'sess-a');
+  raw.prepare('INSERT INTO messages VALUES (?, ?, ?)').run('host', 'w2', cacheStamp('sess-a'));
+  for (const workspace of ['w1', 'w2']) raw.prepare('INSERT INTO tail_cursors VALUES (?, ?)').run('host', workspace);
+  const db = {
+    runAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).run(...params),
+    getFirstAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).all(...params)[0] ?? null,
+    withTransactionAsync: async (task: () => Promise<void>) => task(),
+  } as unknown as SQLiteDatabase;
+
+  expect(await rebind(db, 'host', 'w1', 'sess-a')).toBe(true);
+  expect(await rebind(db, 'host', 'w2', 'sess-a')).toBe(false);
+  for (const table of ['messages', 'tail_cursors']) {
+    const left = raw.prepare(`SELECT workspace_id AS w FROM ${table}`).all() as { w: string }[];
+    expect(left.map((row) => row.w)).toEqual(['w2']);
   }
 });
