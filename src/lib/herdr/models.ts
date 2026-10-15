@@ -376,6 +376,17 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
 function sessionTitle(value: Record<string, unknown>): string | null {
   const title = optionalStr(value.title);
   const stripped = optionalStr(value.terminal_title_stripped);
+  if (value.agent === 'grok') {
+    // Grok titles its terminal `grok`, or `<session> - grok` once the session
+    // has a name; during a turn a braille spinner and activity text lead it,
+    // and a prompt adds "⚠ Action Required" (herdr's grok.toml). The session
+    // is the segment before ` - grok`; a bare `grok` names no chat.
+    const parts = stripped?.split(' - ') ?? [];
+    const named = parts.length >= 2 && parts[parts.length - 1] === 'grok'
+      ? (parts[parts.length - 2] ?? '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^Action Required\b/, '').trim()
+      : '';
+    return named !== '' ? named : title;
+  }
   if (value.agent !== 'codex') return title ?? stripped;
   // Until the thread has a name, Codex's default title is the project's
   // folder alone ("kenneth"), which names no thread; a spinner or a

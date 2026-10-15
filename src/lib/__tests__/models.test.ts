@@ -103,6 +103,24 @@ describe('snapshot decoding', () => {
     expect(untitled?.title).toBe('fix the build');
   });
 
+  // Grok's terminal title: `grok` until the session has a name, then
+  // `<session> - grok`, with a spinner and activity text ahead of it during a
+  // turn (herdr's grok.toml, Grok 1.0.34).
+  it('titles a Grok agent by its session, never by its bare `grok` title', () => {
+    const [fresh, named, working, asking] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'grok', terminal_title_stripped: 'grok' },
+        { pane_id: 'p2', agent: 'grok', terminal_title_stripped: 'Deploy check flake - grok' },
+        { pane_id: 'p3', agent: 'grok', terminal_title_stripped: '⠧ Reading files - Deploy check flake - grok' },
+        { pane_id: 'p4', agent: 'grok', terminal_title_stripped: '⚠ Action Required - grok' },
+      ],
+    }).agents;
+    expect(fresh?.title).toBeNull();
+    expect(named?.title).toBe('Deploy check flake');
+    expect(working?.title).toBe('Deploy check flake');
+    expect(asking?.title).toBeNull();
+  });
+
   // Codex 0.162 titles the terminal with the project's folder alone until the
   // thread has a name ("activity", "thread-name", "project-name" by default),
   // so a title with no ` | ` is the folder, not a thread.
