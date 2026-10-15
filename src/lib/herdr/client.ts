@@ -11,6 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
+import { integrationFor, READABLE_AGENTS } from './agents';
 import type { MachineNames } from './machine';
 import { machineListArgv, parseMachineList, type MachineList } from './machines';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
@@ -42,7 +43,8 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 
 /** The built-in integrations HerdrChat can install and update. */
-export type IntegrationName = 'claude' | 'codex' | 'pi' | 'omp';
+/** A herdr integration target (`herdr integration install <name>`), from `AGENTS`. */
+export type IntegrationName = string;
 
 /**
  * How long to let herdr watch for the agent to react.
@@ -337,7 +339,9 @@ export class HerdrClient {
       return asArray(field(result, 'integrations')).flatMap((item) => {
         if (typeof item !== 'object' || item === null) return [];
         const { target, state } = item as { target?: unknown; state?: unknown };
-        return (target === 'claude' || target === 'codex' || target === 'pi' || target === 'omp') && state === 'outdated'
+        // Only the integrations of agents this app reads: the rest are not its to nag about.
+        return typeof target === 'string' && state === 'outdated' &&
+          READABLE_AGENTS.some((kind) => integrationFor(kind) === target)
           ? [target]
           : [];
       });

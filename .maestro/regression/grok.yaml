@@ -1,0 +1,30 @@
+# A Grok chat on the Demo: its ACP update log found by its session id, its
+# model in the header, a folded tool run, a message sent and answered.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w8
+    direction: DOWN
+    centerElement: true
+- assertVisible: .*Grok.*
+- takeScreenshot: grok-row-${APPEARANCE}
+- tapOn:
+    id: chat-row-w8
+- extendedWaitUntil:
+    visible: .*Waiting for `/ready`.*
+    timeout: 15000
+- assertVisible: .*ran 1 command.*
+- assertVisible: .*grok-5.*
+- tapOn:
+    id: composer-input
+- inputText: and on staging?
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .and on staging\?.*
+    timeout: 15000
+- assertNotVisible: .*Failed to send.*
+- takeScreenshot: grok-thread-${APPEARANCE}
+- tapOn:
+    id: thread-back

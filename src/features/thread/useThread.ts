@@ -11,6 +11,7 @@ import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
+import { agentSpec } from '@/lib/herdr/agents';
 import {
   hasSessionReference,
   isConversationalAgent,
@@ -635,17 +636,8 @@ export function useThread(
           const id = agent.agentSession!.value!;
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
-          let path = isPiFamily(agent.agent)
-            ? await store.ompTranscriptPath(id, agent.agentSession!.kind)
-            : agent.agent === 'codex'
-              ? await store.codexTranscriptPath(id)
-              : await store.claudeTranscriptPath(agent.cwd, id);
-          if (path === null) {
-            if (agent.agent === 'pi') throw new Error('The Pi session could not be located. Pi does not save a chat started with pi --no-session. Otherwise, resume that exact session on the host, then reload.');
-            if (agent.agent === 'omp') throw new Error('The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.');
-            if (agent.agent === 'codex') throw new Error('The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.');
-            throw new Error('The agent reported an invalid session id. Resume the session on the host, then reload.');
-          }
+          let path = await store.transcriptPath(agent);
+          if (path === null) throw new Error(agentSpec(agent.agent)?.missing ?? 'The agent reported an invalid session id. Resume the session on the host, then reload.');
           let probe = await store.fileProbe(path);
           if (probe.kind === 'absent' && agent.agent === 'claude') {
             // Not under the folder the pane's cwd names. The same session id may
@@ -657,8 +649,7 @@ export function useThread(
             }
           }
           if (probe.kind === 'absent') {
-            if (agent.agent === 'codex') store.forgetCodexTranscript(id);
-            if (isPiFamily(agent.agent) && agent.agentSession!.kind === 'id') store.forgetOmpTranscript(id);
+            store.forgetTranscript(agent);
             const previous = absentRetry.current.get(key);
             const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
             absentRetry.current.set(key, { at: Date.now() + delay, delay });

@@ -1,4 +1,5 @@
 import { exitCodeError } from '../herdr/client';
+import { agentSpec } from '../herdr/agents';
 import { isPiFamily } from '../herdr/models';
 import { HerdrError, transportError } from '../herdr/protocol';
 import { shellQuote, withPath } from '../herdr/shell';
@@ -51,14 +52,43 @@ const claudeDirByTransport = new WeakMap<HerdrTransport, Promise<string>>();
  */
 const CLAUDE_DIR_COMMAND = 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"';
 const CLAUDE_DIR_SHELL = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
-const codexPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
-const ompPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
+/** Located transcripts per transport, one map per agent whose lookup is a search. */
+type PathCache = WeakMap<HerdrTransport, Map<string, Promise<string | null>>>;
+const codexPathsByTransport: PathCache = new WeakMap();
+const ompPathsByTransport: PathCache = new WeakMap();
+const grokPathsByTransport: PathCache = new WeakMap();
 
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
 
   constructor(transport: HerdrTransport) {
     this.transport = transport;
+  }
+
+  /**
+   * The transcript of the session an agent reported, by its exact id or path,
+   * or null when the report cannot name one. `AGENTS[kind].reader` picks how;
+   * an agent with no reader has none.
+   */
+  async transcriptPath(agent: SessionRef): Promise<string | null> {
+    const value = agent.agentSession?.value ?? '';
+    const kind = agent.agentSession?.kind ?? null;
+    switch (agentSpec(agent.agent)?.reader) {
+      case 'claude': return kind === 'id' ? this.claudeTranscriptPath(agent.cwd, value) : null;
+      case 'codex': return kind === 'id' ? this.codexTranscriptPath(value) : null;
+      case 'grok': return kind === 'id' ? this.grokTranscriptPath(value) : null;
+      case 'pi': return this.ompTranscriptPath(value, kind);
+      default: return null;
+    }
+  }
+
+  /** Drop a located transcript that turned out absent, so the next try searches again. */
+  forgetTranscript(agent: SessionRef): void {
+    const value = agent.agentSession?.value ?? '';
+    const reader = agentSpec(agent.agent)?.reader;
+    if (reader === 'codex') this.forgetCodexTranscript(value);
+    if (reader === 'grok') grokPathsByTransport.get(this.transport)?.delete(value);
+    if (reader === 'pi' && agent.agentSession?.kind === 'id') this.forgetOmpTranscript(value);
   }
 
   /**
@@ -164,19 +194,54 @@ export class TranscriptStore {
    */
   async codexTranscriptPath(sessionId: string): Promise<string | null> {
     if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
-    let paths = codexPathsByTransport.get(this.transport);
+    return this.remembered(codexPathsByTransport, sessionId, () => this.findCodexTranscript(sessionId));
+  }
+
+  /**
+   * A lookup's answer, kept per transport and id. Missing files and failed
+   * reads are not kept: they must be retried when the next event arrives.
+   */
+  private remembered(cache: PathCache, id: string, find: () => Promise<string | null>): Promise<string | null> {
+    let paths = cache.get(this.transport);
     if (paths === undefined) {
       paths = new Map();
-      codexPathsByTransport.set(this.transport, paths);
+      cache.set(this.transport, paths);
     }
-    const cached = paths.get(sessionId);
+    const cached = paths.get(id);
     if (cached !== undefined) return cached;
-    const pending = this.findCodexTranscript(sessionId);
-    paths.set(sessionId, pending);
-    const forget = () => { if (paths.get(sessionId) === pending) paths.delete(sessionId); };
-    // Missing files and failed reads must be retried when the next event arrives.
+    const pending = find();
+    paths.set(id, pending);
+    const forget = () => { if (paths.get(id) === pending) paths.delete(id); };
     void pending.then(path => { if (path === null) forget(); }, forget);
     return pending;
+  }
+
+  /**
+   * Grok files a session as a folder named by its id, under a folder for its
+   * cwd: `${GROK_HOME:-~/.grok}/sessions/<encoded cwd>/<id>/updates.jsonl`, the
+   * ACP updates that are its conversation. The folder is found by that exact
+   * id, never by cwd or recency; the encoding of a long cwd is Grok's to
+   * change, the id is not.
+   */
+  async grokTranscriptPath(sessionId: string): Promise<string | null> {
+    if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+    return this.remembered(grokPathsByTransport, sessionId, async () => {
+      const output = await this.shell(
+        'grok_dir="${GROK_HOME:-$HOME/.grok}/sessions"; ' +
+        `[ ! -d "$grok_dir" ] || find "$grok_dir" -mindepth 2 -maxdepth 2 -type d -name ${shellQuote(sessionId)}`
+      );
+      const dirs = output.split('\n').filter(dir => dir.length > 0);
+      if (dirs.length === 0) return null;
+      if (dirs.length !== 1) {
+        throw new HerdrError('grok_session_ambiguous',
+          'More than one Grok session folder has this session id. Nothing was opened. Check the duplicate session folders on the host.');
+      }
+      const dir = dirs[0]!;
+      if (!dir.startsWith('/') || !dir.endsWith(`/${sessionId}`) || /[\0\r\n]/.test(dir)) {
+        throw new HerdrError('grok_session_invalid', 'The host returned an invalid Grok session path.');
+      }
+      return `${dir}/updates.jsonl`;
+    });
   }
 
   forgetCodexTranscript(sessionId: string): void {
@@ -228,18 +293,7 @@ export class TranscriptStore {
         !value.split('/').includes('..') ? value : null;
     }
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
-    let paths = ompPathsByTransport.get(this.transport);
-    if (paths === undefined) {
-      paths = new Map();
-      ompPathsByTransport.set(this.transport, paths);
-    }
-    const cached = paths.get(value);
-    if (cached !== undefined) return cached;
-    const pending = this.findOmpTranscript(value);
-    paths.set(value, pending);
-    const forget = () => { if (paths.get(value) === pending) paths.delete(value); };
-    void pending.then(path => { if (path === null) forget(); }, forget);
-    return pending;
+    return this.remembered(ompPathsByTransport, value, () => this.findOmpTranscript(value));
   }
 
   forgetOmpTranscript(sessionId: string): void {
@@ -613,19 +667,21 @@ export class TranscriptStore {
         script += `f=${shellQuote(path)}; `;
         ompSessions.set(key, request.sessionKind === 'path' ? null : request.sessionId);
       } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
-      else if (request.agent === 'codex') {
-        // One broken Codex session must not suppress every other row's preview.
-        const path = await this.codexTranscriptPath(request.sessionId).catch(() => null);
+      else if (request.agent !== undefined && request.agent !== 'claude') {
+        // One broken session must not suppress every other row's preview.
+        const path = await this.transcriptPath({
+          agent: request.agent, cwd: request.cwd, agentSession: { kind: 'id', value: request.sessionId },
+        }).catch(() => null);
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
-      } else if (request.agent === undefined || request.agent === 'claude') {
+      } else {
         const dir = projectDirName(request.cwd);
         const id = request.sessionId;
         script += `f="${CLAUDE_DIR_SHELL}/projects/${dir}/${id}.jsonl"; `;
         // Not under the cwd's folder (a worktree session, #89): the exact id
         // in any project folder. Never a different file.
         script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
-      } else continue;
+      }
       script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
       if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
@@ -677,6 +733,13 @@ export class TranscriptStore {
     if (result.exitCode !== 0) throw exitCodeError(result.exitCode, result.stderr);
     return result.stdout;
   }
+}
+
+/** What locating a transcript needs from an agent: herdr's `AgentInfo` has it all. */
+export interface SessionRef {
+  agent: string | null;
+  cwd: string;
+  agentSession: { kind: string | null; value: string | null } | null;
 }
 
 /**

@@ -1,11 +1,13 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
 import {
+  DEMO_GROK_SESSIONS,
   DEMO_NUKU_SESSION_IDS,
   DEMO_NUKU_WORKSPACES,
   DEMO_SESSION_IDS,
   DEMO_WORKSPACES,
   HISTORY_DAYS,
+  demoGrokPath,
   transcriptFor,
 } from '../demo/fixtures';
 import { withMachine } from '../herdr/machine';
@@ -41,7 +43,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -60,12 +62,12 @@ describe('DemoHost as a herdr host', () => {
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
     // The first five keep the one pane they always had; site's agent has a shell beside it.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2]);
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1]);
   });
 
-  // Scratch and the OMP ledger have no session title, so the Demo also shows
-  // a chat titled by its workspace's label.
-  it('titles most chats by their session, and leaves two to their workspace', async () => {
+  // Scratch, the OMP ledger and the Grok infra chat have no session title, so
+  // the Demo also shows a chat titled by its workspace's label.
+  it('titles most chats by their session, and leaves three to their workspace', async () => {
     const client = new HerdrClient(new DemoHost());
     const { agents } = await client.snapshot();
     expect(agents.map((a) => [a.paneId, a.title])).toEqual([
@@ -77,6 +79,7 @@ describe('DemoHost as a herdr host', () => {
       ['w6:p1', 'Archived projects migration'],
       ['w6:p2', 'Save button wrap'],
       ['w7:p1', 'Landing page copy'],
+      ['w8:p1', null],
     ]);
   });
 
@@ -106,6 +109,20 @@ describe('DemoHost as a filesystem', () => {
     );
     expect([...previews.keys()].sort()).toEqual(agents.map((agent) => agent.paneId).sort());
     expect(displayText(previews.get('w6:p1')!)).toMatch(/archived_at/);
+  });
+
+  // Grok files a session as a folder named by its id; only that exact folder is opened.
+  it("finds a Grok session by its exact id and reads its ACP log as a chat", async () => {
+    const host = new DemoHost();
+    const grok = (await new HerdrClient(host).snapshot()).agents.find((agent) => agent.agent === 'grok')!;
+    const store = new TranscriptStore(host);
+    const path = await store.transcriptPath(grok);
+    expect(path).toBe(demoGrokPath('/home/demo/infra', DEMO_GROK_SESSIONS['w8:p1']!));
+    const { messages } = await store.recent(path!, null, 100);
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant', 'user', 'assistant']);
+    const other = (value: string) => ({ ...grok, agentSession: { ...grok.agentSession!, value } });
+    expect(await store.transcriptPath(other('01a13fe8-0000-7000-8000-000000000009'))).toBeNull();
+    expect(await store.transcriptPath(other('../w8'))).toBeNull();
   });
 
   it('reports a home directory, so transcript paths can be built', async () => {
@@ -206,7 +223,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

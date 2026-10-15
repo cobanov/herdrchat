@@ -3,6 +3,8 @@ import { View } from 'react-native';
 import { WaitingBar } from '@/components/Activity';
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
+import { READABLE_AGENTS } from '@/lib/herdr/agents';
+import { agentName } from '@/lib/herdr/models';
 import { spacing } from '@/theme/tokens';
 
 import type { SessionState } from './useThread';
@@ -74,7 +76,8 @@ export function MissingHost({ machine = null, onBack, onHosts, onChats }: {
   );
 }
 
-const AGENT_NAMES = { claude: 'Claude', codex: 'Codex', pi: 'Pi', omp: 'OMP' } as const;
+/** Every agent whose history the app reads, by name: "Claude, Codex, Grok, Pi and OMP". */
+const READABLE_NAMES = READABLE_AGENTS.map(agentName).join(', ').replace(/, ([^,]+)$/, ' and $1');
 
 /**
  * What the thread shows before its first batch of history arrives, and when a
@@ -102,12 +105,12 @@ export function ThreadPlaceholder({
   onBack?: () => void;
   title: string;
   sessionState: SessionState;
-  agentKind?: keyof typeof AGENT_NAMES;
+  agentKind?: string;
   onInstallIntegration?: () => void;
   installing: boolean;
   installError: string | null;
 }) {
-  const agentName = AGENT_NAMES[agentKind ?? 'claude'];
+  const name = agentName(agentKind ?? 'claude');
   return (
     <View
       style={{
@@ -128,7 +131,7 @@ export function ThreadPlaceholder({
         <>
           <Text variant="title3" style={{ textAlign: 'center' }}>Chat history is not supported for this agent</Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            HerdrChat can read Claude Code, Codex, Pi, and OMP conversations. Open this agent in the host terminal to read its output.
+            HerdrChat can read {READABLE_NAMES} conversations. Open this agent in the host terminal to read its output.
           </Text>
         </>
       ) : sessionState === 'missing' ? (
@@ -140,7 +143,7 @@ export function ThreadPlaceholder({
             Can&apos;t identify this chat
           </Text>
           <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            The agent isn&apos;t reporting which {agentName} session it is, so this thread can&apos;t be
+            The agent isn&apos;t reporting which {name} session it is, so this thread can&apos;t be
             told apart from others in the same folder.
           </Text>
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }}>

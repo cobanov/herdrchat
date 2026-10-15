@@ -18,7 +18,7 @@ export interface DemoPane {
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /** Claude unless named; OMP reports its journal's path rather than an id. */
-  agent?: 'claude' | 'omp';
+  agent?: 'claude' | 'omp' | 'grok';
   /**
    * The title the session gave itself, which titles its chat. Left out on
    * two of them, so the Demo also shows a chat titled by its workspace.
@@ -168,6 +168,17 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
       panes: [{ paneId: 'w7:p1', rect: [0, 0, 160, 32] }, { paneId: 'w7:p2', rect: [0, 32, 160, 16] }],
     }],
   },
+  {
+    // A Grok chat, read from its ACP update log. Untitled, so the chat is
+    // named after its workspace.
+    workspaceId: 'w8',
+    label: 'infra',
+    number: 8,
+    paneId: 'w8:p1',
+    cwd: '/home/demo/infra',
+    agentStatus: 'idle',
+    agent: 'grok',
+  },
 ];
 
 /**
@@ -205,6 +216,16 @@ export function demoPanes(workspace: DemoWorkspace): DemoPane[] {
 export const DEMO_OMP_PATHS: Readonly<Record<string, string>> = {
   'w4:p1': '/home/demo/.omp/agent/sessions/--home-demo-ledger--/2026-09-28T09-00-00_44444444-4444-4444-8444-444444444444.jsonl',
 };
+
+/** The Grok session id each Grok pane reports: the name of its session folder. */
+export const DEMO_GROK_SESSIONS: Readonly<Record<string, string>> = {
+  'w8:p1': '01a13fe8-0000-7000-8000-000000000008',
+};
+
+/** Where Grok keeps a session: a folder named by its id, under one for its cwd. */
+export function demoGrokPath(cwd: string, session: string): string {
+  return `${DEMO_HOME}/.grok/sessions/${encodeURIComponent(cwd)}/${session}/updates.jsonl`;
+}
 
 /** The Claude session id each demo workspace reports, and therefore its transcript filename. */
 export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
@@ -471,9 +492,55 @@ export function ompLine(role: 'user' | 'assistant', text: string, id: string, ti
     : { role, model: OMP_MODEL, content: [{ type: 'text', text }] });
 }
 
+// MARK: - Grok
+//
+// Grok's own log (`updates.jsonl`): ACP `session/update` notifications, one a
+// line, each message whole, a tool's result its final update.
+
+const GROK_MODEL = 'grok-5';
+
+function grokUpdate(eventId: string, timestamp: string, update: Record<string, unknown>): string {
+  const ms = Date.parse(timestamp);
+  return JSON.stringify({
+    timestamp: Math.floor(ms / 1000),
+    method: 'session/update',
+    params: { sessionId: DEMO_GROK_SESSIONS['w8:p1'], update, _meta: { eventId, agentTimestampMs: ms } },
+  });
+}
+
+const GROK_SEED: readonly string[] = [
+  grokUpdate('g-1', '2026-08-19T09:01:00.000Z', {
+    sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'why does the deploy check fail every other run?' },
+    _meta: { modelId: GROK_MODEL, promptIndex: 0 },
+  }),
+  grokUpdate('g-2', '2026-08-19T09:01:05.000Z', {
+    sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Running the check twice to see what differs.' },
+  }),
+  grokUpdate('g-3', '2026-08-19T09:01:06.000Z', {
+    sessionUpdate: 'tool_call', toolCallId: 'g-call-1', title: 'Run the deploy check',
+    rawInput: { command: 'npm run check:deploy' }, _meta: { 'x.ai/tool': { name: 'run_terminal_command', kind: 'execute' } },
+  }),
+  grokUpdate('g-4', '2026-08-19T09:01:20.000Z', {
+    sessionUpdate: 'tool_call_update', toolCallId: 'g-call-1', status: 'completed',
+    content: [{ type: 'content', content: { type: 'text', text: 'health: 503 (warming up)' } }],
+  }),
+  grokUpdate('g-5', '2026-08-19T09:01:30.000Z', {
+    sessionUpdate: 'agent_message_chunk',
+    content: { type: 'text', text: 'The check runs before the service has warmed up, so the first probe gets a 503. Waiting for `/ready` before probing fixes it.' },
+  }),
+];
+
+/** One more Grok prompt or reply, for when the demo is used. */
+export function grokLine(role: 'user' | 'assistant', text: string, id: string, timestamp: string): string {
+  return grokUpdate(id, timestamp, role === 'user'
+    ? { sessionUpdate: 'user_message_chunk', content: { type: 'text', text }, _meta: { modelId: GROK_MODEL } }
+    : { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+}
+
 /** The transcript a demo pane starts with, as the file's contents. */
 export function transcriptFor(paneId: string): string {
   if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
+  if (DEMO_GROK_SESSIONS[paneId] !== undefined) return `${GROK_SEED.join('\n')}\n`;
   const lines = paneId === 'w5:p1' ? historyLines() : SEEDS[paneId] ?? [];
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
@@ -599,6 +666,8 @@ export interface DemoFixtures {
   sessionIds: Readonly<Record<string, string>>;
   /** Where an OMP pane keeps its journal. */
   ompPaths: Readonly<Record<string, string>>;
+  /** The session id each Grok pane reports. */
+  grokSessions: Readonly<Record<string, string>>;
   /** The transcript a pane starts with, as the file's contents. */
   transcript: (paneId: string) => string;
   /** The pane herdr reports as focused. */
@@ -661,6 +730,7 @@ export const DEMO_NUKU: DemoFixtures = {
   workspaces: DEMO_NUKU_WORKSPACES,
   sessionIds: DEMO_NUKU_SESSION_IDS,
   ompPaths: {},
+  grokSessions: {},
   transcript: (paneId) => {
     const lines = NUKU_SEEDS[paneId] ?? [];
     return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
@@ -679,6 +749,7 @@ export const DEMO_HOST: DemoFixtures = {
   workspaces: DEMO_WORKSPACES,
   sessionIds: DEMO_SESSION_IDS,
   ompPaths: DEMO_OMP_PATHS,
+  grokSessions: DEMO_GROK_SESSIONS,
   transcript: transcriptFor,
   focusedPaneId: 'w1:p1',
   machines: DEMO_MACHINES,
