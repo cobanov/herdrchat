@@ -60,7 +60,8 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     name: 'Grok',
     reader: 'grok',
     integration: 'grok',
-    defaultTitles: [],
+    // Idle, before the session has a name (herdr's grok.toml).
+    defaultTitles: ['grok'],
     // `1`–`9` chooses an option directly (Grok's 03-keyboard-shortcuts.md).
     digitAnswers: true,
     missing: 'The Grok session is identified, but its folder is not in ~/.grok/sessions on this host. Resume that exact session on the host, then reload.',
