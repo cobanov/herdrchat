@@ -167,10 +167,6 @@ function RootStack() {
             second sheet over it, and picking a host dismisses both. */}
         <Stack.Screen name="hosts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
-        {/* What a chat's subagent and workflow cards open: pushed over the
-            chat, on iPad over the split, with the same swipe back. */}
-        <Stack.Screen name="chat/agent" options={{ gestureEnabled: true }} />
-        <Stack.Screen name="chat/workflow" options={{ gestureEnabled: true }} />
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />
