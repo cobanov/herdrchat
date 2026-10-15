@@ -4,6 +4,12 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
+# The row is titled by its Claude session, not the workspace ("notes"). The
+# workspace is named after its folder, so the line under the title says it
+# once, in the folder.
+- assertVisible:
+    id: chat-row-w2
+    text: 'Release notes summary, .*Claude · demo/notes.*'
 - tapOn:
     id: chat-row-w2
 # Send stays off until the thread has loaded; wait for its history first.
@@ -11,6 +17,15 @@ appId: dev.herdr.HerdrChat
     visible:
       id: bubble-d2-2
     timeout: 15000
+# The thread is titled as its row is, and names the workspace below.
+- assertVisible:
+    id: thread-title
+    text: Release notes summary
+- extendedWaitUntil:
+    visible:
+      id: thread-meta
+      text: 'notes · .*'
+    timeout: 10000
 - assertVisible: .*high effort.*
 
 # A run of tool calls folds into one line and opens onto its calls.

@@ -57,7 +57,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 5
+WATCHER_VERSION = 6
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -408,10 +408,18 @@ def summarize(text, limit=SUMMARY_LIMIT):
     return (cut[:space] if space > 0 else cut).rstrip(",;:") + "\u2026"
 
 
+# An agent's own terminal title before the session has a topic, which names no
+# chat (`DEFAULT_TERMINAL_TITLES` in src/lib/chatTitle.ts): Claude Code says
+# "Claude Code", and before an agent starts the shell titles it with the command.
+DEFAULT_TERMINAL_TITLES = {"claude code", "claude", "codex", "omp"}
+LEADING_GLYPHS = re.compile(r"^[^\w\\]+")
+
+
 def chat_title(entries, terminal_title):
     """The chat's name: the title Claude Code gives the conversation (or the one
     you set), else the terminal's title when it is one. A resumed or starting
-    session titles the terminal with its command or id, which names nothing."""
+    session titles the terminal with its command or id, and a fresh one with the
+    agent's name; neither names the chat."""
     for entry in entries:
         if isinstance(entry, dict) and entry.get("type") in ("custom-title", "ai-title"):
             title = entry.get("customTitle") or entry.get("aiTitle")
@@ -419,6 +427,8 @@ def chat_title(entries, terminal_title):
                 return str(title).strip()
     title = (terminal_title or "").strip()
     if not title or title.startswith("\\") or "--resume" in title or re.search(r"[0-9a-f]{8}-[0-9a-f]{4}", title):
+        return ""
+    if LEADING_GLYPHS.sub("", title).strip().lower() in DEFAULT_TERMINAL_TITLES:
         return ""
     return title
 

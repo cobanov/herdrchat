@@ -51,6 +51,11 @@ hand on an iPad (or an iPhone) with a keyboard, after a native build:
 On an iPhone or an Android phone, with no hardware keyboard: the keyboard's
 Return key reads return and starts a new line, with the setting on and off; it
 never sends. On Android, Settings has no "Return sends" row.
+| `regression/thread` | the row and the header titled by the Claude session with the workspace below, effort in the header, a folded tool run with a failure, a two-part question advancing without reopening the chat, hiding the keyboard, the `/` palette, the `/model` panel with "this session only", the `/effort` slider |
+| `regression/host-editor-keyboard` | the host editor's private key field reachable and typed into with the keyboard up (open the screenshot: the field must sit above the keys) |
+| `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
+| `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
+| `regression/multi-agent` | a workspace with two agents: a row for each under it titled by its session, a thread with only that agent's lines, titled by its session, with the workspace and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.

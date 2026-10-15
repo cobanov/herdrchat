@@ -3,11 +3,12 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
+import { titledBySession } from '@/lib/chatTitle';
 import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import { formatListTime } from './ChatRow';
-import { statusLabel } from './rowText';
+import { paneTitle, statusLabel } from './rowText';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
@@ -49,6 +50,9 @@ export const PaneRow = memo(function PaneRow({
   const status = statusLabel(pane.status);
   const preview = pane.preview === null ? status : `${pane.preview.fromUser ? 'You: ' : ''}${pane.preview.text}`;
   const workspace = summary.title || summary.workspaceId;
+  // Only a title of the agent's own: falling back to the workspace label
+  // repeated the card right above, on every untitled sibling alike.
+  const title = titledBySession(pane) ? paneTitle(summary, pane) : null;
 
   return (
     <View style={{ flexDirection: 'row', paddingBottom: spacing.sm }}>
@@ -70,7 +74,8 @@ export const PaneRow = memo(function PaneRow({
         onLongPress={onLongPress}
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        accessibilityLabel={[`${provider} in ${workspace}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
+        // The title first, when the agent has one.
+        accessibilityLabel={[title ?? '', `${provider} in ${workspace}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
         testID={`pane-row-${pane.paneId}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -90,6 +95,10 @@ export const PaneRow = memo(function PaneRow({
         </View>
 
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
+          {/* The session's title, as the workspace chat's row has. The card
+              above already names the workspace, so neither line here does: an
+              agent with no title of its own leads with its provider. */}
+          {title !== null && <Text variant="subhead" weight="600" numberOfLines={2}>{title}</Text>}
           <Text variant="caption" color="secondary" mono numberOfLines={1}>{[provider, folder].filter(Boolean).join(' · ')}</Text>
           <Text variant="footnote" color={attention ? 'attention' : 'secondary'} numberOfLines={1} style={{ minHeight: previewHeight }}>
             {attention ? 'Waiting for your input' : preview}

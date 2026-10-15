@@ -13,7 +13,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, spacing } from '@/theme/tokens';
 
 /**
- * Rename a chat.
+ * Rename a chat's workspace: the herdr label, which titles a row only until
+ * its session has a title of its own, so the sheet says workspace.
  *
  * A presented sheet rather than `Alert.prompt`, which is what this replaced.
  * That API is iOS-only — Android had no rename at all, silently — and it offers
@@ -81,7 +82,7 @@ export default function RenameChatScreen() {
             </Text>
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text variant="headline">Rename chat</Text>
+            <Text variant="headline">Rename workspace</Text>
           </View>
           {/* Same width as Cancel would be, so the title stays optically centred
               whether Save is enabled or not. */}

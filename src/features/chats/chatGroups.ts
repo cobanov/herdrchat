@@ -47,12 +47,13 @@ export function groupChats(
 ): ChatListItem[] {
   const needle = query.trim().toLowerCase();
   const found = (texts: readonly string[]) => texts.some((text) => text.toLowerCase().includes(needle));
-  const paneMatches = (pane: PaneSummary) => found([`${pane.agent.agent ?? ''} ${pane.agent.cwd}`]);
+  // A chat is found by the title its row shows, the session's, as well.
+  const paneMatches = (pane: PaneSummary) => found([`${pane.agent.agent ?? ''} ${pane.agent.cwd}`, pane.sessionTitle ?? '', pane.agentName ?? '']);
   /** The pane rows to list under a chat: all of them when the workspace itself matched. */
   const panesOf = new Map<string, readonly PaneSummary[]>();
   const matches = summaries.filter((chat) => {
     const panes = paneChats(chat);
-    if (found([chat.title, chat.workspaceId, ...chat.agents.map((agent) => `${agent.agent ?? ''} ${agent.cwd}`)])) {
+    if (found([chat.title, chat.workspaceId, ...chat.agents.map((agent) => `${agent.agent ?? ''} ${agent.cwd} ${agent.title ?? ''} ${agent.name ?? ''}`)])) {
       // A folder or provider shared by only some of the agents names those.
       // A search for the workspace's own name lists every agent in it.
       const named = found([chat.title, chat.workspaceId]) ? [] : panes.filter(paneMatches);

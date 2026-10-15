@@ -168,7 +168,7 @@ appId: dev.herdr.HerdrChat
     id: chat-row-w3
 - longPressOn:
     id: chat-row-w3
-- tapOn: Rename…
+- tapOn: Rename workspace…
 - assertVisible:
     id: field-rename
 - takeScreenshot: tablet-rename-sheet

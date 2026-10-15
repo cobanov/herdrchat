@@ -46,7 +46,7 @@ appId: dev.herdr.HerdrChat
 # were cut, and picking an action was the only way out.
 - longPressOn:
     id: chat-row-w2
-- assertVisible: Rename…
+- assertVisible: Rename workspace…
 - assertVisible: Close chat
 - tapOn: Cancel
 - assertNotVisible: Close chat
@@ -69,6 +69,9 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertVisible:
     id: swipe-action-rename
+# It renames the workspace, which a row titled by its session no longer shows.
+- assertVisible:
+    text: Rename workspace
 - assertVisible:
     id: swipe-action-close
 - takeScreenshot: chat-list-trailing-${APPEARANCE}

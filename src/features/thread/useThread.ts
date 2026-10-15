@@ -10,6 +10,7 @@ import type * as SQLite from 'expo-sqlite';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
+import { titleAgent } from '@/lib/chatTitle';
 import {
   hasSessionReference,
   isConversationalAgent,
@@ -177,6 +178,15 @@ export interface ThreadState {
    * notification may arrive without one, and a rename elsewhere changes it.
    */
   workspaceLabel: string | null;
+  /**
+   * The title the chat's session gave itself, read from the bound agent on
+   * every poll: a pane chat's one agent, or a workspace chat's one
+   * conversational agent. Null with several, as the workspace's row keeps
+   * its label then (`titleAgent`), so the list and the thread never disagree.
+   */
+  sessionTitle: string | null;
+  /** That agent's herdr name, the title while the session has none. */
+  agentName: string | null;
   blockedPrompt: BlockedPrompt | null;
   /** The blocked-prompt reply in flight, if any. Non-null disables the bar. */
   blockedPending: BlockedPending | null;
@@ -1502,6 +1512,8 @@ export function useThread(
     kick.current();
   }, [db, connectionId, cacheKey, resetHistory]);
 
+  const titled = titleAgent(agents);
+
   return {
     loading,
     historyVersion,
@@ -1518,6 +1530,8 @@ export function useThread(
     status,
     agents,
     workspaceLabel,
+    sessionTitle: titled?.title ?? null,
+    agentName: titled?.name ?? null,
     blockedPrompt,
     blockedPending,
     isBlocked: blockedPane !== null,

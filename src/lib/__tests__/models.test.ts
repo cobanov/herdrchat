@@ -88,6 +88,50 @@ describe('snapshot decoding', () => {
     expect(plain?.inputPending).toBe(false);
   });
 
+  // Codex's `title` is the first prompt cut off; its thread's name is in the
+  // terminal title, ahead of ` | ` and the folder. The live shape, 2026-10-09.
+  it('titles a Codex agent by its thread, not its first prompt', () => {
+    const [named, untitled] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'codex', name: 'codex-coord', title: 'can i control the codex app from here, can you ask…', terminal_title: '◐ Explain Codex agent controls | kenneth', terminal_title_stripped: 'Explain Codex agent controls | kenneth' },
+        { pane_id: 'p2', agent: 'codex', title: 'fix the build' },
+      ],
+    }).agents;
+    expect(named?.title).toBe('Explain Codex agent controls');
+    expect(untitled?.title).toBe('fix the build');
+  });
+
+  // Codex 0.162 titles the terminal with the project's folder alone until the
+  // thread has a name ("activity", "thread-name", "project-name" by default),
+  // so a title with no ` | ` is the folder, not a thread.
+  it('does not title a Codex agent by its folder before the thread has a name', () => {
+    const [fresh, prompted, working] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'codex', terminal_title: 'kenneth', terminal_title_stripped: 'kenneth' },
+        { pane_id: 'p2', agent: 'codex', title: 'Reply with exactly: ok', terminal_title_stripped: 'kenneth' },
+        { pane_id: 'p3', agent: 'codex', terminal_title_stripped: '⠋ Reply ok | kenneth' },
+      ],
+    }).agents;
+    expect(fresh?.title).toBeNull();
+    expect(prompted?.title).toBe('Reply with exactly: ok');
+    expect(working?.title).toBe('Reply ok');
+  });
+
+  // The session's own title names the chat; `terminal_title` keeps a status
+  // glyph in front, so only the clean fields are read.
+  it('reads the agent name and the session title', () => {
+    const [named, older, plain] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', name: 'feke-pm', title: 'Feke animation smoothness', terminal_title: '✳ Feke animation smoothness', terminal_title_stripped: 'Feke animation smoothness' },
+        { pane_id: 'p2', terminal_title: '◐ Mac app DMG', terminal_title_stripped: 'Mac app DMG' },
+        { pane_id: 'p3', name: '', title: '', terminal_title: '✳ ' },
+      ],
+    }).agents;
+    expect([named?.name, named?.title]).toEqual(['feke-pm', 'Feke animation smoothness']);
+    expect([older?.name, older?.title]).toEqual([null, 'Mac app DMG']);
+    expect([plain?.name, plain?.title]).toEqual([null, null]);
+  });
+
   // herdr #4400 keeps a pane whose restore failed and says why (#119).
   it('collects the panes herdr could not restore', () => {
     const snapshot = decodeSnapshot({
@@ -197,6 +241,8 @@ describe('session signature', () => {
     stateChangeSeq: null,
     completionSeq: null,
     inputPending: false,
+    name: null,
+    title: null,
     ...overrides,
   });
 

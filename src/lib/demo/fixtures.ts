@@ -16,6 +16,11 @@ export interface DemoPane {
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /** Claude unless named; OMP reports its journal's path rather than an id. */
   agent?: 'claude' | 'omp';
+  /**
+   * The title the session gave itself, which titles its chat. Left out on
+   * two of them, so the Demo also shows a chat titled by its workspace.
+   */
+  title?: string;
 }
 
 /** A demo workspace: its first pane inline, any further agents in `morePanes`. */
@@ -35,6 +40,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w1:p1',
     cwd: '/home/demo/herdrchat',
     agentStatus: 'blocked',
+    title: 'Folder picker read errors',
   },
   {
     workspaceId: 'w2',
@@ -43,6 +49,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w2:p1',
     cwd: '/home/demo/notes',
     agentStatus: 'idle',
+    title: 'Release notes summary',
   },
   {
     workspaceId: 'w3',
@@ -68,6 +75,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w5:p1',
     cwd: '/home/demo/journal',
     agentStatus: 'idle',
+    title: 'Daily screen journal',
   },
   {
     // Two agents in one workspace, each its own chat. One is busy so the
@@ -78,14 +86,17 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     paneId: 'w6:p1',
     cwd: '/home/demo/api',
     agentStatus: 'idle',
-    morePanes: [{ paneId: 'w6:p2', cwd: '/home/demo/api/web', agentStatus: 'working' }],
+    title: 'Archived projects migration',
+    morePanes: [{ paneId: 'w6:p2', cwd: '/home/demo/api/web', agentStatus: 'working', title: 'Save button wrap' }],
   },
 ];
 
 /** Every agent pane of a demo workspace, first pane first. */
 export function demoPanes(workspace: DemoWorkspace): DemoPane[] {
-  const { paneId, cwd, agentStatus, agent } = workspace;
-  return [{ paneId, cwd, agentStatus, ...(agent === undefined ? {} : { agent }) }, ...(workspace.morePanes ?? [])];
+  const { paneId, cwd, agentStatus, agent, title } = workspace;
+  return [{
+    paneId, cwd, agentStatus, ...(agent === undefined ? {} : { agent }), ...(title === undefined ? {} : { title }),
+  }, ...(workspace.morePanes ?? [])];
 }
 
 /** Where the OMP demo agent keeps its journal, which herdr reports as its session. */
