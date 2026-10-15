@@ -1,7 +1,8 @@
 # HerdrChat — conventions
 
-A React Native / Expo app for driving Claude Code agents from a phone. Each
-herdr workspace is a chat; the transport is SSH over Tailscale, so nothing is
+A React Native / Expo app for driving coding agents (Claude Code, Codex, Grok,
+Pi, OMP, and any other herdr detects) from a phone. Each herdr workspace is a
+chat; the transport is SSH over Tailscale, so nothing is
 exposed publicly.
 
 ## Stack (not negotiable without a reason in the commit message)
@@ -64,6 +65,14 @@ on ONE folder: they share a project dir, so the newest file belongs to whichever
 was touched last. Without a session id there is nothing safe to open — wait for
 it; the status poll retries every couple of seconds. `TranscriptStore` therefore
 offers no "newest transcript" call at all, deliberately.
+
+**An agent is described once, in `src/lib/herdr/agents.ts`.** Its name, the
+reader for its history, its herdr integration and its default titles live in
+that table; `TranscriptStore.transcriptPath` picks the lookup by the reader. A
+new agent is an entry there, a parser under `src/lib/transcript/` and a Demo
+pane, never another `=== 'codex'` branch in a feature. Every agent herdr
+detects is a chat: one with no reader shows its screen (`ScreenView`) and
+sends through `agent.prompt`, with no echo, since nothing would confirm one.
 
 **Live tails are keyed by session id, never by cwd.** Two agents in one
 directory collapse onto a single map entry, and the second one silently never
