@@ -11,3 +11,12 @@ appId: dev.herdr.HerdrChat
       - tapOn:
           id: welcome-skip
       - waitForAnimationToEnd
+# A tap in the first moment after a cold launch can go unanswered: once more.
+- runFlow:
+    when:
+      visible:
+        id: welcome
+    commands:
+      - tapOn:
+          id: welcome-skip
+      - waitForAnimationToEnd

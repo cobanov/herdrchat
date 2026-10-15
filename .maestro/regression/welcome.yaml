@@ -9,12 +9,13 @@ appId: dev.herdr.HerdrChat
     file: _menu.yaml
     env:
       ITEM: Settings
+# Scrolled to the star, the row below Show the welcome, so both are on screen.
 - scrollUntilVisible:
     element:
-      id: support-welcome
+      id: support-star
     direction: DOWN
 - assertVisible:
-    id: support-star
+    id: support-welcome
 - tapOn:
     id: support-welcome
 - extendedWaitUntil:

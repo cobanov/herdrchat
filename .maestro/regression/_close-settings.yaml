@@ -1,20 +1,6 @@
-# Back from Settings to the chats, with the tab bar or with the Chats menu
-# (cobanov/herdrchat#154, where Settings is a sheet closed by `header-close`):
+# Back from Settings, a sheet, to the chats:
 #   - runFlow: _close-settings.yaml
-# The tab bar is tried first: under the menu the chats title also reads
-# "Chats" and opens a picker, so it is tapped only when no sheet is up.
 appId: dev.herdr.HerdrChat
 ---
-- runFlow:
-    when:
-      notVisible:
-        id: header-close
-    commands:
-      - tapOn: Chats
-- runFlow:
-    when:
-      visible:
-        id: header-close
-    commands:
-      - tapOn:
-          id: header-close
+- tapOn:
+    id: header-close

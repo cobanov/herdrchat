@@ -1,30 +1,8 @@
-# Open Settings from the chats, with the tab bar or with the Chats menu
-# (cobanov/herdrchat#154, the "…" beside "+" that replaces the tab bar):
+# Open Settings from the chats, through the Chats menu:
 #   - runFlow: _open-settings.yaml
-# The tab bar is tried first: once Settings is open, the menu control is not
-# on screen, so the second branch cannot fire behind the first. The menu is
-# the system action sheet, its rows matched by text, "Settings" tapped below
-# the menu control as #154's own _menu.yaml does.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow:
-    when:
-      notVisible:
-        id: chats-menu
-    commands:
-      - tapOn: Settings
-- runFlow:
-    when:
-      visible:
-        id: chats-menu
-    commands:
-      - tapOn:
-          id: chats-menu
-      - extendedWaitUntil:
-          visible: Settings
-          timeout: 5000
-      - tapOn:
-          text: Settings
-          below:
-            id: chats-menu
-      - waitForAnimationToEnd
+    file: _menu.yaml
+    env:
+      ITEM: Settings
