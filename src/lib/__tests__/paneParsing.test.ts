@@ -123,7 +123,9 @@ describe('blocked prompt parsing', () => {
  * host names are replaced; nothing else is.
  */
 const screen = (name: string) =>
-  readFileSync(join(__dirname, 'fixtures', 'screens', `${name}.txt`), 'utf8');
+  readFileSync(join(__dirname, 'fixtures', 'screens', `${name}.txt`), 'utf8')
+    // A fixture's provenance, where it is more than a plain capture.
+    .replace(/^(?:#\| .*\n)+/, '');
 const labels = (name: string) => parseBlockedPrompt(screen(name)).options.map((o) => `${o.number}. ${o.label}`);
 
 describe('captured menus', () => {
@@ -206,6 +208,181 @@ describe('captured menus', () => {
   it('offers nothing for any other unnumbered menu', () => {
     expect(isBlockedPromptEmpty(parseBlockedPrompt('Pick one\n❯ Apples\n  Pears\n'))).toBe(true);
     expect(isBlockedPromptEmpty(parseBlockedPrompt(screen('trust').replace('Yes, I trust this folder', 'Yes')))).toBe(true);
+  });
+});
+
+/**
+ * What is being approved. The phone showed only "Do you want to proceed?",
+ * with the command, its description and Claude's warning cut off by the blank
+ * line above the question, so nobody could tell what they were approving.
+ *
+ * `permission-bash-tip-120`, `permission-bash-tip-80`, `permission-heredoc-120`
+ * and `permission-write-120` are captured from Claude Code 2.1.299;
+ * `permission-bash-120` and `permission-bash-deadline-80` are written from
+ * those captures and the shapes the maintainer captured on #170 (the auto-deny
+ * line never appeared in a captured run), and each file's `#|` header says how.
+ * `permission-bash` is a real 2.1.280 capture.
+ */
+describe('prompt details', () => {
+  const COMMAND = 'mkdir -p cap && cd cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s';
+  const NOTE = "A variable in this command can't be checked before it runs";
+
+  // The dashed rules and the `│ ` margin frame the command; the Tip is Claude's
+  // hint, not the prompt's description.
+  it('reads a 2.1.299 Bash prompt: summary, the command alone, the note', () => {
+    for (const name of ['permission-bash-tip-120', 'permission-bash-120']) {
+      const prompt = parseBlockedPrompt(screen(name));
+      expect(prompt.question).toBe('Do you want to proceed?');
+      expect(prompt.details).toEqual({
+        title: 'Bash command',
+        summary: 'Create cap dir, write and remove two temp files, print epoch time',
+        body: [COMMAND],
+        notes: [NOTE],
+        deadline: null,
+      });
+    }
+    expect(labels('permission-bash-tip-120')).toEqual(['1. Yes', '2. Yes, and switch to auto mode · auto mode handles these prompts for you', '3. No']);
+  });
+
+  // At 80 columns the Tip and the command wrap, as Claude really draws them.
+  it('joins what wrapped in a captured 80-column prompt', () => {
+    const prompt = parseBlockedPrompt(screen('permission-bash-tip-80'));
+    expect(prompt.question).toBe('Do you want to proceed?');
+    expect(prompt.details).toEqual({
+      title: 'Bash command',
+      summary: 'Create cap directory, write and remove two temp files, print epoch time',
+      body: [COMMAND],
+      notes: [NOTE],
+      deadline: null,
+    });
+    expect(labels('permission-bash-tip-80')).toEqual(['1. Yes', '2. Yes, and switch to auto mode · auto mode handles these prompts for you', '3. No']);
+  });
+
+  // The auto-deny line wraps too, and its deadline goes in the notes.
+  it('joins what wrapped at 80 columns, and keeps the deadline in the notes', () => {
+    const prompt = parseBlockedPrompt(screen('permission-bash-deadline-80'));
+    expect(prompt.details).toEqual({
+      title: 'Bash command',
+      summary: 'Create and remove two temp files, then print epoch time',
+      body: ['cd /home/me/work/cap && for f in a b; do bash -c "echo $f > out-$f.txt && rm out-$f.txt"; done; date +%s'],
+      notes: [NOTE, '⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session'],
+      deadline: '1:32',
+    });
+  });
+
+  // A second later Claude prints 1:31; the reply in flight must not read as
+  // superseded and unlock its options.
+  it('keeps its signature while the deadline ticks at 80 columns, and changes it for another command', () => {
+    const now = parseBlockedPrompt(screen('permission-bash-deadline-80'));
+    const later = parseBlockedPrompt(screen('permission-bash-deadline-80').replace('in 1:32,', 'in 1:31,'));
+    expect(later.details?.deadline).toBe('1:31');
+    expect(blockedPromptSignature(later)).toBe(blockedPromptSignature(now));
+    const other = parseBlockedPrompt(screen('permission-bash-deadline-80').replace('date +%s', 'rm -rf ~'));
+    expect(blockedPromptSignature(other)).not.toBe(blockedPromptSignature(now));
+  });
+
+  it('reads the deadline Claude prints when it rounds to minutes', () => {
+    const rounded = screen('permission-bash-deadline-80').replace('in 1:32,', 'in about 2 minutes,');
+    expect(parseBlockedPrompt(rounded).details?.deadline).toBe('about 2 minutes');
+  });
+
+  // The rule and the tool line have scrolled off: whatever is at the top is a
+  // line of the command, and taking it for the title would misstate the prompt.
+  it('gives no details, and says so, when the start of the prompt is off screen', () => {
+    const prompt = parseBlockedPrompt(screen('permission-heredoc-120'));
+    expect(prompt.question).toBe('Do you want to proceed?');
+    expect(prompt.details).toBeNull();
+    expect(prompt.detailsOffScreen).toBe(true);
+    expect(labels('permission-heredoc-120')).toEqual([
+      '1. Yes',
+      '2. Yes, and always allow access to /home/me/work/cap from this project',
+      '3. Yes, and switch to auto mode · auto mode handles these prompts for you',
+      '4. No',
+    ]);
+    // The same, with the rule on screen but the tool line not.
+    const ruled = screen('permission-heredoc-120').replace(' │ line 17 of the note', '─'.repeat(120));
+    expect(parseBlockedPrompt(ruled).detailsOffScreen).toBe(true);
+  });
+
+  // The closing dashed rule sits right on top of the question.
+  it('reads a Write prompt: its question alone, the file in the details', () => {
+    const prompt = parseBlockedPrompt(screen('permission-write-120'));
+    expect(prompt.question).toBe('Do you want to create new.txt?');
+    expect(prompt.details).toEqual({
+      title: 'Create file',
+      summary: 'new.txt',
+      body: ['1 alpha', '2 beta', '3 gamma'],
+      notes: [],
+      deadline: null,
+    });
+    expect(labels('permission-write-120')).toEqual([
+      '1. Yes',
+      '2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
+      '3. No',
+    ]);
+  });
+
+  // The description sits under the command there; copying the body must give
+  // only the command, or pasting it would run the description as one.
+  it('reads the older single-rule shape, command under a blank line', () => {
+    expect(parseBlockedPrompt(screen('permission-bash')).details).toEqual({
+      title: 'Bash command',
+      summary: 'Get current Unix timestamp and write to stamp.txt',
+      body: ['date +%s > stamp.txt'],
+      notes: [],
+      deadline: null,
+    });
+  });
+
+  it('reads an older boxed prompt, its borders gone', () => {
+    expect(parseBlockedPrompt(PERMISSION_PROMPT).details).toMatchObject({
+      title: 'Bash command',
+      summary: 'Delete the build directory',
+      body: ['rm -rf build/'],
+    });
+  });
+
+  // A real newline in a command is kept: only a line that ran to the edge wrapped.
+  it('keeps a command’s own newlines', () => {
+    const rule = '─'.repeat(80);
+    const dashed = '╌'.repeat(80);
+    const prompt = parseBlockedPrompt(
+      [rule, ' Bash command', ' Two steps', dashed, ' │ npm ci', ' │ npm test', dashed, '', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'].join('\n')
+    );
+    expect(prompt.details?.body).toEqual(['npm ci', 'npm test']);
+  });
+
+  // A question with its options and no tool line: the question is the whole of it.
+  it('has no details for an AskUserQuestion, a review, or the trust prompt', () => {
+    for (const name of ['ask-plain-numbered-description', 'ask-preview', 'ask-multiselect', 'ask-multiselect-review', 'trust']) {
+      const prompt = parseBlockedPrompt(screen(name));
+      expect(prompt.details).toBeNull();
+      expect(prompt.detailsOffScreen).toBeUndefined();
+    }
+    expect(parseBlockedPrompt('Pick one?\n❯ 1. A\n  2. B').details).toBeNull();
+    // Prose with no rule above it is not a prompt's details, however long.
+    const prose = Array.from({ length: 50 }, (_, index) => `line ${index}`);
+    expect(parseBlockedPrompt([...prose, '', 'Do you want to proceed?', '❯ 1. Yes', '  2. No'].join('\n')).details).toBeNull();
+  });
+
+  // Codex's banner box closes long before its question; it is not the prompt.
+  it('does not take a closed box or the conversation for the prompt', () => {
+    expect(parseBlockedPrompt(screen('codex-approval')).details?.title).toBe('Would you like to run the following command?');
+    expect(parseBlockedPrompt(screen('codex-trust')).details).toBeNull();
+  });
+
+  // Codex puts the command where the question goes and prose in the block: the
+  // command is what goes in the box that copies, the reason is its summary.
+  it('puts the command of a Codex approval in the body and its reason in the summary', () => {
+    const prompt = parseBlockedPrompt(screen('codex-approval'));
+    expect(prompt.question).toBe('$ date +%s > stamp2.txt');
+    expect(prompt.details).toEqual({
+      title: 'Would you like to run the following command?',
+      summary: 'Environment: local\nReason: Do you allow me to write the current Unix timestamp to stamp2.txt?',
+      body: ['date +%s > stamp2.txt'],
+      notes: [],
+      deadline: null,
+    });
   });
 });
 

@@ -211,7 +211,27 @@ describe('DemoHost as an agent', () => {
     const screen = await client.paneVisible('w1:p1', 60);
     const prompt = parseBlockedPrompt(screen);
     expect(prompt.options.map((o) => o.number)).toEqual([1, 2]);
-    expect(prompt.question).toContain('go ahead');
+    expect(prompt.question).toBe('Do you want to proceed?');
+  });
+
+  // The Demo's prompt is a Bash command in Claude 2.1.299's shape at 80
+  // columns, so the flow and its screenshots cover what the bar shows above
+  // the question, with the wrapped command and deadline joined back up.
+  it('shows what the blocked prompt would run, not only its question', async () => {
+    const client = new HerdrClient(new DemoHost());
+    const { details } = parseBlockedPrompt(await client.paneVisible('w1:p1', 40));
+    expect(details).toMatchObject({
+      title: 'Bash command',
+      summary: 'Reproduce the empty-folder bug against an unreadable folder',
+      deadline: '1:32',
+    });
+    expect(details?.body).toEqual([
+      'mkdir -p /tmp/demo-unreadable && chmod 000 /tmp/demo-unreadable && npx jest src/lib/__tests__/directories.test.ts; rm -rf /tmp/demo-unreadable',
+    ]);
+    expect(details?.notes).toEqual([
+      'This command runs rm and could not be checked',
+      '⚠ Claude Code will automatically deny this request in 1:32, to avoid blocking progress on an unattended session',
+    ]);
   });
 
   it('appends what the user sent, so their own bubble appears', async () => {
