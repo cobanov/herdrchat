@@ -244,28 +244,49 @@ export class TranscriptStore {
     });
   }
 
+  /** Which of a thread's rollout files Codex is writing, by its own state database. */
+  private async currentCodexRollout(sessionId: string, paths: readonly string[]): Promise<string> {
+    const output = await this.shell(
+      'for db in "${CODEX_HOME:-$HOME/.codex}"/state_*.sqlite; do ' +
+      `[ -f "$db" ] && sqlite3 -readonly "$db" ${shellQuote(`select rollout_path from threads where id = '${sessionId}'`)} 2>/dev/null; ` +
+      'done; true'
+    );
+    const current = output.split('\n').find(line => paths.includes(line.trim()))?.trim();
+    if (current === undefined) {
+      throw new HerdrError('codex_session_ambiguous',
+        "More than one Codex transcript has this session id, and Codex's state database did not say which is current. Nothing was opened. Check the session files on the host.");
+    }
+    return current;
+  }
+
   forgetCodexTranscript(sessionId: string): void {
     codexPathsByTransport.get(this.transport)?.delete(sessionId);
   }
 
+  /**
+   * Since Codex 0.157 a rewind (`thread/revert`) writes the thread on into a
+   * new file, `rollout-<ts>-<id>_<rollout id>.jsonl`, and leaves the old one;
+   * only Codex's state database says which is current
+   * (`threads.rollout_path`). Every file of the id is found, and when there is
+   * more than one, that pointer picks, never recency. Without it (no `sqlite3`
+   * on the host, a schema this was not written against) nothing is opened.
+   */
   private async findCodexTranscript(sessionId: string): Promise<string | null> {
     const output = await this.shell(
       'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
       'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
       'if [ -d "$codex_dir" ]; then ' +
-      `find "$codex_dir" -type f -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} || exit $?; ` +
+      `find "$codex_dir" -type f \\( -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} ` +
+      `-o -name ${shellQuote(`rollout-*-${sessionId}_*.jsonl`)} \\) || exit $?; ` +
       'fi; done'
     );
-    const paths = output.split('\n').filter(path => path.length > 0);
+    const paths = [...new Set(output.split('\n').filter(path => path.length > 0))];
     if (paths.length === 0) return null;
-    if (paths.length !== 1) {
-      throw new HerdrError('codex_session_ambiguous',
-        'More than one Codex transcript has this session id. Nothing was opened. Check the duplicate session files on the host.');
-    }
-    const path = paths[0];
-    if (path === undefined || !path.startsWith('/') || !path.endsWith(`-${sessionId}.jsonl`) || path.includes('\0')) {
+    const own = new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl$`);
+    if (paths.some(path => !path.startsWith('/') || !own.test(path) || path.includes('\0'))) {
       throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
     }
+    const path = paths.length === 1 ? paths[0]! : await this.currentCodexRollout(sessionId, paths);
     const header = await this.shell(`head -n 1 ${shellQuote(path)}`);
     let valid = false;
     try {
