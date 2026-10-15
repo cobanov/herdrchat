@@ -33,6 +33,10 @@ jobs:
       - name: Generate the iOS project
         run: npx expo prebuild -p ios --clean
 
+      # SwiftTerm (the terminal) compiles a Metal shader; Xcode 26+ ships the toolchain separately.
+      - name: Install the Metal toolchain
+        run: sh scripts/ensure-metal-toolchain.sh
+
       - name: Build for the simulator (Release, bundle embedded)
         run: |
           set -o pipefail
