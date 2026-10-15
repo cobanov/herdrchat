@@ -30,6 +30,12 @@ export interface AgentSpec {
   defaultTitles: readonly string[];
   /** Said when herdr reported a session whose transcript cannot be found. */
   missing: string;
+  /**
+   * A menu takes its option's digit as the answer, with no Enter after it.
+   * Where it does not (Codex, and any agent not known here), the digit only
+   * moves the cursor and Enter picks.
+   */
+  digitAnswers?: boolean;
 }
 
 const MISSING = 'The agent reported an invalid session id. Resume the session on the host, then reload.';
@@ -41,6 +47,7 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     integration: 'claude',
     defaultTitles: ['Claude Code', 'claude'],
     missing: MISSING,
+    digitAnswers: true,
   },
   codex: {
     name: 'Codex',
@@ -54,6 +61,8 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     reader: 'grok',
     integration: 'grok',
     defaultTitles: [],
+    // `1`–`9` chooses an option directly (Grok's 03-keyboard-shortcuts.md).
+    digitAnswers: true,
     missing: 'The Grok session is identified, but its folder is not in ~/.grok/sessions on this host. Resume that exact session on the host, then reload.',
   },
   pi: {

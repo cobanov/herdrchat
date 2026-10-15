@@ -9,6 +9,7 @@ import {
   parseBlockedPrompt,
 } from '../transcript/blockedPrompt';
 import { extractLivePreview } from '../transcript/livePreview';
+import { agentSpec } from '../herdr/agents';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
 
 /**
@@ -51,6 +52,31 @@ describe('blocked prompt parsing', () => {
       { number: 2, label: 'Yes, and don’t ask again' },
       { number: 3, label: 'No, tell Claude what to do' },
     ]);
+  });
+
+  // Grok's permission prompt, as herdr's grok.toml quotes its rows: a `┃`
+  // gutter, the key, a radio for the focused row. `1`–`9` answers it directly
+  // (Grok's 03-keyboard-shortcuts.md), so no Enter follows the digit.
+  it("reads Grok's radio rows and answers them with the digit alone", () => {
+    const screen = [
+      '◆ Run a shell command',
+      '┃  npm test',
+      '┃',
+      '┃  1 (●) Yes, allow once',
+      '┃  2 (○) Yes, and always allow npm test',
+      '┃  3 (○) No, and tell Grok what to do differently',
+      '┃  z (○) Type your answer here',
+      '1/3:select │ Ctrl+o:yolo │ Ctrl+c:cancel',
+    ].join('\n');
+    const prompt = parseBlockedPrompt(screen);
+    expect(prompt.options).toEqual([
+      { number: 1, label: 'Yes, allow once' },
+      { number: 2, label: 'Yes, and always allow npm test' },
+      { number: 3, label: 'No, and tell Grok what to do differently' },
+    ]);
+    expect(prompt.question).toContain('npm test');
+    expect(optionKeys(prompt.options[1]!, { ...prompt, submitWithEnter: agentSpec('grok')?.digitAnswers !== true })).toEqual(['2']);
+    expect(agentSpec('codex')?.digitAnswers).not.toBe(true);
   });
 
   it('submits a choice by number then Enter', () => {
