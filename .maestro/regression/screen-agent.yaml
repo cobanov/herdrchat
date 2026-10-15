@@ -1,0 +1,34 @@
+# An agent whose history the app has no reader for (the Demo's opencode, w9
+# "docs"): a chat row of its own rather than a terminal row, its thread
+# showing its screen under a line that says so, and a message sent to it
+# landing on that screen with no "Failed to send".
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w9
+    direction: DOWN
+    centerElement: true
+- assertVisible: .*opencode.*
+- assertNotVisible:
+    id: terminal-row-w9:p1
+- tapOn:
+    id: chat-row-w9
+- extendedWaitUntil:
+    visible:
+      id: agent-screen-text
+    timeout: 15000
+- assertVisible: .*can't read opencode's history yet.*
+- assertVisible: (?s).*tidy the install section.*
+- tapOn:
+    id: composer-input
+- inputText: and the uninstall section?
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: (?s).*> and the uninstall section\?.*
+    timeout: 15000
+- assertNotVisible: .*Failed to send.*
+- takeScreenshot: screen-agent-${APPEARANCE}
+- tapOn:
+    id: thread-back

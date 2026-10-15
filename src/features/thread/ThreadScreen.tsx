@@ -45,6 +45,7 @@ import { useThread } from '@/features/thread/useThread';
 import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/thread/useSlashCommands';
 import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
+import { ScreenView } from '@/features/thread/ScreenView';
 import { chatKey } from '@/lib/chatKey';
 import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
 import { integrationFor } from '@/lib/herdr/agents';
@@ -532,6 +533,13 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                 onChats={() => router.navigate('/')}
               />
             </View>
+          ) : thread.sessionState === 'unsupported' && !thread.loading ? (
+            <ScreenView
+              text={thread.screen}
+              agent={agentName(thread.agents.find((agent) => agent.agent !== null)?.agent ?? null)}
+              topInset={headerHeight}
+              bottomInset={controlsHeight - keyboardTakes + spacing.lg}
+            />
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
               <ThreadPlaceholder

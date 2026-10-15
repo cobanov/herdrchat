@@ -13,6 +13,7 @@
  * small `sh` snippet for reading transcripts.
  */
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
+import { agentSpec } from '../herdr/agents';
 import type { HerdrTransport } from '../herdr/transport';
 import { agentMetaPath, agentTranscriptPath } from '../subagents/paths';
 import { projectDirName } from '../transcript/parser';
@@ -43,6 +44,7 @@ import {
   DEMO_BLOCKED_SCREEN,
   ompLine,
   grokLine,
+  DEMO_SCREEN_SESSION,
   demoGrokPath,
   DEMO_HOME,
   DEMO_HOST,
@@ -615,13 +617,21 @@ export class DemoHost implements HerdrTransport {
     return this.herdrchatDir.get(name)?.text ?? null;
   }
 
+  /** True for a pane whose agent has no reader: its screen, kept as its transcript, is its chat. */
+  private isScreen(paneId: string): boolean {
+    const pane = this.fixtures.workspaces.flatMap(demoPanes).find((candidate) => candidate.paneId === paneId);
+    return pane !== undefined && agentSpec(pane.agent ?? 'claude')?.reader == null;
+  }
+
   /** True for a pane running Claude, the only agent with commands, shell mode and subagents here. */
   private isClaude(paneId: string): boolean {
-    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined;
+    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined &&
+      !this.isScreen(paneId);
   }
 
   /** A prompt or reply in the pane's own agent's format. */
   private lineFor(paneId: string, role: 'user' | 'assistant', text: string): string {
+    if (this.isScreen(paneId)) return role === 'user' ? `\n> ${text}\n` : text;
     if (this.fixtures.ompPaths[paneId] !== undefined) return ompLine(role, text, this.uuid(), this.stamp());
     if (this.fixtures.grokSessions[paneId] !== undefined) return grokLine(role, text, this.uuid(), this.stamp());
     return role === 'user' ? userLine(text, this.uuid(), this.stamp()) : replyLine(text, this.uuid(), this.stamp());
@@ -674,6 +684,8 @@ export class DemoHost implements HerdrTransport {
         ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: this.fixtures.ompPaths[pane.paneId] ?? null }
         : pane.agent === 'grok'
           ? { agent: 'grok', kind: 'id', source: 'herdr:grok', value: this.fixtures.grokSessions[pane.paneId] ?? null }
+          : pane.agent === 'opencode'
+            ? { agent: 'opencode', kind: 'id', source: 'herdr:opencode', value: DEMO_SCREEN_SESSION }
           : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
     })));
   }
@@ -782,6 +794,10 @@ export class DemoHost implements HerdrTransport {
       if (questions !== undefined) return out(questionScreen(questions.step, questions.answers));
       const cursor = this.trusting.get(paneId);
       if (cursor !== undefined) return out(trustScreen(cursor));
+      if (this.isScreen(paneId)) {
+        this.materialise();
+        return out(this.transcripts.get(paneId) ?? '');
+      }
       return out(this.statusOf(paneId) === 'blocked' ? DEMO_BLOCKED_SCREEN : '');
     }
 

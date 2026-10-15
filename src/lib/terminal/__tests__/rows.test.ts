@@ -25,12 +25,13 @@ const pane = (overrides: Partial<Pane>): Pane => ({
 });
 
 describe('isTerminalRow', () => {
-  it('leaves a conversational agent to its chat, and rows everything else', () => {
+  // An agent the app cannot read (Letta) is a chat too, its screen the history.
+  it('leaves every agent to its chat, and rows everything else', () => {
     expect(isTerminalRow({ agent: 'claude' })).toBe(false);
     expect(isTerminalRow({ agent: 'codex' })).toBe(false);
     expect(isTerminalRow({ agent: 'omp' })).toBe(false);
+    expect(isTerminalRow({ agent: 'letta' })).toBe(false);
     expect(isTerminalRow({ agent: null })).toBe(true);
-    expect(isTerminalRow({ agent: 'letta' })).toBe(true);
   });
 });
 
@@ -43,7 +44,7 @@ describe('terminalPanes', () => {
       pane({ paneId: 'w1:p3', agent: 'letta' }),
     ];
     const rows = terminalPanes(panes, 'w1', new Map([['w1:p2', 'vim']]));
-    expect(rows.map((row) => [row.paneId, row.processName])).toEqual([['w1:p2', 'vim'], ['w1:p3', null]]);
+    expect(rows.map((row) => [row.paneId, row.processName])).toEqual([['w1:p2', 'vim']]);
   });
 });
 

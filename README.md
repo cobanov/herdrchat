@@ -36,7 +36,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 
 ## Less terminal. More conversation.
 
-- **Pick up where you left off.** Read Claude Code, Codex, Grok, Pi and OMP history, including replies started at your desk.
+- **Pick up where you left off.** Read Claude Code, Codex, Grok, Pi and OMP history, including replies started at your desk. Any other agent herdr detects is a chat too: you see its terminal screen and can send it a message.
 - **See what needs you.** Search chats grouped by Needs you, Working and Idle. The title switches between **Spaces**, a card per herdr workspace that lists its agents and its terminals grouped by tab, and **Agents**, every agent a row of its own. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Watch the agents it hands work to.** When Claude Code starts a subagent or a workflow, it shows in the chat as a card that says what it was asked and where it stands, then what it handed back. Open a subagent to read its own conversation as it works, or a workflow to see each phase and each agent in it.

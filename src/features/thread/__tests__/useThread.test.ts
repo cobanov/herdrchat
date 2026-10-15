@@ -341,13 +341,34 @@ it('explains a Codex file lookup failure instead of leaving the spinner running'
   await unmount();
 });
 
-it('does not treat an unsupported agent as a Claude transcript', async () => {
+// An agent with no history reader is still a chat: its screen stands in for
+// the history, and a message goes to it with no echo, since no transcript
+// would ever confirm one ("Failed to send").
+it('shows the screen of an agent it cannot read, and sends to it', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue('\u001b[1m> hello\u001b[0m  \n\n\n✦ Hi there.\n\n');
+  const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(result.current.sessionState).toBe('unsupported');
-  expect(result.current.canSend).toBe(false);
   expect(result.current.loading).toBe(false);
   expect(seedMessages).not.toHaveBeenCalled();
+  expect(result.current.screen).toBe('> hello\n\n✦ Hi there.');
+  expect(result.current.livePreview).toBeNull();
+  expect(result.current.canSend).toBe(true);
+  await act(async () => { await result.current.send('and again'); });
+  expect(prompt).toHaveBeenCalledWith('pane', 'and again');
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.error).toBeNull();
+  await unmount();
+});
+
+it('says so when an agent it cannot read never picks a message up', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue('> ');
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('stalled');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await result.current.send('anyone there?'); });
+  expect(result.current.error).toMatch(/never picked that up/);
   await unmount();
 });
 

@@ -3,7 +3,6 @@ import { View } from 'react-native';
 import { WaitingBar } from '@/components/Activity';
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
-import { READABLE_AGENTS } from '@/lib/herdr/agents';
 import { agentName } from '@/lib/herdr/models';
 import { spacing } from '@/theme/tokens';
 
@@ -76,8 +75,6 @@ export function MissingHost({ machine = null, onBack, onHosts, onChats }: {
   );
 }
 
-/** Every agent whose history the app reads, by name: "Claude, Codex, Grok, Pi and OMP". */
-const READABLE_NAMES = READABLE_AGENTS.map(agentName).join(', ').replace(/, ([^,]+)$/, ' and $1');
 
 /**
  * What the thread shows before its first batch of history arrives, and when a
@@ -125,13 +122,6 @@ export function ThreadPlaceholder({
           <WaitingBar />
           <Text variant="subhead" color="secondary">
             Loading the conversation…
-          </Text>
-        </>
-      ) : sessionState === 'unsupported' ? (
-        <>
-          <Text variant="title3" style={{ textAlign: 'center' }}>Chat history is not supported for this agent</Text>
-          <Text variant="subhead" color="secondary" style={{ textAlign: 'center' }}>
-            HerdrChat can read {READABLE_NAMES} conversations. Open this agent in the host terminal to read its output.
           </Text>
         </>
       ) : sessionState === 'missing' ? (

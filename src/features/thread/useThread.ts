@@ -37,6 +37,7 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { screenText } from '@/lib/transcript/screen';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
 import { isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
@@ -123,6 +124,8 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How much of an agent's screen stands in for the history the app cannot read. */
+const SCREEN_LINES = 80;
 /** First and longest wait before looking again for a sibling's absent transcript. */
 const ABSENT_RETRY_MS = 5_000;
 const ABSENT_RETRY_MAX_MS = 60_000;
@@ -205,6 +208,11 @@ export interface ThreadState {
   sendOverlayKeys: (keys: readonly string[]) => Promise<void>;
   sessionMeta: SessionMeta | null;
   livePreview: string | null;
+  /**
+   * The agent's visible screen, cleaned, for an agent whose history the app
+   * has no reader for (`sessionState` is `unsupported`); null otherwise.
+   */
+  screen: string | null;
   workingDirName: string | null;
   error: string | null;
   isSending: boolean;
@@ -311,6 +319,8 @@ export function useThread(
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
+  /** The agent's screen, for an agent whose history the app cannot read; null otherwise. */
+  const [screen, setScreen] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<PaneOverlay | null>(null);
   const [overlayBusy, setOverlayBusy] = useState(false);
   /** The pane the open panel is on, or null. Read by the poll, which must not re-run on it. */
@@ -1011,11 +1021,19 @@ export function useThread(
           overlayPane.current = null;
           setOverlay(null);
         }
-        if (working && primary !== undefined) {
+        if (working && primary !== undefined && !unsupported) {
           const raw = await client.paneVisible(primary.paneId, 30);
           setLivePreview(extractLivePreview(raw));
         } else {
           setLivePreview(null);
+        }
+        // No reader for this agent's history: its screen is the conversation,
+        // read from the pane a message goes to, never a focused shell beside it.
+        const screenPane = unsupported ? sendTarget(live) : null;
+        if (screenPane !== null) {
+          setScreen(screenText(await client.paneVisible(screenPane.paneId, SCREEN_LINES)));
+        } else {
+          setScreen(null);
         }
 
         /*
@@ -1321,6 +1339,28 @@ export function useThread(
     [client, currentPane, watchOverlay]
   );
 
+  /**
+   * Send to an agent whose history the app cannot read. herdr's prompt call
+   * says whether the agent picked it up; a stall is said, never resent, and
+   * the screen the next poll reads shows the rest.
+   */
+  const sendToScreen = useCallback(
+    async (text: string, polled: AgentInfo) => {
+      if (client === null) return;
+      setIsSending(true);
+      try {
+        const pane = await currentPane(polled);
+        if ((await client.sendPrompt(pane.paneId, text)) === 'stalled') setActionError(STALLED_WARNING);
+      } catch (thrown) {
+        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      } finally {
+        setIsSending(false);
+        kick.current();
+      }
+    },
+    [client, currentPane]
+  );
+
   const send = useCallback(
     async (raw: string, images: readonly OutgoingImage[] = []): Promise<boolean> => {
       const text = raw.trim();
@@ -1329,7 +1369,6 @@ export function useThread(
         primaryPane === null ||
         sending.current ||
         loading ||
-        sessionState === 'unsupported' ||
         sessionState === 'replaced' ||
         (images.length > 0 && client === null)
       ) {
@@ -1358,6 +1397,12 @@ export function useThread(
             setIsSending(false);
           }
         }
+        if (sessionState === 'unsupported') {
+          // No transcript will confirm an echo, so none is shown: the
+          // message lands on the agent's screen, which the next poll reads.
+          await sendToScreen(promptWithImages(text, paths), primaryPane);
+          return true;
+        }
         const segments: MessageSegment[] = [
           ...(text.length > 0 ? [{ kind: 'text' as const, text }] : []),
           ...paths.map((path) => ({ kind: 'image' as const, path })),
@@ -1379,7 +1424,7 @@ export function useThread(
         sending.current = false;
       }
     },
-    [primaryPane, rebuild, deliver, loading, sessionState, client]
+    [primaryPane, rebuild, deliver, sendToScreen, loading, sessionState, client]
   );
 
   /** Retries in flight, by echo id. A second tap on "retry" sent it twice (#100). */
@@ -1521,7 +1566,6 @@ export function useThread(
       primaryPane !== null &&
       !loading &&
       !offline &&
-      sessionState !== 'unsupported' &&
       sessionState !== 'replaced',
     offline,
     paused: tailError !== null,
@@ -1540,6 +1584,7 @@ export function useThread(
     sendOverlayKeys,
     sessionMeta,
     livePreview,
+    screen,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
     error: actionError ?? pollError ?? tailError,
     isSending,

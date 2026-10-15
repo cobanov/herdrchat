@@ -115,6 +115,14 @@ export function isConversationalAgent(agent: AgentInfo): boolean {
 }
 
 /**
+ * True for a pane holding any agent herdr detects: each is a chat. One with
+ * no transcript reader shows its screen in place of history (`useThread`).
+ */
+export function isChatAgent(agent: Pick<AgentInfo, 'agent'>): boolean {
+  return agent.agent !== null;
+}
+
+/**
  * The pane a chat sends to: an agent whose transcript the thread shows, the
  * focused one first. Focus alone sent a Claude chat's message to a focused
  * agent the app cannot read, so the echo never confirmed ("Failed to send").

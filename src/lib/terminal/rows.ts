@@ -1,13 +1,12 @@
-import { agentName, CONVERSATIONAL_AGENTS, type Pane } from '../herdr/models';
+import { agentName, isChatAgent, type Pane } from '../herdr/models';
 import type { ListMode } from '../listModes';
 
 /**
  * Which panes get a terminal row in the chat list, and what the row says.
  *
- * A conversational agent (Claude, Codex, OMP) is a chat; its terminal is
- * the chat's header action. Every other pane is a terminal row: a shell, a
- * build, a `vim`, and an agent the app cannot hold a conversation with
- * (Letta), which otherwise could not be reached from the phone at all.
+ * Every agent herdr detects is a chat, its terminal the chat's header action;
+ * one whose history the app cannot read (Letta) shows its screen as the chat.
+ * Every other pane is a terminal row: a shell, a build, a `vim`.
  */
 
 /** What every terminal row is titled. */
@@ -26,7 +25,7 @@ export interface TerminalPane {
 
 /** True for a pane with a terminal row of its own: anything that is not a chat. */
 export function isTerminalRow(pane: Pick<Pane, 'agent'>): boolean {
-  return pane.agent === null || !CONVERSATIONAL_AGENTS.includes(pane.agent);
+  return !isChatAgent(pane);
 }
 
 /** A workspace's terminal rows, in herdr's order. */

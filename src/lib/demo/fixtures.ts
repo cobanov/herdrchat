@@ -17,8 +17,11 @@ export interface DemoPane {
   paneId: string;
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
-  /** Claude unless named; OMP reports its journal's path rather than an id. */
-  agent?: 'claude' | 'omp' | 'grok';
+  /**
+   * Claude unless named; OMP reports its journal's path rather than an id.
+   * opencode stands for an agent the app has no reader for: its screen is its chat.
+   */
+  agent?: 'claude' | 'omp' | 'grok' | 'opencode';
   /**
    * The title the session gave itself, which titles its chat. Left out on
    * two of them, so the Demo also shows a chat titled by its workspace.
@@ -178,6 +181,16 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     cwd: '/home/demo/infra',
     agentStatus: 'idle',
     agent: 'grok',
+  },
+  {
+    // An agent whose history the app cannot read: its chat is its screen.
+    workspaceId: 'w9',
+    label: 'docs',
+    number: 9,
+    paneId: 'w9:p1',
+    cwd: '/home/demo/docs',
+    agentStatus: 'idle',
+    agent: 'opencode',
   },
 ];
 
@@ -537,8 +550,22 @@ export function grokLine(role: 'user' | 'assistant', text: string, id: string, t
     : { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
 }
 
+/** The session id opencode's integration reports; no reader opens it. */
+export const DEMO_SCREEN_SESSION = 'ses_demo9docs';
+
+/** What an agent with no reader shows on its screen when the Demo starts. */
+const SCREEN_SEED = [
+  '┃  opencode',
+  '',
+  '> tidy the install section of the README',
+  '',
+  'Moved the Homebrew steps first and cut the duplicate PATH note.',
+  '  README.md  +6 -11',
+].join('\n');
+
 /** The transcript a demo pane starts with, as the file's contents. */
 export function transcriptFor(paneId: string): string {
+  if (paneId === 'w9:p1') return `${SCREEN_SEED}\n`;
   if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
   if (DEMO_GROK_SESSIONS[paneId] !== undefined) return `${GROK_SEED.join('\n')}\n`;
   const lines = paneId === 'w5:p1' ? historyLines() : SEEDS[paneId] ?? [];

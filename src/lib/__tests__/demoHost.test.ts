@@ -1,4 +1,5 @@
 import { HerdrClient } from '../herdr/client';
+import { isConversationalAgent } from '../herdr/models';
 import { DemoHost } from '../demo/host';
 import {
   DEMO_GROK_SESSIONS,
@@ -17,6 +18,7 @@ import { displayText, receiptKey } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
 import { threadItems, toolRunSummary } from '../threadItems';
+import { screenText } from '../transcript/screen';
 import { TranscriptStore } from '../transcript/store';
 
 /** A demo workspace's transcript path, built by the real path rules. */
@@ -43,7 +45,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -62,12 +64,12 @@ describe('DemoHost as a herdr host', () => {
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
     // The first five keep the one pane they always had; site's agent has a shell beside it.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1]);
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1, 1]);
   });
 
-  // Scratch, the OMP ledger and the Grok infra chat have no session title, so
-  // the Demo also shows a chat titled by its workspace's label.
-  it('titles most chats by their session, and leaves three to their workspace', async () => {
+  // Scratch, the OMP ledger, the Grok infra chat and the opencode docs chat
+  // have no session title, so the Demo also shows chats titled by their workspace.
+  it('titles most chats by their session, and leaves four to their workspace', async () => {
     const client = new HerdrClient(new DemoHost());
     const { agents } = await client.snapshot();
     expect(agents.map((a) => [a.paneId, a.title])).toEqual([
@@ -80,6 +82,7 @@ describe('DemoHost as a herdr host', () => {
       ['w6:p2', 'Save button wrap'],
       ['w7:p1', 'Landing page copy'],
       ['w8:p1', null],
+      ['w9:p1', null],
     ]);
   });
 
@@ -96,7 +99,9 @@ describe('DemoHost as a filesystem', () => {
   // (regression/multi-agent and regression/machines could not pass).
   it("answers the chat list's preview batch, one last message per agent", async () => {
     const host = new DemoHost();
-    const agents = (await new HerdrClient(host).snapshot()).agents.filter((agent) => agent.agentSession !== null);
+    // An agent the app has no reader for has no last message to preview.
+    const agents = (await new HerdrClient(host).snapshot()).agents
+      .filter((agent) => agent.agentSession !== null && isConversationalAgent(agent));
     const previews = await new TranscriptStore(host).latestMessages(
       agents.map((agent) => ({
         workspaceId: agent.workspaceId,
@@ -123,6 +128,15 @@ describe('DemoHost as a filesystem', () => {
     const other = (value: string) => ({ ...grok, agentSession: { ...grok.agentSession!, value } });
     expect(await store.transcriptPath(other('01a13fe8-0000-7000-8000-000000000009'))).toBeNull();
     expect(await store.transcriptPath(other('../w8'))).toBeNull();
+  });
+
+  // An agent with no reader: its screen is its chat, and a prompt lands on it.
+  it("shows an unreadable agent's screen, and a prompt and its answer on it", async () => {
+    const host = new DemoHost();
+    const client = new HerdrClient(host);
+    expect(screenText(await client.paneVisible('w9:p1', 80))).toMatch(/tidy the install section[\s\S]*README\.md {2}\+6 -11$/);
+    await client.sendPrompt('w9:p1', 'and the uninstall section?');
+    expect(await client.paneVisible('w9:p1', 80)).toMatch(/> and the uninstall section\?/);
   });
 
   it('reports a home directory, so transcript paths can be built', async () => {
@@ -223,7 +237,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

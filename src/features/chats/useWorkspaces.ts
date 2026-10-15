@@ -19,6 +19,7 @@ import {
   needsAttention,
   sessionSignature,
   hasSessionReference,
+  isChatAgent,
   isConversationalAgent,
   type AgentInfo,
   type AgentStatus,
@@ -488,7 +489,7 @@ export function buildSummaries(
     .map((workspace) => {
       const group = byWorkspace.get(workspace.workspaceId) ?? [];
       const sessionSig = sessionSignature(group);
-      const panes = group.filter(isConversationalAgent).map((agent) => paneSummary(agent, previews));
+      const panes = group.filter(isChatAgent).map((agent) => paneSummary(agent, previews));
       // herdr calls an agent idle while a menu waits for its keys (Claude's
       // folder-trust question on a first start), so the row would never
       // say the chat needs you.
