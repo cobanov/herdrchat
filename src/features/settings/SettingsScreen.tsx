@@ -14,6 +14,7 @@ import { AboutSection } from '@/features/settings/AboutSection';
 import { DangerZone } from '@/features/settings/DangerZone';
 import { HighlightOnLink, isSettingsSection, SETTINGS_SECTIONS, type SettingsSection } from './HighlightOnLink';
 import { HostCard } from '@/features/settings/HostCard';
+import { HostThemeSection } from '@/features/settings/HostThemeSection';
 import { ConnectionCheck } from '@/features/settings/ConnectionCheck';
 import { useSelectedConnection } from '@/state/connections';
 import { NotificationsSection } from '@/features/settings/NotificationsSection';
@@ -108,7 +109,7 @@ export default function SettingsScreen() {
             {connection !== null && <ConnectionCheck key={connection.id} connection={connection} />}
           </>}
 
-          {show('appearance') && <SegmentedField<ThemePreference>
+          {show('appearance') && <><SegmentedField<ThemePreference>
             label="Appearance"
             labelInset={ROW_INSET}
             options={[
@@ -118,7 +119,8 @@ export default function SettingsScreen() {
             ]}
             value={settings.themePreference}
             onChange={(next) => update('themePreference', next)}
-          />}
+          />
+          <HostThemeSection key={connection?.id ?? 'none'} /></>}
 
           {show('conversations') && <><HighlightOnLink section="conversations" target={target} onMeasure={onMeasure}>
             <Section title="Conversations">

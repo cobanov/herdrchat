@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
+import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import {
   SETTINGS_DEFAULTS,
   decodeBool,
@@ -26,6 +27,9 @@ export function Hydrate({ children }: { children: ReactNode }) {
   const setAll = useConnections((state) => state.setAll);
   const hydrateSettings = useSettings((state) => state.hydrate);
 
+  // From launch on, every change to a host's theme is written back.
+  useEffect(() => mirrorHostThemes(db), [db]);
+
   useEffect(() => {
     void (async () => {
       const [
@@ -41,6 +45,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         welcomeSeen,
         starAsked,
         activeDays,
+        useHostThemes,
       ] =
         await Promise.all([
           loadConnections(db),
@@ -55,6 +60,10 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'welcomeSeen'),
           getSetting(db, 'starAsked'),
           getSetting(db, 'activeDays'),
+          getSetting(db, 'useHostThemes'),
+          // Before the connections land, so the selected host opens in its
+          // own colours rather than flashing the default first.
+          loadHostThemes(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,
@@ -67,6 +76,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         welcomeSeen: decodeBool(welcomeSeen, SETTINGS_DEFAULTS.welcomeSeen),
         starAsked: decodeBool(starAsked, SETTINGS_DEFAULTS.starAsked),
         activeDays: activeDays ?? SETTINGS_DEFAULTS.activeDays,
+        useHostThemes: decodeBool(useHostThemes, SETTINGS_DEFAULTS.useHostThemes),
       });
       // After the settings: `hydrated` is what the welcome waits on, and it
       // must not read the defaults (never welcomed) for a moment first.

@@ -2,7 +2,9 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, type ReactNode } from 'react';
 
 import { ThemeProvider, type ThemePreference } from './ThemeProvider';
+import { useConnections } from '@/state/connections';
 import { setSetting } from '@/state/db';
+import { useHostTheme } from '@/state/hostTheme';
 import { useSettings } from '@/state/settings';
 
 /**
@@ -15,6 +17,15 @@ export function AppTheme({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const preference = useSettings((state) => state.themePreference);
   const set = useSettings((state) => state.set);
+  // The selected host's theme, so switching hosts switches colours. Read
+  // whatever the setting says and dropped below, rather than selected
+  // conditionally, to keep the subscriptions the same on every render.
+  const useHostThemes = useSettings((state) => state.useHostThemes);
+  const selectedId = useConnections((state) => state.selectedId);
+  const hostTheme = useHostTheme((state) =>
+    selectedId === null ? undefined : state.byConnection[selectedId]
+  );
+  const applied = useHostThemes ? hostTheme : undefined;
 
   const change = useCallback(
     (next: ThemePreference) => {
@@ -25,7 +36,11 @@ export function AppTheme({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ThemeProvider preference={preference} onPreferenceChange={change}>
+    <ThemeProvider
+      preference={preference}
+      onPreferenceChange={change}
+      overrides={applied?.overrides}
+      hostThemeName={applied?.status === 'present' ? applied.name : null}>
       {children}
     </ThemeProvider>
   );

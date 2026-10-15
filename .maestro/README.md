@@ -20,12 +20,18 @@ where regressions are found.
 | `regression/keyboard` | pulling the conversation down takes the keyboard with it and the composer stays above the keys and the home indicator (two screenshots to open) |
 | `regression/folder-trust` | Claude's folder-trust question on a first start: shown with the folder, no numbers, answered with the arrows, the reply after it |
 | `regression/multi-agent` | a workspace with two agents: a row for each under it, a thread with only that agent's lines and its name in the header, a reply landing on that agent's row alone, unread kept per agent |
+| `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
 
 A fresh install with no host opens on the welcome, so every flow runs
 `regression/_skip-welcome.yaml` right after launching.
 
+`regression/_open-settings.yaml` and `_close-settings.yaml` reach Settings and
+come back with the tab bar or, once the Chats menu replaces it, through the
+menu, so a flow that uses them runs on either.
+
 The Demo understands a few phrases for this (`src/lib/demo/scenarios.ts`):
-`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder".
+`/model`, `/effort`, "ask me two questions", "run the checks", "open a new folder",
+"restyle the app".
 
 
 Run against a booted simulator with the app installed and Metro running:

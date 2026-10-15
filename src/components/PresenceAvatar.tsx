@@ -36,7 +36,7 @@ export function PresenceAvatar({
   status: AgentStatus;
   size?: number;
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors, reduceMotion, avatarPalette } = useTheme();
   const pulse = useSharedValue(1);
 
   const ring =
@@ -92,7 +92,7 @@ export function PresenceAvatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: avatarColor(colorKey),
+          backgroundColor: avatarColor(colorKey, avatarPalette),
           alignItems: 'center',
           justifyContent: 'center',
         }}>

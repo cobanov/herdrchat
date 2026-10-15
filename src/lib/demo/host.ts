@@ -15,8 +15,13 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from '../herdr/transport';
 import { projectDirName } from '../transcript/parser';
+import { HEREDOC_END } from '../theme/bootstrap';
+import { THEME_BEGIN, THEME_MISSING } from '../theme/hostTheme';
+import { THEME_FILE } from '../theme/schema';
 import {
   DEMO_PHRASES,
+  DEMO_THEME_REPLY,
+  DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
   TRUST_OPTIONS,
@@ -205,7 +210,28 @@ interface Pending {
   answer?: string;
   /** A scenario's own turns, written instead of the usual reply. */
   lines?: (next: () => string, timestamp: string) => string[];
+  /** What the scenario does to the host as its turns land, such as writing a file. */
+  effect?: () => void;
   dueAt: number;
+}
+
+/** A file in the demo's ~/.herdrchat, with the version the theme fetch would print. */
+interface HostFile {
+  text: string;
+  version: string;
+}
+
+/**
+ * Stands in for `cksum`: a hash of the contents and their length in bytes.
+ * Not the same CRC, which nothing compares it to; the same promise, that the
+ * same text gives the same version and a different one (almost) never does.
+ */
+function demoVersion(text: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 16777619) >>> 0;
+  }
+  return `${hash} ${byteLength(text)}`;
 }
 
 /** A question asked in parts: which part is on screen, and what was picked so far. */
@@ -229,6 +255,12 @@ export class DemoHost implements HerdrTransport {
   /** Panes at the folder-trust question, with the row under its cursor. */
   private readonly trusting = new Map<string, number>();
   private counter = 0;
+  /**
+   * ~/.herdrchat, by file name. Empty at first, so the theme is the app's own
+   * and every other flow looks as it always has; the app's bootstrap writes and
+   * the theme scenario fill it, in memory only.
+   */
+  private readonly herdrchatDir = new Map<string, HostFile>();
 
   constructor(private readonly now: () => number = () => Date.now()) {
     for (const pane of DEMO_WORKSPACES.flatMap(demoPanes)) {
@@ -256,6 +288,7 @@ export class DemoHost implements HerdrTransport {
     const ready = this.pending.filter(reply => reply.dueAt <= now);
     this.pending = this.pending.filter(reply => reply.dueAt > now);
     for (const due of ready) {
+      due.effect?.();
       if (due.lines !== undefined) {
         for (const written of due.lines(() => this.uuid(), this.stamp())) this.append(due.paneId, written);
       } else {
@@ -365,6 +398,10 @@ export class DemoHost implements HerdrTransport {
       const contents = this.read(window[1]!);
       return contents === null ? exit(1) : out(linesBefore(contents, Number(window[2]), Number(window[3])));
     }
+    if (script !== null) {
+      const theme = this.themeFiles(script[1]!.replaceAll(`'\\''`, `'`));
+      if (theme !== null) return theme;
+    }
 
     // The OMP header check reads the first two records.
     const head = /^head -n (\d+) '(.+?)'$/.exec(body);
@@ -380,6 +417,46 @@ export class DemoHost implements HerdrTransport {
     }
 
     return null;
+  }
+
+  // MARK: - ~/.herdrchat (src/lib/theme)
+
+  /** The host theme's three commands: fetch, bootstrap, reset. Null for any other script. */
+  private themeFiles(script: string): ExecResult | null {
+    if (script.includes(`echo ${THEME_BEGIN}`)) {
+      const file = this.herdrchatDir.get(THEME_FILE);
+      if (file === undefined) return out(`${THEME_MISSING}\n`);
+      const last = /if \[ "\$v" = "([^"]*)" \]/.exec(script)?.[1];
+      return out(last === file.version ? `${file.version}\n` : `${file.version}\n${THEME_BEGIN}\n${file.text}`);
+    }
+    if (script.startsWith('mkdir -p "$HOME/.herdrchat"')) {
+      const heredoc = new RegExp(`\\[ -e (\\S+) \\] \\|\\| cat > \\S+ <<'${HEREDOC_END}'\\n([\\s\\S]*?)\\n${HEREDOC_END}(?:\\n|$)`, 'g');
+      for (const [, name, text] of script.matchAll(heredoc)) {
+        if (!this.herdrchatDir.has(name!)) this.writeHostFile(name!, `${text!}\n`);
+      }
+      return silent();
+    }
+    if (script.includes('mv "$f" "$b"')) {
+      const file = this.herdrchatDir.get(THEME_FILE);
+      if (file !== undefined) {
+        // The first free backup name, as the real command picks it.
+        let backup = `${THEME_FILE}.bak`;
+        for (let n = 1; this.herdrchatDir.has(backup); n += 1) backup = `${THEME_FILE}.bak.${n}`;
+        this.herdrchatDir.delete(THEME_FILE);
+        this.herdrchatDir.set(backup, file);
+      }
+      return silent();
+    }
+    return null;
+  }
+
+  private writeHostFile(name: string, text: string): void {
+    this.herdrchatDir.set(name, { text, version: demoVersion(text) });
+  }
+
+  /** A file under ~/.herdrchat, for tests: what the app's writes left there. */
+  hostFile(name: string): string | null {
+    return this.herdrchatDir.get(name)?.text ?? null;
   }
 
   private isOmp(paneId: string): boolean {
@@ -505,6 +582,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
+      if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
       return silent();
@@ -633,6 +711,31 @@ export class DemoHost implements HerdrTransport {
       prompt: '',
       dueAt: this.now() + REPLY_DELAY_MS,
       lines: (next, timestamp) => [replyLine(DEMO_TABLE_REPLY, next(), timestamp)],
+    });
+    return silent();
+  }
+
+  /**
+   * The agent restyles the app: it writes ~/.herdrchat/theme.json, says so,
+   * and from then on the theme fetch serves the file with a new version. The file
+   * lands with the reply, not with the prompt, as it would on a real host.
+   */
+  private writeTheme(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    const path = `${DEMO_HOME}/.herdrchat/${THEME_FILE}`;
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      effect: () => this.writeHostFile(THEME_FILE, DEMO_THEME_TEXT),
+      lines: (next, timestamp) => {
+        const id = `toolu_demo_${next()}`;
+        return [
+          toolUseLine('Write', { file_path: path, content: DEMO_THEME_TEXT }, id, next(), timestamp),
+          toolResultLine(id, `File created successfully at: ${path}`, false, next(), timestamp),
+          replyLine(DEMO_THEME_REPLY, next(), timestamp),
+        ];
+      },
     });
     return silent();
   }
