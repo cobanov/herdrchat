@@ -608,14 +608,13 @@ export class TranscriptStore {
 
   /**
    * Where the line that ends at (or contains) `byte - 1` starts: the host runs
-   * `grep -b` over the prefix and returns only that offset, never the content.
+   * `grep -b` over the 64 KB before it (`lineStartScript`) and returns only
+   * that offset, never the content.
    * Used where a read must begin exactly on a line boundary.
    */
   async lineStartBefore(path: string, byte: number): Promise<number> {
     if (byte <= 0) return 0;
-    const output = await this.shell(
-      `head -c ${byte} ${shellQuote(path)} | LC_ALL=C grep -a -b '' | cut -d: -f1 | tail -n 1`
-    );
+    const output = await this.shell(lineStartScript(path, byte));
     const lineStart = Number.parseInt(output.trim(), 10);
     if (!Number.isInteger(lineStart) || lineStart < 0 || lineStart >= byte) {
       throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
@@ -665,7 +664,7 @@ export class TranscriptStore {
    * Null when the tail holds no assistant turn with usage yet.
    */
   async sessionMeta(path: string, agent: string | null = null, tailBytes = 262_144): Promise<SessionMeta | null> {
-    const text = await this.shell(`tail -c ${tailBytes} ${shellQuote(path)} 2>/dev/null`);
+    const text = await this.shell(strippedTail(shellQuote(path), tailBytes));
     let model: string | null = null;
     let effort: string | null = null;
     let contextTokens: number | null = null;
@@ -775,7 +774,7 @@ export class TranscriptStore {
       script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
       if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
-      script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
+      script += `[ -n "$f" ] && ${strippedTail('"$f"', tailBytes)}; `;
     }
     if (script.length === 0) return new Map();
     script += 'true'; // a workspace without a transcript must not fail the batch
@@ -936,6 +935,46 @@ const WINDOW_CHUNK_BYTES = 4 * 1024 * 1024;
 /** See `linesBefore`. */
 const STRIP_PICTURES =
   's|"[A-Za-z0-9+/=]{128}[A-Za-z0-9+/=]*"|""|g; s|"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=]*"|""|g';
+
+/**
+ * The host side of `lineStartBefore`: where the line holding byte `e - 1`
+ * starts. It reads the 64 KB before `e`, by seeking as `windowScript` does,
+ * not the whole file before it: the full prefix of a 30 MB transcript was read
+ * on the host each time a chat reopened. Only a chunk with no newline in it
+ * (one line longer than 64 KB) falls back to the full read, since then the
+ * line's start is further back. All of it in the C locale: `LC_ALL=C` on
+ * `grep` alone left `cut` reading text it could stop on.
+ */
+export function lineStartScript(path: string, byte: number): string {
+  return `sh -c ${shellQuote([
+    // Bytes, for every tool in the pipe: a chunk can start inside a
+    // character, and BSD `cut` stops at an "Illegal byte sequence" there.
+    'LC_ALL=C; export LC_ALL',
+    `f=${shellQuote(path)}; e=${byte}; w=${LINE_START_CHUNK_BYTES}; b=0`,
+    '[ "$e" -gt "$w" ] && b=$((e - w))',
+    'starts() { grep -a -b "" | cut -d: -f1 | tail -n 1; }',
+    's=$({ dd bs=1 skip="$b" count=0 2>/dev/null; head -c $((e - b)); } < "$f" | starts)',
+    'if [ "$b" -gt 0 ] && [ "$s" = 0 ]; then b=0; s=$(head -c "$e" "$f" | starts); fi',
+    'echo $((b + s))',
+  ].join('\n'))}`;
+}
+
+/** How far before a cursor `lineStartScript` looks for the line's start. */
+const LINE_START_CHUNK_BYTES = 64 * 1024;
+
+/**
+ * The last `bytes` of a transcript with its pictures stripped on the host.
+ * Stripped BEFORE it is cut: a chat that ended on a screenshot filled a plain
+ * `tail -c` with one picture line, so the preview found no line to show and
+ * the header no model. A megabyte is read, a picture or two, and at most
+ * `bytes` cross the network.
+ */
+function strippedTail(file: string, bytes: number): string {
+  return `tail -c ${STRIP_WINDOW_BYTES} ${file} 2>/dev/null | sed -E ${shellQuote(STRIP_PICTURES)} | tail -c ${bytes}`;
+}
+
+/** How far back `strippedTail` reads before it strips. */
+const STRIP_WINDOW_BYTES = 1024 * 1024;
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 

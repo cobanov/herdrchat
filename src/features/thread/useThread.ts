@@ -8,6 +8,7 @@ import { useSettings } from '@/state/settings';
 import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
+import { concernsWorkspace } from '@/lib/herdr/events';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
@@ -16,6 +17,7 @@ import {
   hasSessionReference,
   isConversationalAgent,
   isPiFamily,
+  sameAgents,
   sendTarget,
   sessionSignature,
   type AgentInfo,
@@ -37,6 +39,7 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { batcher } from '@/lib/batcher';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
 import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
@@ -46,6 +49,7 @@ import {
   rebind,
   replaceMessages,
   seedMessages,
+  seedIfSession,
   setTailCursor,
   tailCursor,
 } from '@/state/threadCache';
@@ -123,6 +127,10 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How far past its cursor a reopened chat catches up through the tail rather than a fresh window. */
+const CATCH_UP_BYTES = 64 * 1024;
+/** How long a burst of tail lines gathers before it is written and shown. */
+const TAIL_BATCH_MS = 100;
 /** First and longest wait before looking again for a sibling's absent transcript. */
 const ABSENT_RETRY_MS = 5_000;
 const ABSENT_RETRY_MAX_MS = 60_000;
@@ -285,7 +293,9 @@ export function useThread(
   connectionId: string,
   workspaceId: string,
   initialAgents: readonly AgentInfo[],
-  paneId?: string
+  paneId?: string,
+  /** The session the chat list last saw for this chat, when it opened from there. */
+  listedSig?: string
 ): ThreadState {
   /** Absent and empty both mean the workspace chat, as in `chatKey`. */
   const pane = paneId === undefined || paneId === '' ? undefined : paneId;
@@ -371,11 +381,15 @@ export function useThread(
   const failures = useRef(0);
   /** Asks the running status loop to poll soon. Set by the effect that owns it. */
   const kick = useRef<() => void>(() => undefined);
+  /** The screen the last poll read, which the next one asks for with its snapshot. */
+  const screenWant = useRef<{ paneId: string; lines: number } | null>(null);
   const streamLive = useHostEvents(
     client,
     agents.map((agent) => agent.paneId),
     polling,
-    () => kick.current()
+    (event) => {
+      if (concernsWorkspace(event, workspaceId)) kick.current();
+    }
   );
   const streamLiveRef = useRef(streamLive);
   useEffect(() => {
@@ -497,6 +511,28 @@ export function useThread(
     merged.push(...pending.slice(index));
     setMessages(merged);
   }, []);
+
+  /*
+    Open from the cache at once. The list saw this chat's session a moment
+    ago; when the cached messages are that session's, they show before the
+    first poll, and the thread is bound to it so the poll goes straight to the
+    tail rather than through a loading state. A host that names another
+    session by then is a rotation, and is handled as one. A cache of another
+    session is left alone here (`seedIfSession` only reads).
+  */
+  const seededFromList = useRef(false);
+  useEffect(() => {
+    if (listedSig === undefined || listedSig === '' || seededFromList.current) return;
+    seededFromList.current = true;
+    void seedIfSession(db, connectionId, cacheKey, listedSig).then((cached) => {
+      if (!alive.current || boundSig.current !== null || arrivals.current.length > 0 || cached.length === 0) return;
+      boundSig.current = listedSig;
+      arrivals.current = cached;
+      seen.current = new Set(cached.map((message) => message.id));
+      rebuild();
+      setLoading(false);
+    });
+  }, [db, connectionId, cacheKey, listedSig, rebuild]);
 
   const ingest = useCallback(
     async (incoming: readonly ChatMessage[], sig: string) => {
@@ -696,9 +732,16 @@ export function useThread(
       const claudePaths = sources.filter(source => source.agent === 'claude').map(source => source.path);
       setTranscriptPaths(previous => previous.join('\n') === claudePaths.join('\n') ? previous : claudePaths);
 
-      // A cursor is a live-stream checkpoint, not a history-loading strategy.
-      // Even a small backlog is read in bulk; an unchanged file can use cache.
-      const changed = arrivals.current.length === 0 || sources.some(source => source.cached !== source.size);
+      // A cursor is a live-stream checkpoint, not a history-loading strategy: a
+      // backlog is read as one bounded window (#66, an 11 MB gap took minutes
+      // to replay line by line). A few lines past the cursor, a reply or two
+      // since the chat was last open, are the exception: the tail streams them
+      // from the cursor, where the window re-read 300 lines and replaced the
+      // cache. An unchanged file uses the cache as it is.
+      const smallGap = (source: { cached: number | null; size: number }) =>
+        source.cached !== null && source.cached < source.size && source.size - source.cached <= CATCH_UP_BYTES;
+      const changed = arrivals.current.length === 0 ||
+        sources.some(source => source.cached !== source.size && !smallGap(source));
       const windows = await Promise.all(sources.map(async source => ({
         ...source,
         recent: changed ? await loadRecent(store, source.path, source.label, source.size) : null,
@@ -754,16 +797,26 @@ export function useThread(
         tailBeats.current.set(source.key, Date.now());
         void (async () => {
           let restartNow = false;
+          // Lines arrive in bursts (a call, its result, the reply), and each
+          // one was a transaction, a cursor write and a rebuild of the whole
+          // list. A burst is one of each now, messages before the cursor.
+          const written = batcher<{ message: ChatMessage | null; consumed: number }>(async (chunks) => {
+            const messages = chunks.flatMap((chunk) => (chunk.message === null ? [] : [chunk.message]));
+            if (messages.length > 0) await ingest(messages, sig);
+            const last = chunks[chunks.length - 1];
+            if (current() && last !== undefined) await setTailCursor(db, connectionId, cacheKey, source.path, last.consumed);
+          }, TAIL_BATCH_MS);
           try {
             for await (const chunk of store.tail(source.path, source.label, followFrom, controller.signal)) {
               if (!current()) break;
+              if (written.failure !== undefined) throw written.failure;
               tailBeats.current.set(source.key, Date.now());
               tailFailures.current.delete(source.key);
               if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
-              if (chunk.message !== null) await ingest([chunk.message], sig);
-              if (!current()) break;
-              await setTailCursor(db, connectionId, cacheKey, source.path, chunk.consumedBytes);
+              written.push({ message: chunk.message, consumed: chunk.consumedBytes });
             }
+            await written.drain();
+            if (written.failure !== undefined) throw written.failure;
           } catch (thrown) {
             if (current()) {
               const failures = (tailFailures.current.get(source.key) ?? 0) + 1;
@@ -872,10 +925,23 @@ export function useThread(
       let keepFast = true;
       let needsUser = false;
       try {
-        const snapshot = await client.snapshot();
+        // The screen the last poll read rides with the snapshot: while an agent
+        // works or waits, every poll reads one, and on its own channel that was
+        // half of what an open chat asked the host.
+        const asked = screenWant.current;
+        const polled = await client.pollSnapshot(asked);
+        const snapshot = polled.snapshot;
+        let nextWant: { paneId: string; lines: number } | null = null;
+        /** A pane's visible screen: the one the batch brought, or a read of its own. */
+        const visible = async (paneId: string, lines: number): Promise<string> => {
+          nextWant ??= { paneId, lines };
+          return polled.screen !== null && asked?.paneId === paneId && asked.lines === lines
+            ? polled.screen
+            : client.paneVisible(paneId, lines);
+        };
         if (!alive.current || stopped) return;
         const live = chatAgents(snapshot.agents, workspaceId, pane);
-        setAgents(live);
+        setAgents((previous) => (sameAgents(previous, live) ? previous : live));
         const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
         if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
@@ -896,7 +962,9 @@ export function useThread(
         if (
           sig === null &&
           boundSig.current !== null &&
-          (conversational.length === 0 || panes !== boundPanes.current)
+          // No panes yet: bound from the cache before the first poll, which
+          // records them below.
+          (conversational.length === 0 || (boundPanes.current !== '' && panes !== boundPanes.current))
         ) {
           for (const controller of tails.current.values()) controller.abort();
           tails.current.clear();
@@ -981,7 +1049,7 @@ export function useThread(
           ? live.find((agent) => agent.inputPending && agent.agentStatus !== 'working')
           : undefined;
         if (pendingInput !== undefined) {
-          const raw = await client.paneVisible(pendingInput.paneId, 40);
+          const raw = await visible(pendingInput.paneId, 40);
           if (parsePaneOverlay(raw) !== null) {
             lookForPanel = true;
           } else {
@@ -992,7 +1060,7 @@ export function useThread(
             }
           }
         } else if (blocked !== undefined) {
-          const raw = await client.paneVisible(blocked.paneId, 40);
+          const raw = await visible(blocked.paneId, 40);
           if (blocked.agent === 'codex' && isMentionPopup(raw)) {
             parsedPrompt = {
               question: 'Codex has its file picker open. Close it here, or pick a file in the terminal.',
@@ -1007,7 +1075,8 @@ export function useThread(
               : { ...parsed, submitWithEnter: agentSpec(blocked.agent)?.digitAnswers !== true };
           }
         }
-        setBlockedPrompt(parsedPrompt);
+        // The same question as last poll keeps its object, as the agents do.
+        setBlockedPrompt((previous) => (JSON.stringify(previous) === JSON.stringify(parsedPrompt) ? previous : parsedPrompt));
         setAskingPaneId(blocked?.paneId ?? null);
 
         // A reply in flight is confirmed (or orphaned) by what this poll saw.
@@ -1045,11 +1114,12 @@ export function useThread(
           setOverlay(null);
         }
         if (working && primary !== undefined) {
-          const raw = await client.paneVisible(primary.paneId, 30);
+          const raw = await visible(primary.paneId, 30);
           setLivePreview(extractLivePreview(raw));
         } else {
           setLivePreview(null);
         }
+        screenWant.current = nextWant;
 
         /*
           Tail watchdog.

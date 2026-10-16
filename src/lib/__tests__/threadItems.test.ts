@@ -249,3 +249,24 @@ describe('tool wording', () => {
     expect(toolCallLine(call('AskUserQuestion', '{questions: [{question: Pick a color, header: Color}]}'))).toEqual({ verb: 'Ask', detail: 'Pick a color' });
   });
 });
+
+// `Bubble` is memoized on its message; a fresh object for every rebuild, once
+// per transcript line, rendered every visible reply again.
+describe('rebuilding the same messages', () => {
+  it('keeps each row on the same message object', () => {
+    const reply: ChatMessage = {
+      id: 'a1', role: 'assistant', timestamp: 1, agentLabel: null, isSidechain: false,
+      segments: [{ kind: 'thinking', text: 'Checking.' }, { kind: 'text', text: 'Done.' }, { kind: 'toolUse', name: 'Bash', input: null }],
+    };
+    const typed: ChatMessage = {
+      id: 'u1', role: 'user', timestamp: 0, agentLabel: null, isSidechain: false,
+      segments: [{ kind: 'text', text: 'go' }, { kind: 'toolResult', text: 'ok' }],
+    };
+    const first = threadItems([typed, reply], { showSidechain: false });
+    const second = threadItems([typed, reply], { showSidechain: false });
+    const messages = (items: typeof first) => items.flatMap((placed) =>
+      placed.item.kind === 'agent' || placed.item.kind === 'user' ? [placed.item.message] : []);
+    expect(messages(second)).toHaveLength(2);
+    messages(second).forEach((message, index) => expect(message).toBe(messages(first)[index]));
+  });
+});
