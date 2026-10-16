@@ -108,7 +108,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
 
   const renderRightActions = useCallback(
     (_progress: unknown, translation: SharedValue<number>, methods: SwipeableMethods) => (
-      <ActionPanel side="right" count={2} translation={translation}>
+      <ActionPanel side="right" count={2} seam="neutral" translation={translation}>
         {/* "Workspace" under the pencil, not "Rename": a row titled by its
             session no longer shows the workspace label this renames, and
             "Rename workspace" does not fit the panel. VoiceOver hears it whole. */}
@@ -142,7 +142,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   const leadingCount = (onTogglePin !== undefined ? 1 : 0) + (onToggleMute !== undefined ? 1 : 0);
   const renderLeftActions = useCallback(
     (_progress: unknown, translation: SharedValue<number>, methods: SwipeableMethods) => (
-      <ActionPanel side="left" count={leadingCount} translation={translation}>
+      <ActionPanel side="left" count={leadingCount} seam={onToggleMute !== undefined ? 'neutral' : 'tint'} translation={translation}>
         {onTogglePin !== undefined && (
           <SwipeAction
             label={pinned ? 'Unpin' : 'Pin'}
@@ -238,18 +238,26 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
  * was translucent. Moved with the drag instead, the panel is off the edge
  * whenever the row is closed and enters exactly as far as the row leaves,
  * the way Mail's do.
+ *
+ * The seam carries the inner action's colour under the row's rounded corner
+ * while the row is moved, so the card sits on the panel instead of beside it
+ * with the list showing through the corner gap.
  */
 function ActionPanel({
   side,
   count,
+  seam,
   translation,
   children,
 }: {
   side: 'left' | 'right';
   count: number;
+  /** The tone of the action next to the row. */
+  seam: Tone;
   translation: SharedValue<number>;
   children: ReactNode;
 }) {
+  const { colors } = useTheme();
   const width = count * ACTION_WIDTH;
   const style = useAnimatedStyle(() => {
     const offset = translation.get();
@@ -259,7 +267,26 @@ function ActionPanel({
       ],
     };
   });
-  return <Animated.View style={[{ flexDirection: 'row', width }, style]}>{children}</Animated.View>;
+  const seamStyle = useAnimatedStyle(() => ({ opacity: translation.get() === 0 ? 0 : 1 }));
+  return (
+    <Animated.View style={[{ flexDirection: 'row', width }, style]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          { position: 'absolute', top: 0, bottom: 0, width: radius.sm, backgroundColor: toneBackground(colors, seam) },
+          side === 'right' ? { left: -radius.sm } : { right: -radius.sm },
+          seamStyle,
+        ]}
+      />
+      {children}
+    </Animated.View>
+  );
+}
+
+type Tone = 'neutral' | 'tint' | 'destructive';
+
+function toneBackground(colors: ReturnType<typeof useTheme>['colors'], tone: Tone): string {
+  return tone === 'destructive' ? colors.destructive : tone === 'tint' ? colors.tint : colors.swipeNeutral;
 }
 
 function SwipeAction({
@@ -276,11 +303,11 @@ function SwipeAction({
   /** What VoiceOver reads when the visible label is shortened to fit. */
   accessibilityLabel?: string;
   symbol: IconName;
-  tone: 'neutral' | 'tint' | 'destructive';
+  tone: Tone;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
-  const background = tone === 'destructive' ? colors.destructive : tone === 'tint' ? colors.tint : colors.swipeNeutral;
+  const background = toneBackground(colors, tone);
   const foreground = tone === 'neutral' ? colors.label : colors.onTint;
 
   return (
