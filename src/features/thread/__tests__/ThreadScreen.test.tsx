@@ -118,6 +118,10 @@ it('extends header material to the window edge, insets only controls, and reserv
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Codex conversation" />);
   expect(screen.getByTestId('thread-meta')).toHaveTextContent('gpt-5.6 · high effort · project-with-a-long-folder-name');
   expect(screen.getByTestId('thread-status')).toHaveTextContent('· online');
+  // On a phone's narrow line, whole parts that fit, never one cut (HC-113).
+  await fireEvent(screen.getByTestId('thread-line'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 220, height: 16 } } });
+  // Whole parts from the start, however many the text size leaves room for.
+  expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^gpt-5\.6( · high effort)?$/);
 });
 
 it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {

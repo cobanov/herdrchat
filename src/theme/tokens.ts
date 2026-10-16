@@ -60,6 +60,12 @@ export const size = {
   /** The status dot beside a thread's subtitle. */
   statusDot: 6,
   /**
+   * A caption character's width, on average, at the default text size: how
+   * the thread header judges how many parts of its line fit whole. The
+   * system font's caption runs about 0.55 em a character.
+   */
+  captionCharWidth: 6.6,
+  /**
    * The narrowest the empty channel opposite a bubble may get — what stops a
    * long message from running the full width of the screen.
    */
