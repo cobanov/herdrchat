@@ -3,11 +3,16 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-- scrollUntilVisible:
-    element:
+# Found by the agent's name as its row shows it: herdr calls it `agy`, and a
+# search for "Antigravity" found nothing on a real host.
+- tapOn:
+    id: chat-search
+- inputText: Antigravity
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
       id: chat-row-wA
-    direction: DOWN
-    centerElement: true
+    timeout: 10000
 - assertVisible: .*Antigravity.*
 - takeScreenshot: agy-row-${APPEARANCE}
 - tapOn:
