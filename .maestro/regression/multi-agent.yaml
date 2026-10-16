@@ -66,13 +66,17 @@ appId: dev.herdr.HerdrChat
     id: thread-back
 
 # The reply is on p2's row and nowhere near p1's. p2 went idle with it, so the
-# workspace moved down into Idle; scrolling also waits for the next refresh.
-- scrollUntilVisible:
-    element:
+# workspace moved into Idle, and the rows around it moved too: the list is
+# narrowed to the workspace rather than scrolled, and waited on for the next
+# refresh.
+- tapOn:
+    id: chat-search
+- inputText: api
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
       id: pane-row-w6:p2
       text: .*You said .ship the fix.*
-    direction: DOWN
-    centerElement: true
     timeout: 20000
 - assertNotVisible:
     id: pane-row-w6:p1
