@@ -1,0 +1,79 @@
+# One probe chat on a live host, run by scripts/e2e-live.sh: a new chat in the
+# scratch folder ${CWD} with ${AGENT}, its startup question answered with the
+# first option, one message, and the agent's own reply.
+appId: dev.herdr.HerdrChat
+env:
+  PICTURE: ${PICTURE || '0'}
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+    timeout: 20000
+- tapOn:
+    id: header-action
+- assertVisible: New chat
+# New chat fills in the last folder used, and a tap puts the cursor
+# mid-path, so the field is cleared through its own Select All.
+- tapOn:
+    id: field-cwd
+- tapOn:
+    id: field-cwd
+- tapOn:
+    text: Select All
+    optional: true
+- eraseText: 300
+- inputText: ${CWD}
+- tapOn:
+    id: field-label
+- eraseText: 60
+- inputText: ${LABEL}
+- tapOn: ${AGENT}
+- assertVisible: Start ${AGENT}
+- scrollUntilVisible:
+    element:
+      id: start-chat
+    direction: DOWN
+- tapOn:
+    id: start-chat
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 60000
+# A first start in a new folder asks whether to trust it (Claude, agy), a
+# moment after the chat opens. The yes is matched by its words: Claude lists
+# "No, exit" first. An agent that does not ask leaves this to time out, which
+# is not a failure.
+- extendedWaitUntil:
+    visible:
+      id: blocked-bar
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: blocked-bar
+    commands:
+      - tapOn:
+          text: "(?i)(yes|trust)\\b[^?]*"
+      - extendedWaitUntil:
+          notVisible:
+            id: blocked-bar
+          timeout: 30000
+- takeScreenshot: ${LABEL}-started
+- tapOn:
+    id: composer-input
+- inputText: What is 6 times 7? Answer with the number only.
+- runFlow: ../regression/_send.yaml
+# The question does not hold the answer, so only the agent's reply can match.
+- extendedWaitUntil:
+    visible: ".*\\b42\\b.*"
+    timeout: 180000
+- takeScreenshot: ${LABEL}-reply
+- runFlow:
+    when:
+      true: ${PICTURE == "1"}
+    file: picture.yaml
+- tapOn:
+    id: thread-back
+- waitForAnimationToEnd
