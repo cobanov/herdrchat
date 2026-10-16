@@ -35,6 +35,21 @@ const requestIn = (command: string): { method: string; params: Record<string, un
 };
 
 describe('HerdrClient over the socket', () => {
+  // The iPad's list and open chat poll side by side, and a send re-reads the
+  // snapshot a poll may be reading at that moment: one read serves them all.
+  it('shares a snapshot already on its way, and asks again once it is back', async () => {
+    const { client, commands } = socketHost({
+      'session.snapshot':
+        '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}',
+    });
+    const reads = () => commands.filter((command) => !isSocketProbe(command)).length;
+    const [a, b] = await Promise.all([client.snapshot(), client.snapshot()]);
+    expect(a).toBe(b);
+    expect(reads()).toBe(1);
+    await client.snapshot();
+    expect(reads()).toBe(2);
+  });
+
   it('reads the snapshot with session.snapshot and remembers the version', async () => {
     const { client, commands } = socketHost({
       'session.snapshot':

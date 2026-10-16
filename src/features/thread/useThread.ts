@@ -8,6 +8,7 @@ import { useSettings } from '@/state/settings';
 import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
+import { concernsWorkspace } from '@/lib/herdr/events';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
@@ -376,7 +377,9 @@ export function useThread(
     client,
     agents.map((agent) => agent.paneId),
     polling,
-    () => kick.current()
+    (event) => {
+      if (concernsWorkspace(event, workspaceId)) kick.current();
+    }
   );
   const streamLiveRef = useRef(streamLive);
   useEffect(() => {
