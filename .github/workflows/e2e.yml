@@ -2,12 +2,15 @@
 # host, on an iOS simulator with a Release build (no Metro, no dev menu).
 # Free for this public repository, but slow: the native build alone took about
 # 50 minutes on a GitHub macOS runner. So it runs on demand (Actions, E2E, Run
-# workflow, or `gh workflow run e2e.yml --ref <branch>`), and `npm run e2e` on
-# a local simulator is the gate before shipping.
+# workflow, or `gh workflow run e2e.yml --ref <branch>`) and each night on
+# main, in Dark, so a flow that breaks is red within a day rather than found
+# weeks later; `npm run e2e` on a local simulator is the gate before shipping.
 name: E2E
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '30 1 * * *'
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -65,6 +68,8 @@ jobs:
       - name: Run the flows
         env:
           E2E_OUT: ${{ github.workspace }}/e2e-output
+          # The nightly run checks Dark only, to stay well inside the timeout.
+          E2E_APPEARANCES: ${{ github.event_name == 'schedule' && 'Dark' || 'Dark Light' }}
         run: sh scripts/e2e.sh
 
       - name: Keep the screenshots
