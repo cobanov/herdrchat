@@ -52,7 +52,9 @@ export function modelDisplayName(model: string | null): string | null {
  * confident-looking guess.
  */
 export function contextLabel(contextTokens: number | null): string | null {
-  if (contextTokens === null) return null;
+  // A usage block of zeros says nothing about the context: "ctx 0" flickered
+  // in the header between turns (HC-23).
+  if (contextTokens === null || contextTokens <= 0) return null;
   return contextTokens >= 1000
     ? `ctx ${Math.round(contextTokens / 1000)}k`
     : `ctx ${contextTokens}`;

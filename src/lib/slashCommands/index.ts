@@ -10,7 +10,7 @@
  */
 
 export * from './types';
-export { CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from './builtins';
+export { AGY_BUILTINS, CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from './builtins';
 export { binaryKey, discoveryCommand, type ScanRequest } from './discover';
 export { parseScanOutput, type ScanResult } from './parse';
 export { filterCommands, paletteQuery, paletteSections, type PaletteSection } from './filter';

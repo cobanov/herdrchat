@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
 import type { HerdrTransport } from '../herdr/transport';
 import { displayText } from '../transcript/message';
-import { TranscriptStore, previewText } from '../transcript/store';
+import { TranscriptStore, previewText, tailScript } from '../transcript/store';
 
 /**
  * Covers `TranscriptStore.recent` — the bounded history window a chat thread
@@ -106,10 +106,10 @@ class ShellHost implements HerdrTransport {
     return { ok: true, stdout, stderr: run.stderr.toString('utf8'), exitCode: run.status ?? 1 };
   }
 
+  // The real host side, under sh, without `-f` so it ends at the file's end.
   async *streamLines(command: string): AsyncIterable<string> {
-    const from = /tail -c \+(\d+)/.exec(command);
-    const start = from === null ? 0 : Number(from[1]) - 1;
-    for (const line of readFileSync(this.path).subarray(start).toString('utf8').split('\n')) {
+    const run = spawnSync('/bin/sh', ['-c', command.replace(' -f ', ' ')], { maxBuffer: 64 * 1024 * 1024 });
+    for (const line of run.stdout.toString('utf8').split('\n')) {
       if (line.length > 0) yield line;
     }
   }
@@ -453,6 +453,35 @@ class StreamingTransport implements HerdrTransport {
 }
 
 describe('TranscriptStore.tail', () => {
+  // A screenshot line was a megabyte on every tail: across SSH, the bridge and
+  // JSON.parse, for a picture the thread shows as a path. The host strips it
+  // and says how long the line was, so the cursor stays in the file's bytes.
+  it('strips pictures on the host and keeps the cursor in the bytes of the file', async () => {
+    const picture = 'A'.repeat(1024 * 1024);
+    const lines = [
+      JSON.stringify({ type: 'user', uuid: 'u1', message: { content: '🎉 ünïcödé' } }),
+      JSON.stringify({ type: 'user', uuid: 'u2', message: { content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: picture } },
+        { type: 'text', text: 'what is this?' },
+      ] } }),
+      JSON.stringify({ type: 'user', uuid: 'u3', message: { content: `![x](data:image/png;base64,${'B'.repeat(64)})` } }),
+    ];
+    const host = new ShellHost(`${lines.join('\n')}\n`);
+    const store = new TranscriptStore(host);
+    const framed: string[] = [];
+    for await (const line of host.streamLines(tailScript(host.path, 0))) framed.push(line);
+    expect(framed.map((line) => Number(line.split('\t')[0]))).toEqual(lines.map((line) => Buffer.byteLength(line, 'utf8')));
+    expect(Buffer.byteLength(framed[1]!, 'utf8')).toBeLessThan(10 * 1024);
+
+    const chunks = [];
+    for await (const chunk of store.tail(host.path, null, 0)) chunks.push(chunk);
+    expect(chunks.map((chunk) => chunk.consumedBytes)).toEqual(
+      lines.map((_, index) => lines.slice(0, index + 1).reduce((sum, line) => sum + Buffer.byteLength(line, 'utf8') + 1, 0))
+    );
+    expect(displayText(chunks[0]!.message!)).toBe('🎉 ünïcödé');
+    expect(displayText(chunks[1]!.message!)).toBe('what is this?');
+  });
+
   it('carries header metadata alongside the bubbles', async () => {
     // The model and context size used to come from a separate `tail -c 262144`
     // every ten seconds, re-reading lines that had already streamed through

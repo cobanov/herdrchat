@@ -247,12 +247,31 @@ describe('HerdrClient over the socket', () => {
   it('creates a workspace without stealing focus, labelled only when asked', async () => {
     const created =
       '{"id":"x","result":{"type":"workspace_created","workspace":{"workspace_id":"w9","label":"x"},"tab":{},"root_pane":{"pane_id":"w9:p1","workspace_id":"w9"}}}';
-    const { client, commands } = socketHost({ 'workspace.create': created });
+    // The folder check (no socket method) prints the folder, as the host would.
+    const { client, commands } = socketHost({ 'workspace.create': created, '': () => '/home/u/proj\n' });
+    const creates = () => commands.filter((command) => command.includes('workspace.create'));
     const creation = await client.createWorkspace('/home/u/proj', 'proj');
     expect(creation.rootPane.paneId).toBe('w9:p1');
-    expect(requestIn(commands[0] ?? '').params).toEqual({ cwd: '/home/u/proj', label: 'proj', focus: false });
+    expect(requestIn(creates()[0] ?? '').params).toEqual({ cwd: '/home/u/proj', label: 'proj', focus: false });
     await client.createWorkspace('/home/u/proj', '');
-    expect(requestIn(commands[1] ?? '').params).toEqual({ cwd: '/home/u/proj', label: null, focus: false });
+    expect(requestIn(creates()[1] ?? '').params).toEqual({ cwd: '/home/u/proj', label: null, focus: false });
+  });
+
+  // Seen on a real host: herdr made the workspace for a folder that does not
+  // exist in the home folder instead, and the agent started there.
+  it('refuses a folder that is not on the host, before making anything', async () => {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        if (isSocketProbe(command)) return { ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never;
+        return { ok: true, exitCode: 1, stdout: '', stderr: '' } as never;
+      },
+      streamLines: async function* () {},
+    };
+    await expect(new HerdrClient(transport).createWorkspace('/home/u/no-such', null))
+      .rejects.toMatchObject({ code: 'dir_missing', message: expect.stringContaining('/home/u/no-such') });
+    expect(commands.some((command) => command.includes('workspace.create'))).toBe(false);
   });
 
   it('waits for a status with agent.wait and answers false on timeout', async () => {
@@ -313,6 +332,18 @@ describe('an open chat poll on one channel', () => {
     expect(polled.snapshot.version).toBe('0.9.0');
     await jest.advanceTimersByTimeAsync(10_000);
     expect(commands).toHaveLength(1);
+  });
+
+  // The list beside an open chat on iPad takes the chat's poll for its own.
+  it('remembers the last snapshot any read brought, until it is as old as asked', async () => {
+    jest.useFakeTimers();
+    const { client } = batchHost();
+    expect(client.recentSnapshot(3_000)).toBeNull();
+    const polled = await client.pollSnapshot({ paneId: 'w1:p1', lines: 30 });
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(client.recentSnapshot(3_000)).toEqual({ snapshot: polled.snapshot, ageMs: 1_000 });
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(client.recentSnapshot(3_000)).toBeNull();
   });
 
   it('sends a presence report on its own when no poll carries it', async () => {

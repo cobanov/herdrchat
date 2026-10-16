@@ -35,6 +35,14 @@ export const SCREEN_TIMEOUT_MS = 15_000;
 export const SEND_TIMEOUT_MS = 20_000;
 
 /**
+ * How long a stopped agent has to leave `working` before Stop says it did not
+ * take: herdr reads the status off the screen, which redraws within a second.
+ */
+export const INTERRUPT_CONFIRM_MS = 3_000;
+/** Between looks at the status while a stop is confirmed. */
+export const INTERRUPT_CHECK_MS = 500;
+
+/**
  * Reading transcript history. Deliberately looser: `recent()` may pull three
  * megabytes over a phone's uplink, and a slow read here is inconvenient rather
  * than broken.

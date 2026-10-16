@@ -379,8 +379,10 @@ export class DemoHost implements HerdrTransport {
    * the consumer abandons the iterator when the thread goes away.
    */
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
-    const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
+    // `tailScript` frames each line with its size; a bare `tail -f` does not.
+    const follow = /^tail -c \+(\d+) -f '(.+?)'( \| LC_ALL=C awk '[^']*')?$/.exec(withoutPath(command));
     if (follow === null) return;
+    const framed = follow[3] !== undefined;
 
     const path = follow[2]!;
     let cursor = Number(follow[1]) - 1;
@@ -395,7 +397,7 @@ export class DemoHost implements HerdrTransport {
         // incomplete line, or the empty string. Either way it is not ours yet.
         for (const line of lines.slice(0, -1)) {
           cursor += byteLength(line) + 1;
-          if (line.length > 0) yield line;
+          if (line.length > 0) yield framed ? `${byteLength(line)}\t${line}` : line;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, TAIL_POLL_MS));
@@ -417,6 +419,9 @@ export class DemoHost implements HerdrTransport {
   /** `sh` reading transcripts. Returns null when the command is not one of these. */
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
+    // New chat's folder check (`hostFolderCommand`): every folder is there.
+    const folder = /^p='(.+?)'; case "\$p" in /.exec(body);
+    if (folder !== null) return out(`${folder[1]!.replace(/^~(?=\/|$)/, DEMO_HOME)}\n`);
     if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
 
     // The Files tab. The demo has a small home folder with one folder in it,

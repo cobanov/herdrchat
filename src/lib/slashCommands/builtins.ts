@@ -296,3 +296,48 @@ export const GROK_BUILTINS: readonly CatalogueCommand[] = [
   c('settings', 'View and change configuration'),
   c('timestamps', 'Set which rows show the clock time', '<off|minimal|on>'),
 ];
+
+/**
+ * Antigravity CLI's `/` menu (agy 1.3.6), from the command registry in its
+ * binary: each command's name and the line it shows beside it. Aliases
+ * (`/new` for `/clear`, `/quit` for `/exit`, `/undo` for `/rewind`) are left
+ * to the fuzzy match. Commands the agent runs itself (`/plan`, `/compact`,
+ * `/goal`) are not in the registry and are left out until one is seen typed.
+ */
+export const AGY_BUILTINS: readonly CatalogueCommand[] = [
+  c('add-dir', 'Add a directory to the workspace'),
+  c('agents', 'List available custom agents'),
+  c('artifact', 'View and review artifacts'),
+  c('btw', 'Ask a side question without interrupting the current task'),
+  c('changelog', 'Show release notes and changes'),
+  c('clear', 'Clear conversation and start a new one'),
+  c('codesearch', 'Search code in the workspace', '<query>'),
+  c('config', 'Open settings panel'),
+  c('context', 'Visualize current context usage'),
+  c('copy', 'Copy the last planner response to the clipboard', '[n|btw]'),
+  c('credits', 'Show remaining credits and purchase link'),
+  c('diff', 'View uncommitted changes and per-turn diffs'),
+  c('effort', 'Set the reasoning effort'),
+  c('exit', 'Exit the CLI'),
+  c('feedback', 'Submit qualitative feedback to improve the agent'),
+  c('fork', 'Create a branch of the current conversation at this point'),
+  c('help', 'Show available commands and keybindings'),
+  c('hooks', 'Manage hook configurations for tool events'),
+  c('keybindings', 'Set custom keybindings'),
+  c('logout', 'Log out'),
+  c('mcp', 'Manage MCP servers'),
+  c('model', 'Set a model, or run a single prompt on another model'),
+  c('open', 'Open a file or view opened/edited files'),
+  c('permissions', 'Manage tool permissions'),
+  c('plugin', 'Manage, discover, install, uninstall, enable, and disable plugins'),
+  c('remote-control', 'Turn on remote control for this session'),
+  c('rename', 'Rename the current conversation'),
+  c('resume', 'Browse and resume past conversations'),
+  c('rewind', 'Rewind conversation to a previous message'),
+  c('skills', 'List available skills'),
+  c('statusline', 'Toggle the statusline'),
+  c('tasks', 'View background tasks'),
+  c('title', 'Toggle custom terminal window title'),
+  c('usage', 'View model quota usage'),
+  c('voice', 'Dictate a prompt using your microphone'),
+];

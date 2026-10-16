@@ -28,6 +28,7 @@ struct SshConfigRecord: Record {
 /// result and TypeScript owns the policy, where it can be tested.
 public class HerdrSshModule: Module {
   private let connections = ConnectionStore()
+  private let inputs = StreamInputs()
 
   public func definition() -> ModuleDefinition {
     Name("HerdrSsh")
@@ -85,16 +86,21 @@ public class HerdrSshModule: Module {
             self?.sendEvent("onStreamLine", ["streamId": streamId, "line": line])
           },
           onEnd: { [weak self] exitCode in
+            self?.inputs.remove(streamId)
             self?.sendEvent("onStreamEnd", ["streamId": streamId, "exitCode": exitCode])
             guard let store = self?.connections else { return }
             Task { await store.forgetStream(streamId) }
           },
           onError: { [weak self] code, message in
+            self?.inputs.remove(streamId)
             self?.sendEvent("onStreamError", [
               "streamId": streamId, "code": code, "message": message,
             ])
             guard let store = self?.connections else { return }
             Task { await store.forgetStream(streamId) }
+          },
+          onInput: { [weak self] input in
+            self?.inputs.set(streamId, input)
           }
         )
         await self.connections.registerStream(streamId, task: task)
@@ -107,7 +113,22 @@ public class HerdrSshModule: Module {
     }
 
     AsyncFunction("stopStream") { (streamId: String) in
+      self.inputs.remove(streamId)
       await self.connections.stopStream(streamId)
+    }
+
+    // A line to a running stream's stdin: the host's socket bridge, which
+    // stays up for the connection and takes one request a line.
+    AsyncFunction("writeStream") { (streamId: String, text: String) -> [String: Any] in
+      guard let input = self.inputs.get(streamId) else {
+        return ["ok": false, "code": "transport_failed", "message": "That stream is no longer open."]
+      }
+      do {
+        try await input.write(text)
+        return ["ok": true]
+      } catch {
+        return ["ok": false, "code": "transport_failed", "message": SshFailure.friendly(error)]
+      }
     }
 
     // MARK: Terminal shells
@@ -204,6 +225,29 @@ public class HerdrSshModule: Module {
     "code": "not_connected",
     "message": "No live connection for this server. Connect first.",
   ]
+}
+
+/// The stdin of each stream that takes input, by stream id. A lock rather
+/// than the actor: a stream's start sets it from the SSH event loop and must
+/// not wait on JS calls queued behind it.
+final class StreamInputs: @unchecked Sendable {
+  private let lock = NSLock()
+  private var inputs: [String: StreamInput] = [:]
+
+  func set(_ streamId: String, _ input: StreamInput) {
+    lock.lock(); defer { lock.unlock() }
+    inputs[streamId] = input
+  }
+
+  func get(_ streamId: String) -> StreamInput? {
+    lock.lock(); defer { lock.unlock() }
+    return inputs[streamId]
+  }
+
+  func remove(_ streamId: String) {
+    lock.lock(); defer { lock.unlock() }
+    inputs[streamId] = nil
+  }
 }
 
 /// Owns the live connections and stream tasks. An actor because JS can call

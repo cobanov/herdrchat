@@ -688,6 +688,20 @@ it('shows the saved history, read-only, when the host cannot be reached', async 
   await unmount();
 });
 
+// HC-18: offline, a cache of the slot's previous chat showed under the new
+// chat's title. Opened from the list, only the session the list saw shows.
+it('shows saved history offline only when it is the session the list saw', async () => {
+  jest.mocked(seedIfSession).mockResolvedValue([]);
+  jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('timeout', "The host didn't answer.", { transport: true }));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [agent], undefined, 'session'));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10); });
+  expect(jest.mocked(seedIfSession)).toHaveBeenCalledWith(db, 'host', 'chat', 'session');
+  expect(jest.mocked(seedMessages)).not.toHaveBeenCalled();
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.offline).toBe(true);
+  await unmount();
+});
+
 // #99: a sibling whose transcript does not exist yet used to abort and
 // restart the healthy agent's SSH tail on every poll.
 it('does not restart a healthy tail on every poll while a sibling has no file yet', async () => {

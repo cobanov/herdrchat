@@ -24,6 +24,7 @@ struct SshConfigRecord {
     print("PASS first contact, changed key, concurrent pin checks")
 
     try await shellPureChecks()
+    try keyChecks()
 
     guard CommandLine.arguments.count == 3 else {
       print("For loopback checks: swift run NativeChecks <test-key> <test-directory>")
@@ -99,6 +100,23 @@ struct SshConfigRecord {
     try await Task.sleep(nanoseconds: 1_500_000_000)
     precondition(!FileManager.default.fileExists(atPath: alive), "The wrapped command outlived its stream")
     print("PASS a wrapped stream runs while open and stops, with its cleanup, when cancelled")
+
+    // HC-95: a stream that is also written to, as the host's long-lived
+    // socket bridge is. Lines written to its stdin come back on its stdout.
+    let echoed = LineBox()
+    let input = InputBox()
+    let echo = try await connection.startStream(
+      "cat", startTimeoutMs: 5000,
+      onLine: { echoed.append($0) }, onEnd: { _ in }, onError: { _, _ in },
+      onInput: { input.set($0) }
+    )
+    guard let stdin = input.get() else { preconditionFailure("A started stream gave no stdin") }
+    for line in ["one", "two {\"id\":\"hc:x:1\"}"] { try await stdin.write(line + "\n") }
+    for _ in 0..<100 where echoed.count < 2 { try await Task.sleep(nanoseconds: 20_000_000) }
+    precondition(echoed.lines == ["one", "two {\"id\":\"hc:x:1\"}"], "stdin lines came back as \(echoed.lines)")
+    echo.cancel()
+    await echo.value
+    print("PASS a stream takes lines on its stdin and answers on its stdout")
 
     // #84: after a reset, the poll, tail, feed and previews all dial at once.
     // They must share one connection, not open one each and leak the extras.
@@ -202,6 +220,37 @@ struct SshConfigRecord {
   // MARK: - Terminal shells
 
   /// The launch line and the marker gate, with no host.
+  /// A passphrase-protected key, as `ssh-keygen` writes one, is read with its
+  /// passphrase and refused without it or with a wrong one (HC-7).
+  static func keyChecks() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("herdrchat-keys-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    for type in ["ed25519", "rsa"] {
+      let path = directory.appendingPathComponent(type).path
+      let keygen = Process()
+      keygen.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+      keygen.arguments = ["-q", "-t", type, "-N", "open sesame", "-f", path]
+      try keygen.run()
+      keygen.waitUntilExit()
+      precondition(keygen.terminationStatus == 0, "ssh-keygen failed for \(type)")
+      var config = SshConfigRecord()
+      config.privateKey = try String(contentsOfFile: path, encoding: .utf8)
+      config.passphrase = "open sesame"
+      _ = try SshConnection.authMethod(for: config)
+      for wrong in [nil, "", "not it"] as [String?] {
+        config.passphrase = wrong
+        do {
+          _ = try SshConnection.authMethod(for: config)
+          preconditionFailure("an encrypted \(type) key was read with passphrase \(wrong ?? "nil")")
+        } catch let failure as SshFailure {
+          precondition(failure.code == "bad_key")
+        }
+      }
+    }
+    print("PASS encrypted ed25519 and RSA keys read with their passphrase, refused without")
+  }
+
   static func shellPureChecks() async throws {
     let line = ShellLaunch.line(command: "herdr agent attach 'w1:p2'", nonce: "abc")
     let expected = #" exec /bin/sh -c 'echo HERDRCHAT_""SHELL_abc; herdr agent attach '\''w1:p2'\'''"# + "\r"
@@ -290,4 +339,19 @@ struct SshConfigRecord {
     dropped.close()
     print("PASS PTY shell: clean output, typing, resize, exit status, hang-up, lost connection")
   }
+}
+
+final class LineBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var stored: [String] = []
+  var lines: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+  var count: Int { lines.count }
+  func append(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+}
+
+final class InputBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var input: StreamInput?
+  func set(_ value: StreamInput) { lock.lock(); input = value; lock.unlock() }
+  func get() -> StreamInput? { lock.lock(); defer { lock.unlock() }; return input }
 }

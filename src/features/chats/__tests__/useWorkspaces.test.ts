@@ -3,7 +3,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import type { HostEvent } from '@/lib/herdr/events';
-import { useHostVersion } from '@/state/hostVersion';
+import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { buildSummaries, refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
@@ -104,6 +104,28 @@ it('honours an event that arrives while a poll is in flight', async () => {
   await act(async () => { await jest.advanceTimersByTimeAsync(100); }); // first poll done
   await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(300); }); // poll #2 in flight
   await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(1_700); }); // event mid-poll
+  expect(fetch).toHaveBeenCalledTimes(3);
+  await unmount();
+});
+
+// On iPad the open chat beside the list reads the snapshot every couple of
+// seconds. The list's timer takes that read and comes back sooner by its age;
+// an event and a pull still ask the host.
+it('takes a snapshot the open chat just read, but asks the host on an event or a pull', async () => {
+  mockLive = false;
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const recent = jest.spyOn(client, 'recentSnapshot').mockReturnValue({ snapshot, ageMs: 1_000 });
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(recent).not.toHaveBeenCalled();
+  await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+  expect(recent).toHaveBeenCalledWith(3_000);
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_000); });
+  expect(recent).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(250); });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await act(async () => { await result.current.refresh(); });
   expect(fetch).toHaveBeenCalledTimes(3);
   await unmount();
 });
@@ -521,15 +543,19 @@ describe('another host\'s poll', () => {
     await unmount();
   });
 
-  it('leaves the herdr version to the selected host\'s poll', async () => {
-    useHostVersion.setState({ version: null });
+  // Settings shows the selected host's herdr version, recorded under that
+  // host: another host's poll runs beside it and used to overwrite it, and the
+  // previous host's version showed until the new one answered.
+  it('records the herdr version under the selected host only', async () => {
+    useHostVersion.setState({ versions: {} });
     const { unmount } = await renderHook(() => useWorkspaces(client, 'mac', false));
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
-    expect(useHostVersion.getState().version).toBeNull();
+    expect(useHostVersion.getState().versions).toEqual({});
     await unmount();
     const host = await renderHook(() => useWorkspaces(client, 'host'));
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
-    expect(useHostVersion.getState().version).toBe('0.9.0');
+    expect(hostVersionOf(useHostVersion.getState().versions, 'host')).toBe('0.9.0');
+    expect(hostVersionOf(useHostVersion.getState().versions, 'other')).toBeNull();
     await host.unmount();
   });
 });

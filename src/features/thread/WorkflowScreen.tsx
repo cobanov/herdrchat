@@ -119,7 +119,7 @@ export default function WorkflowScreen({
               )}
               <View style={{ gap: spacing.xs, paddingTop: spacing.xs }}>
                 {phase.agents.length === 0 ? (
-                  <Text variant="footnote" color="tertiary">
+                  <Text variant="footnote" color="secondary">
                     No agents yet
                   </Text>
                 ) : phase.agents.map((agent) => (

@@ -17,6 +17,8 @@ import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
+  INTERRUPT_CHECK_MS,
+  INTERRUPT_CONFIRM_MS,
   LAUNCH_TIMEOUT_MS,
   POLL_TIMEOUT_MS,
   SCREEN_TIMEOUT_MS,
@@ -164,6 +166,21 @@ export class HerdrClient {
 
   private snapshotInFlight: Promise<Snapshot> | null = null;
 
+  /**
+   * The last snapshot this client read, whoever asked, while it is younger
+   * than `maxAgeMs`; null otherwise. On iPad the chat list sits beside an open
+   * chat whose poll reads the host every couple of seconds, and the list's
+   * timer takes that read rather than asking for the same state again.
+   */
+  recentSnapshot(maxAgeMs: number): { snapshot: Snapshot; ageMs: number } | null {
+    if (this.lastSnapshot === null) return null;
+    const ageMs = Date.now() - this.lastSnapshot.at;
+    // A clock set back makes the age negative; that read is of unknown age.
+    return ageMs >= 0 && ageMs < maxAgeMs ? { snapshot: this.lastSnapshot.snapshot, ageMs } : null;
+  }
+
+  private lastSnapshot: { snapshot: Snapshot; at: number } | null = null;
+
   private async readSnapshot(): Promise<Snapshot> {
     const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
       this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
@@ -226,6 +243,7 @@ export class HerdrClient {
       if (this.agentPrompt?.provenance === 'probe') this.agentPrompt = null;
       if (this.agentStart?.provenance === 'probe') this.agentStart = null;
     }
+    this.lastSnapshot = { snapshot, at: Date.now() };
     return snapshot;
   }
 
@@ -709,8 +727,34 @@ export class HerdrClient {
    * nothing is worse than one that costs an extra round-trip on hosts where the
    * first spelling is wrong. Whichever works, works.
    */
-  async interrupt(paneId: string): Promise<void> {
+  async interrupt(paneId: string, confirmMs = INTERRUPT_CONFIRM_MS): Promise<void> {
     await this.sendFirstAccepted(paneId, ['Escape', 'esc']);
+    // A key the host took is not an agent that stopped: a host that types an
+    // unknown key name as text takes it without an error. One Escape only: a
+    // second one into Claude opens its rewind menu.
+    if (!(await this.leftWorking(paneId, confirmMs))) {
+      throw new HerdrError('interrupt_unconfirmed', 'The agent is still working. Tap Stop again, or hold it to force quit.');
+    }
+  }
+
+  /**
+   * Whether the pane's agent has left `working` within `ms`. True too when
+   * the status cannot be read: a stop that may well have worked is not
+   * reported as failed.
+   */
+  private async leftWorking(paneId: string, ms: number): Promise<boolean> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      let status: AgentStatus | undefined;
+      try {
+        status = (await this.snapshot()).agents.find((agent) => agent.paneId === paneId)?.agentStatus;
+      } catch {
+        return true;
+      }
+      if (status !== 'working') return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, INTERRUPT_CHECK_MS));
+    }
   }
 
   /**
@@ -813,7 +857,8 @@ export class HerdrClient {
    * Create a new workspace rooted at `cwd` without stealing focus on the
    * desktop. Follow with `startAgent` on the returned root pane.
    */
-  async createWorkspace(cwd: string, label: string | null): Promise<WorkspaceCreation> {
+  async createWorkspace(path: string, label: string | null): Promise<WorkspaceCreation> {
+    const cwd = await this.hostFolder(path);
     const named = label !== null && label.length > 0 ? label : null;
     const result = await this.request(
       'workspace.create',
@@ -826,6 +871,22 @@ export class HerdrClient {
       }
     );
     return decodeWorkspaceCreation(result);
+  }
+
+  /**
+   * `path` as a folder on the host, absolute, `~` read as the home folder.
+   * herdr makes a workspace for a folder that does not exist in the home
+   * folder instead, without a word: on a real host a mistyped path started an
+   * agent, with the permissions just chosen for it, in `~`.
+   */
+  private async hostFolder(path: string): Promise<string> {
+    const output = await this.shell(hostFolderCommand(path), LAUNCH_TIMEOUT_MS).catch((thrown: unknown) => {
+      throw thrown instanceof HerdrError && thrown.code === 'ssh_command_failed'
+        ? new HerdrError('dir_missing', `There's no folder ${path} on the host. Check the path, or pick one with Choose folder on the host.`)
+        : thrown;
+    });
+    const folder = output.trim();
+    return folder.length > 0 ? folder : path;
   }
 
   /** Give a workspace a new label. The chat list reads it as the chat's title. */
@@ -936,6 +997,10 @@ export class HerdrClient {
         checkEnvelope(output);
         return true;
       } catch (thrown) {
+        // The agent came up and stopped at a startup question (Claude's "trust
+        // this folder?"): herdr keeps it registered and waiting. It is started;
+        // its chat is where the question gets answered.
+        if (thrown instanceof HerdrError && thrown.code === 'agent_not_ready') return true;
         const busy = thrown instanceof HerdrError && thrown.code === 'agent_pane_busy';
         if (!busy) throw thrown;
 
@@ -1238,4 +1303,13 @@ function field(result: unknown, key: string): unknown {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The shell that prints the absolute folder `path` names on the host, with `~`
+ * as the home folder, and fails when there is no such folder. Exported for
+ * tests, which run it under a real `sh`.
+ */
+export function hostFolderCommand(path: string): string {
+  return `p=${shellQuote(path)}; case "$p" in '~') p=$HOME ;; '~/'*) p="$HOME/\${p#'~/'}" ;; esac; cd "$p" 2>/dev/null && pwd`;
 }
