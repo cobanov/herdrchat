@@ -33,6 +33,7 @@ import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcr
 import { titleAgent } from '@/lib/chatTitle';
 import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
 import type { BatchAnswer } from '@/lib/herdr/socket';
+import { keepUnchanged } from '@/lib/sameShape';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
 
@@ -320,7 +321,7 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(
+      const built = buildSummaries(
         workspaces,
         snapshot.agents,
         previews.current,
@@ -328,8 +329,12 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
         snapshot.panes,
         processNameMap(processNames.current),
         { tabs: snapshot.tabs, layouts: snapshot.layouts }
-      ));
-      setPaneIds(snapshot.agents.map((agent) => agent.paneId));
+      );
+      // A poll that saw nothing new keeps the rows it had, so neither the
+      // list nor its rows render again; one that changed a row changes that row.
+      setSummaries((previous) => keepUnchanged(previous, built, (summary) => summary.workspaceId));
+      const ids = snapshot.agents.map((agent) => agent.paneId);
+      setPaneIds((previous) => (previous.join('\n') === ids.join('\n') ? previous : ids));
       setError(null);
       setErrorCode(null);
       lastCode.current = null;
