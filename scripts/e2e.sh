@@ -32,6 +32,14 @@ xcrun simctl spawn "$DEVICE" defaults write com.apple.keyboard.preferences Keybo
 # timeout: four to six minutes a flow instead of about one.
 xcrun simctl spawn "$DEVICE" defaults write com.apple.Accessibility ReduceMotionEnabled -bool true >/dev/null 2>&1
 
+# A development build has Expo's developer menu, which a Release build has none
+# of: it opened over the app at launch, and its floating button sat on the
+# Chats menu and took the tap. Every flow failed in its first step.
+for key in EXDevMenuShowsAtLaunch EXDevMenuShowFloatingActionButton EXDevMenuTouchGestureEnabled; do
+  xcrun simctl spawn "$DEVICE" defaults write dev.herdr.HerdrChat "$key" -bool false >/dev/null 2>&1
+done
+xcrun simctl spawn "$DEVICE" defaults write dev.herdr.HerdrChat EXDevMenuIsOnboardingFinished -bool true >/dev/null 2>&1
+
 # tool-activity tests the default, so the stored choice goes first.
 DB="$(xcrun simctl get_app_container "$DEVICE" dev.herdr.HerdrChat data 2>/dev/null)/Documents/SQLite/herdrchat.db"
 reset_tool_setting() {
