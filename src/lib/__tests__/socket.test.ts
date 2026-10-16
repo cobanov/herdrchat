@@ -1,3 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { HerdrError } from '../herdr/protocol';
 import {
   HerdrSocket,
@@ -56,6 +61,31 @@ describe('probe', () => {
   it('asks herdr for the socket path before falling back to the default', () => {
     const script = probeScript('herdr');
     expect(script.indexOf("'herdr' status server")).toBeLessThan(script.indexOf('HERDR_SOCKET_PATH'));
+  });
+
+  // Run for real, under sh, with stand-ins for uname, python3 and herdr.
+  it('puts a Windows host on the CLI, never on a bridge that cannot answer there (#158)', () => {
+    const bin = mkdtempSync(join(tmpdir(), 'probe-'));
+    const tool = (name: string, body: string) => {
+      writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
+      chmodSync(join(bin, name), 0o755);
+    };
+    tool('python3', 'exit 0');
+    tool('herdr', [
+      'case "$1 $2" in',
+      '  "status server") echo "socket: /h/herdr.sock" ;;',
+      '  "remote-api-bridge --check") echo herdr-api-bridge-v1 ;;',
+      '  *) exit 1 ;;',
+      'esac',
+    ].join('\n'));
+    const probe = (system: string) => {
+      tool('uname', `echo ${system}`);
+      return execFileSync('sh', ['-c', probeScript('herdr')], { env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, HOME: bin } }).toString();
+    };
+    expect(probe('MINGW64_NT-10.0-26200')).toContain('BRIDGE none');
+    expect(parseProbe(probe('MSYS_NT-10.0'))).toBeNull();
+    expect(parseProbe(probe('CYGWIN_NT-10.0'))).toBeNull();
+    expect(parseProbe(probe('Linux'))).toEqual({ bridge: 'python3', socketPath: '/h/herdr.sock' });
   });
 
   it("only trusts Apple's python stub when the developer tools are installed", () => {

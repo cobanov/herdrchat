@@ -266,9 +266,8 @@ files.
   sockets, so the python3 bridge cannot work there, and `herdr
   remote-api-bridge` returns nothing on Windows herdr 0.9.3
   ([herdrdev/herdr#5128](https://github.com/herdrdev/herdr/issues/5128)).
-  Until the connection test skips both, a `python3` on the PATH (including the
-  Microsoft Store alias) makes it fail; the workaround that gets the app onto
-  its polling fallback, without live events, is in
-  [#158](https://github.com/cobanov/herdrchat/issues/158).
+  The connection test therefore skips both on a Git Bash, MSYS or Cygwin
+  host, and the app uses its polling fallback there: chats work, without live
+  events ([#158](https://github.com/cobanov/herdrchat/issues/158)).
 - Reconnect banners and waiting/live-preview presentation are being refined.
   Report problems in [issues](https://github.com/cobanov/herdrchat/issues).
