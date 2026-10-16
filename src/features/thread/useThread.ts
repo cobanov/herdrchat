@@ -214,7 +214,7 @@ export function useThread(
     client, db, connectionId, cacheKey, listedSig, aliveRef, boundSigRef, shown, seed, stopTails, resetHistory, setLoading,
   });
   const poll = useAgentPoll({
-    client, db, connectionId, cacheKey, workspaceId, pane, polling, pollScale, aliveRef, boundSigRef, kickRef, agents,
+    client, db, connectionId, cacheKey, listedSig, workspaceId, pane, polling, pollScale, aliveRef, boundSigRef, kickRef, agents,
     setAgents, setLoading, shown, seed, bind, startTails, abortTails, dropSilentTails,
     readQuestion: asking.readQuestion, watchingOverlay, readOverlay, closeOverlay,
   });
