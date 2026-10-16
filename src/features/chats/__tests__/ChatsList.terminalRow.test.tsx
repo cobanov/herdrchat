@@ -58,7 +58,7 @@ jest.mock('../../../../modules/herdr-terminal/src', () => ({ isTerminalAvailable
 jest.mock('@/state/db', () => ({ loadThreadReads: () => Promise.resolve(new Map()), setSetting: jest.fn() }));
 jest.mock('@/features/chats/useHostChats', () => ({ useHostChats: () => mockChats }));
 jest.mock('@/features/chats/useOutdatedIntegrations', () => ({
-  useOutdatedIntegrations: () => ({ outdated: [], updating: false, error: null, update: jest.fn() }),
+  useOutdatedIntegrations: () => ({ issues: [], updating: false, error: null, update: jest.fn() }),
 }));
 jest.mock('@/features/chats/useChatPrefs', () => ({
   useChatPrefs: () => mockPrefs,

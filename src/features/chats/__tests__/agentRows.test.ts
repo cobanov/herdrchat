@@ -123,8 +123,9 @@ describe('agentRows through groupChats', () => {
     items.map((item) => (item.kind === 'group' ? item.id : item.kind === 'chat' ? item.summary.chatKey : item.kind === 'tab' ? `tab:${item.tabId}` : `pane:${item.pane.paneId}`));
 
   it('groups each agent by its own state, with no pane rows under any of them', () => {
+    // Idle lists the agent that finished last first: w6:p1's reply is newer than w2's.
     expect(ids(groupChats(rows, '', new Map(), agentRowKey))).toEqual([
-      'needs-you', 'w1', 'working', 'w6/w6:p2', 'idle', 'w2', 'w6/w6:p1',
+      'needs-you', 'w1', 'working', 'w6/w6:p2', 'idle', 'w6/w6:p1', 'w2',
     ]);
   });
 
@@ -158,8 +159,8 @@ describe('agentContext', () => {
     expect(agentContext(byKey('w2'))).toBe('Claude · demo/notes');
   });
 
-  it('puts the machine before the workspace', () => {
-    expect(agentContext(byKey('w1'))).toBe('nuku · kenneth-bot · Claude · demo/bot');
+  it('puts the machine first, and leaves a name someone gave the workspace to the title', () => {
+    expect(agentContext(byKey('w1'))).toBe('nuku · Claude · demo/bot');
   });
 
   // An untitled agent's row is titled by the workspace, so its line does not repeat it.

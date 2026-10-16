@@ -1,7 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as Native from 'react-native';
 
-import ChatsScreen from '../../../../app/index';
+import ChatsScreen from '../../../../app/(tabs)/index';
 import TerminalRoute from '../../../../app/chat/terminal';
 import { openChat } from '@/features/chats/navigation';
 import { terminalBackControl } from '../backControl';

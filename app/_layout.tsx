@@ -36,10 +36,10 @@ Notifications.setNotificationHandler({
  * The chats are under every presented screen, even one reached cold by a link.
  * Without an anchor, `herdrchat://settings?section=…` (or `/hosts`) built a
  * stack of that sheet alone: Done's `back()` had nowhere to go, there was no
- * swipe-down on a root screen, and the welcome gate in `index` never ran. With
- * the tab bar there was always a way out; now the chats have to be put there.
+ * swipe-down on a root screen, and the welcome gate in `index` never ran. The
+ * anchor is the tabs, whose first tab is the chats.
  */
-export const unstable_settings = { anchor: 'index' };
+export const unstable_settings = { anchor: '(tabs)' };
 
 export default function RootLayout() {
   return (
@@ -132,11 +132,11 @@ function RootStack() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.systemBackground },
         }}>
-        {/* The root: the chats. iPad keeps its selected conversation beside
-            them on this same screen; only phones push the standalone thread
-            route above it. There is no tab bar: Hosts and Settings are opened
-            from the menu in the Chats header and presented below. */}
-        <Stack.Screen name="index" />
+        {/* The root: the tabs, Chats, Files and Terminal (app/(tabs)). iPad
+            keeps its selected conversation beside the chats on the Chats tab;
+            only phones push the standalone thread route above it. Hosts and
+            Settings are opened from the Chats header and presented below. */}
+        <Stack.Screen name="(tabs)" />
         {/* `gestureEnabled` is the native-stack default, and it is stated here
             anyway. This is the app's main pushed screen (a chat's subagents and workflows
             push over it the same way), its back control

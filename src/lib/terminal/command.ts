@@ -55,13 +55,18 @@ import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/tim
  */
 
 /** Which attach path a pane takes. */
-export type TerminalPaneKind = 'agent' | 'shell';
+/**
+ * What a terminal opens: an agent's pane, a shell pane (both attached through
+ * herdr), or `login`, a plain login shell on the machine itself, for the
+ * Terminal tab, with no herdr pane behind it.
+ */
+export type TerminalPaneKind = 'agent' | 'shell' | 'login';
 
 /**
  * An agent pane is one herdr detected an agent in, any agent, conversational
  * or not: `agent attach` answers for all of them. A pane with none is a shell.
  */
-export function paneKind(agent: string | null): TerminalPaneKind {
+export function paneKind(agent: string | null): 'agent' | 'shell' {
   return agent === null ? 'shell' : 'agent';
 }
 
@@ -109,6 +114,8 @@ export function attachCommand(target: TerminalTarget): string | null {
 
 /** The command on the computer the pane is on, with its PATH, locale and session. */
 function paneCommand(target: TerminalTarget, herdrPath: string): string | null {
+  // The user's own login shell, which sets its PATH itself.
+  if (target.kind === 'login') return `${LOCALE}; exec "\${SHELL:-/bin/sh}" -l`;
   const session = isNamedSession(target.session) ? target.session.trim() : null;
   if (needsNewerHerdr(target)) return null;
   const attach = target.kind === 'agent'

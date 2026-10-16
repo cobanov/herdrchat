@@ -71,7 +71,8 @@ export function paneChats<S extends ChatSummary>(summary: S): readonly S['panes'
 
 /**
  * Pinned chats first, in the order they were pinned, then by live state,
- * keeping the host's order within each group (chats without an agent too).
+ * keeping the host's order within each group (chats without an agent too),
+ * except Idle, where the chat that finished last comes first.
  *
  * A pinned chat stays in Pinned whatever it is doing: its row already says
  * when it needs you, and a pin that jumped away the moment the agent asked
@@ -115,6 +116,8 @@ export function groupChats<S extends ChatSummary & { machine?: MachineRef | null
   return CHAT_GROUPS.flatMap(({ id, title }): ChatListItem<S>[] => {
     const chats = matches.filter((chat) => groupOf(chat) === id);
     if (id === 'pinned') chats.sort((a, b) => (pinned.get(keyOf(a)) ?? 0) - (pinned.get(keyOf(b)) ?? 0));
+    // The chat that finished last first, by its last message; one with none keeps its place after them.
+    if (id === 'idle') chats.sort((a, b) => (b.preview?.timestamp ?? 0) - (a.preview?.timestamp ?? 0));
     if (chats.length === 0) return [];
     return [
       { kind: 'group', id, title, count: chats.length },

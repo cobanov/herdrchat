@@ -16,22 +16,41 @@ export interface TitleParts {
   agentName: string | null | undefined;
   workspaceLabel: string | null | undefined;
   workspaceId: string | null | undefined;
+  /**
+   * The folders of the workspace's panes. herdr labels a workspace after its
+   * focused pane's folder and follows it until someone renames it, so a label
+   * that names none of them was given by a person, and titles the chat over
+   * the session's own title. Omitted: the label never outranks the session.
+   */
+  folders?: readonly (string | null | undefined)[];
 }
 
 /**
- * The first of the agent's herdr name, the session title, the workspace label
- * and the workspace id that says something, trimmed. Empty only when none
+ * The first of the agent's herdr name, a workspace label someone chose, the
+ * session title, the workspace label and the workspace id that says
+ * something, trimmed. Empty only when none
  * does. Nothing is cut: a row wraps a long title onto a second line.
  *
  * The herdr name comes first because someone chose it, and a name a person
  * chose wins over one the model wrote. It is null until someone sets it.
  */
-export function chatTitle({ sessionTitle, agentName, workspaceLabel, workspaceId }: TitleParts): string {
-  for (const candidate of [agentName, namesSomething(sessionTitle), workspaceLabel, workspaceId]) {
+export function chatTitle({ sessionTitle, agentName, workspaceLabel, workspaceId, folders }: TitleParts): string {
+  const chosen = folders !== undefined && isChosenLabel(workspaceLabel, folders) ? workspaceLabel : null;
+  for (const candidate of [agentName, chosen, namesSomething(sessionTitle), workspaceLabel, workspaceId]) {
     const trimmed = candidate?.trim() ?? '';
     if (trimmed !== '') return trimmed;
   }
   return '';
+}
+
+/**
+ * True when a workspace label was given by a person: it names none of the
+ * workspace's folders, the name herdr would have given it (see `folders`).
+ * With no folder known there is nothing to tell it from, so it is not.
+ */
+export function isChosenLabel(label: string | null | undefined, folders: readonly (string | null | undefined)[]): boolean {
+  const names = folders.map((folder) => folder?.split('/').filter(Boolean).pop() ?? '').filter(Boolean);
+  return (label?.trim() ?? '') !== '' && names.length > 0 && !names.some((name) => sameName(label, name));
 }
 
 /**

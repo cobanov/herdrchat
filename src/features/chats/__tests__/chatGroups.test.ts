@@ -195,3 +195,13 @@ describe('space cards', () => {
     expect(ids(groupChats([two], 'codex'))).toEqual(['idle', 'api', 'pane:api:p2']);
   });
 });
+
+it('lists the idle chat that finished last first, and the ones with no message after them', () => {
+  const at = (workspaceId: string, timestamp: number | null): ChatSummary => ({
+    ...chat(workspaceId, 'idle'),
+    preview: timestamp === null ? null : { text: 'done', timestamp, fromUser: false },
+  });
+  const items = groupChats([at('w1', 100), at('w2', null), at('w3', 300), chat('w4', 'done'), at('w5', 200)], '');
+  expect(items.filter((item) => item.kind === 'chat').map((item) => item.kind === 'chat' ? item.summary.workspaceId : ''))
+    .toEqual(['w3', 'w5', 'w1', 'w2', 'w4']);
+});

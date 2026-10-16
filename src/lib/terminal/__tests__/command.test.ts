@@ -19,6 +19,16 @@ describe('paneKind', () => {
 });
 
 describe('attachCommand', () => {
+  // The Terminal tab: no herdr pane, the machine's own login shell.
+  it('opens a login shell on the host, and through the host on one of its machines', () => {
+    const login = { paneId: '', kind: 'login' as const, terminalId: null, herdrPath: 'herdr', session: 'work' };
+    expect(attachCommand(login)).toBe(`${LOCALE}; exec "\${SHELL:-/bin/sh}" -l`);
+    const jumped = attachCommand({ ...login, machine: { target: 'me@laptop' } }) ?? '';
+    expect(jumped).toContain('ssh -t -e none');
+    expect(jumped).toContain('SHELL:-/bin/sh');
+    expect(jumped).not.toContain('herdr');
+  });
+
   it('attaches an agent pane on the host with herdr agent attach', () => {
     expect(attachCommand({ paneId: 'w2:p1', kind: 'agent', terminalId: 'term_a', herdrPath: 'herdr', session: '' })).toBe(
       `${PATH_PREFIX}${LOCALE}; exec 'herdr' 'agent' 'attach' 'w2:p1'`

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -7,6 +7,7 @@ import { titledBySession } from '@/lib/chatTitle';
 import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
+import { StatusMark } from './StatusMark';
 import { formatListTime } from './ChatRow';
 import { rowTestKey, type MachineRef } from './listedChat';
 import { paneContext, paneTitle, statusLabel } from './rowText';
@@ -49,7 +50,7 @@ export const PaneRow = memo(function PaneRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const previewHeight = useScaledLine(typography.footnote.lineHeight);
   const attention = pane.status === 'blocked';
   const working = pane.status === 'working';
@@ -121,13 +122,7 @@ export const PaneRow = memo(function PaneRow({
         </View>
 
         <View style={{ alignItems: 'center', gap: spacing.xs }}>
-          {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-            <Icon
-              name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-              size={size.rowStatusGlyph}
-              tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-            />
-          )}
+          <StatusMark status={pane.status} unread={unread} />
           {working ? <Text variant="caption2" color="tint">now</Text> : pane.preview?.timestamp != null && (
             <Text variant="caption2" color="secondary">{formatListTime(pane.preview.timestamp)}</Text>
           )}

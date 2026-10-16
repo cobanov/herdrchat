@@ -13,6 +13,12 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 # Send stays off until the thread has loaded; wait for its history first.

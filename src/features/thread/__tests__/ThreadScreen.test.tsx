@@ -231,10 +231,26 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   mockWorkspaceLabel = 'api';
   mockSessionTitle = 'Web build';
   mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
-  mockAgents = [{ agent: 'claude', paneId: 'w6:p2', agentSession: null }];
+  // In api/web: the label "api" names no folder of this one agent, and must
+  // still not title it over its session, as it titles the workspace's chat.
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p2', agentSession: null, cwd: '/home/demo/api/web' }];
   const screen = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" title="api" />);
   expect(screen.getByTestId('thread-title')).toHaveTextContent('Web build');
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^api · Claude · .*high effort/);
+  await screen.unmount();
+  mockSessionTitle = null;
+  mockAgents = [];
+});
+
+// A name someone gave the workspace (it names none of its folders) titles its
+// chat over the session's own title, as its row does.
+it('titles a workspace chat by a name someone gave the workspace', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'herdrchat';
+  mockSessionTitle = "NAS'taki steam2 dump dosyası";
+  mockAgents = [{ agent: 'claude', paneId: 'w3:p1', agentSession: null, cwd: '/Users/me/Developer' }];
+  const screen = await render(<ThreadScreen workspaceId="w3" title="herdrchat" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('herdrchat');
   await screen.unmount();
   mockSessionTitle = null;
   mockAgents = [];

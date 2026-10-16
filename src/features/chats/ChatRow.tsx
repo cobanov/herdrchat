@@ -1,10 +1,12 @@
 import { memo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
+import { StatusMark } from './StatusMark';
+import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
 import { rowTestKey, type MachineRef } from './listedChat';
 import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
@@ -23,7 +25,7 @@ export const ChatRow = memo(function ChatRow({
   summary, testKey, unread, selected = false, pinned = false, muted = false, onPress, onLongPress, actions = [],
 }: {
   /** With `machine`, a chat on one of the host's machines: its label leads the line under the title. */
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { machine?: MachineRef | null; connectionId?: string };
   /**
    * What the testID is built from, when the row is not its workspace's: an
    * agent's row in the Agents view (`agentTestKey`), one of several in a
@@ -44,7 +46,7 @@ export const ChatRow = memo(function ChatRow({
    */
   actions?: readonly RowAction[];
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const previewHeight = useScaledLine(typography.footnote.lineHeight);
   const attention = summary.status === 'blocked';
   const working = summary.status === 'working';
@@ -97,7 +99,10 @@ export const ChatRow = memo(function ChatRow({
           {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
           {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
         </View>
-        <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+          <DeviceIconMark connectionId={summary.connectionId} />
+          <Text variant="caption" color="secondary" mono numberOfLines={1} style={{ flexShrink: 1 }}>{context}</Text>
+        </View>
         {restoreFailed !== null ? (
           <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">
             {restoreFailed}
@@ -110,13 +115,7 @@ export const ChatRow = memo(function ChatRow({
       </View>
 
       <View style={{ alignItems: 'center', gap: spacing.sm }}>
-        {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-          <Icon
-            name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-            size={size.rowStatusGlyph}
-            tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-          />
-        )}
+        <StatusMark status={summary.status} unread={unread} />
         {working ? <Text variant="caption2" color="tint">now</Text> : summary.preview?.timestamp != null && (
           <Text variant="caption2" color="secondary">{formatListTime(summary.preview.timestamp)}</Text>
         )}

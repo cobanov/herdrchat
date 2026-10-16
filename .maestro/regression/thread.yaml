@@ -8,9 +8,20 @@ appId: dev.herdr.HerdrChat
 # The row is titled by its Claude session, not the workspace ("notes"). The
 # workspace is named after its folder, so the line under the title says it
 # once, in the folder.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
 - assertVisible:
     id: chat-row-w2
     text: 'Release notes summary, .*Claude · demo/notes.*'
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 # Send stays off until the thread has loaded; wait for its history first.
@@ -175,6 +186,16 @@ appId: dev.herdr.HerdrChat
 # time, above the question (the Demo's herdrchat chat waits on a Bash prompt in
 # Claude 2.1.299's shape, its command wrapped at 80 columns and shown joined).
 # Open the screenshot: the command must be legible and the choices still under it.
+# w1 is the first row: the list is swiped back to its top, since a row scrolled
+# up under the search field still counts as visible to Maestro. The drag starts
+# inside the list: a plain swipe begins on the search field, which does not scroll.
+- repeat:
+    times: 3
+    commands:
+      - swipe:
+          start: 50%, 35%
+          end: 50%, 85%
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w1
 - extendedWaitUntil:

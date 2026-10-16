@@ -17,10 +17,9 @@ import { isUnderHost } from '@/lib/herdr/machines';
  * The app's root: the chats, and on iPad the open detail beside them, a
  * conversation or a pane's terminal.
  *
- * Nothing else is a peer of this screen. Hosts and Settings are presented above
- * it from the menu in its header (see `src/lib/mainMenu.ts`), so this is also
- * the one screen that is always underneath, which is why the welcome gate runs
- * here.
+ * The first tab, beside Files and Terminal. Hosts and Settings are presented
+ * above it from its header, and it is the screen the app opens on, which is
+ * why the welcome gate runs here.
  */
 export default function ChatsScreen() {
   useWelcomeGate();

@@ -268,6 +268,14 @@ interface Questions {
   toolId: string;
 }
 
+/** The Demo's home folder as `ls -lnA` prints it in the C locale. */
+const DEMO_HOME_LISTING = [
+  'drwxr-xr-x  4 1000 1000  128 Oct 15 09:12 code',
+  'drwxr-xr-x  3 1000 1000   96 Oct 14 18:40 notes',
+  '-rw-r--r--  1 1000 1000 2048 Oct 15 08:03 README.md',
+  '-rw-r--r--  1 1000 1000  512 Oct 12 22:15 .zshrc',
+].join('\n') + '\n';
+
 export class DemoHost implements HerdrTransport {
   /** Transcripts by pane, mutable because the demo agent writes to them. */
   private readonly transcripts = new Map<string, string>();
@@ -427,6 +435,18 @@ export class DemoHost implements HerdrTransport {
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
     if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
+
+    // The Files tab. The demo has a small home folder with one folder in it,
+    // listed the way `ls -lnA` lists, and any other folder is empty; what is
+    // sent up is kept nowhere, and what is downloaded is a short text.
+    const listing = /^(cd(?: -- '((?:[^']|'\\'')*)')?) && pwd && LC_ALL=C ls -lnA$/.exec(body);
+    if (listing !== null) {
+      const folder = listing[2] === undefined ? DEMO_HOME : listing[2].replaceAll(`'\\''`, "'");
+      const home = folder === DEMO_HOME;
+      return out(`${folder}\ntotal 8\n${home ? DEMO_HOME_LISTING : ''}`);
+    }
+    if (body.includes('base64 < ') && body.includes("tr -d '\\n'")) return out('SGVsbG8gZnJvbSB0aGUgSGVyZHJDaGF0IGRlbW8uCg==');
+    if (body.includes('.herdrchat-part')) return out('');
 
     // A picture on its way up. The demo keeps nothing; it answers the last
     // command the way a host does, with where the file would be, so sending a

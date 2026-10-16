@@ -83,6 +83,12 @@ appId: dev.herdr.HerdrChat
       id: chat-row-w2
     direction: UP
     centerElement: true
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:

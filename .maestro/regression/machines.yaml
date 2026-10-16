@@ -99,6 +99,12 @@ appId: dev.herdr.HerdrChat
 # list's error, and its row stays as last seen. The Demo's scenario
 # (DEMO_PHRASES.unplug, typed into a host chat) takes nuku off the network;
 # every jump to it then fails as ssh does, with exit 255.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:

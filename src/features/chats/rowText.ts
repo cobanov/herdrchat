@@ -1,4 +1,4 @@
-import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName } from '@/lib/chatTitle';
 import { agentName, type AgentStatus, type Pane } from '@/lib/herdr/models';
 import { processLabel } from '@/lib/terminal/rows';
 import { paneChats } from './chatGroups';
@@ -34,7 +34,15 @@ export function rowTitle(summary: ChatSummary): string {
     agentName: multi ? null : summary.agentName,
     workspaceLabel: summary.title,
     workspaceId: summary.workspaceId,
+    // One agent's row of a workspace running several (`agentRows`) is titled
+    // by that agent's session: the workspace's name is the line below it.
+    folders: 'pane' in summary && summary.pane !== null ? undefined : workspaceFolders(summary),
   });
+}
+
+/** Every folder the workspace's panes are in, which herdr would have named it after. */
+export function workspaceFolders(summary: Pick<ChatSummary, 'agents' | 'shellPanes'>): string[] {
+  return [...summary.agents.map((agent) => agent.cwd), ...summary.shellPanes.map((shell) => shell.pane.cwd)];
 }
 
 /**
@@ -119,7 +127,7 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null;
     // folder; said again in front, it pushed the folder off a phone's row.
     // Either folder shown: an agent in `api/web` of workspace `api` read
     // `api · Claude · api/web`.
-    const workspace = titledBySession(summary) && !parts.some((part) => sameName(summary.title, part)) ? summary.title.trim() : '';
+    const workspace = !sameName(rowTitle(summary), summary.title) && !parts.some((part) => sameName(summary.title, part)) ? summary.title.trim() : '';
     return [machine, workspace, summary.ordinal ?? '', agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];

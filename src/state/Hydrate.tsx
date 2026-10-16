@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useConnections } from './connections';
 import { getSetting, loadConnections } from './db';
+import { useDeviceIcons } from './deviceIcons';
 import { loadHostMachines, mirrorHostMachines } from './hostMachines';
 import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import { loadSlashCatalogues, mirrorSlashCatalogues } from './slashCommands';
@@ -80,6 +81,8 @@ export function Hydrate({ children }: { children: ReactNode }) {
           loadHostMachines(db).catch(() => undefined),
           // And the `/` palette is complete from launch, before any scan.
           loadSlashCatalogues(db).catch(() => undefined),
+          // The glyph each host and machine was given, so rows draw it from launch.
+          useDeviceIcons.getState().load(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,

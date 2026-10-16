@@ -15,7 +15,7 @@
  * (`--takeover`) gets the same screen.
  */
 import { agentName } from '../herdr/models';
-import { attachCommand, paneKind } from '../terminal/command';
+import { attachCommand, paneKind, type TerminalPaneKind } from '../terminal/command';
 import { DEMO_HOST, demoPanes, type DemoFixtures } from './fixtures';
 
 const ESC = '\u001b';
@@ -105,8 +105,10 @@ export function demoTerminalScreen(
 function screenOn(
   command: string,
   fixtures: DemoFixtures,
-  build: (pane: { paneId: string; kind: 'agent' | 'shell'; terminalId: string | null }) => string | null
+  build: (pane: { paneId: string; kind: TerminalPaneKind; terminalId: string | null }) => string | null
 ): string | null {
+  // The Terminal tab's login shell is the Demo's one shell too.
+  if (build({ paneId: '', kind: 'login', terminalId: null }) === command) return DEMO_SHELL_SCREEN;
   for (const workspace of fixtures.workspaces) {
     for (const pane of demoPanes(workspace)) {
       const agent = pane.agent ?? 'claude';

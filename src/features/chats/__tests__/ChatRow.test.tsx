@@ -107,15 +107,16 @@ it('names every agent of a workspace that runs several, and the folder they shar
 
 // The session's title is what a person calls the conversation; the workspace
 // label, a folder or slot name, moves to the line under it.
-it('titles a chat by its session, with the workspace ahead of the agent below', async () => {
+it('titles a chat by a workspace name someone chose, over its session', async () => {
+  // "Scratch" names no folder of the workspace, so a person gave it.
   const screen = await render(
     <ChatRow summary={{ ...summary('claude'), title: 'Scratch', sessionTitle: 'Herdrchat repository clone' }} unread={false} onPress={jest.fn()} />
   );
-  expect(screen.getByText('Herdrchat repository clone')).toBeOnTheScreen();
-  expect(screen.getByText('Scratch · Claude · code/parser')).toBeOnTheScreen();
+  expect(screen.getByText('Scratch')).toBeOnTheScreen();
+  expect(screen.getByText('Claude · code/parser')).toBeOnTheScreen();
   expect(screen.getByTestId('chat-row-w1').props.accessibilityLabel)
-    .toMatch(/^Herdrchat repository clone, Scratch · Claude · code\/parser, Idle/);
-  // A workspace named after its folder is said once, in the folder.
+    .toMatch(/^Scratch, Claude · code\/parser, Idle/);
+  // A workspace named after its folder is titled by the session, and said once, in the folder.
   await screen.rerender(
     <ChatRow summary={{ ...summary('claude'), sessionTitle: 'Herdrchat repository clone' }} unread={false} onPress={jest.fn()} />
   );

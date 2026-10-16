@@ -96,7 +96,7 @@ jest.mock('../useChatPrefs', () => ({
     togglePin: jest.fn(), toggleMute: jest.fn(), error: null, clearError: jest.fn(),
   }),
 }));
-jest.mock('../useOutdatedIntegrations', () => ({ useOutdatedIntegrations: () => ({ outdated: [], updating: false, error: null, update: jest.fn() }) }));
+jest.mock('../useOutdatedIntegrations', () => ({ useOutdatedIntegrations: () => ({ issues: [], updating: false, error: null, update: jest.fn() }) }));
 jest.mock('../useAttentionBadge', () => ({ useAttentionBadge: () => undefined }));
 jest.mock('../useChatActions', () => ({
   useChatActions: () => ({ error: null, clearError: jest.fn(), manageChat: jest.fn(), renameChat: jest.fn(), closeChat: jest.fn() }),

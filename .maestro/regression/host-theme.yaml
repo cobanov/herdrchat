@@ -52,6 +52,12 @@ appId: dev.herdr.HerdrChat
 
 # The agent writes the file.
 - runFlow: _close-settings.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:

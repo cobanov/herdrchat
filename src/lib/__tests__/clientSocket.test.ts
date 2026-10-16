@@ -174,35 +174,49 @@ describe('HerdrClient over the socket', () => {
     });
   });
 
-  describe('outdatedIntegrations (#93)', () => {
-    // The shape herdr answers, trimmed.
-    const list = (claude: string, codex: string, omp: string, pi = 'not_installed') =>
+  describe('integrationIssues (#93)', () => {
+    // The shape herdr answers, trimmed. `available` is whether the agent is on the host's PATH.
+    const list = (claude: string, codex: string, omp: string, pi = 'not_installed', available = { claude: true, codex: true, omp: true, pi: true }) =>
       `{"id":"x","result":{"type":"integration_list","integrations":[` +
-      `{"target":"pi","label":"pi","command":"pi","available":true,"state":"${pi}"},` +
-      `{"target":"claude","label":"claude","command":"claude","available":true,"state":"${claude}"},` +
-      `{"target":"codex","label":"codex","command":"codex","available":true,"state":"${codex}"},` +
-      `{"target":"omp","label":"omp","command":"omp","available":true,"state":"${omp}"}]}}`;
+      `{"target":"pi","label":"pi","command":"pi","available":${available.pi},"state":"${pi}"},` +
+      `{"target":"claude","label":"claude","command":"claude","available":${available.claude},"state":"${claude}"},` +
+      `{"target":"codex","label":"codex","command":"codex","available":${available.codex},"state":"${codex}"},` +
+      `{"target":"omp","label":"omp","command":"omp","available":${available.omp},"state":"${omp}"}]}}`;
+    const none = { claude: false, codex: false, omp: false, pi: false };
 
     it('names the integrations the host reports as outdated', async () => {
-      const { client } = socketHost({ 'integration.list': list('outdated', 'current', 'outdated') });
-      await expect(client.outdatedIntegrations()).resolves.toEqual(['claude', 'omp']);
+      const { client } = socketHost({ 'integration.list': list('outdated', 'current', 'outdated', 'current') });
+      await expect(client.integrationIssues()).resolves.toEqual([
+        { name: 'claude', state: 'outdated' },
+        { name: 'omp', state: 'outdated' },
+      ]);
     });
 
     it('names an outdated Pi integration', async () => {
       const { client } = socketHost({ 'integration.list': list('current', 'current', 'current', 'outdated') });
-      await expect(client.outdatedIntegrations()).resolves.toEqual(['pi']);
+      await expect(client.integrationIssues()).resolves.toEqual([{ name: 'pi', state: 'outdated' }]);
+    });
+
+    it('names a missing integration for an agent the host has, the chat that waits forever', async () => {
+      const { client } = socketHost({ 'integration.list': list('not_installed', 'current', 'current', 'current', { ...none, claude: true }) });
+      await expect(client.integrationIssues()).resolves.toEqual([{ name: 'claude', state: 'missing' }]);
+    });
+
+    it('says nothing about an integration whose agent the host does not have', async () => {
+      const { client } = socketHost({ 'integration.list': list('current', 'not_installed', 'not_installed', 'not_installed', { ...none, claude: true }) });
+      await expect(client.integrationIssues()).resolves.toEqual([]);
     });
 
     it('reports none when everything is current', async () => {
-      const { client } = socketHost({ 'integration.list': list('current', 'current', 'current') });
-      await expect(client.outdatedIntegrations()).resolves.toEqual([]);
+      const { client } = socketHost({ 'integration.list': list('current', 'current', 'current', 'current') });
+      await expect(client.integrationIssues()).resolves.toEqual([]);
     });
 
     it('says nothing on a herdr without integration.list', async () => {
       const { client } = socketHost({
         'integration.list': '{"id":"x","error":{"code":"invalid_request","message":"unknown variant `integration.list`"}}',
       });
-      await expect(client.outdatedIntegrations()).resolves.toBeNull();
+      await expect(client.integrationIssues()).resolves.toBeNull();
     });
   });
 

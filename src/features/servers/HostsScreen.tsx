@@ -10,7 +10,11 @@ import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
+import { chooseDeviceIcon } from '@/features/devices/chooseDeviceIcon';
+import { machineConnectionId } from '@/lib/herdr/machines';
+import { enabledMachines, useHostMachines } from '@/state/hostMachines';
 import { returnToChats } from '@/features/chats/navigation';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { isNamedSession } from '@/lib/herdr/session';
@@ -48,6 +52,7 @@ export default function ServersScreen() {
   // The chats under this sheet still poll; their count keeps the one signal
   // the tab bar's badge gave while you were away from them.
   const waiting = useBadge((state) => state.count);
+  const machinesByHost = useHostMachines((state) => state.byHost);
 
   const choose = async (connection: ServerConnection) => {
     select(connection.id);
@@ -155,6 +160,7 @@ export default function ServersScreen() {
                   padding: spacing.md,
                   opacity: pressed ? 0.6 : 1,
                 })}>
+                <DeviceIconMark connectionId={connection.id} glyphSize={size.rowStatusGlyph} />
                 <View style={{ flex: 1, gap: spacing.xxs }}>
                   <Text variant="headline">{connection.name}</Text>
                   <Text variant="caption" color="secondary">
@@ -189,9 +195,36 @@ export default function ServersScreen() {
                     }
                   />
                   <View style={{ width: 1, backgroundColor: colors.separator }} />
+                  <RowAction label="Icon" onPress={() => chooseDeviceIcon(db, connection.id, connection.name)} />
+                  <View style={{ width: 1, backgroundColor: colors.separator }} />
                   <RowAction label="Remove" destructive onPress={() => confirmDelete(connection)} />
                 </View>
               )}
+
+              {/* The machines herdr on this host lists (`herdr machine add`), each
+                  given its own glyph here: their chats share this host's list. */}
+              {enabledMachines(machinesByHost, connection.id).map((machine) => {
+                const id = machineConnectionId(connection.id, machine.id);
+                return (
+                  <Pressable
+                    key={id}
+                    onPress={() => chooseDeviceIcon(db, id, machine.label)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Choose an icon for ${machine.label}`}
+                    testID={`machine-icon-${machine.id}`}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md,
+                      borderTopWidth: 1, borderTopColor: colors.separator, opacity: pressed ? 0.6 : 1,
+                    })}>
+                    <DeviceIconMark connectionId={id} glyphSize={size.rowStatusGlyph} />
+                    <View style={{ flex: 1, gap: spacing.xxs }}>
+                      <Text variant="subhead">{machine.label}</Text>
+                      <Text variant="caption" color="secondary">{`${machine.target} · through ${connection.name}`}</Text>
+                    </View>
+                    <Text variant="footnote" color="tint" weight="600">Icon</Text>
+                  </Pressable>
+                );
+              })}
             </View>
           ))}
 

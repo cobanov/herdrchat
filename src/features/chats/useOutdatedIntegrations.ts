@@ -1,35 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { HerdrClient, IntegrationName } from '@/lib/herdr/client';
+import type { HerdrClient, IntegrationIssue } from '@/lib/herdr/client';
+import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { HerdrError } from '@/lib/herdr/protocol';
 
 export interface OutdatedIntegrations {
-  /** Integrations the host reports as outdated. Empty when none, or unknown. */
-  outdated: readonly IntegrationName[];
+  /** Integrations the host reports as outdated or missing. Empty when none, or unknown. */
+  issues: readonly IntegrationIssue[];
   updating: boolean;
   error: string | null;
-  /** Reinstall every outdated integration, then ask the host again. */
+  /** Install every listed integration, then ask the host again. */
   update: () => Promise<void>;
 }
 
 /**
  * Asks the host once per client whether herdr's chat-agent integrations are
- * out of date, and offers the reinstall (#93). A host that cannot be asked
- * reports nothing: this is advice, never an error of its own.
+ * out of date (#93) or not installed at all, and offers the install. A host
+ * that cannot be asked reports nothing: this is advice, never an error of its
+ * own.
  *
  * Keyed on the client, so switching hosts asks the new one. The screen that
  * uses it is itself keyed by connection, which resets this state with it.
  */
 export function useOutdatedIntegrations(client: HerdrClient | null): OutdatedIntegrations {
-  const [outdated, setOutdated] = useState<readonly IntegrationName[]>([]);
+  const [issues, setIssues] = useState<readonly IntegrationIssue[]>([]);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (client === null) return;
     let alive = true;
-    void client.outdatedIntegrations().then((list) => {
-      if (alive) setOutdated(list ?? []);
+    void client.integrationIssues().then((list) => {
+      if (alive) setIssues(list ?? []);
     });
     return () => {
       alive = false;
@@ -37,18 +39,22 @@ export function useOutdatedIntegrations(client: HerdrClient | null): OutdatedInt
   }, [client]);
 
   const update = useCallback(async () => {
-    if (client === null || outdated.length === 0) return;
+    if (client === null || issues.length === 0) return;
     setUpdating(true);
     setError(null);
     try {
-      for (const name of outdated) await client.installIntegration(name);
-      setOutdated((await client.outdatedIntegrations()) ?? []);
+      for (const { name } of issues) {
+        await client.installIntegration(name);
+        // As the thread's own install does: Codex reports its session through the launcher.
+        if (name === 'codex') await installCodexLauncher(client.transport);
+      }
+      setIssues((await client.integrationIssues()) ?? []);
     } catch (thrown) {
       setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
     } finally {
       setUpdating(false);
     }
-  }, [client, outdated]);
+  }, [client, issues]);
 
-  return { outdated, updating, error, update };
+  return { issues, updating, error, update };
 }

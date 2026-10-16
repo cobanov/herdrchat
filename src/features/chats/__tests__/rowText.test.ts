@@ -66,10 +66,17 @@ describe('titles', () => {
   const titled = (paneId: string, cwd: string, title: string | null, name: string | null = null): AgentInfo =>
     ({ ...agentIn(paneId, 'claude', cwd), title, name });
 
-  it('titles a one-agent chat by its session, and names the workspace in its line', () => {
-    const chat = workspace([titled('w6:p1', '/home/demo/server', 'API contract')]);
+  it('titles a one-agent chat by its session while herdr names the workspace after its folder', () => {
+    const chat = { ...workspace([titled('w6:p1', '/home/demo/server', 'API contract')]), title: 'server' };
     expect(rowTitle(chat)).toBe('API contract');
-    expect(rowContext(chat)).toBe('api · Claude · demo/server');
+    expect(rowContext(chat)).toBe('Claude · demo/server');
+  });
+  // A label that names no folder of the workspace was given by a person, and
+  // a name a person gave wins over the one the model wrote.
+  it('titles it by a workspace name someone chose, over the session', () => {
+    const chat = workspace([titled('w6:p1', '/home/demo/server', 'API contract')]);
+    expect(rowTitle(chat)).toBe('api');
+    expect(rowContext(chat)).toBe('Claude · demo/server');
   });
   it('titles it by the agent\'s herdr name before the session has a title', () => {
     const chat = workspace([titled('w6:p1', '/home/demo/server', null, 'api-pm')]);
@@ -112,9 +119,10 @@ it('says what an agent is doing when it has no line to show', () => {
 // computers is two chats.
 describe('rowContext on a machine', () => {
   const nuku = { id: 'demo-nuku', label: 'nuku' };
-  it('leads with the machine, then the workspace rule, the provider and the folder', () => {
+  it('leads with the machine, then the provider and the folder', () => {
+    // A name someone gave the workspace titles the row, so the line does not repeat it.
     const titled = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
-    expect(rowContext(titled)).toBe('nuku · kenneth-bot · Claude · demo/bot');
+    expect(rowContext(titled)).toBe('nuku · Claude · demo/bot');
     // A workspace named after its folder is still said once, by the folder.
     const sameFolder = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/kenneth-bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
     expect(rowContext(sameFolder)).toBe('nuku · Claude · demo/kenneth-bot');

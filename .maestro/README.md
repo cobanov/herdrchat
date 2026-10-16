@@ -226,11 +226,12 @@ A fresh install with no host opens on the welcome, so every flow runs
 flows that only need Settings.
 
 The app opens on the chats list, titled by its view (Spaces or Agents, picked
-by tapping the title, `chats-view`); Hosts, Settings and New chat sit behind its "…" menu
-(`chats-menu`) and open as sheets closed by Done (`header-close`). Flows reach
-them through `regression/_menu.yaml` with `ITEM` set to the row's text, never
-by tapping a screen's name on its own: the name is also a menu row and a sheet
-title, so assert something only that screen renders. Leaving a sheet is
+by tapping the title, `chats-view`), above a tab bar of Chats, Files and Terminal
+(`tabs.yaml`). New chat is the header's "+" (`header-action`), Settings its gear
+(`chats-settings`) and Hosts the host's name under the title (`server-switcher`);
+each opens as a sheet closed by Done (`header-close`). Flows reach them through
+`regression/_menu.yaml` with `ITEM` set to the screen's name, and assert
+something only that screen renders, never its name, which is also a sheet title. Leaving a sheet is
 proved the same way: assert the sheet's own element is gone, since the chats'
 title is still in the hierarchy behind a page sheet.
 

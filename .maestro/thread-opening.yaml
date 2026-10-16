@@ -34,8 +34,17 @@ appId: dev.herdr.HerdrChat
     id: header-close
 - tapOn:
     id: chat-group-idle
-- assertVisible:
-    id: chat-row-w2
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - assertVisible:
@@ -56,6 +65,12 @@ appId: dev.herdr.HerdrChat
     id: jump-to-bottom
 - tapOn:
     id: thread-back
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - assertVisible:

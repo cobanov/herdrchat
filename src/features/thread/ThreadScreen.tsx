@@ -46,7 +46,7 @@ import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/
 import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
-import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName } from '@/lib/chatTitle';
 import type { IntegrationName } from '@/lib/herdr/client';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
@@ -201,6 +201,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
     agentName: thread.agentName,
     workspaceLabel: thread.workspaceLabel,
     workspaceId: null,
+    // One agent's chat of a workspace running several is titled by its session;
+    // a name someone gave the workspace titles the workspace's own chat (`rowTitle`).
+    folders: paneId === undefined || paneId === '' ? thread.agents.map((agent) => agent.cwd) : undefined,
   });
   const linkTitle = title?.trim() ?? '';
   const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
@@ -354,7 +357,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
    * wait for the first poll rather than guessing.
    */
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
-  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
+  const workspaceLine = thread.workspaceLabel !== null && !sameName(polledTitle, thread.workspaceLabel) ? thread.workspaceLabel : null;
   const subtitle = [
     // The machine first: the same folder on two computers is two chats.
     machineLabel,

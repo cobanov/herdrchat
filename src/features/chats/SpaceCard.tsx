@@ -1,5 +1,5 @@
 import { memo, useRef } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { HoverView } from '../../../modules/herdr-keys/src/hover';
 import { Icon } from '@/components/Icon';
@@ -8,6 +8,8 @@ import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { useHoverIntent } from '@/features/spaces/useHoverIntent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, size, spaceLayout, spacing } from '@/theme/tokens';
+import { StatusMark } from './StatusMark';
+import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
 import { AVATAR_SIZE, type RowAction } from './ChatRow';
 import { rowTestKey, type MachineRef } from './listedChat';
 import { spaceStats, spaceTitle, statusLabel } from './rowText';
@@ -29,7 +31,7 @@ import type { ChatSummary } from './useWorkspaces';
 export const SpaceCard = memo(function SpaceCard({
   summary, testKey, unread, pinned = false, muted = false, onOpenLayout, onHoverLayout, onLeaveLayout, onLongPress, actions = [],
 }: {
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { machine?: MachineRef | null; connectionId?: string };
   testKey?: string;
   unread: boolean;
   pinned?: boolean;
@@ -43,10 +45,9 @@ export const SpaceCard = memo(function SpaceCard({
   /** Offered to VoiceOver and Voice Control: the swipe's actions (`ChatRow`). */
   actions?: readonly RowAction[];
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const button = useRef<View>(null);
   const attention = summary.status === 'blocked';
-  const working = summary.status === 'working';
   const title = spaceTitle(summary);
   const stats = spaceStats(summary);
   const key = testKey ?? rowTestKey(summary);
@@ -97,18 +98,15 @@ export const SpaceCard = memo(function SpaceCard({
             {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
             {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
           </View>
-          <Text variant="caption" color={attention ? 'attention' : 'secondary'} mono numberOfLines={2}>{stats}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <DeviceIconMark connectionId={summary.connectionId} />
+            <Text variant="caption" color={attention ? 'attention' : 'secondary'} mono numberOfLines={2} style={{ flexShrink: 1 }}>{stats}</Text>
+          </View>
           {restoreFailed !== null && (
             <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">{restoreFailed}</Text>
           )}
         </View>
-        {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-          <Icon
-            name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-            size={size.rowStatusGlyph}
-            tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-          />
-        )}
+        <StatusMark status={summary.status} unread={unread} />
       </Pressable>
       {hasLayout && (
         <HoverView onHoverChange={hover} style={{ justifyContent: 'center', marginRight: spacing.xs }}>

@@ -43,7 +43,6 @@ import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { chatKey } from '@/lib/chatKey';
-import { mainMenuActions, mainMenuLabel, mainMenuTitle } from '@/lib/mainMenu';
 import {
   LIST_MODE_SHEET_TITLE,
   emptyListState,
@@ -67,7 +66,7 @@ import { loadThreadReads, setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
 
 /**
  * Chats, the app's root, in one of two views picked from its title
@@ -354,13 +353,6 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     });
   };
 
-  const menuActions = mainMenuActions({
-    hasConnection: connection !== null,
-    newChat: () => router.push('/new-chat'),
-    hosts: () => router.navigate('/hosts'),
-    settings: () => router.navigate('/settings'),
-  });
-
   return (
     <Screen>
       {/* One poll per machine saved on the host, feeding `useHostChats`. */}
@@ -377,9 +369,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
-        menuTestID="chats-menu"
-        menuLabel={mainMenuLabel(menuActions)}
-        onMenu={() => showActionSheet({ title: mainMenuTitle(connection?.name), actions: menuActions })}
+        // New chat and Settings are the header's two glyphs; Hosts is the host's
+        // name under the title, and Chats, Files and Terminal are the tab bar.
+        menuSymbol="gearshape"
+        menuTestID="chats-settings"
+        menuLabel="Settings"
+        onMenu={() => router.navigate('/settings')}
       />
 
       {/* Rename and close fail outside the poll's own error path, so they get
@@ -514,19 +509,18 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           maintainVisibleContentPosition={{ disabled: true }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          // The list runs under the home indicator (the screen's safe area
-          // leaves the bottom edge to it), so the last row has to be able to
-          // scroll clear of it.
-          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + spacing.xl }}
+          // The list runs under the floating tab bar and the home indicator, so
+          // the last row has to be able to scroll clear of both.
+          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + size.floatingBarClearance }}
           // Below the rows, not above them: the host answers the integration
           // check after the list has drawn, and a banner arriving on top pushed
           // every row down under a finger that was about to tap one (#4
           // acceptance: a tap meant for one chat opened the next).
           ListFooterComponent={
             <>
-              {error === null && integrations.outdated.length > 0 && (
+              {error === null && integrations.issues.length > 0 && (
                 <IntegrationBanner
-                  outdated={integrations.outdated}
+                  issues={integrations.issues}
                   updating={integrations.updating}
                   error={integrations.error}
                   onUpdate={() => void integrations.update()}

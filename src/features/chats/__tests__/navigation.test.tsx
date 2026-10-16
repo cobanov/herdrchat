@@ -2,7 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { useState } from 'react';
 import * as Native from 'react-native';
 
-import ChatsScreen from '../../../../app/index';
+import ChatsScreen from '../../../../app/(tabs)/index';
 import ThreadRoute from '../../../../app/chat/[workspaceId]';
 import { openChat } from '../navigation';
 import { useChatSelection } from '@/state/chatSelection';

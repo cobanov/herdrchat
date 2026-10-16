@@ -44,6 +44,12 @@ export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 /** The built-in integrations HerdrChat can install and update. */
 export type IntegrationName = 'claude' | 'codex' | 'pi' | 'omp';
 
+/** An integration the host should install: out of date, or never installed. */
+export interface IntegrationIssue {
+  name: IntegrationName;
+  state: 'outdated' | 'missing';
+}
+
 /**
  * How long to let herdr watch for the agent to react.
  *
@@ -323,23 +329,26 @@ export class HerdrClient {
   }
 
   /**
-   * The chat-agent integrations that the host reports as `outdated`. herdr
-   * tells a user who upgraded it that an existing integration is stale (#93).
+   * The chat-agent integrations that need installing on this host: `outdated`
+   * ones, which herdr reports after an upgrade (#93), and `missing` ones,
+   * whose agent is on the host's PATH (`available`) with no integration. A
+   * missing one is the silent failure: the agent never reports its session,
+   * so its chat waits for one forever.
    *
    * Null when the host cannot be asked: no socket, or a herdr without
    * `integration.list`. Best effort, so any failure is also null, never a
    * banner of its own.
    */
-  async outdatedIntegrations(): Promise<IntegrationName[] | null> {
+  async integrationIssues(): Promise<IntegrationIssue[] | null> {
     if ((await this.socket.detect()) === null) return null;
     try {
       const result = await this.socket.call('integration.list', {}, POLL_TIMEOUT_MS);
-      return asArray(field(result, 'integrations')).flatMap((item) => {
+      return asArray(field(result, 'integrations')).flatMap((item): IntegrationIssue[] => {
         if (typeof item !== 'object' || item === null) return [];
-        const { target, state } = item as { target?: unknown; state?: unknown };
-        return (target === 'claude' || target === 'codex' || target === 'pi' || target === 'omp') && state === 'outdated'
-          ? [target]
-          : [];
+        const { target, state, available } = item as { target?: unknown; state?: unknown; available?: unknown };
+        if (target !== 'claude' && target !== 'codex' && target !== 'pi' && target !== 'omp') return [];
+        if (state === 'outdated') return [{ name: target, state: 'outdated' }];
+        return state === 'not_installed' && available === true ? [{ name: target, state: 'missing' }] : [];
       });
     } catch {
       return null;
