@@ -36,6 +36,9 @@ appId: dev.herdr.HerdrChat
 # Typed into, the field holds the key (its label is then the bare words, its
 # text what was typed), so the key's text is what finds it now.
 - assertVisible: .*BEGIN OPENSSH PRIVATE KEY.*
+# An encrypted key's passphrase goes under it (HC-7).
+- assertVisible:
+    id: field-passphrase
 - takeScreenshot: host-editor-key-${APPEARANCE}
 - tapOn:
     id: header-close

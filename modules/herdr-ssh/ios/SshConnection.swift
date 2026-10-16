@@ -218,7 +218,8 @@ actor SshConnection {
     }
   }
 
-  private static func authMethod(for config: SshConfigRecord) throws -> SSHAuthenticationMethod {
+  // Internal, not private: NativeChecks parses keys through it.
+  static func authMethod(for config: SshConfigRecord) throws -> SSHAuthenticationMethod {
     if config.authKind == "password" {
       return .passwordBased(username: config.username, password: config.password ?? "")
     }
