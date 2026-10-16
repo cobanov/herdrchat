@@ -11,7 +11,7 @@ import Animated, {
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { avatarColor, avatarGlyph } from '@/theme/tokens';
+import { avatarColor, avatarGlyph, motion } from '@/theme/tokens';
 import type { AgentStatus } from '@/lib/herdr/models';
 
 /**
@@ -60,7 +60,7 @@ export function PresenceAvatar({
     // a setState loop would be paying the JS bridge the whole time.
     pulse.set(
       withRepeat(
-        withTiming(0.35, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0.35, { duration: motion.presencePulse, easing: Easing.inOut(Easing.quad) }),
         -1,
         true
       )
