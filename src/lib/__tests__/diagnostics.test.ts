@@ -11,7 +11,6 @@ const facts = (overrides: Partial<DiagnosticsFacts> = {}): DiagnosticsFacts => (
   hostCount: 2,
   newArchitecture: true,
   glassAvailable: true,
-  lastError: null,
   herdrVersion: '0.8.0',
   ...overrides,
 });
@@ -21,14 +20,10 @@ describe('formatDiagnostics', () => {
     expect(formatDiagnostics(facts()).split('\n')[0]).toBe('HerdrChat 0.5.0 (40)');
   });
 
-  it('omits the error line when there was no error', () => {
+  // No "Last error" line: nothing owns the last failure, and one screen's
+  // dismissed error in a bug report misleads more than it helps (HC-31).
+  it('carries no error line', () => {
     expect(formatDiagnostics(facts())).not.toContain('Last error');
-  });
-
-  it('includes the error line when there was one', () => {
-    expect(formatDiagnostics(facts({ lastError: 'Connection refused' }))).toContain(
-      'Last error: Connection refused'
-    );
   });
 
   it('never leaks a host name, address or username', () => {
