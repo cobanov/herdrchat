@@ -612,8 +612,8 @@ export class DemoHost implements HerdrTransport {
 
   /** True for a pane running Claude, the only agent with commands, shell mode and subagents here. */
   private isClaude(paneId: string): boolean {
-    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined &&
-      this.fixtures.agySessions[paneId] === undefined;
+    const pane = this.fixtures.workspaces.flatMap(demoPanes).find((candidate) => candidate.paneId === paneId);
+    return (pane?.agent ?? 'claude') === 'claude';
   }
 
   /** A prompt or reply in the pane's own agent's format. */
@@ -673,6 +673,8 @@ export class DemoHost implements HerdrTransport {
           ? { agent: 'grok', kind: 'id', source: 'herdr:grok', value: this.fixtures.grokSessions[pane.paneId] ?? null }
           : pane.agent === 'agy'
             ? { agent: 'agy', kind: 'id', source: 'herdr:antigravity_cli', value: this.fixtures.agySessions[pane.paneId] ?? null }
+          // An agent no integration reports a session for.
+          : pane.agent === 'opencode' ? null
           : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
     })));
   }

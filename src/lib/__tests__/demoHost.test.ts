@@ -43,7 +43,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'assets']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -62,13 +62,13 @@ describe('DemoHost as a herdr host', () => {
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
     // The first five keep the one pane they always had; site's agent has a shell beside it.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1, 1]);
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1, 1, 1]);
   });
 
-  // Scratch, the OMP ledger, the Grok infra chat and the Antigravity assets
-  // chat have no session title, so the Demo also shows chats titled by their
-  // workspace.
-  it('titles most chats by their session, and leaves four to their workspace', async () => {
+  // Scratch, the OMP ledger, the Grok infra chat, the opencode docs pane and
+  // the Antigravity assets chat have no session title, so the Demo also shows
+  // chats titled by their workspace.
+  it('titles most chats by their session, and leaves five to their workspace', async () => {
     const client = new HerdrClient(new DemoHost());
     const { agents } = await client.snapshot();
     expect(agents.map((a) => [a.paneId, a.title])).toEqual([
@@ -81,6 +81,7 @@ describe('DemoHost as a herdr host', () => {
       ['w6:p2', 'Save button wrap'],
       ['w7:p1', 'Landing page copy'],
       ['w8:p1', null],
+      ['w9:p1', null],
       ['wA:p1', null],
     ]);
   });
@@ -246,7 +247,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'assets']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

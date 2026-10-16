@@ -18,7 +18,7 @@ export interface DemoPane {
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /** Claude unless named; OMP reports its journal's path rather than an id. */
-  agent?: 'claude' | 'omp' | 'grok' | 'agy';
+  agent?: 'claude' | 'omp' | 'grok' | 'agy' | 'opencode';
   /**
    * The title the session gave itself, which titles its chat. Left out on
    * two of them, so the Demo also shows a chat titled by its workspace.
@@ -180,10 +180,21 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     agent: 'grok',
   },
   {
+    // An agent the app has no reader for: a terminal row under its workspace,
+    // and one of its own in the Agents view.
+    workspaceId: 'w9',
+    label: 'docs',
+    number: 9,
+    paneId: 'w9:p1',
+    cwd: '/home/demo/docs',
+    agentStatus: 'idle',
+    agent: 'opencode',
+  },
+  {
     // An Antigravity chat, read from agy's conversation log by its id.
     workspaceId: 'wA',
     label: 'assets',
-    number: 9,
+    number: 10,
     paneId: 'wA:p1',
     cwd: '/home/demo/assets',
     agentStatus: 'idle',

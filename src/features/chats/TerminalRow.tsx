@@ -19,13 +19,15 @@ import type { ChatSummary } from './useWorkspaces';
  * of the workspace. No status, unread mark or preview: a terminal has no
  * conversation to summarise, and no pin, mute or rename either in this round.
  */
-export const TerminalRow = memo(function TerminalRow({ summary, terminal, first = false, last = false, selected = false, onPress }: {
+export const TerminalRow = memo(function TerminalRow({ summary, terminal, first = false, last = false, standalone = false, selected = false, onPress }: {
   summary: ChatSummary & { host?: HostRef | null };
   terminal: TerminalPane;
   /** The first row under the workspace's card: the rail reaches up to the card. */
   first?: boolean;
   /** The last row under the card: the rail stops here. */
   last?: boolean;
+  /** Under no card (an agent's row in the Agents view): no rail, no indent. */
+  standalone?: boolean;
   /** Its terminal is the iPad's detail: lit as an open agent's row is. */
   selected?: boolean;
   onPress: () => void;
@@ -38,7 +40,7 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
   return (
     <View style={{ flexDirection: 'row', paddingBottom: spacing.sm }}>
       {/* The rail, as an agent's row under the same card draws it. */}
-      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: size.paneIndent }}>
+      {!standalone && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: size.paneIndent }}>
         <View style={{ flex: 1 }}>
           <View style={{ position: 'absolute', left: size.paneIndent / 2, top: first ? -spacing.sm : 0, bottom: last ? '50%' : 0, width: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />
           <View style={{ position: 'absolute', left: size.paneIndent / 2, right: 0, top: '50%', height: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />
@@ -46,7 +48,7 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
         <View style={{ height: spacing.sm }}>
           {!last && <View style={{ position: 'absolute', left: size.paneIndent / 2, top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: colors.separator }} />}
         </View>
-      </View>
+      </View>}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -56,7 +58,7 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
         testID={`terminal-row-${rowTestKey(summary, terminal.paneId)}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-          marginLeft: size.paneIndent, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+          marginLeft: standalone ? 0 : size.paneIndent, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
           borderRadius: radius.sm, borderWidth: 1,
           borderColor: selected ? colors.tint : 'transparent',
           backgroundColor: pressed ? colors.chatCardPressed : colors.chatCard,

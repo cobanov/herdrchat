@@ -18,11 +18,11 @@ const pane = (paneId: string, overrides: Record<string, unknown> = {}): Pane =>
   decodePane({ pane_id: paneId, workspace_id: paneId.split(':')[0], terminal_id: `term_${paneId}`, cwd: '/home/demo/api', ...overrides });
 
 describe('terminal rows in the chat list', () => {
-  it("puts the Demo's shell panes under w6 and w7, and nowhere else", async () => {
+  it("puts the Demo's shell panes under w6 and w7, and its opencode pane under w9", async () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     const summaries = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes);
     expect(summaries.map((summary) => [summary.workspaceId, summary.shellPanes.map((row) => row.paneId)])).toEqual([
-      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']], ['w7', ['w7:p2']], ['w8', []], ['wA', []],
+      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']], ['w7', ['w7:p2']], ['w8', []], ['w9', ['w9:p1']], ['wA', []],
     ]);
     // The two agents are still two chats of their own, and the shell is not one.
     expect(summaries[5]?.panes.map((row) => row.paneId)).toEqual(['w6:p1', 'w6:p2']);
@@ -178,22 +178,32 @@ describe('chatListRows', () => {
     const w6 = rows.flatMap((row) => (row.kind === 'chat' || row.kind === 'group' ? [] : [`${row.kind}:${row.kind === 'pane' ? row.pane.paneId : row.kind === 'tab' ? `${row.tabId}:${row.label ?? ''}` : row.terminal.paneId}`]));
     // Without the snapshot's `tabs` (not passed here), w6's dev server is
     // still set apart by its tab id's number, under a line with no label.
-    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'tab:w6:t2:', 'terminal:w6:p4', 'pane:w7:p1', 'terminal:w7:p2']);
+    expect(w6).toEqual(['pane:w6:p1', 'pane:w6:p2', 'terminal:w6:p3', 'tab:w6:t2:', 'terminal:w6:p4', 'pane:w7:p1', 'terminal:w7:p2', 'terminal:w9:p1']);
   });
 
-  // Android has no terminal: a row would only open the screen saying so.
-  // Without the shells, w6's agents share one tab and nothing divides them.
-  it('lists no terminal rows where no terminal can open', async () => {
+  // Android has no terminal: a shell's row would only open the screen saying
+  // so. Without the shells, w6's agents share one tab and nothing divides
+  // them. The opencode pane keeps its row, or it would be in no list at all.
+  it('lists only agents as terminal rows where no terminal can open', async () => {
     const rows = chatListRows('spaces', await listed(), '', new Map(), false);
-    expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
+    expect(rows.flatMap((row) => (row.kind === 'terminal' ? [row.terminal.paneId] : []))).toEqual(['w9:p1']);
     expect(rows.some((row) => row.kind === 'tab')).toBe(false);
     expect(rows.some((row) => row.kind === 'pane' && row.pane.paneId === 'w6:p2')).toBe(true);
   });
 
-  // An agent row carries no shells, and the view of agents lists none.
-  it('lists no terminal rows in Agents', async () => {
+  // An agent row carries no shells. An agent the app has no reader for is a
+  // terminal row of its own there, under no card, in its status's group.
+  it('lists no shells in Agents, and an agent the app cannot read as a terminal row of its own', async () => {
     const rows = chatListRows('agents', await listed(), '', new Map(), true);
-    expect(rows.some((row) => row.kind === 'terminal')).toBe(false);
+    const terminals = rows.filter((row) => row.kind === 'terminal');
+    expect(terminals.map((row) => [row.terminal.paneId, row.standalone])).toEqual([['w9:p1', true]]);
+    const idle = rows.findIndex((row) => row.kind === 'group' && row.id === 'idle');
+    const idleRows = rows.slice(idle + 1);
+    expect(idleRows.at(-1)).toMatchObject({ kind: 'terminal' });
+    expect(rows[idle]).toMatchObject({ kind: 'group', count: rows.filter((row, index) => index > idle && row.kind !== 'group').length });
     expect(rows.some((row) => row.kind === 'chat' && row.summary.workspaceId === 'w6')).toBe(true);
+    // A search finds it by its agent's name, and leaves it out otherwise.
+    expect(chatListRows('agents', await listed(), 'opencode', new Map(), true).filter((row) => row.kind === 'terminal')).toHaveLength(1);
+    expect(chatListRows('agents', await listed(), 'grok', new Map(), true).filter((row) => row.kind === 'terminal')).toHaveLength(0);
   });
 });
