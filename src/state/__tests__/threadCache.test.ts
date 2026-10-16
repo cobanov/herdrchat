@@ -136,3 +136,31 @@ itWithSqlite("clears one chat's messages and cursors for a reload, and nothing e
     expect(raw.prepare(`SELECT workspace_id FROM ${table}`).all()).toEqual([{ workspace_id: 'w2' }]);
   }
 });
+
+// Gemini CLI writes a message again once its tool results are in. Kept as
+// first cached, a reopen showed the call without its result.
+itWithSqlite('replaces a message cached again under its id, and keeps its place', async () => {
+  const raw = new sqlite!.DatabaseSync(':memory:');
+  raw.exec(`CREATE TABLE messages (connection_id TEXT NOT NULL, workspace_id TEXT NOT NULL, session_sig TEXT NOT NULL,
+    message_id TEXT NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (connection_id, workspace_id, message_id))`);
+  const db = {
+    runAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).run(...params),
+    getFirstAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).all(...params)[0] ?? null,
+    getAllAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).all(...params),
+    prepareAsync: async (sql: string) => {
+      const statement = raw.prepare(sql);
+      return { executeAsync: async (...params: unknown[]) => statement.run(...params), finalizeAsync: async () => undefined };
+    },
+    withTransactionAsync: async (task: () => Promise<void>) => task(),
+  } as unknown as SQLiteDatabase;
+  const message = (id: string, text: string) => ({
+    id, role: 'assistant' as const, segments: [{ kind: 'text' as const, text }], timestamp: 1, agentLabel: null, isSidechain: false,
+  });
+  await appendMessages(db, 'host', 'w1', 'sig', [message('a', 'running'), message('b', 'next')]);
+  await appendMessages(db, 'host', 'w1', 'sig', [message('a', 'ran it'), message('c', 'last')]);
+  expect((await seedMessages(db, 'host', 'w1')).map((cached) => [cached.id, cached.segments[0]])).toEqual([
+    ['a', { kind: 'text', text: 'ran it' }],
+    ['b', { kind: 'text', text: 'next' }],
+    ['c', { kind: 'text', text: 'last' }],
+  ]);
+});

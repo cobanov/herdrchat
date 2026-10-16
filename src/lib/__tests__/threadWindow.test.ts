@@ -56,3 +56,25 @@ it('continues the list on a re-read of its end, and starts a new one after a gap
   window.reset();
   expect(window.isEmpty).toBe(true);
 });
+
+// Gemini CLI writes a message again under its id once its tool results and
+// tokens are in. Dropped as already seen, the call never showed its result.
+it('puts a message that comes again changed in place of the one shown, once', () => {
+  const window = new ThreadWindow();
+  window.seed([line('a', 'hi', 1), line('b', 'running', 2, 'assistant')]);
+  const changed = window.append([line('c', 'next', 3), line('b', 'ran it', 2, 'assistant'), line('c', 'next, done', 3)]);
+  expect(changed.map((message) => [message.id, message.segments])).toEqual([
+    ['c', [{ kind: 'text', text: 'next, done' }]],
+    ['b', [{ kind: 'text', text: 'ran it' }]],
+  ]);
+  expect(window.view().messages.map((message) => [message.id, message.segments[0]])).toEqual([
+    ['a', { kind: 'text', text: 'hi' }],
+    ['b', { kind: 'text', text: 'ran it' }],
+    ['c', { kind: 'text', text: 'next, done' }],
+  ]);
+  // A line read again as it was changes nothing, so nothing is rebuilt or cached.
+  expect(window.append([line('b', 'ran it', 2, 'assistant')])).toEqual([]);
+  // A page of older history never overwrites the later version on screen.
+  expect(window.prepend([line('b', 'running', 2, 'assistant')])).toEqual([]);
+  expect(window.view().messages[1]?.segments).toEqual([{ kind: 'text', text: 'ran it' }]);
+});

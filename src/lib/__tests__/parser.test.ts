@@ -60,6 +60,15 @@ describe('transcript parsing', () => {
     const labelled = parseTranscript(transcript, 'claude');
     expect(labelled.every((message) => message.agentLabel === 'claude')).toBe(true);
   });
+
+  // Two rows with one id in a window were two bubbles with one list key.
+  it('reads a line with an earlier id as that message, where it was', () => {
+    const [u1, a1, , a2] = transcript.split('\n').filter((line) => line.includes('"uuid"'));
+    const again = a1!.replace('Tamam, testleri calistiriyorum.', 'Tamam, bitti.');
+    const read = parseTranscript([u1, a1, a2, again].join('\n'));
+    expect(read.map((message) => message.id)).toEqual(['u1', 'a1', 'a2']);
+    expect(displayText(read[1]!)).toBe('Tamam, bitti.');
+  });
 });
 
 describe('single-line parsing', () => {

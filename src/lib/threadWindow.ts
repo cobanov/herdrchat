@@ -32,14 +32,33 @@ export class ThreadWindow {
     this.seen = new Set(messages.map((message) => message.id));
   }
 
-  /** Add what is new of `incoming` at the end. Returns the new part. */
+  /**
+   * Add what is new of `incoming` at the end. A message already shown that
+   * comes again changed replaces the one shown, where it is: Gemini CLI writes
+   * a message again under its id once its tool results and tokens are in.
+   * Returns what changed, each message once, as it now is.
+   */
   append(incoming: readonly ChatMessage[]): ChatMessage[] {
-    const fresh = this.unseen(incoming);
-    this.arrivals.push(...fresh);
-    return fresh;
+    const changed = new Map<string, ChatMessage>();
+    for (const message of incoming) {
+      if (this.seen.has(message.id)) {
+        const index = this.arrivals.findIndex((shown) => shown.id === message.id);
+        // Every other reader repeats a line only as it was: nothing to redo.
+        if (index < 0 || JSON.stringify(this.arrivals[index]) === JSON.stringify(message)) continue;
+        this.arrivals[index] = message;
+      } else {
+        this.seen.add(message.id);
+        this.arrivals.push(message);
+      }
+      changed.set(message.id, message);
+    }
+    return [...changed.values()];
   }
 
-  /** Put what is new of a page of older history above the rest. Returns the new part. */
+  /**
+   * Put what is new of a page of older history above the rest. Returns the
+   * new part. A message already shown is a later version of it: it stays.
+   */
   prepend(older: readonly ChatMessage[]): ChatMessage[] {
     const fresh = this.unseen(older);
     this.arrivals.unshift(...fresh);

@@ -18,15 +18,19 @@ import type { SessionMeta } from './sessionMeta';
  * before the Expo rewrite).
  */
 
-/** Parse a whole transcript file's contents. */
+/**
+ * Parse a whole transcript file's contents. A line with the id of an earlier
+ * one replaces it, where it was: Gemini CLI writes a message again once its
+ * tool results are in.
+ */
 export function parseTranscript(contents: string, agentLabel: string | null = null): ChatMessage[] {
-  const messages: ChatMessage[] = [];
+  const messages = new Map<string, ChatMessage>();
   for (const line of contents.split('\n')) {
     if (line.length === 0) continue;
     const message = parseTranscriptLine(line, agentLabel);
-    if (message !== null) messages.push(message);
+    if (message !== null) messages.set(message.id, message);
   }
-  return messages;
+  return [...messages.values()];
 }
 
 /**

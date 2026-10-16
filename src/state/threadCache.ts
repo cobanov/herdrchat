@@ -91,11 +91,12 @@ async function insertMessages(
 ): Promise<void> {
   if (messages.length === 0) return;
   // One statement for the batch: run as a fresh statement per row, the same
-  // insert was compiled again for every message of a window.
+  // insert was compiled again for every message of a window. A message
+  // written again (Gemini's, once its tool results are in) keeps its place.
   const insert = await db.prepareAsync(
     `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
      VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`
+     ON CONFLICT(connection_id, workspace_id, message_id) DO UPDATE SET payload = excluded.payload`
   );
   try {
     for (const [offset, message] of messages.entries()) {
