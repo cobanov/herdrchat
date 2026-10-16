@@ -18,6 +18,15 @@ import type { ExecResult } from '../../../modules/herdr-ssh/src';
 /** A status/list poll. Short: it runs again in two seconds anyway. */
 export const POLL_TIMEOUT_MS = 15_000;
 
+/**
+ * Back in the foreground after this long, the connection may have died while
+ * iOS held the app suspended, with no keepalive to notice (`HerdrClient.wake`).
+ */
+export const WAKE_AFTER_MS = 60_000;
+
+/** How long the wake probe waits: well under a poll, so a dead socket goes fast. */
+export const WAKE_TIMEOUT_MS = 3_000;
+
 /** Reading a pane's visible screen — bounded output, same urgency as a poll. */
 export const SCREEN_TIMEOUT_MS = 15_000;
 

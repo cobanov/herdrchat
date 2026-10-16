@@ -455,6 +455,27 @@ describe('the host theme check, riding on the list poll', () => {
     await unmount();
   });
 
+  // A suspended app keeps no keepalive: back after a minute or more, a short
+  // probe drops a dead connection before the first poll waits 15 s on it.
+  it('wakes the connection when the app comes back after a long time away', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const wake = jest.spyOn(client, 'wake').mockResolvedValue(undefined);
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    await act(async () => { onChange('active'); });
+    expect(wake).not.toHaveBeenCalled();
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    await act(async () => { onChange('active'); });
+    expect(wake).toHaveBeenCalledTimes(1);
+    await unmount();
+  });
+
   it('never checks after a poll that failed', async () => {
     jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
     const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
