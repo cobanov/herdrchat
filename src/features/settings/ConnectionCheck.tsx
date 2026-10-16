@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ActionRow, ROW_INSET, Section } from '@/components/SettingsList';
 import { Text } from '@/components/Text';
 import { connectionRecovery } from '@/lib/connectionRecovery';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError } from '@/lib/herdr/protocol';
 import { clientFor, type ServerConnection } from '@/state/connections';
 import { spacing } from '@/theme/tokens';
 
@@ -25,7 +25,7 @@ export function ConnectionCheck({ connection }: { connection: ServerConnection }
     } catch (thrown) {
       const code = thrown instanceof HerdrError ? thrown.code : 'unknown';
       setResult(
-        `${connectionRecovery(code).title}. ${thrown instanceof Error ? thrown.message : String(thrown)}`
+        `${connectionRecovery(code).title}. ${errorText(thrown)}`
       );
       setFailed(true);
     } finally {

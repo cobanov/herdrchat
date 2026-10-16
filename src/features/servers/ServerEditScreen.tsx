@@ -12,7 +12,7 @@ import { Screen } from '@/components/Screen';
 import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
 import { KeyField } from '@/features/servers/KeyField';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError, type HerdrErrorCode } from '@/lib/herdr/protocol';
 import { connectionRecovery, type RecoveryAction } from '@/lib/connectionRecovery';
 import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
 import { shouldResetPin } from '@/lib/hostkey';
@@ -36,7 +36,7 @@ type TestState =
   | { kind: 'idle' }
   | { kind: 'testing' }
   | { kind: 'ok'; version: string | null }
-  | { kind: 'failed'; message: string; code: string }
+  | { kind: 'failed'; message: string; code: HerdrErrorCode }
   /**
    * The host answered with a key that differs from the stored pin. Its own
    * state, not a `failed` flavour: the only way forward is an explicit,
@@ -162,7 +162,7 @@ export default function ServerEditScreen() {
       } else {
         setTest({
           kind: 'failed',
-          message: failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)),
+          message: failure?.message ?? (errorText(thrown)),
           code: failure?.code ?? 'unknown',
         });
       }
@@ -243,7 +243,7 @@ export default function ServerEditScreen() {
       setInstalling(false);
       setTest({
         kind: 'failed',
-        message: thrown instanceof HerdrError ? thrown.message : String(thrown),
+        message: errorText(thrown),
         code: thrown instanceof HerdrError ? thrown.code : 'unknown',
       });
     }
@@ -276,7 +276,7 @@ export default function ServerEditScreen() {
     } catch (thrown) {
       setTest({
         kind: 'failed',
-        message: thrown instanceof Error ? thrown.message : String(thrown),
+        message: errorText(thrown),
         code: thrown instanceof HerdrError ? thrown.code : 'unknown',
       });
     } finally {

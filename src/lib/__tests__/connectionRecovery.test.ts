@@ -9,6 +9,6 @@ it.each([
   ['herdr_not_executable', 'path'],
   ['server_not_running', 'start'],
   ['timeout', 'retry'],
-])('offers the matching recovery for %s', (code, action) => {
+] as const)('offers the matching recovery for %s', (code, action) => {
   expect(connectionRecovery(code).action).toBe(action);
 });

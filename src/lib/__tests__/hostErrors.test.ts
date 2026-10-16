@@ -1,4 +1,5 @@
 import { exitCodeError, herdrErrorFrom } from '../herdr/client';
+import { errorText, HerdrError } from '../herdr/protocol';
 
 /**
  * What a phone shows when the host says no.
@@ -68,5 +69,28 @@ describe('exitCodeError', () => {
   it('falls back to the exit code when stderr carries nothing structured', () => {
     expect(exitCodeError(2, 'Killed').message).toContain('exit 2');
     expect(exitCodeError(2, '').message).toContain('exit 2');
+  });
+});
+
+describe('error codes', () => {
+  it('rejects a misspelt code at the typecheck', () => {
+    // @ts-expect-error: no such code. `tsc` fails here once a typo compiles.
+    const error = new HerdrError('host_key_change', 'typo');
+    // @ts-expect-error: the same for a comparison, which could never be true.
+    expect(error.code === 'server_not_runing').toBe(false);
+  });
+
+  it('keeps a code herdr sends that the app has no name for, with herdr\'s words', () => {
+    const error = herdrErrorFrom('{"error":{"code":"brand_new","message":"Something new went wrong."}}');
+    expect(error?.code).toBe('brand_new');
+    expect(error?.message).toBe('Something new went wrong.');
+  });
+});
+
+describe('errorText', () => {
+  it('reads the message of any error, and anything else as text', () => {
+    expect(errorText(new HerdrError('timeout', 'The host did not answer.'))).toBe('The host did not answer.');
+    expect(errorText(new Error('disk full'))).toBe('disk full');
+    expect(errorText('plain')).toBe('plain');
   });
 });

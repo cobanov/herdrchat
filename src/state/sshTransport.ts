@@ -14,6 +14,7 @@ import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from '@/lib/herdr/socket';
 import { untilChannelCloses } from '@/lib/herdr/shell';
 import type { HerdrTransport } from '@/lib/herdr/transport';
 import { withJsDeadline } from '@/lib/herdr/timeouts';
+import { errorText } from '@/lib/herdr/protocol';
 
 /**
  * A `HerdrTransport` backed by the native SSH module.
@@ -90,7 +91,7 @@ export class SshHerdrTransport implements HerdrTransport {
           return {
             ok: false,
             code: thrown instanceof MissingCredentialsError ? 'credentials_missing' : 'connect_failed',
-            message: thrown instanceof Error ? thrown.message : String(thrown),
+            message: errorText(thrown),
           };
         });
     }

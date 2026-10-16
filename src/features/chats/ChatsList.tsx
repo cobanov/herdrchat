@@ -329,7 +329,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
    */
   /** The fix that matches the failure, for the banner and the empty state alike. */
   const recover = () => {
-    const { action } = connectionRecovery(errorCode ?? '');
+    const { action } = connectionRecovery(errorCode);
     if (action === 'install') confirmInstallHerdr();
     else if (action === 'start') void fixHost('start');
     else if (action === 'retry') void refresh();
@@ -413,7 +413,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           // no way to fix it (#4 acceptance).
           <ErrorBanner
             message={error}
-            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode).label}
             onAction={fixing ? undefined : recover}
           />
         ))}
@@ -478,9 +478,9 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
               // (#96). Say which failure it was and offer the fix that matches.
               <EmptyState
                 symbol="exclamationmark.triangle"
-                title={connectionRecovery(errorCode ?? '').title}
+                title={connectionRecovery(errorCode).title}
                 body={error}
-                actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+                actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode).label}
                 onAction={fixing ? undefined : recover}
               />
             ) : error === null ? (

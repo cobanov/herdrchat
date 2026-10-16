@@ -1,4 +1,5 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
+import { errorText } from './protocol';
 
 /**
  * How long each kind of remote command may take before we give up on it.
@@ -195,7 +196,7 @@ export function withJsDeadline(
         resolve({
           ok: false,
           code: 'transport_failed',
-          message: thrown instanceof Error ? thrown.message : String(thrown),
+          message: errorText(thrown),
         });
       }
     );
