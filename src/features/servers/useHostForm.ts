@@ -14,6 +14,8 @@ export function useHostForm(id: string, existing: ServerConnection | null, onCha
   const [username, setUsername] = useState(existing?.username ?? '');
   const [authKind, setAuthKind] = useState<ServerConnection['authKind']>(existing?.authKind ?? 'password');
   const [secret, setSecret] = useState('');
+  /** An encrypted key's passphrase. Blank keeps the stored one while the key is kept too. */
+  const [passphrase, setPassphrase] = useState('');
   const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
   const [sessionName, setSessionName] = useState(existing?.sessionName ?? '');
 
@@ -48,7 +50,7 @@ export function useHostForm(id: string, existing: ServerConnection | null, onCha
    * acceptance). With anything entered or changed the editor asks first.
    */
   const dirty = existing === null
-    ? [name, host, username, secret, sessionName].some((value) => value.trim().length > 0) ||
+    ? [name, host, username, secret, passphrase, sessionName].some((value) => value.trim().length > 0) ||
       herdrPath !== 'herdr' ||
       port !== '22'
     : name !== existing.name ||
@@ -57,11 +59,12 @@ export function useHostForm(id: string, existing: ServerConnection | null, onCha
       username !== existing.username ||
       authKind !== existing.authKind ||
       secret.length > 0 ||
+      passphrase.length > 0 ||
       herdrPath !== existing.herdrPath ||
       sessionName !== existing.sessionName;
 
   return {
-    values: { name, host, port, username, authKind, secret, herdrPath, sessionName },
+    values: { name, host, port, username, authKind, secret, passphrase, herdrPath, sessionName },
     set: {
       name: edit(setName),
       host: edit(setHost),
@@ -69,6 +72,7 @@ export function useHostForm(id: string, existing: ServerConnection | null, onCha
       username: edit(setUsername),
       authKind: edit(setAuthKind),
       secret: edit(setSecret),
+      passphrase: edit(setPassphrase),
       herdrPath: edit(setHerdrPath),
       sessionName: edit(setSessionName),
     },

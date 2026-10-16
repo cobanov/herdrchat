@@ -123,7 +123,9 @@ Windows-native paths are not translated.
 
 1. Open **Hosts** (the **…** menu at the top of Chats, or the host name under
    its title) and add the computer's reachable address, SSH username and
-   password or existing OpenSSH private key.
+   password or existing private key. Use an ed25519 or RSA key in OpenSSH
+   format, with its passphrase if it has one. On Android an ECDSA key works
+   too; on iOS it does not.
 2. Test the connection and verify the host fingerprint before saving. If herdr
    is not on the SSH session's PATH, enter its full executable path.
 3. Back on **Chats**, choose a workspace. No session ID means no safe history
