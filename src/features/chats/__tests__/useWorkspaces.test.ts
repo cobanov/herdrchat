@@ -114,6 +114,28 @@ it('honours an event that arrives while a poll is in flight', async () => {
   await unmount();
 });
 
+// On iPad the open chat beside the list reads the snapshot every couple of
+// seconds. The list's timer takes that read and comes back sooner by its age;
+// an event and a pull still ask the host.
+it('takes a snapshot the open chat just read, but asks the host on an event or a pull', async () => {
+  mockLive = false;
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const recent = jest.spyOn(client, 'recentSnapshot').mockReturnValue({ snapshot, ageMs: 1_000 });
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(recent).not.toHaveBeenCalled();
+  await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
+  expect(recent).toHaveBeenCalledWith(3_000);
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_000); });
+  expect(recent).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => { mockEvent(); await jest.advanceTimersByTimeAsync(250); });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await act(async () => { await result.current.refresh(); });
+  expect(fetch).toHaveBeenCalledTimes(3);
+  await unmount();
+});
+
 // #86: a chat's identity is its session, not its workspace slot.
 it('never shows the previous chat\'s preview in a reused workspace slot', async () => {
   const withSession = snapshot;

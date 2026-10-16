@@ -169,6 +169,21 @@ export class HerdrClient {
 
   private snapshotInFlight: Promise<Snapshot> | null = null;
 
+  /**
+   * The last snapshot this client read, whoever asked, while it is younger
+   * than `maxAgeMs`; null otherwise. On iPad the chat list sits beside an open
+   * chat whose poll reads the host every couple of seconds, and the list's
+   * timer takes that read rather than asking for the same state again.
+   */
+  recentSnapshot(maxAgeMs: number): { snapshot: Snapshot; ageMs: number } | null {
+    if (this.lastSnapshot === null) return null;
+    const ageMs = Date.now() - this.lastSnapshot.at;
+    // A clock set back makes the age negative; that read is of unknown age.
+    return ageMs >= 0 && ageMs < maxAgeMs ? { snapshot: this.lastSnapshot.snapshot, ageMs } : null;
+  }
+
+  private lastSnapshot: { snapshot: Snapshot; at: number } | null = null;
+
   private async readSnapshot(): Promise<Snapshot> {
     const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
       this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
@@ -231,6 +246,7 @@ export class HerdrClient {
       if (this.agentPrompt?.provenance === 'probe') this.agentPrompt = null;
       if (this.agentStart?.provenance === 'probe') this.agentStart = null;
     }
+    this.lastSnapshot = { snapshot, at: Date.now() };
     return snapshot;
   }
 

@@ -301,6 +301,18 @@ describe('an open chat poll on one channel', () => {
     expect(commands).toHaveLength(1);
   });
 
+  // The list beside an open chat on iPad takes the chat's poll for its own.
+  it('remembers the last snapshot any read brought, until it is as old as asked', async () => {
+    jest.useFakeTimers();
+    const { client } = batchHost();
+    expect(client.recentSnapshot(3_000)).toBeNull();
+    const polled = await client.pollSnapshot({ paneId: 'w1:p1', lines: 30 });
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(client.recentSnapshot(3_000)).toEqual({ snapshot: polled.snapshot, ageMs: 1_000 });
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(client.recentSnapshot(3_000)).toBeNull();
+  });
+
   it('sends a presence report on its own when no poll carries it', async () => {
     jest.useFakeTimers();
     const { client, commands } = batchHost();
