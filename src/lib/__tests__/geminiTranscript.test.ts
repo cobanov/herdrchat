@@ -119,9 +119,11 @@ describe('Gemini CLI transcript', () => {
     expect(store.geminiTranscriptPath('1a2b3c4d-0000', 'id')).toBeNull();
   });
 
-  it('names the agent and installs HerdrChat\'s hook, since herdr has no integration for it', () => {
+  // herdr 0.9.5 keeps no session reported for Gemini, from any source, so a
+  // hook that reported one changed the person's settings for nothing.
+  it('names the agent and offers nothing to install, since herdr has no integration for it', () => {
     expect(agentName('gemini')).toBe('Gemini');
-    expect(agentSpec('gemini')).toMatchObject({ reader: 'gemini', integration: null });
-    expect(agentSpec('gemini')?.installHook).toBeDefined();
+    expect(agentSpec('gemini')).toEqual(expect.objectContaining({ reader: 'gemini', integration: null }));
+    expect(agentSpec('gemini')).not.toHaveProperty('installHook');
   });
 });

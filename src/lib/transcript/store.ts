@@ -237,7 +237,8 @@ export class TranscriptStore {
   }
 
   /**
-   * Gemini CLI's log, as HerdrChat's hook reported it (`geminiHook.ts`):
+   * Gemini CLI's log, by the path a session report names (herdr 0.9.5 keeps
+   * none for Gemini, so none arrives yet):
    * `<home>/.gemini/tmp/<project>/chats/session-<time>-<id8>.jsonl` (0.64).
    * Only a path of that shape is taken, and an id never: the file is named by
    * the minute it started as well as by the id, so an id alone names no file.

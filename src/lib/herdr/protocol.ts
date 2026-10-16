@@ -40,8 +40,6 @@ type AppErrorCode =
   | 'dir_missing'
   | 'dir_unreadable'
   | 'empty_response'
-  | 'gemini_hook_install_failed'
-  | 'gemini_settings_invalid'
   | 'grok_session_ambiguous'
   | 'grok_session_invalid'
   | 'herdr_not_executable'

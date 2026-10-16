@@ -9,15 +9,15 @@ jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
 }));
 
-// herdr has no Gemini integration: its chat is its screen, and the hook that
-// would report its log installs from there.
-it('offers the hook that makes a screen chat readable, and says why it failed', async () => {
+// A screen chat whose agent herdr has an integration for: the integration that
+// would report its session installs from there.
+it('offers the integration that makes a screen chat readable, and says why it failed', async () => {
   const onInstall = jest.fn();
   const screen = await render(
     <ScreenView text="> hello" agent="Gemini" topInset={0} bottomInset={0} onInstall={onInstall} installError="python3 is missing." />
   );
   expect(screen.getByTestId('agent-screen-text')).toHaveTextContent('> hello');
-  expect(screen.getByText(/Install HerdrChat's hook for Gemini/)).toBeOnTheScreen();
+  expect(screen.getByText(/Install the Gemini integration/)).toBeOnTheScreen();
   await fireEvent.press(screen.getByTestId('install-integration'));
   expect(onInstall).toHaveBeenCalledTimes(1);
   expect(screen.getByText('python3 is missing.')).toBeOnTheScreen();
@@ -26,7 +26,7 @@ it('offers the hook that makes a screen chat readable, and says why it failed', 
 it('offers nothing for an agent with no hook', async () => {
   const screen = await render(<ScreenView text="> hello" agent="opencode" topInset={0} bottomInset={0} />);
   expect(screen.queryByTestId('install-integration')).toBeNull();
-  expect(screen.queryByText(/Install HerdrChat's hook/)).toBeNull();
+  expect(screen.queryByText(/Install the .* integration/)).toBeNull();
 });
 
 // On a real host the install button sat above a live screen, and each poll's

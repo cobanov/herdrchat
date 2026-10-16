@@ -1,5 +1,6 @@
-# A Gemini CLI chat on the Demo: its session log, found by the path
-# HerdrChat's hook reported, its model in the header, a tool run whose result
+# A Gemini CLI chat on the Demo: its session log, found by the path its
+# session report names (a real herdr keeps none for Gemini yet; the Demo shows
+# the chat as it reads once one does), its model in the header, a tool run whose result
 # came as the same message written again, a message sent and answered.
 appId: dev.herdr.HerdrChat
 ---

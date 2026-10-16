@@ -19,7 +19,7 @@ export interface DemoPane {
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /**
    * Claude unless named; OMP reports its journal's path rather than an id,
-   * and so does Gemini, through HerdrChat's hook. opencode stands for an
+   * and so would Gemini, once herdr keeps its session. opencode stands for an
    * agent the app has no reader for: its screen is its chat.
    */
   agent?: 'claude' | 'omp' | 'grok' | 'agy' | 'gemini' | 'opencode';
@@ -204,7 +204,7 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     agent: 'agy',
   },
   {
-    // A Gemini CLI chat, read from its session log, whose path HerdrChat's hook reported.
+    // A Gemini CLI chat, read from its session log by a reported path (as it reads once herdr keeps one).
     workspaceId: 'wB',
     label: 'scripts',
     number: 11,
@@ -271,7 +271,7 @@ export function demoAgyPath(session: string): string {
   return `${DEMO_HOME}/.gemini/antigravity-cli/brain/${session}/.system_generated/logs/transcript.jsonl`;
 }
 
-/** Where each Gemini pane's log is: the path HerdrChat's hook reports as its session. */
+/** Where each Gemini pane's log is: the path its session report names. */
 export const DEMO_GEMINI_PATHS: Readonly<Record<string, string>> = {
   'wB:p1': '/home/demo/.gemini/tmp/scripts/chats/session-2026-08-20T10-15-5c1e2d3a.jsonl',
 };
@@ -841,7 +841,7 @@ export interface DemoFixtures {
   grokSessions: Readonly<Record<string, string>>;
   /** The conversation id each Antigravity pane reports. */
   agySessions: Readonly<Record<string, string>>;
-  /** Where a Gemini pane keeps its log, which HerdrChat's hook reports. */
+  /** Where a Gemini pane keeps its log, which its session report names. */
   geminiPaths: Readonly<Record<string, string>>;
   /** The transcript a pane starts with, as the file's contents. */
   transcript: (paneId: string) => string;

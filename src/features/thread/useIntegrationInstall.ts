@@ -14,11 +14,8 @@ import { errorText } from '@/lib/herdr/protocol';
  * the integration. Naming the command was better than nothing, but it still
  * meant putting the phone down and finding a terminal.
  *
- * An agent herdr has no integration for may have HerdrChat's own hook
- * instead (Gemini CLI's), which installs the same way from its screen chat.
- *
  * `install` is undefined when there is nothing to install it with: no host,
- * or an agent with neither.
+ * or an agent with no integration.
  */
 export function useIntegrationInstall(client: HerdrClient | null, agents: readonly AgentInfo[]) {
   const [installing, setInstalling] = useState(false);
@@ -29,18 +26,12 @@ export function useIntegrationInstall(client: HerdrClient | null, agents: readon
     ?? agents.find(agent => agent.agentSession === null)
     ?? agents[0];
   const spec = agentSpec(integrationKind?.agent);
-  // The agent's own integration, or HerdrChat's hook where herdr has none;
-  // an agent with neither gets no install button.
+  // The agent's own integration; an agent without one gets no install button.
   const agentKind: IntegrationName | null = spec?.integration ?? null;
-  const installHook = spec?.installHook;
   const install = useCallback(() => {
-    if (client === null || installing) return;
-    let task: Promise<void>;
-    if (installHook !== undefined) task = installHook(client.transport);
-    else if (agentKind !== null) {
-      task = client.installIntegration(agentKind)
-        .then(() => agentKind === 'codex' ? installCodexLauncher(client.transport) : undefined);
-    } else return;
+    if (client === null || installing || agentKind === null) return;
+    const task = client.installIntegration(agentKind)
+      .then(() => agentKind === 'codex' ? installCodexLauncher(client.transport) : undefined);
     setInstalling(true);
     setInstallError(null);
     void task
@@ -55,11 +46,11 @@ export function useIntegrationInstall(client: HerdrClient | null, agents: readon
         setInstallError(errorText(thrown));
       })
       .finally(() => setInstalling(false));
-  }, [client, installing, agentKind, installHook]);
+  }, [client, installing, agentKind]);
   return {
     agentKind,
     installing,
     installError,
-    install: client === null || (agentKind === null && installHook === undefined) ? undefined : install,
+    install: client === null || agentKind === null ? undefined : install,
   };
 }

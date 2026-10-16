@@ -87,28 +87,13 @@ before the integration says it can't identify itself until agy is restarted.
 
 ### Gemini CLI
 
-herdr detects Gemini CLI but has no integration for it, so nothing tells it
-which conversation a Gemini pane holds. Until something does, a Gemini chat is
-its terminal screen: you see it and can send it a message, but HerdrChat can't
-read its history. HerdrChat installs a small hook of its own to fill the gap:
-open the Gemini chat and tap **Install it on the host**. It needs Python 3 on
-the host, and it:
-
-- writes `~/.local/share/herdrchat/gemini-session-hook.sh`;
-- adds that script to `~/.gemini/settings.json` as a `herdrchat-session` command
-  hook for `SessionStart` and `BeforeAgent`, keeping every other setting and
-  hook, and saves the file as it was to `settings.json.herdrchat-bak` the first
-  time. A settings file with comments is left alone; add the hook by hand there.
-
-Gemini CLI hands each hook the session's log path. Inside a Herdr pane the hook
-reports that path to herdr (`herdr pane report-agent-session`), and HerdrChat
-opens that exact file, `~/.gemini/tmp/<project>/chats/session-….jsonl`, and no
-other. Outside Herdr it does nothing. Gemini CLI reads hooks when it starts and
-runs them only in folders it trusts, so restart Gemini CLI in its pane after
-installing (`gemini --resume` picks the conversation up again). The chat
-switches to its history at the next prompt at the latest. Gemini CLI writes a message again
-as its tool results come in, and the thread updates it in place; a `/rewind`
-still shows the rewound turns until the chat is reloaded.
+herdr detects Gemini CLI but has no integration for it, and herdr 0.9.5 keeps no
+session for it, so nothing tells HerdrChat which conversation a Gemini pane
+holds. A Gemini chat is therefore its terminal screen: you see it and can send
+it a message, but HerdrChat can't read its history. HerdrChat reads Gemini
+CLI's log as soon as herdr reports a Gemini session. Note that Google no longer
+lets personal accounts sign in to Gemini CLI and points them to Antigravity;
+Gemini CLI still works with a Gemini API key or Vertex AI.
 
 ### Pi and OMP (Oh My Pi)
 

@@ -36,7 +36,7 @@ connected directly over SSH. No HerdrChat account. No relay server.
 
 ## Less terminal. More conversation.
 
-- **Pick up where you left off.** Read Claude Code, Codex, Grok, Antigravity, Gemini CLI, Pi and OMP history, including replies started at your desk. Any other agent herdr detects is a chat too: you see its terminal screen and can send it a message.
+- **Pick up where you left off.** Read Claude Code, Codex, Grok, Antigravity, Pi and OMP history, including replies started at your desk. Any other agent herdr detects is a chat too: you see its terminal screen and can send it a message.
 - **See what needs you.** Search chats grouped by Needs you, Working and Idle. The title switches between **Spaces**, a card per herdr workspace that lists its agents and its terminals grouped by tab, and **Agents**, every agent a row of its own. On iPad, keep the list beside your conversation.
 - **Keep things readable.** Message bubbles, code blocks, tables and compact tool activity.
 - **Watch the agents it hands work to.** When Claude Code starts a subagent or a workflow, it shows in the chat as a card that says what it was asked and where it stands, then what it handed back. Open a subagent to read its own conversation as it works, or a workflow to see each phase and each agent in it.
@@ -67,7 +67,7 @@ Just curious? Open the built-in **Demo** host. No server setup needed.
 For your own agents:
 
 1. Install HerdrChat from the [App Store](https://apps.apple.com/app/herdrchat/id6791874615) (free), or [build it locally](docs/getting-started.md#build-the-ios-app).
-2. Set up herdr and the [Claude, Codex, Grok, Antigravity, Gemini CLI, Pi or OMP integration](docs/getting-started.md#prepare-your-computer) on your computer.
+2. Set up herdr and the [Claude, Codex, Grok, Antigravity, Pi or OMP integration](docs/getting-started.md#prepare-your-computer) on your computer.
 3. Add that computer in **Hosts** (in the **…** menu on Chats), test the SSH connection, and open a chat.
 
 **On the App Store** for iPhone and iPad, iOS 17+. Android is experimental.

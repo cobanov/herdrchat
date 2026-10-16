@@ -15,8 +15,8 @@ import { screenPadding, spacing, threadLayout } from '@/theme/tokens';
  * a live screen, but a reader who scrolled up (to the hook's install button
  * above it, on a real host) was pulled back down by every poll.
  *
- * An agent herdr has no integration for, but HerdrChat has a hook for (Gemini
- * CLI), is read once the hook reports its session: `onInstall` offers it.
+ * An agent whose herdr integration would report its session is read once it
+ * does: `onInstall` offers to install that integration.
  */
 export function ScreenView({
   text,
@@ -68,7 +68,7 @@ export function ScreenView({
       {onInstall !== undefined && (
         <>
           <Text variant="footnote" color="secondary">
-            {`Install HerdrChat's hook for ${agent} on the host, then start ${agent} there again and resume this conversation. From then on it says which conversation it is, and this chat shows its history.`}
+            {`Install the ${agent} integration on the host, then start ${agent} there again and resume this conversation. From then on it says which conversation it is, and this chat shows its history.`}
           </Text>
           <Button
             title={installing ? 'Installing\u2026' : 'Install it on the host'}

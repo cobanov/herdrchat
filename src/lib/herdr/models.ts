@@ -106,8 +106,8 @@ export function hasSessionReference(agent: AgentInfo): boolean {
 
 /**
  * The agents whose reported path is their session: Pi's and OMP's journal,
- * whose integrations report it, and Gemini CLI's log, which HerdrChat's hook
- * reports and nothing names by id.
+ * whose integrations report it, and Gemini CLI's log, which a session report
+ * would name (herdr keeps none for Gemini yet) and nothing names by id.
  */
 function readsPath(agent: string | null | undefined): boolean {
   const reader = agentSpec(agent)?.reader;

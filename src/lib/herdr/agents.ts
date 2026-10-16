@@ -7,8 +7,6 @@
  * here plus, for its history, a reader in `src/lib/transcript/`.
  */
 
-import { installGeminiHook } from './geminiHook';
-import type { HerdrTransport } from './transport';
 
 /**
  * Which transcript reader serves an agent's history: where its sessions are
@@ -28,11 +26,6 @@ export interface AgentSpec {
    * agent herdr detects but has no integration for.
    */
   integration: string | null;
-  /**
-   * For an agent herdr has no integration for: installs HerdrChat's own hook
-   * on the host, which reports the session in the integration's place.
-   */
-  installHook?: (transport: HerdrTransport) => Promise<void>;
   /**
    * The terminal titles it sets before a conversation has a topic, which name
    * no chat (`Claude Code` in every pane).
@@ -105,14 +98,14 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     digitAnswers: true,
     missing: 'The Antigravity conversation is identified, but its transcript is not in ~/.gemini/antigravity-cli/brain on this host. Resume that exact conversation on the host, then reload.',
   },
-  // Gemini CLI. herdr detects it but has no integration for it; HerdrChat's
-  // hook reports the log's path (`geminiHook.ts`). Until it has, the chat is
-  // its screen, as for an agent with no reader.
+  // Gemini CLI. herdr detects it but has no integration for it, and keeps no
+  // session reported for it from any source (measured on herdr 0.9.5, from
+  // inside the pane too), so its chat is its screen. The reader opens the log
+  // the day herdr reports one.
   gemini: {
     name: 'Gemini',
     reader: 'gemini',
     integration: null,
-    installHook: installGeminiHook,
     // Before it starts, the shell's command title. Gemini's own titles are a
     // status and the folder (`◇  Ready (app)`, windowTitle.ts in 0.64), never
     // a topic, so `sessionTitle` reads none of them.

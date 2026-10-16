@@ -12,15 +12,12 @@ const agent = (kind: string): AgentInfo => ({
   inputPending: false, name: null, title: null,
 });
 
-// herdr has no Gemini integration, so `herdr integration install gemini`
-// would fail; the button installs HerdrChat's own hook instead.
-it("installs HerdrChat's hook for Gemini, and herdr's integration for the rest", async () => {
-  const commands: string[] = [];
+// herdr has no Gemini integration and keeps no session reported for Gemini
+// (herdr 0.9.5), so there is nothing to install for it; a hook that reported one
+// changed the person's settings for nothing.
+it("offers nothing for Gemini, and herdr's integration for the rest", async () => {
   const transport: HerdrTransport = {
-    exec: async (command) => {
-      commands.push(command);
-      return { ok: true, stdout: '', stderr: '', exitCode: 0 };
-    },
+    exec: async () => ({ ok: true, stdout: '', stderr: '', exitCode: 0 }),
     streamLines: async function* () {},
   };
   const client = new HerdrClient(transport);
@@ -28,10 +25,7 @@ it("installs HerdrChat's hook for Gemini, and herdr's integration for the rest",
 
   const gemini = await renderHook(() => useIntegrationInstall(client, [agent('gemini')]));
   expect(gemini.result.current.agentKind).toBeNull();
-  await act(async () => { gemini.result.current.install?.(); });
-  expect(integration).not.toHaveBeenCalled();
-  expect(commands.some((command) => command.includes('gemini-session-hook.sh'))).toBe(true);
-  expect(gemini.result.current.installError).toBeNull();
+  expect(gemini.result.current.install).toBeUndefined();
 
   // A Claude chat waiting for its session beside a Gemini screen installs Claude's.
   const claude = await renderHook(() => useIntegrationInstall(client, [agent('gemini'), agent('claude')]));
