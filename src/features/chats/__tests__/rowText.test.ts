@@ -147,9 +147,9 @@ describe('rowContext on another host', () => {
 
 // A space card says what the workspace holds, not what one agent last said.
 describe('spaceStats', () => {
-  const shell = (paneId: string, cwd: string): TerminalPane => ({
+  const shell = (paneId: string, cwd: string, agent: string | null = null, agentStatus: TerminalPane['pane']['agentStatus'] = 'unknown'): TerminalPane => ({
     paneId, processName: null,
-    pane: { paneId, workspaceId: 'w6', tabId: 't1', terminalId: null, agent: null, agentStatus: 'unknown', cwd, foregroundCwd: null, focused: false, title: null },
+    pane: { paneId, workspaceId: 'w6', tabId: 't1', terminalId: null, agent, agentStatus, cwd, foregroundCwd: null, focused: false, title: null },
   });
   const space = (agents: AgentInfo[], states: PaneSummary['status'][], counts: { tabs: number; panes: number }, shells: TerminalPane[] = []): ChatSummary => {
     const summary = workspace(agents);
@@ -175,6 +175,15 @@ describe('spaceStats', () => {
     expect(spaceStats(space(one, ['blocked'], { tabs: 1, panes: 2 }, shells))).toBe('1 agent needs you · 1 tab · 2 panes · side/herdrchat');
     expect(spaceStats(space(one, ['idle'], { tabs: 1, panes: 2 }, shells))).toBe('1 agent · 1 tab · 2 panes · side/herdrchat');
     expect(spaceStats(space([], [], { tabs: 1, panes: 1 }, [shell('w6:p1', '/home/demo/logs')]))).toBe('no agent · 1 tab · 1 pane · demo/logs');
+  });
+
+  // HC-135: the Demo's docs space, OpenCode alone, said "no agent".
+  it('counts an agent the app cannot read, and what it is doing', () => {
+    const docs = (status: TerminalPane['pane']['agentStatus']) => [shell('w9:p1', '/home/demo/docs', 'opencode', status)];
+    expect(spaceStats(space([], [], { tabs: 1, panes: 1 }, docs('idle')))).toBe('1 agent · 1 tab · 1 pane · demo/docs');
+    expect(spaceStats(space([], [], { tabs: 1, panes: 1 }, docs('blocked')))).toBe('1 agent needs you · 1 tab · 1 pane · demo/docs');
+    const one = [agentIn('w6:p1', 'claude', '/home/demo/docs')];
+    expect(spaceStats(space(one, ['working'], { tabs: 0, panes: 0 }, docs('working')))).toBe('2 agents, 2 working · 2 panes · demo/docs');
   });
 
   // An older herdr sends no counts: what the snapshot listed stands in, and
