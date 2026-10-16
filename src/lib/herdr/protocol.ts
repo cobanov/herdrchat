@@ -60,7 +60,8 @@ type AppErrorCode =
   | 'transcript_tools_missing'
   | 'transcript_unreadable'
   | 'unknown'
-  | 'unparseable_response';
+  | 'unparseable_response'
+  | 'windows_shell';
 
 /**
  * Every code a `HerdrError` can carry. A union, so a misspelt code in a
@@ -186,6 +187,17 @@ export function exitCodeError(exitCode: number, stderr = ''): HerdrError {
   // envelope does not.
   const structured = herdrErrorFrom(stderr);
   if (structured !== null) return structured;
+
+  // Windows OpenSSH runs cmd or PowerShell unless told otherwise, and neither
+  // parses the app's commands: seen as "'export' is not recognized as an
+  // internal or external command," from a Windows host.
+  if (/is not recognized as (?:an internal or external command|the name of a cmdlet|a name of a cmdlet)/.test(stderr)) {
+    return new HerdrError(
+      'windows_shell',
+      "This computer's SSH shell is Windows cmd or PowerShell, which can't run HerdrChat's commands. " +
+        'Set Git for Windows bash as the OpenSSH DefaultShell, with DefaultShellCommandOption set to -c.'
+    );
+  }
 
   const detail = stderr.trim().split('\n')[0] ?? '';
   return new HerdrError(
