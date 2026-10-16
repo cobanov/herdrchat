@@ -1,0 +1,49 @@
+# Builds the iOS app whenever a change can break its native side: the native
+# modules, config plugins, app.json, or the dependencies. Before this the
+# Swift code built only in the manual E2E workflow, so a broken module could
+# merge with every check green.
+name: iOS build
+
+on:
+  pull_request:
+    paths:
+      - 'modules/**'
+      - 'plugins/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the iOS project
+        run: npx expo prebuild -p ios --clean
+
+      # SwiftTerm (the terminal) compiles a Metal shader; Xcode 26+ ships the toolchain separately.
+      - name: Install the Metal toolchain
+        run: sh scripts/ensure-metal-toolchain.sh
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/HerdrChat.xcworkspace -scheme HerdrChat \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build | tail -n 40
