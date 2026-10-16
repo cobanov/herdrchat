@@ -10,7 +10,7 @@ import type { FileProbe } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import type { SessionMeta } from '@/lib/transcript/sessionMeta';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { appendMessages, seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
+import { appendMessages, seedIfSession, seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
 let mockPolling = true;
@@ -62,6 +62,7 @@ jest.mock('@/state/threadCache', () => ({
   rebind: jest.fn(async () => false),
   replaceMessages: jest.fn(async () => undefined),
   seedMessages: jest.fn(async () => []),
+  seedIfSession: jest.fn(async () => []),
   setTailCursor: jest.fn(async () => undefined),
   tailCursor: jest.fn(async () => null),
 }));
@@ -1400,6 +1401,34 @@ describe('the agents pane', () => {
     expect(result.current.agentsPane).toBeNull();
     await act(async () => { await jest.advanceTimersByTimeAsync(6_500); });
     expect(read).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+});
+
+// A reopened chat waited for the host before it showed the messages the phone
+// already had. Opened from the list, it shows them at once when they are the
+// session the list saw, and leaves a cache of another session alone.
+describe('opening from the chat list', () => {
+  const cached = [{ id: 'kept', role: 'assistant' as const, segments: [{ kind: 'text' as const, text: 'kept' }], timestamp: 1, agentLabel: null, isSidechain: false }];
+  const slowHost = () => jest.spyOn(client, 'snapshot').mockImplementation(() => new Promise(() => undefined));
+
+  it('shows the cached messages before the first poll when they are the listed session', async () => {
+    slowHost();
+    jest.mocked(seedIfSession).mockResolvedValue(cached);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], undefined, 'session'));
+    expect(jest.mocked(seedIfSession)).toHaveBeenCalledWith(db, 'host', 'chat', 'session');
+    expect(result.current.messages.map((message) => message.id)).toEqual(['kept']);
+    expect(result.current.loading).toBe(false);
+    expect(rebind).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  it('waits for the host when the cache is another session', async () => {
+    slowHost();
+    jest.mocked(seedIfSession).mockResolvedValue([]);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], undefined, 'session'));
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.loading).toBe(true);
     await unmount();
   });
 });

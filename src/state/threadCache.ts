@@ -114,6 +114,27 @@ async function insertMessages(
  * in-memory copy too. A no-op while the session is still unknown — binding to
  * nothing would throw away a perfectly good cache on every cold open.
  */
+/**
+ * The cached messages of a chat, but only when they are `sessionSig`'s: what
+ * a chat shows the moment it opens, before its first poll. Read only: a cache
+ * of another session is left for `rebind` to judge once the host has spoken,
+ * never dropped on the word of the list.
+ */
+export async function seedIfSession(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string
+): Promise<ChatMessage[]> {
+  const row = await db.getFirstAsync<{ session_sig: string }>(
+    'SELECT session_sig FROM messages WHERE connection_id = ? AND workspace_id = ? LIMIT 1',
+    connectionId,
+    workspaceId
+  );
+  if (row === null || row.session_sig !== cacheStamp(sessionSig)) return [];
+  return seedMessages(db, connectionId, workspaceId);
+}
+
 export async function rebind(
   db: SQLite.SQLiteDatabase,
   connectionId: string,
