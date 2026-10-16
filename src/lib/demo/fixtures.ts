@@ -18,7 +18,7 @@ export interface DemoPane {
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /** Claude unless named; OMP reports its journal's path rather than an id. */
-  agent?: 'claude' | 'omp' | 'grok';
+  agent?: 'claude' | 'omp' | 'grok' | 'agy';
   /**
    * The title the session gave itself, which titles its chat. Left out on
    * two of them, so the Demo also shows a chat titled by its workspace.
@@ -179,6 +179,16 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     agentStatus: 'idle',
     agent: 'grok',
   },
+  {
+    // An Antigravity chat, read from agy's conversation log by its id.
+    workspaceId: 'wA',
+    label: 'assets',
+    number: 9,
+    paneId: 'wA:p1',
+    cwd: '/home/demo/assets',
+    agentStatus: 'idle',
+    agent: 'agy',
+  },
 ];
 
 /**
@@ -225,6 +235,16 @@ export const DEMO_GROK_SESSIONS: Readonly<Record<string, string>> = {
 /** Where Grok keeps a session: a folder named by its id, under one for its cwd. */
 export function demoGrokPath(cwd: string, session: string): string {
   return `${DEMO_HOME}/.grok/sessions/${encodeURIComponent(cwd)}/${session}/updates.jsonl`;
+}
+
+/** The conversation id each Antigravity pane reports: the name of its folder under `brain`. */
+export const DEMO_AGY_SESSIONS: Readonly<Record<string, string>> = {
+  'wA:p1': '6e990404-0000-4000-8000-00000000000a',
+};
+
+/** Where agy keeps a conversation's log: a folder named by its id. */
+export function demoAgyPath(session: string): string {
+  return `${DEMO_HOME}/.gemini/antigravity-cli/brain/${session}/.system_generated/logs/transcript.jsonl`;
 }
 
 /** The Claude session id each demo workspace reports, and therefore its transcript filename. */
@@ -537,10 +557,60 @@ export function grokLine(role: 'user' | 'assistant', text: string, id: string, t
     : { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
 }
 
+// MARK: - Antigravity
+//
+// agy's own log (`transcript.jsonl`): one step a line, the person's input, the
+// model's turn with its tool calls, a tool's output (agy 1.3.6).
+
+function agyStep(index: number, timestamp: string, type: string, fields: Record<string, unknown>): string {
+  return JSON.stringify({
+    step_index: index,
+    source: type === 'USER_INPUT' ? 'USER_EXPLICIT' : 'MODEL',
+    type,
+    status: 'DONE',
+    created_at: timestamp,
+    ...fields,
+  });
+}
+
+function agyPrompt(index: number, timestamp: string, text: string, model: string | null = null): string {
+  const change = model === null ? '' : `\n<USER_SETTINGS_CHANGE>\nThe user changed setting \`Model Selection\` from None to ${model}. No need to comment on this change if the user doesn't ask about it.\n</USER_SETTINGS_CHANGE>`;
+  return agyStep(index, timestamp, 'USER_INPUT', {
+    content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: ${timestamp}.\n</ADDITIONAL_METADATA>${change}`,
+  });
+}
+
+const AGY_SEED: readonly string[] = [
+  agyPrompt(0, '2026-08-19T09:20:00Z', 'which icon sizes does the app still need?', 'Gemini 3.8 Flash (High)'),
+  agyStep(1, '2026-08-19T09:20:04Z', 'PLANNER_RESPONSE', {
+    input_tokens: 11_831, cache_read_tokens: 0, output_tokens: 203,
+    thinking: 'Listing what is in the icon folder first.',
+    tool_calls: [{
+      name: 'run_command',
+      args: { CommandLine: '"ls assets/icons"', Cwd: '"/home/demo/assets"', toolAction: '"Listing icons"', toolSummary: '"List icons"' },
+    }],
+  }),
+  agyStep(2, '2026-08-19T09:20:06Z', 'GENERIC', {
+    content: 'Created At: 2026-08-19T09:20:06Z\nCompleted At: 2026-08-19T09:20:06Z\n\nThe command exited with code 0.\nOutput:\nicon-1024.png\r\nicon-180.png\r\n',
+  }),
+  agyStep(3, '2026-08-19T09:20:12Z', 'PLANNER_RESPONSE', {
+    input_tokens: 2_791, cache_read_tokens: 18_559, output_tokens: 160,
+    content: 'Only 1024 and 180 are there. The 120 and 87 point sizes are missing, so the build falls back to scaling the 180.',
+  }),
+];
+
+/** One more Antigravity step, a prompt or a reply, for when the demo is used. */
+export function agyLine(role: 'user' | 'assistant', text: string, index: number, timestamp: string): string {
+  return role === 'user'
+    ? agyPrompt(index, timestamp, text)
+    : agyStep(index, timestamp, 'PLANNER_RESPONSE', { input_tokens: 21_400, cache_read_tokens: 0, content: text });
+}
+
 /** The transcript a demo pane starts with, as the file's contents. */
 export function transcriptFor(paneId: string): string {
   if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
   if (DEMO_GROK_SESSIONS[paneId] !== undefined) return `${GROK_SEED.join('\n')}\n`;
+  if (DEMO_AGY_SESSIONS[paneId] !== undefined) return `${AGY_SEED.join('\n')}\n`;
   const lines = paneId === 'w5:p1' ? historyLines() : SEEDS[paneId] ?? [];
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
@@ -663,6 +733,8 @@ export interface DemoFixtures {
   ompPaths: Readonly<Record<string, string>>;
   /** The session id each Grok pane reports. */
   grokSessions: Readonly<Record<string, string>>;
+  /** The conversation id each Antigravity pane reports. */
+  agySessions: Readonly<Record<string, string>>;
   /** The transcript a pane starts with, as the file's contents. */
   transcript: (paneId: string) => string;
   /** The pane herdr reports as focused. */
@@ -675,6 +747,7 @@ export const DEMO_HOST: DemoFixtures = {
   sessionIds: DEMO_SESSION_IDS,
   ompPaths: DEMO_OMP_PATHS,
   grokSessions: DEMO_GROK_SESSIONS,
+  agySessions: DEMO_AGY_SESSIONS,
   transcript: transcriptFor,
   focusedPaneId: 'w1:p1',
 };

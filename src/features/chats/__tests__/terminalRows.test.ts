@@ -22,7 +22,7 @@ describe('terminal rows in the chat list', () => {
     const snapshot = await new HerdrClient(new DemoHost()).snapshot();
     const summaries = buildSummaries(snapshot.workspaces ?? [], snapshot.agents, new Map(), [], snapshot.panes);
     expect(summaries.map((summary) => [summary.workspaceId, summary.shellPanes.map((row) => row.paneId)])).toEqual([
-      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']], ['w7', ['w7:p2']], ['w8', []],
+      ['w1', []], ['w2', []], ['w3', []], ['w4', []], ['w5', []], ['w6', ['w6:p3', 'w6:p4']], ['w7', ['w7:p2']], ['w8', []], ['wA', []],
     ]);
     // The two agents are still two chats of their own, and the shell is not one.
     expect(summaries[5]?.panes.map((row) => row.paneId)).toEqual(['w6:p1', 'w6:p2']);

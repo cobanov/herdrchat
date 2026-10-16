@@ -42,6 +42,8 @@ import {
   DEMO_BLOCKED_SCREEN,
   ompLine,
   grokLine,
+  agyLine,
+  demoAgyPath,
   demoGrokPath,
   DEMO_HOME,
   DEMO_HOST,
@@ -315,6 +317,8 @@ export class DemoHost implements HerdrTransport {
       if (ompPath !== undefined) this.paths.set(ompPath, pane.paneId);
       const grokSession = fixtures.grokSessions[pane.paneId];
       if (grokSession !== undefined) this.paths.set(demoGrokPath(pane.cwd, grokSession), pane.paneId);
+      const agySession = fixtures.agySessions[pane.paneId];
+      if (agySession !== undefined) this.paths.set(demoAgyPath(agySession), pane.paneId);
       const session = fixtures.sessionIds[pane.paneId];
       if (session !== undefined) {
         const dir = projectDirName(pane.cwd);
@@ -608,13 +612,15 @@ export class DemoHost implements HerdrTransport {
 
   /** True for a pane running Claude, the only agent with commands, shell mode and subagents here. */
   private isClaude(paneId: string): boolean {
-    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined;
+    return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined &&
+      this.fixtures.agySessions[paneId] === undefined;
   }
 
   /** A prompt or reply in the pane's own agent's format. */
   private lineFor(paneId: string, role: 'user' | 'assistant', text: string): string {
     if (this.fixtures.ompPaths[paneId] !== undefined) return ompLine(role, text, this.uuid(), this.stamp());
     if (this.fixtures.grokSessions[paneId] !== undefined) return grokLine(role, text, this.uuid(), this.stamp());
+    if (this.fixtures.agySessions[paneId] !== undefined) return agyLine(role, text, ++this.counter, this.stamp());
     return role === 'user' ? userLine(text, this.uuid(), this.stamp()) : replyLine(text, this.uuid(), this.stamp());
   }
 
@@ -665,6 +671,8 @@ export class DemoHost implements HerdrTransport {
         ? { agent: 'omp', kind: 'path', source: 'herdr:omp', value: this.fixtures.ompPaths[pane.paneId] ?? null }
         : pane.agent === 'grok'
           ? { agent: 'grok', kind: 'id', source: 'herdr:grok', value: this.fixtures.grokSessions[pane.paneId] ?? null }
+          : pane.agent === 'agy'
+            ? { agent: 'agy', kind: 'id', source: 'herdr:antigravity_cli', value: this.fixtures.agySessions[pane.paneId] ?? null }
           : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },
     })));
   }

@@ -9,9 +9,10 @@
 
 /**
  * Which transcript reader serves an agent's history: where its sessions are
- * filed and in what format. Grok's is a log of ACP `session/update`s.
+ * filed and in what format. Grok's is a log of ACP `session/update`s;
+ * Antigravity's a log of its conversation's steps.
  */
-export type HistoryReader = 'claude' | 'codex' | 'pi' | 'grok';
+export type HistoryReader = 'claude' | 'codex' | 'pi' | 'grok' | 'agy';
 
 export interface AgentSpec {
   /** How a person sees it named. */
@@ -80,6 +81,17 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     defaultTitles: ['omp'],
     missing: 'The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.',
   },
+  // Antigravity CLI. herdr names it `agy`, its command, in snapshots and in
+  // the session its integration reports; the integration itself is
+  // `antigravity-cli`.
+  agy: {
+    name: 'Antigravity',
+    reader: 'agy',
+    integration: 'antigravity-cli',
+    // Its title, idle or not: it never names its terminal after a conversation.
+    defaultTitles: ['agy'],
+    missing: 'The Antigravity conversation is identified, but its transcript is not in ~/.gemini/antigravity-cli/brain on this host. Resume that exact conversation on the host, then reload.',
+  },
   letta: { name: 'Letta', reader: null, integration: null, defaultTitles: [], missing: MISSING },
 };
 
@@ -90,6 +102,14 @@ export function agentSpec(kind: string | null | undefined): AgentSpec | undefine
 
 /** The agent kinds whose history the app reads, in the table's order. */
 export const READABLE_AGENTS: readonly string[] = Object.keys(AGENTS).filter((kind) => AGENTS[kind]?.reader != null);
+
+/**
+ * The agent kind an integration reports for: `antigravity-cli` is agy's, and
+ * every other one shares its agent's name. Unknown names come back as given.
+ */
+export function agentOfIntegration(integration: string): string {
+  return Object.keys(AGENTS).find((kind) => AGENTS[kind]?.integration === integration) ?? integration;
+}
 
 /** An agent kind herdr has an integration for, which `herdr integration install` takes. */
 export function integrationFor(kind: string | null | undefined): string | null {

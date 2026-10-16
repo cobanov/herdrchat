@@ -1,0 +1,30 @@
+# An Antigravity chat on the Demo: agy's conversation log found by its id, its
+# model in the header, a folded tool run, a message sent and answered.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-wA
+    direction: DOWN
+    centerElement: true
+- assertVisible: .*Antigravity.*
+- takeScreenshot: agy-row-${APPEARANCE}
+- tapOn:
+    id: chat-row-wA
+- extendedWaitUntil:
+    visible: .*120 and 87 point sizes are missing.*
+    timeout: 15000
+- assertVisible: .*ran 1 command.*
+- assertVisible: .*Gemini 3.8 Flash.*
+- tapOn:
+    id: composer-input
+- inputText: and the 120?
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .and the 120\?.*
+    timeout: 15000
+- assertNotVisible: .*Failed to send.*
+- takeScreenshot: agy-thread-${APPEARANCE}
+- tapOn:
+    id: thread-back
