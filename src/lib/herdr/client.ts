@@ -135,7 +135,25 @@ export class HerdrClient {
 
   // MARK: - Reads
 
-  async snapshot(): Promise<Snapshot> {
+  /**
+   * The host's whole state. A call while one is already on its way shares its
+   * answer: on iPad the chat list and the open chat poll side by side, and a
+   * send re-reads the snapshot that a poll may be reading at that moment.
+   */
+  snapshot(): Promise<Snapshot> {
+    if (this.snapshotInFlight !== null) return this.snapshotInFlight;
+    const pending = this.readSnapshot();
+    this.snapshotInFlight = pending;
+    const clear = () => {
+      if (this.snapshotInFlight === pending) this.snapshotInFlight = null;
+    };
+    pending.then(clear, clear);
+    return pending;
+  }
+
+  private snapshotInFlight: Promise<Snapshot> | null = null;
+
+  private async readSnapshot(): Promise<Snapshot> {
     const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
       this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
     );
