@@ -37,6 +37,7 @@ type AppErrorCode =
   | 'codex_session_compressed'
   | 'codex_session_invalid'
   | 'codex_session_mismatch'
+  | 'dir_missing'
   | 'dir_unreadable'
   | 'empty_response'
   | 'gemini_hook_install_failed'
