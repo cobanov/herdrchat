@@ -11,7 +11,7 @@ import { useChatPrefs } from '../useChatPrefs';
 import type { ChatSummary } from '../useWorkspaces';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn() } }));
 jest.mock('@/features/notifications/mutedChats', () => ({ publishMutedChats: jest.fn().mockResolvedValue(undefined) }));
 /** Prefs as saved, by connection id, then workspace id. */
 const mockSaved = new Map<string, Map<string, ChatPref>>();

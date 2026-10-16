@@ -15,7 +15,7 @@ import {
   useSlashCatalogues,
 } from '../slashCommands';
 
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
 /** The settings table, in memory, answering the statements the catalogue uses. */
 function fakeDb(initial: Record<string, string> = {}) {

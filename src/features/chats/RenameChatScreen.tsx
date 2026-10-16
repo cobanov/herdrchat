@@ -6,7 +6,7 @@ import { Field } from '@/components/Field';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { errorText } from '@/features/chats/useWorkspaces';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useChatEdits } from '@/state/chatEdits';
 import { clientFor, useConnectionFor, useSelectedConnection } from '@/state/connections';
 import { useTheme } from '@/theme/ThemeProvider';

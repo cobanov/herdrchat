@@ -3,7 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Glass } from '@/components/Glass';
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { ACCESSORY_KEYS, encodeKey, type AccessoryKey } from '@/lib/terminal/keys';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, spacing, terminal } from '@/theme/tokens';

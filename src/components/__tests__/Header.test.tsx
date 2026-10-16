@@ -4,13 +4,13 @@ import { Header } from '../Header';
 import { Platform } from 'react-native';
 
 import { Icon, MATERIAL_GLYPHS } from '../Icon';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { spacing } from '@/theme/tokens';
 
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
 }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn() } }));
 jest.mock('../Icon', () => ({ Icon: jest.fn(() => null), MATERIAL_GLYPHS: jest.requireActual<typeof import('../Icon')>('../Icon').MATERIAL_GLYPHS }));
 
 const originalOS = Object.getOwnPropertyDescriptor(Platform, 'OS');

@@ -8,7 +8,7 @@ import ReanimatedSwipeable, {
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/tokens';
 import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';

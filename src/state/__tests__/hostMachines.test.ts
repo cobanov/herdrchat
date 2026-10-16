@@ -16,7 +16,7 @@ import {
 import { clearHostSettings } from '../hostTheme';
 import { draftKey, useDrafts } from '../drafts';
 
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
 const klaw: HostMachine = { id: 'm-klaw', label: 'klaw', target: 'klaw', session: 'default', enabled: true };
 const nuku: HostMachine = { id: 'm-nuku', label: 'nuku', target: 'nuku', session: 'work', enabled: false };

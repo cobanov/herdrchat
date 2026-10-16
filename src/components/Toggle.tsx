@@ -3,7 +3,7 @@ import { Platform, Pressable, Switch, View } from 'react-native';
 import Animated, { interpolate, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { Text } from './Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, size, spacing } from '@/theme/tokens';
 

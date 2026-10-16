@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { showActionSheet, type SheetAction } from '@/components/ActionSheet';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { foldShellOutput, shellOutputText } from '@/lib/shellMode';
 import type { ShellItem } from '@/lib/threadItems';
 import { useToolRuns } from '@/state/toolRuns';

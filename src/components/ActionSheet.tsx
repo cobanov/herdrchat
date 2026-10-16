@@ -1,6 +1,6 @@
 import { ActionSheetIOS, Platform } from 'react-native';
 
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { buildSheet, type SheetAction } from '@/lib/actionSheet';
 import { useActionSheet } from '@/state/actionSheet';
 

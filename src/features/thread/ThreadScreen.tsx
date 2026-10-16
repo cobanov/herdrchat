@@ -54,7 +54,7 @@ import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
 import { composerInset } from '@/lib/composerInset';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
 import { isShellDraft } from '@/lib/shellMode';
 import { HerdrError } from '@/lib/herdr/protocol';

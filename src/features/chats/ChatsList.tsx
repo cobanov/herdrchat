@@ -41,7 +41,7 @@ import { MachineFeeds } from '@/features/chats/MachineChats';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { chatKey } from '@/lib/chatKey';
 import { mainMenuActions, mainMenuLabel, mainMenuTitle } from '@/lib/mainMenu';
 import {

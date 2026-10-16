@@ -14,7 +14,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
-jest.mock('@/lib/haptics', () => ({ haptics: { success: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { success: jest.fn() } }));
 
 const Clipboard = jest.requireMock<{ setStringAsync: jest.Mock }>('expo-clipboard');
 

@@ -1,6 +1,6 @@
-import { jumpCommand, withMachine } from '../herdr/machine';
-import { MAX_COMMAND_BYTES } from '../herdr/socket';
-import { MissingCredentialsError, SshHerdrTransport } from '../herdr/sshTransport';
+import { jumpCommand, withMachine } from '@/lib/herdr/machine';
+import { MAX_COMMAND_BYTES } from '@/lib/herdr/socket';
+import { MissingCredentialsError, SshHerdrTransport } from '../sshTransport';
 
 const mockConnect = jest.fn();
 jest.mock('../../../modules/herdr-ssh/src', () => ({

@@ -1,7 +1,7 @@
 import Native from '../HerdrSshModule';
 import { streamLines, type SshConfig } from '..';
 import { DONE_MARK } from '../../../../src/lib/herdr/doneMark';
-import { SshHerdrTransport } from '../../../../src/lib/herdr/sshTransport';
+import { SshHerdrTransport } from '../../../../src/state/sshTransport';
 
 jest.mock('../HerdrSshModule', () => ({
   __esModule: true,
