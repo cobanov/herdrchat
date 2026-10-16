@@ -28,13 +28,14 @@ const AGENTS: readonly { value: NewChatAgent; label: string }[] = [
   { value: 'codex', label: 'Codex' },
   { value: 'grok', label: 'Grok' },
   { value: 'agy', label: 'Antigravity' },
+  { value: 'gemini', label: 'Gemini CLI' },
   { value: 'pi', label: 'Pi' },
   { value: 'omp', label: 'OMP' },
 ];
 
 /**
  * Start a new conversation: create a workspace on the host at a chosen working
- * directory and launch Claude Code, Codex, Grok, Antigravity, Pi, or OMP in it.
+ * directory and launch Claude Code, Codex, Grok, Antigravity, Gemini CLI, Pi, or OMP in it.
  */
 export default function NewChatScreen() {
   const router = useRouter();
