@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import { ActionRow, Divider, Row, Section } from '@/components/SettingsList';
 import { versionAdvice, versionVerdict } from '@/lib/herdr/version';
 import { useSelectedConnection } from '@/state/connections';
-import { useHostVersion } from '@/state/hostVersion';
+import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 
 const PRIVACY_URL = 'https://herdrchat.cobanov.dev/privacy';
 const TERMS_URL = 'https://herdrchat.cobanov.dev/terms';
@@ -39,8 +39,8 @@ export function AboutSection() {
    * reports a session" both have herdr-version answers, and until now neither
    * the user nor a bug report carried the version to find them with.
    */
-  const hostVersion = useHostVersion((state) => state.version);
   const connection = useSelectedConnection();
+  const hostVersion = useHostVersion((state) => hostVersionOf(state.versions, connection?.id));
   const verdict = versionVerdict(hostVersion);
   /**
    * No advice until there is a host AND it has answered.

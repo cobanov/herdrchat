@@ -294,8 +294,8 @@ export function useWorkspaces(
       // than asking the host itself — see `state/hostVersion`. The selected
       // host's only: another host's poll runs alongside it and would
       // otherwise overwrite it with that host's herdr.
-      if (primary) {
-        useHostVersion.getState().setVersion(snapshot.version);
+      if (primary && connectionId !== null) {
+        useHostVersion.getState().setVersion(connectionId, snapshot.version);
       }
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
       // Unmounted mid-flight: not a failure, just nothing left to do with it.
