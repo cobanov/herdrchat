@@ -980,6 +980,10 @@ export class HerdrClient {
         checkEnvelope(output);
         return true;
       } catch (thrown) {
+        // The agent came up and stopped at a startup question (Claude's "trust
+        // this folder?"): herdr keeps it registered and waiting. It is started;
+        // its chat is where the question gets answered.
+        if (thrown instanceof HerdrError && thrown.code === 'agent_not_ready') return true;
         const busy = thrown instanceof HerdrError && thrown.code === 'agent_pane_busy';
         if (!busy) throw thrown;
 
