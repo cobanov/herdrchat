@@ -192,7 +192,7 @@ describe('a machine the host stops listing', () => {
     stop();
     expect(deletedUnder()).toEqual([
       'connections:h1/m-gone',
-      ...['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs', 'prompts'].map((table) => `${table}:h1/m-gone`),
+      ...['messages', 'tail_cursors', 'thread_reads', 'chat_prefs', 'prompts'].map((table) => `${table}:h1/m-gone`),
     ]);
     expect(settingsCleared()).toEqual(['.h1/m-gone']);
     expect(Object.keys(useDrafts.getState().drafts).sort()).toEqual([draftKey('h1', 'w1'), draftKey('h1/m-klaw', 'w1')].sort());

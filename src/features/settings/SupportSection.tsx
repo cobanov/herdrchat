@@ -96,11 +96,6 @@ export function SupportSection() {
       hostCount,
       newArchitecture: report.fabric && report.bridgeless,
       glassAvailable,
-      // Null until something owns "the last thing that went wrong". Errors are
-      // currently held per-screen and cleared when their banner is dismissed, so
-      // reading one here would report whatever screen happened to fail last —
-      // and a stale error in a bug report is worse than no error at all.
-      lastError: null,
       herdrVersion: useHostVersion.getState().version,
       agentExplain,
     });

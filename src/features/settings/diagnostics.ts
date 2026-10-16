@@ -22,8 +22,6 @@ export interface DiagnosticsFacts {
   hostCount: number;
   newArchitecture: boolean;
   glassAvailable: boolean;
-  /** The most recent connection failure, if there was one. */
-  lastError: string | null;
   /**
    * The host's herdr version. Not ours — this is the number that explains why a
    * send is slow or a session never gets reported, and a report without it costs
@@ -108,11 +106,8 @@ export function formatDiagnostics(facts: DiagnosticsFacts): string {
     `Hosts configured: ${facts.hostCount}`,
     `herdr on host: ${facts.herdrVersion ?? 'not reported'}`,
   ];
-  // Only when there is one. An empty "Last error: none" line invites the reader
-  // to conclude nothing went wrong, which is the opposite of why they are
-  // reading a diagnostics block.
-  if (facts.lastError !== null) lines.push(`Last error: ${facts.lastError}`);
-  // Same rule: present only when the host answered. It is one line because a
+  // Present only when the host answered: an empty line invites the reader to
+  // conclude something that is not so. It is one line because a
   // bug report is read, not parsed.
   if (facts.agentExplain != null && facts.agentExplain !== '') {
     lines.push(`Agent detection: ${facts.agentExplain}`);
