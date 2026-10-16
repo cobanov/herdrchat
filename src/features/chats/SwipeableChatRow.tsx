@@ -14,7 +14,7 @@ import { minTouchTarget, radius, spacing } from '@/theme/tokens';
 import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { ChatRow } from './ChatRow';
 import { SpaceCard } from './SpaceCard';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import type { ChatSummary } from './useWorkspaces';
 
 /**
@@ -50,7 +50,7 @@ export const SwipeableChatRow = memo(function SwipeableChatRow({
   onSwiped,
   space,
 }: {
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { host?: HostRef | null };
   /** What the row's testIDs are built from, when not its workspace's (`ChatRow`). */
   testKey?: string;
   unread: boolean;

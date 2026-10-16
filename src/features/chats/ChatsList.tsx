@@ -36,8 +36,8 @@ import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegration
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useHostChats } from '@/features/chats/useHostChats';
-import { MachineNotices } from '@/features/chats/MachineNotices';
-import { MachineFeeds } from '@/features/chats/MachineChats';
+import { HostNotices } from '@/features/chats/HostNotices';
+import { HostFeeds } from '@/features/chats/HostFeeds';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
@@ -77,13 +77,13 @@ import { minTouchTarget, radius, screenPadding, size, spacing, typography } from
  * in a tab bar.
  *
  * Thin by design: everything it knows comes from `useHostChats` (the host's
- * `useWorkspaces`, and one for each machine saved on the host), everything it
+ * `useWorkspaces`, and one for each other saved host), everything it
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
  * `useChatActions`, on the row's own connection.
  */
 export default function ChatsList({ selectedWorkspaceId, selectedConnectionId, selectedTerminal }: {
   selectedWorkspaceId?: string;
-  /** The open chat's connection: the host's, or one of its machines'. Absent: the host's. */
+  /** The open chat's connection: the selected host's or another's. Absent: the selected host's. */
   selectedConnectionId?: string;
   /** The pane whose terminal is the iPad's detail. Never set with a chat: one detail at a time. */
   selectedTerminal?: OpenTerminal;
@@ -124,8 +124,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  // The host's chats and its machines' in one list. The host's error and
-  // loading are the list's; a machine's failure is a notice at the end.
+  // Every host's chats in one list. The selected host's error and loading
+  // are the list's; another host's failure is a notice at the end.
   const chats = useHostChats(connection, client);
   const { summaries, loading, error, errorCode, refresh, notices, connectionIds } = chats;
   const integrations = useOutdatedIntegrations(client);
@@ -177,7 +177,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   // two, left alone beside a shell when the other exited, kept that key while
   // its row was keyed `w6`.
   //
-  // By connection too: a machine's `w1` is not the host's `w1`.
+  // By connection too: one host's `w1` is not another's.
   const openConnectionId = selectedConnectionId ?? connection?.id ?? null;
   const selectedSummary = summaries.find((item) =>
     item.workspaceId === selectedWorkspaceId && item.connectionId === openConnectionId);
@@ -204,7 +204,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const actions = useChatActions<ListedChat>({
     client,
     connectionId: connection?.id ?? null,
-    // A machine's chat is renamed and closed on the machine.
+    // Another host's chat is renamed and closed on that host.
     targetOf: chats.targetOf,
     db,
     refresh,
@@ -355,8 +355,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
 
   return (
     <Screen>
-      {/* One poll per machine saved on the host, feeding `useHostChats`. */}
-      {connection !== null && <MachineFeeds host={connection} />}
+      {/* One poll per other saved host, feeding `useHostChats`. */}
+      {connection !== null && <HostFeeds selectedId={connection.id} />}
       <Header
         title={listModeTitle(listMode)}
         titleMenu={{
@@ -484,7 +484,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             ) : null}
             {notices.length > 0 && (
               <View style={{ paddingHorizontal: screenPadding }}>
-                <MachineNotices notices={notices} />
+                <HostNotices notices={notices} />
               </View>
             )}
           </ScrollView>
@@ -526,7 +526,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                   onUpdate={() => void integrations.update()}
                 />
               )}
-              <MachineNotices notices={notices} />
+              <HostNotices notices={notices} />
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
               {askForStar && (
                 <View style={{ marginTop: spacing.lg }}>
@@ -586,10 +586,9 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             const muted = prefs.isMuted(item);
             // Both belong to a conversation, so both wait for its session id.
             const personal = item.sessionSig !== null;
-            // Only the host's own chats notify, so only they can be muted.
             const mutable = personal && prefs.canMute(item);
-            // Compared on the row's own connection: a machine's `w1` is not
-            // the host's.
+            // Compared on the row's own connection: one host's `w1` is not
+            // another's.
             const openHere = openFor(open, item);
             const rowReads = readsOf(reads, item);
             const manage = () => actions.manageChat(item, personal ? [
@@ -695,7 +694,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   );
 }
 
-/** Every listed connection's read markers: the host's and each machine's. */
+/** Every listed host's read markers. */
 async function loadReads(db: Parameters<typeof loadThreadReads>[0], ids: string): Promise<ReadsByConnection> {
   const loaded = await Promise.all(ids.split('\n').map(async (id) => [id, await loadThreadReads(db, id)] as const));
   return new Map(loaded);

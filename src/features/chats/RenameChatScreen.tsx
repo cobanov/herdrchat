@@ -36,8 +36,8 @@ export default function RenameChatScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const markDirty = useChatEdits((state) => state.markDirty);
-  // `connectionId` names the row's connection: one of the host's machines
-  // for a chat on that machine, whose workspace is renamed there. Without it
+  // `connectionId` names the row's connection: another host for a chat on
+  // that host, whose workspace is renamed there. Without it
   // (an older link), the selected host, as before.
   const params = useLocalSearchParams<{ workspaceId: string; title?: string; connectionId?: string }>();
   const selected = useSelectedConnection();

@@ -2,11 +2,9 @@ import { act, render } from '@testing-library/react-native';
 import { useEffect } from 'react';
 
 import { HerdrClient } from '@/lib/herdr/client';
-import type { HostMachine } from '@/lib/herdr/machines';
-import type { ServerConnection } from '@/state/connections';
-import { useHostMachines } from '@/state/hostMachines';
-import { MachineFeeds } from '../MachineChats';
-import { useHostChats, useMachineFeeds, type HostChatsState } from '../useHostChats';
+import { useConnections, type ServerConnection } from '@/state/connections';
+import { HostFeeds } from '../HostFeeds';
+import { useHostChats, useHostFeeds, type HostChatsState } from '../useHostChats';
 import type { ChatSummary } from '../useWorkspaces';
 
 jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
@@ -34,24 +32,25 @@ jest.mock('../useWorkspaces', () => ({
     };
   },
 }));
-/** A machine's client, as a token naming its connection. */
-const mockMachineClients = new Map<string, { machineClient: string }>();
+/** Another host's client, as a token naming it. */
+const mockClients = new Map<string, { client: string }>();
 jest.mock('@/state/connections', () => ({
-  machineConnection: (host: { id: string }, machine: { id: string; label: string }) => ({
-    kind: 'machine', id: `${host.id}/${machine.id}`, name: machine.label, via: host.id, host, machine,
-  }),
+  useConnections: jest.requireActual<typeof import('zustand')>('zustand').create(() => ({ connections: [] as unknown[] })),
+  isDemo: (id: string) => id === 'demo',
   clientFor: (connection: { id: string }) => {
-    if (!mockMachineClients.has(connection.id)) mockMachineClients.set(connection.id, { machineClient: connection.id });
-    return mockMachineClients.get(connection.id);
+    if (!mockClients.has(connection.id)) mockClients.set(connection.id, { client: connection.id });
+    return mockClients.get(connection.id);
   },
 }));
 
-const host = { id: 'gimel', name: 'Gimel', host: 'gimel', port: 22, username: 'me' } as ServerConnection;
+const saved = (id: string, name: string) => ({ id, name, host: id, port: 22, username: 'me' } as ServerConnection);
+const host = saved('gimel', 'Gimel');
+const mac = saved('mac', 'MacBook');
+const demo = saved('demo', 'Demo');
 const hostClient = new HerdrClient({
   exec: async () => ({ ok: true, exitCode: 0, stdout: '', stderr: '' }),
   streamLines: async function* () { yield* []; },
 });
-const klaw: HostMachine = { id: 'm-klaw', label: 'klaw', target: 'klaw', session: 'default', enabled: true };
 
 const chat = (workspaceId: string, title: string): ChatSummary => ({
   workspaceId, title, number: 1, status: 'idle', agents: [], panes: [], preview: null,
@@ -60,84 +59,85 @@ const chat = (workspaceId: string, title: string): ChatSummary => ({
 
 /** What the hook last returned, handed out after each render. */
 const seen: { current: HostChatsState | null } = { current: null };
-function Probe() {
-  const state = useHostChats(host, hostClient);
+function Probe({ selected = host }: { selected?: ServerConnection }) {
+  const state = useHostChats(selected, hostClient);
   useEffect(() => {
     seen.current = state;
   });
-  return <MachineFeeds host={host} />;
+  return <HostFeeds selectedId={selected.id} />;
 }
 
 beforeEach(() => {
   mockPolls.clear();
   mockRefresh.mockClear();
-  mockMachineClients.clear();
-  useHostMachines.getState().clear('gimel');
+  mockClients.clear();
+  useConnections.setState({ connections: [host, mac, demo] });
   seen.current = null;
 });
 
-it('merges a machine\'s rows after the host\'s, each saying where it lives', async () => {
+it('merges every other saved host\'s rows after the selected one\'s, each saying where it lives', async () => {
   mockPolls.set('gimel', { summaries: [chat('w1', 'herdrchat')] });
-  mockPolls.set('gimel/m-klaw', { summaries: [chat('w1', 'kenneth-bot')] });
-  useHostMachines.getState().set('gimel', [klaw]);
+  mockPolls.set('mac', { summaries: [chat('w1', 'kenneth-bot')] });
   const screen = await render(<Probe />);
   const rows = seen.current!.summaries;
-  expect(rows.map((row) => [row.connectionId, row.workspaceId, row.machine?.label ?? null])).toEqual([
+  // The Demo joins no real host's list.
+  expect(rows.map((row) => [row.connectionId, row.workspaceId, row.host?.label ?? null])).toEqual([
     ['gimel', 'w1', null],
-    ['gimel/m-klaw', 'w1', 'klaw'],
+    ['mac', 'w1', 'MacBook'],
   ]);
-  expect(seen.current!.connectionIds).toEqual(['gimel', 'gimel/m-klaw']);
+  expect(seen.current!.connectionIds).toEqual(['gimel', 'mac']);
   expect(seen.current!.notices).toEqual([]);
-  // A machine row's actions run on the machine's own client.
-  expect(seen.current!.targetOf(rows[1]!)).toEqual({ client: mockMachineClients.get('gimel/m-klaw'), connectionId: 'gimel/m-klaw' });
+  // Another host's row runs its actions on that host's own client.
+  expect(seen.current!.targetOf(rows[1]!)).toEqual({ client: mockClients.get('mac'), connectionId: 'mac' });
   expect(seen.current!.targetOf(rows[0]!)).toEqual({ client: hostClient, connectionId: 'gimel' });
-  // A pull refreshes the host and the machine.
+  // A pull refreshes every host.
   await act(() => seen.current!.refresh());
-  expect(mockRefresh.mock.calls.map(([id]) => id).sort()).toEqual(['gimel', 'gimel/m-klaw']);
+  expect(mockRefresh.mock.calls.map(([id]) => id).sort()).toEqual(['gimel', 'mac']);
   await screen.unmount();
-  expect(useMachineFeeds.getState().feeds).toEqual({});
+  expect(useHostFeeds.getState().feeds).toEqual({});
 });
 
-// The host answered; one machine behind it did not. The list keeps the host's
-// rows, says nothing about it as the list's error, and gives the machine one
-// line naming it.
-it('leaves the host\'s rows and error alone when a machine fails, and sets its notice', async () => {
+// The selected host answered; another did not. The list keeps every row, says
+// nothing about it as the list's error, and gives that host one line naming it.
+it('leaves the selected host\'s error alone when another host fails, and sets its notice', async () => {
   mockPolls.set('gimel', { summaries: [chat('w1', 'herdrchat')] });
-  mockPolls.set('gimel/m-klaw', {
-    summaries: [chat('w1', 'kenneth-bot')],
-    error: "Gimel can't reach klaw right now.",
-    errorCode: 'connect_failed',
-  });
-  useHostMachines.getState().set('gimel', [klaw]);
+  mockPolls.set('mac', { summaries: [chat('w1', 'kenneth-bot')], error: 'Timed out.', errorCode: 'connect_failed' });
   const screen = await render(<Probe />);
   expect(seen.current!.error).toBeNull();
-  expect(seen.current!.summaries.map((row) => row.connectionId)).toEqual(['gimel', 'gimel/m-klaw']);
-  expect(seen.current!.notices).toEqual([{ machineId: 'm-klaw', label: 'klaw', text: "Gimel can't reach klaw right now." }]);
+  expect(seen.current!.summaries.map((row) => row.connectionId)).toEqual(['gimel', 'mac']);
+  expect(seen.current!.notices).toEqual([{ hostId: 'mac', label: 'MacBook', text: 'MacBook: Timed out.' }]);
   await screen.unmount();
 });
 
-// A host that is down takes its machines with it; their notices would repeat it.
-it('says nothing about machines while the host itself is failing', async () => {
+// One host down is not every host down: the others' rows still show.
+it('keeps another host\'s rows while the selected one is failing', async () => {
   mockPolls.set('gimel', { error: 'Host down', errorCode: 'connect_failed' });
-  mockPolls.set('gimel/m-klaw', { error: 'Host down', errorCode: 'connect_failed' });
-  useHostMachines.getState().set('gimel', [klaw]);
+  mockPolls.set('mac', { summaries: [chat('w1', 'kenneth-bot')] });
   const screen = await render(<Probe />);
   expect(seen.current!.error).toBe('Host down');
-  expect(seen.current!.notices).toEqual([]);
+  expect(seen.current!.summaries.map((row) => row.connectionId)).toEqual(['mac']);
   await screen.unmount();
 });
 
-it('drops a machine\'s rows once the host lists it as disabled', async () => {
+it('drops a host\'s rows once it is removed', async () => {
   mockPolls.set('gimel', { summaries: [chat('w1', 'herdrchat')] });
-  mockPolls.set('gimel/m-klaw', { summaries: [chat('w1', 'kenneth-bot')] });
-  useHostMachines.getState().set('gimel', [klaw]);
+  mockPolls.set('mac', { summaries: [chat('w1', 'kenneth-bot')] });
   const screen = await render(<Probe />);
   expect(seen.current!.summaries).toHaveLength(2);
   await act(async () => {
-    useHostMachines.getState().set('gimel', [{ ...klaw, enabled: false }]);
+    useConnections.setState({ connections: [host] });
   });
   expect(seen.current!.summaries.map((row) => row.connectionId)).toEqual(['gimel']);
   expect(seen.current!.connectionIds).toEqual(['gimel']);
-  expect(useMachineFeeds.getState().feeds).toEqual({});
+  expect(useHostFeeds.getState().feeds).toEqual({});
+  await screen.unmount();
+});
+
+// App Review and the e2e flows see the Demo alone.
+it('lists the Demo by itself', async () => {
+  mockPolls.set('demo', { summaries: [chat('w1', 'herdrchat')] });
+  mockPolls.set('mac', { summaries: [chat('w1', 'kenneth-bot')] });
+  const screen = await render(<Probe selected={demo} />);
+  expect(seen.current!.summaries.map((row) => row.connectionId)).toEqual(['demo']);
   await screen.unmount();
 });

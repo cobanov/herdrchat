@@ -6,7 +6,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 /**
  * The two places the app is used from, as a real UIKit tab bar: the chats,
- * and the computers (the host and its machines) with their files and terminals.
+ * and the computers (every saved host) with their files and terminals.
  *
  * `NativeTabs` renders the system's own tab bar rather than a JS imitation,
  * which on iOS 26 is the floating Liquid Glass bar, with the way it minimises

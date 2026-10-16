@@ -17,7 +17,7 @@ export const DEVICE_ICON_LABELS: Readonly<Record<DeviceIcon, string>> = {
   terminal: 'Terminal',
 };
 
-/** Offer the glyphs for one host or machine, and "No icon" when it has one. */
+/** Offer the glyphs for one host, and "No icon" when it has one. */
 export function chooseDeviceIcon(db: SQLite.SQLiteDatabase, connectionId: string, name: string): void {
   const current = useDeviceIcons.getState().byConnection[connectionId];
   const set = (icon: DeviceIcon | null) => void useDeviceIcons.getState().set(db, connectionId, icon);

@@ -6,12 +6,10 @@ import { useHostEvents } from '../useHostEvents';
 import { usePollGate } from '../usePollGate';
 import { useHostVersion } from '@/state/hostVersion';
 import { checkHostTheme } from '@/state/hostTheme';
-import { refreshHostMachines } from '@/state/hostMachines';
 import { scanSlashCatalogue } from '@/state/slashCommands';
 import { projectFoldersToScan, slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
-import { machineListDue, splitMachineConnectionId } from '@/lib/herdr/machines';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -163,8 +161,16 @@ const EVENT_DEBOUNCE_MS = 250;
  * refresh. The poll loop stays underneath as a safety net, slowed right down
  * while the stream is live and back at its old rate when it is not (a host
  * with no socket bridge, or a stream between reconnects).
+ *
+ * `primary` is false for the other hosts whose chats join the selected one's
+ * list (`HostFeed`): the app's theme and the herdr version Settings shows are
+ * the selected host's alone.
  */
-export function useWorkspaces(client: HerdrClient | null, connectionId: string | null = null): WorkspacesState {
+export function useWorkspaces(
+  client: HerdrClient | null,
+  connectionId: string | null = null,
+  primary = true
+): WorkspacesState {
   const [summaries, setSummaries] = useState<ChatSummary[]>([]);
   // Starts true and is only ever cleared, never re-armed: switching servers
   // remounts the screen (it is keyed by connection id), which is React's own
@@ -216,12 +222,6 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
     themeEnabled.current = useHostThemes;
   }, [useHostThemes]);
   /**
-   * When the host's machine list was last asked for, the same way: null asks
-   * on the next poll that works (the first after connecting, a pull, coming
-   * back to the app), and otherwise once a minute (`machineListDue`).
-   */
-  const lastMachineCheck = useRef<number | null>(null);
-  /**
    * When the slash-command catalogue was last scanned, the same way again:
    * null scans on the next poll that works (the first after connecting, a
    * pull), and otherwise every ten minutes (`slashScanDue`). Not on coming
@@ -231,12 +231,10 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   const lastSlashScan = useRef<number | null>(null);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
-  // A machine may have been added at the host meanwhile, too.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       lastThemeCheck.current = null;
-      lastMachineCheck.current = null;
     });
     return () => subscription.remove();
   }, []);
@@ -274,10 +272,10 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // there genuinely are none, and asking again would be pointless.
       const snapshot = await client.snapshot();
       // Rides along with the poll that already runs. Settings reads this rather
-      // than asking the host itself — see `state/hostVersion`. The host's
-      // only: a machine's poll (a connection id with a slash) runs alongside
-      // it and would otherwise overwrite it with the machine's herdr.
-      if (connectionId === null || splitMachineConnectionId(connectionId) === null) {
+      // than asking the host itself — see `state/hostVersion`. The selected
+      // host's only: another host's poll runs alongside it and would
+      // otherwise overwrite it with that host's herdr.
+      if (primary) {
         useHostVersion.getState().setVersion(snapshot.version);
       }
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
@@ -330,25 +328,14 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       // After the list is published, and not awaited: the theme is a side
       // task of this poll, and a slow or failing check must neither delay the
       // rows nor turn into the list's error. `checkHostTheme` never rejects.
-      //
-      // Both are the HOST's. A machine's list (a connection id with a slash)
-      // asks neither: the host's theme applies to its machines, and a
-      // machine's own machines are not federated a second hop.
+      // The selected host's only: the app wears one theme.
       const now = Date.now();
-      const isHost = connectionId !== null && splitMachineConnectionId(connectionId) === null;
-      if (isHost && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
+      if (primary && connectionId !== null && themeEnabled.current && themeCheckDue(lastThemeCheck.current, now)) {
         lastThemeCheck.current = now;
         void checkHostTheme(connectionId, client.transport);
       }
-      // The same side task for the machines saved on the host: a failed ask
-      // keeps the last list and never reaches this list's error.
-      // `refreshHostMachines` never rejects.
-      if (isHost && machineListDue(lastMachineCheck.current, now)) {
-        lastMachineCheck.current = now;
-        void refreshHostMachines(connectionId, client);
-      }
       // The slash commands, a side task the same way: after the rows, not
-      // awaited, never the list's error. Every connection's, a machine's
+      // awaited, never the list's error. Every host's, another host's
       // too: each has its own Claude Code and its own home folder, read
       // through its own client. `scanSlashCatalogue` never rejects, and never
       // runs two at once for one connection (b704ec8 was reverted for a scan
@@ -372,7 +359,7 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
     } finally {
       if (alive.current) setLoading(false);
     }
-  }, [client, connectionId]);
+  }, [client, connectionId, primary]);
 
   useEffect(() => {
     alive.current = true;
@@ -443,7 +430,6 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       failures.current = 0;
       forcePreviews.current = true;
       lastThemeCheck.current = null;
-      lastMachineCheck.current = null;
       lastSlashScan.current = null;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();

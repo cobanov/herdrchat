@@ -1,7 +1,5 @@
-import { sshJump } from '../herdr/machine';
 import { isNamedSession } from '../herdr/session';
 import { shellCommand, shellQuote, withPath } from '../herdr/shell';
-import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/timeouts';
 
 /**
  * The command a terminal runs on the host to show one herdr pane.
@@ -54,11 +52,10 @@ import { JUMP_CONNECT_TIMEOUT_MS, TERMINAL_START_TIMEOUT_MS } from '../herdr/tim
  * POSIX shell and fish read the same way (`noBackslashes`).
  */
 
-/** Which attach path a pane takes. */
 /**
  * What a terminal opens: an agent's pane, a shell pane (both attached through
- * herdr), or `login`, a plain login shell on the machine itself, for the
- * Terminal tab, with no herdr pane behind it.
+ * herdr), or `login`, a plain login shell on the computer itself, for the
+ * Computers tab, with no herdr pane behind it.
  */
 export type TerminalPaneKind = 'agent' | 'shell' | 'login';
 
@@ -82,12 +79,10 @@ export interface TerminalTarget {
   terminalId: string | null;
   /** Take the pane from another attached client. Only ever the person's choice. */
   takeover?: boolean;
-  /** The host's `herdr` path (`Connection.herdrPath`); `herdr` on a machine. */
+  /** The host's `herdr` path (`ServerConnection.herdrPath`). */
   herdrPath: string;
-  /** The herdr session the pane lives in: the host's, or the machine's. */
+  /** The host's herdr session the pane lives in. */
   session: string | null | undefined;
-  /** Set for a pane on one of the host's machines: its SSH target as the host knows it. */
-  machine?: { target: string } | null;
 }
 
 /**
@@ -101,19 +96,11 @@ const LOCALE = 'export LANG="${LANG:-en_US.UTF-8}"';
 /**
  * The command to run on the host, or null when there is none: a shell pane
  * without a terminal id (`needsNewerHerdr`), or a part that cannot be written
- * without a backslash (a pane id, terminal id, path, session or machine target
- * with a `\` in it, none of which herdr or ssh produce).
+ * without a backslash (a pane id, terminal id, path or session with a `\` in
+ * it, none of which herdr produces). With its PATH, locale and session.
  */
 export function attachCommand(target: TerminalTarget): string | null {
-  const inner = paneCommand(target, target.machine === undefined || target.machine === null ? target.herdrPath : 'herdr');
-  if (inner === null) return null;
-  if (target.machine === undefined || target.machine === null) return inner;
-  if (target.machine.target.includes('\\')) return null;
-  return noBackslashes(withPath(ptyJump(target.machine.target, inner)));
-}
-
-/** The command on the computer the pane is on, with its PATH, locale and session. */
-function paneCommand(target: TerminalTarget, herdrPath: string): string | null {
+  const { herdrPath } = target;
   // The user's own login shell, which sets its PATH itself.
   if (target.kind === 'login') return `${LOCALE}; exec "\${SHELL:-/bin/sh}" -l`;
   const session = isNamedSession(target.session) ? target.session.trim() : null;
@@ -139,34 +126,10 @@ export function needsNewerHerdr(target: Pick<TerminalTarget, 'kind' | 'terminalI
 }
 
 /**
- * The machine jump of `withMachine`, with a terminal on the machine's end.
- *
- * `sshJump` itself runs without one on purpose (byte offsets would drift on
- * `\r\n`), and it is the builder every jump goes through, so the terminal
- * adds two options to its line rather than writing its own:
- *
- * - `-t`: a PTY on the machine, so herdr there draws for a terminal and gets
- *   the size. The host's `ssh` already runs on the app's PTY, so one `t` is
- *   enough.
- * - `-e none`: no escape character. With a PTY, `ssh` reads `~.` after a
- *   newline as "disconnect", and a person typing `~` in vim would hang up.
- */
-export function ptyJump(target: string, command: string): string {
-  const line = sshJump(target, command);
-  if (!line.startsWith('ssh ')) throw new Error('sshJump no longer starts with ssh');
-  return `ssh -t -e none ${line.slice('ssh '.length)}`;
-}
-
-/**
  * `shellQuote`'s `'\''` rewritten as `'"'"'`: the same quote to every POSIX
  * shell, and to fish, with no backslash. Only valid on text whose every
  * backslash came from `shellQuote`, which `attachCommand` checks first.
  */
 export function noBackslashes(command: string): string {
   return command.replaceAll(`'\\''`, `'"'"'`);
-}
-
-/** How long opening the terminal may take: the jump's connect time on top for a machine. */
-export function terminalStartTimeout(target: Pick<TerminalTarget, 'machine'>): number {
-  return TERMINAL_START_TIMEOUT_MS + (target.machine === undefined || target.machine === null ? 0 : JUMP_CONNECT_TIMEOUT_MS);
 }

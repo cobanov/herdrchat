@@ -56,7 +56,6 @@ jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView 
 jest.mock('@/features/usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('@/features/useHostEvents', () => ({ useHostEvents: () => false }));
 jest.mock('@/state/hostTheme', () => ({ checkHostTheme: async () => true }));
-jest.mock('@/state/hostMachines', () => ({ refreshHostMachines: async () => true }));
 jest.mock('@/state/slashCommands', () => ({ scanSlashCatalogue: async () => undefined }));
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: 'demo', name: 'Demo', host: 'demo', username: 'demo' }),
@@ -101,7 +100,7 @@ jest.mock('../useAttentionBadge', () => ({ useAttentionBadge: () => undefined })
 jest.mock('../useChatActions', () => ({
   useChatActions: () => ({ error: null, clearError: jest.fn(), manageChat: jest.fn(), renameChat: jest.fn(), closeChat: jest.fn() }),
 }));
-jest.mock('../MachineChats', () => ({ MachineFeeds: () => null }));
+jest.mock('../HostFeeds', () => ({ HostFeeds: () => null }));
 const mockOpenChat = jest.fn();
 jest.mock('../navigation', () => ({ openChat: (...args: unknown[]) => mockOpenChat(...args) }));
 

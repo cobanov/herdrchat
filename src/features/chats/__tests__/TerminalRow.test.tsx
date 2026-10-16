@@ -26,10 +26,10 @@ it('names the program and the folder it is in, and opens on a tap', async () => 
   expect(press).toHaveBeenCalledTimes(1);
 });
 
-it('says Shell until herdr says which program, and names the machine for VoiceOver', async () => {
+it('says Shell until herdr says which program, and names another host for VoiceOver', async () => {
   const screen = await render(
     <TerminalRow
-      summary={{ ...api, machine: { id: 'demo-nuku', label: 'nuku' } }}
+      summary={{ ...api, host: { id: 'demo-nuku', label: 'nuku' } }}
       terminal={{ paneId: 'w6:p3', pane, processName: null }}
       onPress={jest.fn()}
     />

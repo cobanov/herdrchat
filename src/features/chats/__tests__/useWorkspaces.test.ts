@@ -36,10 +36,6 @@ const mockCheckTheme = jest.fn(async (_connectionId: string, _transport: unknown
 jest.mock('@/state/hostTheme', () => ({
   checkHostTheme: (connectionId: string, transport: unknown) => mockCheckTheme(connectionId, transport),
 }));
-const mockRefreshMachines = jest.fn(async (_hostId: string, _client: unknown) => true);
-jest.mock('@/state/hostMachines', () => ({
-  refreshHostMachines: (hostId: string, client: unknown) => mockRefreshMachines(hostId, client),
-}));
 const mockScanSlash = jest.fn(async (_connectionId: string, _transport: unknown, _ask: unknown) => undefined);
 jest.mock('@/state/slashCommands', () => ({
   scanSlashCatalogue: (connectionId: string, transport: unknown, ask: unknown) =>
@@ -88,8 +84,6 @@ beforeEach(() => {
   mockHostThemes = true;
   mockCheckTheme.mockReset();
   mockCheckTheme.mockResolvedValue(true);
-  mockRefreshMachines.mockReset();
-  mockRefreshMachines.mockResolvedValue(true);
   mockScanSlash.mockReset();
   mockScanSlash.mockResolvedValue(undefined);
 });
@@ -462,68 +456,24 @@ describe('the host theme check, riding on the list poll', () => {
   });
 });
 
-describe('the host\'s machine list, riding on the list poll', () => {
+// Another host's poll, beside the selected one's in the same list: the app
+// wears the selected host's theme, and Settings shows its herdr version.
+describe('another host\'s poll', () => {
   beforeEach(() => {
     mockLive = false; // a poll every 3 s
     jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
   });
 
-  it('asks on the first poll, then at most every 60 s', async () => {
-    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
-    expect(mockRefreshMachines).toHaveBeenLastCalledWith('host', client);
-    // Polls every 3 s up to 57 s: none of them is due.
-    await act(async () => { await jest.advanceTimersByTimeAsync(57_100); });
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(1);
-    // The poll at 60 s is.
-    await act(async () => { await jest.advanceTimersByTimeAsync(3_000); });
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
-    await unmount();
-  });
-
-  it('asks again on a pull to refresh and on coming back to the foreground', async () => {
-    let onChange: (state: AppStateStatus) => void = () => undefined;
-    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
-      onChange = listener as (state: AppStateStatus) => void;
-      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
-    });
-    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
-    await act(async () => { await result.current.refresh(); });
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
-    await act(async () => { onChange('background'); });
-    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(2);
-    await act(async () => { onChange('active'); });
-    await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
-    expect(mockRefreshMachines).toHaveBeenCalledTimes(3);
-    await unmount();
-  });
-
-  it('never asks after a poll that failed, or without a host to file it under', async () => {
-    const anonymous = await renderHook(() => useWorkspaces(client));
-    await anonymous.unmount();
-    jest.spyOn(client, 'snapshot').mockRejectedValue(new HerdrError('connect_failed', 'down'));
-    const failed = await renderHook(() => useWorkspaces(client, 'host'));
-    await failed.unmount();
-    expect(mockRefreshMachines).not.toHaveBeenCalled();
-  });
-
-  // A machine's own list: the host's theme applies to it, and its own
-  // machines are not federated a second hop.
-  it('asks neither the machines nor the theme for a machine\'s list', async () => {
-    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+  it('asks for no theme', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'mac', false));
     await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
-    expect(mockRefreshMachines).not.toHaveBeenCalled();
     expect(mockCheckTheme).not.toHaveBeenCalled();
     await unmount();
   });
 
-  // Settings shows the host's herdr version, which the host's poll records.
-  // A machine's poll runs beside it and used to overwrite it with the
-  // machine's own.
-  it('leaves the host\'s herdr version to the host\'s poll', async () => {
+  it('leaves the herdr version to the selected host\'s poll', async () => {
     useHostVersion.setState({ version: null });
-    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'mac', false));
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
     expect(useHostVersion.getState().version).toBeNull();
     await unmount();
@@ -531,19 +481,6 @@ describe('the host\'s machine list, riding on the list poll', () => {
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
     expect(useHostVersion.getState().version).toBe('0.9.0');
     await host.unmount();
-  });
-
-  // The list never waits on the ask or reports it.
-  it('keeps a failed or hanging ask out of the list', async () => {
-    mockRefreshMachines.mockImplementation(() => new Promise(() => undefined));
-    const { result, unmount } = await renderHook(() => useWorkspaces(client, 'host'));
-    expect(result.current.summaries).toHaveLength(1);
-    expect(result.current.error).toBeNull();
-    mockRefreshMachines.mockResolvedValue(false);
-    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
-    expect(result.current.error).toBeNull();
-    expect(result.current.loading).toBe(false);
-    await unmount();
   });
 });
 
@@ -594,12 +531,12 @@ describe('the slash-command scan, riding on the list poll', () => {
     expect(mockScanSlash).not.toHaveBeenCalled();
   });
 
-  // A machine has its own Claude Code and home folder: its own scan,
-  // through its own client, filed under its own connection id.
-  it('scans a machine\'s list under the machine\'s own id', async () => {
-    const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
+  // Another host has its own Claude Code and home folder: its own scan,
+  // through its own client, filed under its own id.
+  it('scans another host\'s list under its own id', async () => {
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'mac', false));
     expect(mockScanSlash).toHaveBeenCalledTimes(1);
-    expect(mockScanSlash).toHaveBeenLastCalledWith('host/m-klaw', client.transport, { host: true, cwds: ['/test'] });
+    expect(mockScanSlash).toHaveBeenLastCalledWith('mac', client.transport, { host: true, cwds: ['/test'] });
     await unmount();
   });
 

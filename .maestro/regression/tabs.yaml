@@ -1,5 +1,5 @@
-# The tab bar: Chats and Computers. Computers lists the Demo and its machine,
-# each with a button for its files and one for its terminal. Files browses the
+# The tab bar: Chats and Computers. Computers lists the Demo, with a button
+# for its files and one for its terminal. Files browses the
 # Demo's home folder and one folder in it; the terminal is a login shell on the
 # Demo, the same terminal screen a pane's opens, pushed over the tabs.
 appId: dev.herdr.HerdrChat
@@ -11,8 +11,6 @@ appId: dev.herdr.HerdrChat
     visible:
       id: device-demo
     timeout: 5000
-- assertVisible:
-    id: device-demo/demo-nuku
 - takeScreenshot: computers-${APPEARANCE}
 
 - tapOn:

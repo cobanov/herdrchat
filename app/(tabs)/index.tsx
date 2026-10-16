@@ -11,7 +11,7 @@ import ThreadScreen from '@/features/thread/ThreadScreen';
 import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
 import { useSelectedConnection } from '@/state/connections';
 import { chatOf, terminalOf, useChatSelection } from '@/state/chatSelection';
-import { isUnderHost } from '@/lib/herdr/machines';
+import { useOtherHosts } from '@/features/chats/useHostChats';
 
 /**
  * The app's root: the chats, and on iPad the open detail beside them, a
@@ -30,11 +30,11 @@ export default function ChatsScreen() {
   const detail = useChatSelection((state) => state.detail);
   const select = useChatSelection((state) => state.select);
   // Workspace ids are only unique on their host. Never carry a selection onto
-  // another connection that happens to have the same workspace slot. A chat
-  // or a pane on one of this host's machines is in this host's list, so it stays.
-  const onThisHost = connection !== null && detail !== null &&
-    (detail.connectionId === connection.id || isUnderHost(detail.connectionId, connection.id));
-  const shown = Platform.OS === 'ios' && Platform.isPad && onThisHost ? detail : null;
+  // a list that does not hold its host: one on any listed host stays.
+  const others = useOtherHosts(connection?.id ?? null);
+  const listed = connection !== null && detail !== null &&
+    (detail.connectionId === connection.id || others.some((other) => other.id === detail.connectionId));
+  const shown = Platform.OS === 'ios' && Platform.isPad && listed ? detail : null;
   const chat = chatOf(shown);
   const terminal = terminalOf(shown);
   const selected = chat?.workspaceId;

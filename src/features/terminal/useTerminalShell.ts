@@ -13,7 +13,7 @@ import {
 import { feed, type TerminalSize } from '../../../modules/herdr-terminal/src';
 import { demoTerminalScreen } from '@/lib/demo/terminal';
 import { TERMINAL_RESIZE_DEBOUNCE_MS } from '@/lib/herdr/timeouts';
-import { isDemo, transportFor, type Connection } from '@/state/connections';
+import { isDemo, transportFor, type ServerConnection } from '@/state/connections';
 import type { TerminalPhase } from './status';
 import { noLaunchMessage, terminalLaunch, type TerminalPaneRef } from './target';
 
@@ -39,7 +39,7 @@ import { noLaunchMessage, terminalLaunch, type TerminalPaneRef } from './target'
  * the first open and every reconnect ask without it.
  */
 export function useTerminalShell({ connection, pane, onOpened }: {
-  connection: Connection | null;
+  connection: ServerConnection | null;
   pane: TerminalPaneRef;
   /** The shell is open and taking input. */
   onOpened?: () => void;

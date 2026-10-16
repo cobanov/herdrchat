@@ -11,8 +11,7 @@ import { DeviceList } from './DeviceList';
 import { useDevices, type Device } from './useDevices';
 
 /**
- * The Computers tab: the host and the machines saved on it, each with its
- * files and a terminal. Files browse here, in the tab; the terminal is a login
+ * The Computers tab: every saved host, each with its files and a terminal. Files browse here, in the tab; the terminal is a login
  * shell on that computer, on the terminal screen every pane uses, pushed over
  * the tabs so its keyboard bar and swipe back are the same.
  */
@@ -21,7 +20,7 @@ export default function ComputersScreen() {
   const host = useSelectedConnection();
   const devices = useDevices();
   const [browsing, setBrowsing] = useState<Device | null>(null);
-  // A computer that left the list (another host picked, a machine disabled) closes its folders.
+  // A computer that left the list (its host removed) closes its folders.
   const open = browsing !== null && devices.some((item) => item.connection.id === browsing.connection.id) ? browsing : null;
 
   if (open !== null) return <FolderBrowser key={open.connection.id} device={open} onClose={() => setBrowsing(null)} />;
@@ -32,7 +31,7 @@ export default function ComputersScreen() {
         <EmptyState
           symbol="desktopcomputer"
           title="No host yet"
-          body="Add a machine that runs herdr, then open the files and a terminal of it, and of the machines it reaches, from here."
+          body="Add a computer that runs herdr, then open its files and a terminal from here."
           actionLabel="Add a host"
           onAction={() => router.navigate('/hosts')}
         />

@@ -136,10 +136,10 @@ it('keeps the workspace label as the title while the session has none', async ()
   expect(screen.getByTestId('chat-row-w1').props.accessibilityLabel).toMatch(/^Parser, Claude · code\/parser/);
 });
 
-// A chat on one of the host's machines: its machine leads the line under the
-// title, and its testID has no slash (`chat-row-<machineId>-<workspaceId>`).
-it('says which machine a chat is on, first, and is found by a slash-free testID', async () => {
-  const onNuku = { ...summary('claude'), machine: { id: 'demo-nuku', label: 'nuku' } };
+// A chat on another host: its name leads the line under the title, and its
+// testID leads with its id (`chat-row-<hostId>-<workspaceId>`).
+it('says which other host a chat is on, first, and is found by a testID of its own', async () => {
+  const onNuku = { ...summary('claude'), host: { id: 'demo-nuku', label: 'nuku' } };
   const screen = await render(<ChatRow summary={onNuku} unread={false} onPress={jest.fn()} />);
   expect(screen.getByText('nuku · Claude · code/parser')).toBeOnTheScreen();
   expect(screen.getByTestId('chat-row-demo-nuku-w1').props.accessibilityLabel).toMatch(/^Parser, nuku · Claude · code\/parser/);

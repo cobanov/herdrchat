@@ -71,10 +71,6 @@ export function shouldPoll({
  */
 export function needsTheUser(code: string | null | undefined): boolean {
   return (
-    code === 'auth_failed' || code === 'host_key_changed' || code === 'credentials_missing' || code === 'bad_key' ||
-    // The same, one hop further: the host's own ssh refused by a machine
-    // (`jumpFailure`). Retrying adds failed logins from the host's address,
-    // which the machine's sshd penalises like any other.
-    code === 'machine_auth_failed' || code === 'machine_host_key'
+    code === 'auth_failed' || code === 'host_key_changed' || code === 'credentials_missing' || code === 'bad_key'
   );
 }

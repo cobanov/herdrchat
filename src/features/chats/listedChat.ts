@@ -4,30 +4,29 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
 /**
  * A chat row as the chats list holds it: a summary plus where it lives.
  *
- * One host's list also lists the chats of the machines saved on that host
- * (`useHostChats`), and herdr numbers each machine's workspaces from `w1`
- * like the host's own. So within the list a workspace id no longer names a
- * row: everything the list files by row (pins, the open chat, reads, the
- * list's own keys) goes by `rowKey`, and every action runs on the row's
- * connection, not the selected host's.
+ * The list holds the chats of every saved host (`useHostChats`), and herdr
+ * numbers each host's workspaces from `w1`. So within the list a workspace id
+ * no longer names a row: everything the list files by row (pins, the open
+ * chat, reads, the list's own keys) goes by `rowKey`, and every action runs on
+ * the row's connection, not the selected host's.
  */
 
-/** The machine a row is on, for its label; null on the host itself. */
-export interface MachineRef {
+/** The other host a row is on, for its label; null on the selected host. */
+export interface HostRef {
   id: string;
   label: string;
 }
 
 export interface ListedPane extends PaneSummary {
-  /** The host's id, or the machine's (`${hostId}/${machineId}`). */
+  /** The id of the host it is on. */
   connectionId: string;
-  machine: MachineRef | null;
+  host: HostRef | null;
 }
 
 export interface ListedChat extends ChatSummary {
-  /** The host's id, or the machine's (`${hostId}/${machineId}`). */
+  /** The id of the host it is on. */
   connectionId: string;
-  machine: MachineRef | null;
+  host: HostRef | null;
   panes: ListedPane[];
 }
 
@@ -35,18 +34,18 @@ export interface ListedChat extends ChatSummary {
 export function listChats(
   summaries: readonly ChatSummary[],
   connectionId: string,
-  machine: MachineRef | null
+  host: HostRef | null
 ): ListedChat[] {
   return summaries.map((summary) => ({
     ...summary,
     connectionId,
-    machine,
-    panes: summary.panes.map((pane) => ({ ...pane, connectionId, machine })),
+    host,
+    panes: summary.panes.map((pane) => ({ ...pane, connectionId, host })),
   }));
 }
 
 /**
- * A row's identity within one host's list: its connection and its workspace.
+ * A row's identity within the list: its connection and its workspace.
  * A newline cannot occur in either id.
  */
 export function rowKey(summary: Pick<ListedChat, 'connectionId' | 'workspaceId'>): string {
@@ -54,17 +53,16 @@ export function rowKey(summary: Pick<ListedChat, 'connectionId' | 'workspaceId'>
 }
 
 /**
- * What a row's testID is built from. A host's row keeps its bare workspace
- * id (`chat-row-w2`), as every flow already finds it; a machine's row puts
- * the machine's id first (`chat-row-demo-nuku-w1`). Not the connection id: it
- * holds a slash, and the host is the one whose list this is anyway.
+ * What a row's testID is built from. The selected host's row keeps its bare
+ * workspace id (`chat-row-w2`), as every flow already finds it; another
+ * host's row puts that host's id first (`chat-row-<hostId>-w1`).
  */
-export function rowTestKey(summary: { workspaceId: string; machine?: MachineRef | null }, paneId?: string): string {
+export function rowTestKey(summary: { workspaceId: string; host?: HostRef | null }, paneId?: string): string {
   const own = paneId ?? summary.workspaceId;
-  return summary.machine === null || summary.machine === undefined ? own : `${summary.machine.id}-${own}`;
+  return summary.host === null || summary.host === undefined ? own : `${summary.host.id}-${own}`;
 }
 
-/** Read markers, per connection: a machine's are filed under its own id. */
+/** Read markers, per connection: each host's are filed under its own id. */
 export type ReadsByConnection = ReadonlyMap<string, ReadonlyMap<string, ThreadRead>>;
 
 const NO_READS: ReadonlyMap<string, ThreadRead> = new Map();
@@ -82,26 +80,8 @@ export interface OpenChat {
 
 /**
  * The open chat's key as a row should compare it: only on the row's own
- * connection. `w1` open on the host is not `w1` on a machine.
+ * connection. `w1` open on one host is not `w1` on another.
  */
 export function openFor(open: OpenChat | null, summary: Pick<ListedChat, 'connectionId'>): string | null {
   return open !== null && open.connectionId === summary.connectionId ? open.key : null;
 }
-
-/**
- * The one line a machine that failed gets at the end of its host's list.
- *
- * The jump's own sentences (`jumpFailure`) and a missing herdr on the
- * machine (`missingOnMachine`) already name it ("Gimel can't reach klaw right
- * now."). Anything else is herdr's own sentence about the machine, which does
- * not say which machine it is, so the label goes first.
- */
-export function machineNotice(label: string, error: string, errorCode: string | null): string {
-  if (errorCode !== null && NAMES_THE_MACHINE.has(errorCode) && error.includes(label)) return error;
-  return `${label}: ${error}`;
-}
-
-const NAMES_THE_MACHINE: ReadonlySet<string> = new Set([
-  'connect_failed', 'machine_auth_failed', 'machine_host_key', 'machine_timeout',
-  'herdr_not_found', 'herdr_not_on_path', 'herdr_not_executable',
-]);

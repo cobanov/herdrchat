@@ -1,33 +1,26 @@
 import { useMemo } from 'react';
 
-import { machineConnection, useSelectedConnection, type Connection } from '@/state/connections';
-import { enabledMachines, useHostMachines } from '@/state/hostMachines';
+import { useOtherHosts } from '@/features/chats/useHostChats';
+import { useSelectedConnection, type ServerConnection } from '@/state/connections';
 
-/** A computer the Computers tab can open: the selected host, or one of its machines. */
+/** A computer the Computers tab can open: one of the saved hosts. */
 export interface Device {
-  connection: Connection;
+  connection: ServerConnection;
   name: string;
-  /** `Host · you@address`, or `Machine · its SSH target`. */
+  /** `you@address`. */
   detail: string;
 }
 
-/**
- * The selected host first, then the machines saved on it (`herdr machine
- * add`), as its chat list shows them. The app only dials the host; a machine
- * is reached from there, which is why it lives under its host.
- */
+/** The selected host first, then every other saved host, as the chats list orders them. */
 export function useDevices(): readonly Device[] {
   const host = useSelectedConnection();
-  const byHost = useHostMachines((state) => state.byHost);
-  return useMemo(() => {
-    if (host === null) return [];
-    return [
-      { connection: host, name: host.name, detail: `Host · ${host.username}@${host.host}` },
-      ...enabledMachines(byHost, host.id).map((machine) => ({
-        connection: machineConnection(host, machine),
-        name: machine.label,
-        detail: `Machine · ${machine.target}`,
-      })),
-    ];
-  }, [host, byHost]);
+  const others = useOtherHosts(host?.id ?? null);
+  return useMemo(
+    () => (host === null ? [] : [host, ...others]).map((connection) => ({
+      connection,
+      name: connection.name,
+      detail: `${connection.username}@${connection.host}`,
+    })),
+    [host, others]
+  );
 }

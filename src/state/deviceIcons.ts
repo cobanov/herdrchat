@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { IconName } from '@/components/Icon';
 import { getSetting, setSetting } from './db';
 
-/** The glyphs a host or a machine can be given, to tell their chats apart in one list. */
+/** The glyphs a host can be given, to tell their chats apart in one list. */
 export const DEVICE_ICONS = [
   'desktopcomputer',
   'laptopcomputer',
@@ -21,7 +21,7 @@ export type DeviceIcon = (typeof DEVICE_ICONS)[number];
 
 const KEY = 'deviceIcons';
 
-/** The saved map, by connection id (a host's, or `${hostId}/${machineId}`); anything else is dropped. */
+/** The saved map, by host id; anything else is dropped. */
 export function parseDeviceIcons(raw: string | null): Record<string, DeviceIcon> {
   if (raw === null) return {};
   try {
@@ -43,9 +43,8 @@ interface DeviceIconsState {
 }
 
 /**
- * The glyph chosen for each host and machine, on this device only. herdr has
- * no such field, and a machine is configured on its host, not here, so this is
- * the phone's own label for it, as a pin is.
+ * The glyph chosen for each host, on this device only. herdr has no such
+ * field, so this is the phone's own label for it, as a pin is.
  */
 export const useDeviceIcons = create<DeviceIconsState>((setState, getState) => ({
   byConnection: {},

@@ -40,7 +40,7 @@ const shell = workspace('w7', 'shell', 'unknown', [agentIn('w7', 'w7:p1', null, 
 const host = listChats([notes, api, shell], 'gimel', null);
 const nuku = listChats(
   [workspace('w1', 'kenneth-bot', 'blocked', [agentIn('w1', 'w1:p1', 'claude', '/home/demo/bot', 'Nightly digest')])],
-  'gimel/demo-nuku', { id: 'demo-nuku', label: 'nuku' }
+  'demo-nuku', { id: 'demo-nuku', label: 'nuku' }
 );
 const rows = agentRows([...host, ...nuku]);
 const byKey = (key: string): AgentRow => {
@@ -86,12 +86,12 @@ describe('agentRows', () => {
     expect(p2.agents.map((agent) => agent.paneId)).toEqual(['w6:p2']);
   });
 
-  it('keeps a machine\'s row on its connection, with its machine', () => {
+  it('keeps another host\'s row on its connection, with its host', () => {
     const bot = byKey('w1');
-    expect(bot.connectionId).toBe('gimel/demo-nuku');
-    expect(bot.machine).toEqual({ id: 'demo-nuku', label: 'nuku' });
+    expect(bot.connectionId).toBe('demo-nuku');
+    expect(bot.host).toEqual({ id: 'demo-nuku', label: 'nuku' });
     expect(agentTestKey(bot)).toBe('demo-nuku-w1');
-    expect(agentRowKey(bot)).toBe('gimel/demo-nuku\nw1');
+    expect(agentRowKey(bot)).toBe('demo-nuku\nw1');
   });
 
   // herdr restarted and w3's agent did not come back: no pane, but the
@@ -136,7 +136,7 @@ describe('agentRows through groupChats', () => {
     ]);
   });
 
-  it('finds an agent by its own folder or provider, and every agent by its workspace or machine', () => {
+  it('finds an agent by its own folder or provider, and every agent by its workspace or host', () => {
     expect(ids(groupChats(rows, 'api/web', new Map(), agentRowKey))).toEqual(['working', 'w6/w6:p2']);
     expect(ids(groupChats(rows, 'codex', new Map(), agentRowKey))).toEqual(['working', 'w6/w6:p2']);
     expect(ids(groupChats(rows, 'api', new Map(), agentRowKey))).toEqual(['working', 'w6/w6:p2', 'idle', 'w6/w6:p1']);
@@ -159,7 +159,7 @@ describe('agentContext', () => {
     expect(agentContext(byKey('w2'))).toBe('Claude · demo/notes');
   });
 
-  it('puts the machine first, and leaves a name someone gave the workspace to the title', () => {
+  it('puts the host first, and leaves a name someone gave the workspace to the title', () => {
     expect(agentContext(byKey('w1'))).toBe('nuku · Claude · demo/bot');
   });
 

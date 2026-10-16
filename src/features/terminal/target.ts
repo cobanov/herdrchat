@@ -1,14 +1,11 @@
 import type { DemoTerminalHost } from '@/lib/demo/terminal';
-import { attachCommand, needsNewerHerdr, terminalStartTimeout, type TerminalPaneKind, type TerminalTarget } from '@/lib/terminal/command';
-import { isMachineConnection, type Connection } from '@/state/connections';
+import { TERMINAL_START_TIMEOUT_MS } from '@/lib/herdr/timeouts';
+import { attachCommand, needsNewerHerdr, type TerminalPaneKind } from '@/lib/terminal/command';
+import type { ServerConnection } from '@/state/connections';
 
 /** What a pane's terminal opens: on which SSH connection, running what. */
 export interface TerminalLaunch {
-  /**
-   * The connection the shell channel opens on. A machine has no connection of
-   * its own: its pane's terminal runs the jump on its host's, as every other
-   * command for the machine does.
-   */
+  /** The connection the shell channel opens on. */
   hostId: string;
   command: string;
   startTimeoutMs: number;
@@ -29,38 +26,15 @@ export interface TerminalPaneRef {
  * written for it (`attachCommand`: a shell pane without a terminal id, or a
  * backslash in a part of it).
  *
- * `connection` is the chat's: a host, or one of its machines. Kept apart from
- * the screen so the choice of connection and session, which is what makes a
- * machine's pane open on the machine, is one function a test pins.
- *
  * `takeover` is only ever set by the person's Take over.
  */
-export function terminalLaunch(connection: Connection, pane: TerminalPaneRef, takeover = false): TerminalLaunch | null {
+export function terminalLaunch(connection: ServerConnection, pane: TerminalPaneRef, takeover = false): TerminalLaunch | null {
   const { paneId, kind, terminalId } = pane;
-  if (isMachineConnection(connection)) {
-    const target: TerminalTarget = {
-      paneId,
-      kind,
-      terminalId,
-      takeover,
-      herdrPath: 'herdr',
-      session: connection.machine.session,
-      machine: { target: connection.machine.target },
-    };
-    const command = attachCommand(target);
-    return command === null ? null : {
-      hostId: connection.via,
-      command,
-      startTimeoutMs: terminalStartTimeout(target),
-      host: { herdrPath: connection.host.herdrPath, session: connection.host.sessionName },
-    };
-  }
-  const target: TerminalTarget = { paneId, kind, terminalId, takeover, herdrPath: connection.herdrPath, session: connection.sessionName };
-  const command = attachCommand(target);
+  const command = attachCommand({ paneId, kind, terminalId, takeover, herdrPath: connection.herdrPath, session: connection.sessionName });
   return command === null ? null : {
     hostId: connection.id,
     command,
-    startTimeoutMs: terminalStartTimeout(target),
+    startTimeoutMs: TERMINAL_START_TIMEOUT_MS,
     host: { herdrPath: connection.herdrPath, session: connection.sessionName },
   };
 }

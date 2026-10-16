@@ -22,7 +22,7 @@ import { canReconnect, canTakeOver, phaseLabel, phaseMessage, type TerminalPhase
  */
 export function TerminalHeader({ title, place, phase, back = TERMINAL_BACK, onBack, onReconnect, onTakeOver }: {
   title: string;
-  /** The machine's label, for a pane on one of the host's machines. */
+  /** The host's name, for a pane on a host other than the selected one. */
   place: string | null;
   phase: TerminalPhase;
   /** How the leading control draws: Back, unless the iPad's column says otherwise (`terminalBackControl`). */

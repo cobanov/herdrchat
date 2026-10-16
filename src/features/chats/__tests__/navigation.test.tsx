@@ -29,7 +29,9 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
-  useConnections: (selector: (state: { hydrated: boolean }) => unknown) => selector({ hydrated: mockHydrated }),
+  useConnections: (selector: (state: { hydrated: boolean; connections: never[] }) => unknown) =>
+    selector({ hydrated: mockHydrated, connections: [] }),
+  isDemo: () => false,
 }));
 jest.mock('@/features/welcome/useWelcomeGate', () => ({ useWelcomeGate: () => {} }));
 jest.mock('@/features/chats/ChatsList', () => ({ __esModule: true, default: () => null }));

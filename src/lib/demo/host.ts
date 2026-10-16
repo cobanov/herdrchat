@@ -22,7 +22,6 @@ import { THEME_FILE } from '../theme/schema';
 import {
   DEMO_PHRASES,
   DEMO_THEME_REPLY,
-  DEMO_UNPLUG_REPLY,
   DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
@@ -59,7 +58,6 @@ import {
   userLine,
   type DemoFixtures,
 } from './fixtures';
-import { unwrapJump, unwrapJumpStream } from '../herdr/machine';
 import { delegateSteps, demoSubagentFiles } from './subagents';
 import { DEMO_PROMPT_COMMANDS, demoSlashScan } from './slashCommands';
 
@@ -296,14 +294,6 @@ export class DemoHost implements HerdrTransport {
    * the theme scenario fill it, in memory only.
    */
   private readonly herdrchatDir = new Map<string, HostFile>();
-  /**
-   * The machines saved on this host, by SSH target, each a demo host of its
-   * own. A command jumped to one (`withMachine`) is unwrapped by the same
-   * builder that wrapped it and answered there.
-   */
-  private readonly machines = new Map<string, DemoHost>();
-  /** Machines the unplug scenario took off the network, by SSH target. */
-  private readonly unplugged = new Set<string>();
 
   /**
    * Files that are no pane's transcript, by absolute path: subagent
@@ -316,9 +306,6 @@ export class DemoHost implements HerdrTransport {
     private readonly now: () => number = () => Date.now(),
     private readonly fixtures: DemoFixtures = DEMO_HOST
   ) {
-    for (const machine of fixtures.machines) {
-      this.machines.set(machine.target, new DemoHost(now, machine.fixtures));
-    }
     for (const pane of fixtures.workspaces.flatMap(demoPanes)) {
       this.statuses.set(pane.paneId, pane.agentStatus);
       this.transcripts.set(pane.paneId, fixtures.transcript(pane.paneId));
@@ -335,14 +322,6 @@ export class DemoHost implements HerdrTransport {
   }
 
   async exec(command: string, timeoutMs: number): Promise<ExecResult> {
-    for (const [target, machine] of this.machines) {
-      const inner = unwrapJump(target, command);
-      if (inner !== null && this.unplugged.has(target)) {
-        // What the host's ssh says for a machine that is off the network.
-        return { ok: true, stdout: '', stderr: `ssh: connect to host ${target} port 22: Connection refused`, exitCode: 255 };
-      }
-      if (inner !== null) return machine.exec(inner, timeoutMs);
-    }
     this.materialise();
     const body = withoutPath(command);
     return this.filesystem(body) ?? this.herdr(parseArgv(body));
@@ -388,14 +367,6 @@ export class DemoHost implements HerdrTransport {
    * the consumer abandons the iterator when the thread goes away.
    */
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
-    for (const [target, machine] of this.machines) {
-      const inner = unwrapJumpStream(target, command);
-      if (inner !== null) {
-        // An unplugged machine's stream ends at once, as a jump that cannot connect does.
-        if (!this.unplugged.has(target)) yield* machine.streamLines(inner, startTimeoutMs, signal);
-        return;
-      }
-    }
     const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
     if (follow === null) return;
 
@@ -742,12 +713,6 @@ export class DemoHost implements HerdrTransport {
     if (verb === 'status server') return ok({ running: true });
     if (verb === 'workspace list') return ok({ workspaces: this.workspaceRows() });
     if (verb === 'agent list') return ok({ agents: this.agentRows() });
-    // Bare JSON, not an envelope, as herdr prints it.
-    if (verb === 'machine list --json') {
-      return out(JSON.stringify(this.fixtures.machines.map(({ id, label, target, session, enabled }) => ({
-        id, label, target, session, enabled, selected: false,
-      }))));
-    }
 
     if (argv[1] === 'workspace' && ['create', 'rename', 'close'].includes(argv[2] ?? '')) {
       return out(JSON.stringify({ error: {
@@ -826,7 +791,6 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
       if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
-      if (asked.includes(DEMO_PHRASES.unplug) && this.machines.size > 0) return this.unplug(paneId);
       if (asked.includes(DEMO_PHRASES.delegate) && !this.isOmp(paneId)) return this.delegate(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
@@ -1007,21 +971,6 @@ export class DemoHost implements HerdrTransport {
           replyLine(DEMO_THEME_REPLY, next(), timestamp),
         ];
       },
-    });
-    return silent();
-  }
-
-  /** Every machine saved here goes off the network, once the reply lands. */
-  private unplug(paneId: string): ExecResult {
-    this.statuses.set(paneId, 'working');
-    this.pending.push({
-      paneId,
-      prompt: '',
-      dueAt: this.now() + REPLY_DELAY_MS,
-      effect: () => {
-        for (const target of this.machines.keys()) this.unplugged.add(target);
-      },
-      lines: (next, timestamp) => [replyLine(DEMO_UNPLUG_REPLY, next(), timestamp)],
     });
     return silent();
   }

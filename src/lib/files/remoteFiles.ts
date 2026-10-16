@@ -4,7 +4,7 @@ import { UPLOAD_CHUNK_CHARS } from '../attachments/upload';
 
 /**
  * The Files tab's whole protocol: plain POSIX commands over the SSH connection
- * the app already holds (a machine's through its host), parsed here.
+ * the app already holds, parsed here.
  *
  * shortcut: commands over the exec channel rather than the SSH SFTP subsystem,
  * which the native module does not speak; a transfer is one base64 string in

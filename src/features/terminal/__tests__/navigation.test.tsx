@@ -32,7 +32,10 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
-  useConnections: (selector: (state: { hydrated: boolean }) => unknown) => selector({ hydrated: mockHydrated }),
+  // Two saved hosts: every one's chats and terminals are in the one list.
+  useConnections: (selector: (state: { hydrated: boolean; connections: { id: string }[] }) => unknown) =>
+    selector({ hydrated: mockHydrated, connections: [{ id: 'host-a' }, { id: 'host-b' }] }),
+  isDemo: () => false,
 }));
 jest.mock('@/features/welcome/useWelcomeGate', () => ({ useWelcomeGate: () => {} }));
 jest.mock('@/features/chats/ChatsList', () => ({
@@ -170,16 +173,16 @@ describe('the root on iPad', () => {
     expect(screen.queryByTestId('terminal-view')).toBeNull();
   });
 
-  it('never carries a terminal onto another host, and keeps one on this host\'s machine', async () => {
+  it('keeps a terminal on any listed host, and never shows one on a host that is gone', async () => {
     openTerminal(shellPane);
     const screen = await render(<ChatsScreen />);
     mockConnectionId = 'host-b';
     await screen.rerender(<ChatsScreen />);
+    expect(screen.getByTestId('terminal-view')).toBeOnTheScreen();
+    await act(() => openTerminal({ ...shellPane, connectionId: 'gone' }));
     expect(screen.queryByTestId('terminal-view')).toBeNull();
     expect(lastListProps()).toEqual(expect.objectContaining({ selectedTerminal: undefined }));
     mockConnectionId = 'host-a';
-    await act(() => openTerminal({ ...shellPane, connectionId: 'host-a/nuku' }));
-    expect(screen.getByTestId('terminal-view')).toBeOnTheScreen();
   });
 });
 
@@ -212,7 +215,7 @@ describe('closing a workspace', () => {
 
   it('keeps a terminal elsewhere, by pane and by connection, but forgets a way back to the closed chat', () => {
     expect(detailAfterClose(terminalOn('w2:p1'), closed)).toEqual(terminalOn('w2:p1'));
-    expect(detailAfterClose(terminalOn('w6:p3', 'host-a/nuku'), closed)).toEqual(terminalOn('w6:p3', 'host-a/nuku'));
+    expect(detailAfterClose(terminalOn('w6:p3', 'host-b'), closed)).toEqual(terminalOn('w6:p3', 'host-b'));
     const fromClosed = { connectionId: 'host-a', workspaceId: 'w6', title: 'api' };
     expect(detailAfterClose(terminalOn('w2:p1', 'host-a', fromClosed), closed)).toEqual(terminalOn('w2:p1'));
     expect(detailAfterClose(terminalOn('w2:p1', 'host-a', notes), closed)).toEqual(terminalOn('w2:p1', 'host-a', notes));

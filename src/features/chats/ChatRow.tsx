@@ -7,7 +7,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import { StatusMark } from './StatusMark';
 import { useDeviceIcon } from '@/state/deviceIcons';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -24,8 +24,8 @@ export interface RowAction {
 export const ChatRow = memo(function ChatRow({
   summary, testKey, unread, selected = false, pinned = false, muted = false, onPress, onLongPress, actions = [],
 }: {
-  /** With `machine`, a chat on one of the host's machines: its label leads the line under the title. */
-  summary: ChatSummary & { machine?: MachineRef | null; connectionId?: string };
+  /** With `host`, a chat on another host: its name leads the line under the title. */
+  summary: ChatSummary & { host?: HostRef | null; connectionId?: string };
   /**
    * What the testID is built from, when the row is not its workspace's: an
    * agent's row in the Agents view (`agentTestKey`), one of several in a
@@ -72,8 +72,8 @@ export const ChatRow = memo(function ChatRow({
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
       accessibilityLabel={[title, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
-      // `chat-row-w2` on the host, `chat-row-<machineId>-w1` on a machine
-      // (`rowTestKey`): workspace ids repeat across machines, and a
+      // `chat-row-w2` on the selected host, `chat-row-<hostId>-w1` on another
+      // (`rowTestKey`): workspace ids repeat across hosts, and a
       // connection id's slash has no place in a testID.
       testID={`chat-row-${testKey ?? rowTestKey(summary)}`}
       style={({ pressed }) => ({

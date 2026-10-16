@@ -65,8 +65,9 @@ const mockTransportOpen = jest.fn(async () => ({ ok: true, fingerprint: 'SHA256:
 let mockConnection: Record<string, unknown> | null = null;
 jest.mock('@/state/connections', () => ({
   useConnectionFor: () => mockConnection,
-  useConnections: (select: (state: { hydrated: boolean }) => unknown) => select({ hydrated: true }),
-  isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
+  // The pane's host is the selected one, so the header names no host.
+  useConnections: (select: (state: { hydrated: boolean; selectedId: unknown }) => unknown) =>
+    select({ hydrated: true, selectedId: mockConnection?.id }),
   isDemo: (id: string) => id === 'demo',
   transportFor: () => ({ open: mockTransportOpen }),
 }));

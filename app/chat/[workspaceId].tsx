@@ -9,7 +9,7 @@ import { useConnections, useSelectedConnection } from '@/state/connections';
 
 export default function ThreadRoute() {
   // `paneId` names one agent of a workspace; without it this is the workspace chat.
-  // `connectionId` is the chat's host, or one of its machines; older links and
+  // `connectionId` is the chat's host; older links and
   // notifications without it mean the selected host.
   const { workspaceId, title, paneId, connectionId: linked } =
     useLocalSearchParams<{ workspaceId: string; title?: string; paneId?: string; connectionId?: string }>();

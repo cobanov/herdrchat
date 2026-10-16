@@ -11,7 +11,7 @@ import { minTouchTarget, motion, radius, size, spaceLayout, spacing } from '@/th
 import { StatusMark } from './StatusMark';
 import { useDeviceIcon } from '@/state/deviceIcons';
 import { AVATAR_SIZE, type RowAction } from './ChatRow';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import { spaceStats, spaceTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -31,7 +31,7 @@ import type { ChatSummary } from './useWorkspaces';
 export const SpaceCard = memo(function SpaceCard({
   summary, testKey, unread, pinned = false, muted = false, onOpenLayout, onHoverLayout, onLeaveLayout, onLongPress, actions = [],
 }: {
-  summary: ChatSummary & { machine?: MachineRef | null; connectionId?: string };
+  summary: ChatSummary & { host?: HostRef | null; connectionId?: string };
   testKey?: string;
   unread: boolean;
   pinned?: boolean;

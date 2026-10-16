@@ -4,7 +4,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { size } from '@/theme/tokens';
 
 /**
- * The glyph chosen for the host or machine a row is on (Hosts), so the chats
+ * The glyph chosen for the host a row is on (Hosts), so the chats
  * of several computers in one list say which is which at a glance. Nothing
  * when none was chosen.
  */

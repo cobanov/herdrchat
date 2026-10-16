@@ -8,7 +8,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
 import type { Device } from './useDevices';
 
-/** The host and its machines, each with the glyph it was given in Hosts and a button for its files and its terminal. */
+/** The saved hosts, each with the glyph it was given in Hosts and a button for its files and its terminal. */
 export function DeviceList({ devices, onFiles, onTerminal, footer }: {
   devices: readonly Device[];
   onFiles: (device: Device) => void;

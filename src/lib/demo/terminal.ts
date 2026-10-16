@@ -8,11 +8,10 @@
  * shell pane, an agent's input box for an agent pane.
  *
  * Which pane is answered is read back from the attach command the screen
- * built, by building it again for every pane the Demo has and comparing, the
- * way the Demo unwraps a machine jump. A change to the builder then cannot
- * leave the Demo answering a command the app no longer sends: it answers
- * nothing, and the flow that opens the terminal fails. A Take over's command
- * (`--takeover`) gets the same screen.
+ * built, by building it again for every pane the Demo has and comparing, so a
+ * change to the builder cannot leave the Demo answering a command the app no
+ * longer sends: it answers nothing, and the flow that opens the terminal fails.
+ * A Take over's command (`--takeover`) gets the same screen.
  */
 import { agentName } from '../herdr/models';
 import { attachCommand, paneKind, type TerminalPaneKind } from '../terminal/command';
@@ -80,7 +79,7 @@ export interface DemoTerminalHost {
 
 /**
  * What the Demo's terminal shows for `command`, or null when it is not the
- * attach command of any pane the Demo has, on the host or one of its machines.
+ * attach command of any pane the Demo has.
  */
 export function demoTerminalScreen(
   command: string,
@@ -92,12 +91,6 @@ export function demoTerminalScreen(
       attachCommand({ ...pane, takeover, herdrPath: host.herdrPath, session: host.session })
     );
     if (own !== null) return own;
-    for (const machine of fixtures.machines) {
-      const screen = screenOn(command, machine.fixtures, (pane) =>
-        attachCommand({ ...pane, takeover, herdrPath: 'herdr', session: machine.session, machine: { target: machine.target } })
-      );
-      if (screen !== null) return screen;
-    }
   }
   return null;
 }

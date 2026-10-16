@@ -18,14 +18,13 @@ import { SLASH_COMMANDS_KEY_PREFIX, deleteSetting, loadSlashCommandRows, setSett
  * the composer's `/` palette offers (`useSlashCommands`).
  *
  * A connection with no entry has not been scanned yet; the palette then offers
- * the static built-ins. A host and each of its machines (`<hostId>/<machineId>`)
- * have entries of their own: a machine has its own Claude Code and its own
- * home folder.
+ * the static built-ins. Each host has an entry of its own: its own Claude Code
+ * and its own home folder.
  */
 interface SlashCataloguesState {
   byConnection: Readonly<Record<string, SlashCatalogueCache>>;
   set: (connectionId: string, cache: SlashCatalogueCache) => void;
-  /** Forget a host's catalogue and its machines'. */
+  /** Forget a host's catalogue. */
   clear: (hostId: string) => void;
   /**
    * The launch, from the settings table. A connection scanned before the
@@ -34,34 +33,22 @@ interface SlashCataloguesState {
   hydrate: (all: Record<string, SlashCatalogueCache>) => void;
 }
 
-/**
- * Bumped by `clear`, so a scan in flight for a removed host, or one of its
- * machines, drops its answer. Kept per host: a machine's scan may be in flight
- * before its connection has an entry to find.
- */
+/** Bumped by `clear`, so a scan in flight for a removed host drops its answer. */
 const generations = new Map<string, number>();
-const hostOf = (connectionId: string) => connectionId.split('/')[0] ?? connectionId;
-const generationOf = (connectionId: string) => generations.get(hostOf(connectionId)) ?? 0;
+const generationOf = (connectionId: string) => generations.get(connectionId) ?? 0;
 
 /** True while `hydrate` runs, which the mirror below must not echo to the table. */
 let hydrating = false;
-
-/** The connection itself, or one of its machines. */
-const belongsTo = (connectionId: string, hostId: string) =>
-  connectionId === hostId || connectionId.startsWith(`${hostId}/`);
 
 export const useSlashCatalogues = create<SlashCataloguesState>((setState) => ({
   byConnection: {},
   set: (connectionId, cache) =>
     setState((state) => ({ byConnection: { ...state.byConnection, [connectionId]: cache } })),
   clear: (hostId) => {
-    generations.set(hostOf(hostId), generationOf(hostId) + 1);
+    generations.set(hostId, generationOf(hostId) + 1);
     setState((state) => {
-      if (!Object.keys(state.byConnection).some((id) => belongsTo(id, hostId))) return state;
-      const rest: Record<string, SlashCatalogueCache> = {};
-      for (const [id, cache] of Object.entries(state.byConnection)) {
-        if (!belongsTo(id, hostId)) rest[id] = cache;
-      }
+      if (!(hostId in state.byConnection)) return state;
+      const { [hostId]: _cleared, ...rest } = state.byConnection;
       return { byConnection: rest };
     });
   },

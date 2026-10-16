@@ -114,31 +114,31 @@ it('says what an agent is doing when it has no line to show', () => {
   expect(statusLabel('idle')).toBe('Idle');
 });
 
-// The list mixes the host's chats with its machines'; the machine is said
+// The list mixes every host's chats; another host is said
 // before anything about the workspace, since the same folder on two
 // computers is two chats.
-describe('rowContext on a machine', () => {
+describe('rowContext on another host', () => {
   const nuku = { id: 'demo-nuku', label: 'nuku' };
-  it('leads with the machine, then the provider and the folder', () => {
+  it('leads with the host, then the provider and the folder', () => {
     // A name someone gave the workspace titles the row, so the line does not repeat it.
-    const titled = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
+    const titled = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', host: nuku };
     expect(rowContext(titled)).toBe('nuku · Claude · demo/bot');
     // A workspace named after its folder is still said once, by the folder.
-    const sameFolder = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/kenneth-bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', machine: nuku };
+    const sameFolder = { ...workspace([{ ...agentIn('w6:p1', 'claude', '/home/demo/kenneth-bot'), title: 'Nightly digest' }]), title: 'kenneth-bot', host: nuku };
     expect(rowContext(sameFolder)).toBe('nuku · Claude · demo/kenneth-bot');
   });
-  it('leads a workspace of several agents with the machine too', () => {
+  it('leads a workspace of several agents with the host too', () => {
     expect(rowContext({ ...workspace([
       agentIn('w6:p1', 'claude', '/home/demo/api'),
       agentIn('w6:p2', 'claude', '/home/demo/api/web'),
-    ]), machine: nuku })).toBe('nuku · 2 agents · Claude · demo/api');
+    ]), host: nuku })).toBe('nuku · 2 agents · Claude · demo/api');
   });
   it('says nothing extra on the host', () => {
-    expect(rowContext({ ...workspace([agentIn('w6:p1', 'claude', '/home/demo/api')]), machine: null })).toBe('Claude · demo/api');
+    expect(rowContext({ ...workspace([agentIn('w6:p1', 'claude', '/home/demo/api')]), host: null })).toBe('Claude · demo/api');
   });
-  // The card above names the machine; each agent's row saying it again
+  // The card above names the host; each agent's row saying it again
   // pushed the folder, the thing telling the agents apart, off the line.
-  it('leaves the machine off an agent row\'s line', () => {
+  it('leaves the host off an agent row\'s line', () => {
     const agent = agentIn('w6:p2', 'codex', '/home/demo/api/web');
     const pane: PaneSummary = { paneId: 'w6:p2', agent, sessionSig: null, preview: null, status: 'idle', sessionTitle: null, agentName: null };
     expect(paneContext(pane)).toBe('Codex · api/web');
@@ -187,10 +187,10 @@ describe('spaceStats', () => {
 });
 
 describe('spaceTitle', () => {
-  it("is the workspace's label, after its machine's on a machine", () => {
+  it("is the workspace's label, after its host's on another host", () => {
     const summary = workspace([agentIn('w6:p1', 'claude', '/a', true)]);
     expect(spaceTitle(summary)).toBe('api');
-    expect(spaceTitle({ ...summary, machine: { id: 'klaw', label: 'klaw' } })).toBe('klaw · api');
+    expect(spaceTitle({ ...summary, host: { id: 'klaw', label: 'klaw' } })).toBe('klaw · api');
     expect(spaceTitle({ ...summary, title: '' })).toBe('w6');
   });
 });
