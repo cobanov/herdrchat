@@ -39,6 +39,21 @@ describe('SshHerdrTransport (#98)', () => {
   });
 });
 
+// HC-5: a host that connects but names no key cannot be pinned, so it is a
+// failure, never a pin of nothing.
+it('refuses a connection that reports no host key fingerprint', async () => {
+  mockConnect.mockResolvedValueOnce({ ok: true, fingerprint: '' });
+  const pinned = jest.fn();
+  const transport = new SshHerdrTransport('host-6', async () => ({ host: 'h', port: 22, username: 'u', auth: { kind: 'password', password: 'p' } }) as never, pinned);
+  await expect(transport.exec('true', 1000)).resolves.toMatchObject({
+    ok: false,
+    code: 'connect_failed',
+    message: expect.stringContaining('no key fingerprint'),
+  });
+  expect(pinned).not.toHaveBeenCalled();
+  mockConnect.mockClear();
+});
+
 // #105: the CLI send paths had no size guard at all.
 it('refuses a command longer than a host shell accepts as one argument', async () => {
   const transport = new SshHerdrTransport('host-3', async () => {
