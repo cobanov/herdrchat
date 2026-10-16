@@ -123,6 +123,15 @@ export function isChatAgent(agent: Pick<AgentInfo, 'agent'>): boolean {
 }
 
 /**
+ * True when two polls saw the same agents, field for field. A poll that saw
+ * nothing new keeps the list it had, so nothing built from it is rebuilt: a
+ * fresh array every two seconds gave every visible thread row new props.
+ */
+export function sameAgents(a: readonly AgentInfo[], b: readonly AgentInfo[]): boolean {
+  return a.length === b.length && a.every((agent, index) => JSON.stringify(agent) === JSON.stringify(b[index]));
+}
+
+/**
  * The pane a chat sends to: an agent whose transcript the thread shows, the
  * focused one first. Focus alone sent a Claude chat's message to a focused
  * agent the app cannot read, so the echo never confirmed ("Failed to send").

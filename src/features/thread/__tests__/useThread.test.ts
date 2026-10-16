@@ -344,6 +344,25 @@ it('explains a Codex file lookup failure instead of leaving the spinner running'
   await unmount();
 });
 
+// A fresh agents array every poll gave every visible row new props, through
+// `primaryPane` and the callbacks built on it.
+it('keeps the same agents, and the same callbacks, when a poll sees nothing new', async () => {
+  mockLive = false; // no event stream: a poll every two seconds
+  const polls = jest.spyOn(client, 'snapshot').mockImplementation(async () => snapshot([{ ...agent }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  const before = { agents: result.current.agents, send: result.current.send, retry: result.current.retry };
+  const seen = polls.mock.calls.length;
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
+  expect(polls.mock.calls.length).toBeGreaterThan(seen);
+  expect(result.current.agents).toBe(before.agents);
+  expect(result.current.send).toBe(before.send);
+  expect(result.current.retry).toBe(before.retry);
+  jest.spyOn(client, 'snapshot').mockImplementation(async () => snapshot([{ ...agent, agentStatus: 'working' }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
+  expect(result.current.agents).not.toBe(before.agents);
+  await unmount();
+});
+
 // An agent with no history reader is still a chat: its screen stands in for
 // the history, and a message goes to it with no echo, since no transcript
 // would ever confirm one ("Failed to send").
