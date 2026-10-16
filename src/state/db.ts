@@ -66,25 +66,13 @@ export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       PRIMARY KEY (connection_id, workspace_id, path)
     );
 
-    -- The chat list's last-message line, kept so rows read correctly on launch
-    -- before the first poll lands.
-    CREATE TABLE IF NOT EXISTS previews (
-      connection_id TEXT NOT NULL,
-      workspace_id  TEXT NOT NULL,
-      session_sig   TEXT,
-      text          TEXT NOT NULL,
-      timestamp     INTEGER,
-      from_user     INTEGER NOT NULL,
-      PRIMARY KEY (connection_id, workspace_id)
-    );
-
     -- When each thread was last opened. Unread is DERIVED from this against the
     -- preview (see src/lib/unread.ts) rather than stored as a flag, so there is
     -- no second source of truth to fall out of step.
     --
-    -- session_sig for the same reason previews carries one: a workspace id is a
-    -- slot herdr reuses, and without it a new chat would inherit the previous
-    -- chat's read marker and never announce its first message.
+    -- session_sig because a workspace id is a slot herdr reuses, and without it
+    -- a new chat would inherit the previous chat's read marker and never
+    -- announce its first message.
     CREATE TABLE IF NOT EXISTS thread_reads (
       connection_id TEXT NOT NULL,
       workspace_id  TEXT NOT NULL,
@@ -123,6 +111,11 @@ export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     -- migrate. Named differently on purpose, so this DROP cannot delete the new
     -- one on a later launch.
     DROP TABLE IF EXISTS unread;
+
+    -- The chat list's last-message line was to be kept here for launch, but
+    -- nothing ever wrote it: the list keeps its previews in memory and reads
+    -- them on the first poll. Dropped, with every delete of it (HC-31).
+    DROP TABLE IF EXISTS previews;
   `);
 
   await addColumnIfMissing(db, 'connections', 'session_name', "TEXT NOT NULL DEFAULT ''");
@@ -214,7 +207,7 @@ export async function deleteConnection(db: SQLite.SQLiteDatabase, id: string): P
     // removed. Leaving them behind also let a re-added host inherit another
     // host's prompt history, because connection ids are reused from the row
     // that made them.
-    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs', 'prompts']) {
+    for (const table of ['messages', 'tail_cursors', 'thread_reads', 'chat_prefs', 'prompts']) {
       await db.runAsync(`DELETE FROM ${table} WHERE ${UNDER_CONNECTION}`, id, id, id);
     }
   });
@@ -466,7 +459,6 @@ export async function clearCachedMessages(db: SQLite.SQLiteDatabase): Promise<vo
   await inTransaction(db, async () => {
     await db.runAsync('DELETE FROM messages');
     await db.runAsync('DELETE FROM tail_cursors');
-    await db.runAsync('DELETE FROM previews');
   });
 }
 

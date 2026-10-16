@@ -23,7 +23,7 @@ function loadSqlite(): Sqlite | null {
 const sqlite = loadSqlite();
 const itWithSqlite = sqlite === null ? it.skip : it;
 
-const TABLES = ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs'];
+const TABLES = ['messages', 'tail_cursors', 'thread_reads', 'chat_prefs'];
 
 // Closing a two-agent workspace left each agent's messages, tail cursor and
 // read marker behind under `w6/w6:p1`; herdr recycles w6, and the next

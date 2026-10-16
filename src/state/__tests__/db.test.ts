@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { clearCachedMessages, clearConnectionSettings, clearPrompts, deleteConnection, inTransaction, loadChatPrefs, saveChatPref } from '../db';
 
-it('clears all transcript content, including list previews, but leaves credentials and host rows alone', async () => {
+it('clears all transcript content, but leaves credentials and host rows alone', async () => {
   const runAsync = jest.fn(async () => undefined);
   const db = {
     runAsync,
@@ -9,7 +9,7 @@ it('clears all transcript content, including list previews, but leaves credentia
   } as unknown as SQLiteDatabase;
   await clearCachedMessages(db);
   expect(runAsync.mock.calls).toEqual([
-    ['DELETE FROM messages'], ['DELETE FROM tail_cursors'], ['DELETE FROM previews'],
+    ['DELETE FROM messages'], ['DELETE FROM tail_cursors'],
   ]);
   await clearPrompts(db, 'host');
   expect(runAsync).toHaveBeenLastCalledWith('DELETE FROM prompts WHERE connection_id = ?', 'host');
@@ -116,7 +116,7 @@ function realDb() {
 // the removed one's history.
 itWithSqlite('deletes a host\'s rows and its machines\' rows, and nothing of its neighbours', async () => {
   const { raw, db } = realDb();
-  const tables = ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs', 'prompts'];
+  const tables = ['messages', 'tail_cursors', 'thread_reads', 'chat_prefs', 'prompts'];
   raw.exec('CREATE TABLE connections (id TEXT)');
   for (const table of tables) raw.exec(`CREATE TABLE ${table} (connection_id TEXT)`);
   const ids = ['h1', 'h1/m1', 'h1/m2', 'h10', 'h10/m1', 'h_', 'x/h1'];
