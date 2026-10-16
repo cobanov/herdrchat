@@ -10,7 +10,7 @@ import type { FileProbe } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import type { SessionMeta } from '@/lib/transcript/sessionMeta';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { appendMessages, seedIfSession, seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
+import { appendMessages, clearThreadCache, seedIfSession, seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
 let mockPolling = true;
@@ -63,6 +63,7 @@ jest.mock('@/state/threadCache', () => ({
   replaceMessages: jest.fn(async () => undefined),
   seedMessages: jest.fn(async () => []),
   seedIfSession: jest.fn(async () => []),
+  clearThreadCache: jest.fn(async () => undefined),
   setTailCursor: jest.fn(async () => undefined),
   tailCursor: jest.fn(async () => null),
 }));
@@ -761,19 +762,11 @@ it('reloads immediately even while the idle event stream is live', async () => {
   await act(async () => {
     await result.current.reload();
   });
-  expect(db.runAsync).toHaveBeenCalledWith(
-    'DELETE FROM messages WHERE connection_id = ? AND workspace_id = ?',
-    'host', 'chat'
-  );
+  expect(clearThreadCache).toHaveBeenCalledWith(db, 'host', 'chat');
   await act(async () => {
     jest.advanceTimersByTime(250);
   });
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(db.runAsync).toHaveBeenCalledWith(
-    expect.stringContaining('DELETE FROM tail_cursors'),
-    'host',
-    'chat'
-  );
   await unmount();
 });
 
