@@ -50,11 +50,11 @@ import {
   rebind,
   replaceMessages,
   seedMessages,
+  clearThreadCache,
   seedIfSession,
   setTailCursor,
   tailCursor,
 } from '@/state/threadCache';
-import { inTransaction } from '@/state/db';
 import { resumeStaleRuns } from '@/features/thread/workflowRuns';
 
 /**
@@ -1651,15 +1651,7 @@ export function useThread(
     tailFailures.current.clear();
     // Reload must replace the persisted messages too, otherwise a cold reopen
     // resurrects stale parsed bubbles that the fresh host read has removed.
-    await inTransaction(db, async () => {
-      for (const table of ['messages', 'tail_cursors']) {
-        await db.runAsync(
-          `DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`,
-          connectionId,
-          cacheKey
-        );
-      }
-    });
+    await clearThreadCache(db, connectionId, cacheKey);
     if (!alive.current) return;
     resetHistory();
     setLoading(true);
