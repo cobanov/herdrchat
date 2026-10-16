@@ -61,7 +61,6 @@ async function oneMinute(workspaceId: string, pane?: string): Promise<number> {
     await act(async () => { await jest.advanceTimersByTimeAsync(1_000); });
   }
   await unmount();
-  // eslint-disable-next-line no-console
   if (process.env.BUDGET_DEBUG) console.log(commands.slice(opened).map((c) => c.replace(/^export PATH=[^;]*; /, '').slice(0, 90)).join('\n'));
   return commands.length - opened;
 }
@@ -72,11 +71,11 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-it('counts the commands an open chat sends each minute', async () => {
-  const working = await oneMinute('w6', 'w6:p2');
-  const idle = await oneMinute('w2');
+// The budget: a change that makes an open chat ask more fails here. Lower a
+// number when a change earns it. `BUDGET_DEBUG=1` prints what was asked.
+it('keeps an open chat within its budget of host commands each minute', async () => {
+  expect(await oneMinute('w6', 'w6:p2')).toBeLessThanOrEqual(60); // an agent at work
+  expect(await oneMinute('w2')).toBeLessThanOrEqual(30); // idle, no event stream
   mockLive = true;
-  const idleLive = await oneMinute('w2');
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify({ working, idle, idleLive }));
+  expect(await oneMinute('w2')).toBeLessThanOrEqual(2); // idle, events live
 });
