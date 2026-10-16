@@ -385,6 +385,9 @@ const DEADLINE = /automatically deny this request in (\d+:\d{2}|about \d+ (?:min
 /** AskUserQuestion's header tabs and review markers, never a tool line. */
 const QUESTION_HEADER = /^[←→☐☒☑✔✓□■●◯]/;
 
+/** A Grok option row once its `┃` gutter is gone: `2 (○) Yes, proceed`. */
+const GROK_OPTION = /^([1-9]) \([●○]\) (.+)$/;
+
 /** Codex's approval titles: "Would you like to run the following command?". */
 const CODEX_TITLE = /^\s*Would you like to /;
 
@@ -731,6 +734,12 @@ function parseOption(line: string): BlockedOption | null {
       break;
     }
   }
+
+  // Grok draws a choice as `2 (○) Yes, proceed`: the key, a radio that marks
+  // the focused row, the label (herdr's grok.toml, Grok 1.0.34). Its letter
+  // rows (`z (○) Type your answer here`) take typing, not a key, and are left out.
+  const radio = GROK_OPTION.exec(text);
+  if (radio !== null) return { number: Number(radio[1]), label: (radio[2] ?? '').trim() };
 
   const digits = /^\d+/.exec(text)?.[0];
   if (digits === undefined) return null;

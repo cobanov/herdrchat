@@ -11,6 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
+import { integrationFor, READABLE_AGENTS } from './agents';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
@@ -40,7 +41,8 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 
 /** The built-in integrations HerdrChat can install and update. */
-export type IntegrationName = 'claude' | 'codex' | 'pi' | 'omp';
+/** A herdr integration target (`herdr integration install <name>`), from `AGENTS`. */
+export type IntegrationName = string;
 
 /** An integration the host should install: out of date, or never installed. */
 export interface IntegrationIssue {
@@ -315,10 +317,14 @@ export class HerdrClient {
       const result = await this.socket.call('integration.list', {}, POLL_TIMEOUT_MS);
       return asArray(field(result, 'integrations')).flatMap((item): IntegrationIssue[] => {
         if (typeof item !== 'object' || item === null) return [];
-        const { target, state, available } = item as { target?: unknown; state?: unknown; available?: unknown };
-        if (target !== 'claude' && target !== 'codex' && target !== 'pi' && target !== 'omp') return [];
-        if (state === 'outdated') return [{ name: target, state: 'outdated' }];
-        return state === 'not_installed' && available === true ? [{ name: target, state: 'missing' }] : [];
+        const { target, label, state, available } = item as { target?: unknown; label?: unknown; state?: unknown; available?: unknown };
+        // Only the integrations of agents this app reads, by the name it installs
+        // them under: herdr lists antigravity-cli as target antigravity_cli.
+        const name = [label, target].find((value): value is string =>
+          typeof value === 'string' && READABLE_AGENTS.some((kind) => integrationFor(kind) === value));
+        if (name === undefined) return [];
+        if (state === 'outdated') return [{ name, state: 'outdated' }];
+        return state === 'not_installed' && available === true ? [{ name, state: 'missing' }] : [];
       });
     } catch {
       return null;

@@ -155,10 +155,21 @@ appId: dev.herdr.HerdrChat
 
 # w7 has one agent and a shell: a space, not the agent's card with the
 # terminal hanging off it. Its agent is a row under it, then the terminal.
+# Found by searching: the Demo's list is longer than a screen, and where w7
+# lands after a scroll depends on what comes after it.
 - scrollUntilVisible:
     element:
+      id: chat-search
+    direction: UP
+- tapOn:
+    id: chat-search
+- eraseText: 40
+- inputText: site
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
       id: terminal-row-w7:p2
-    direction: DOWN
+    timeout: 10000
 - assertVisible:
     id: chat-row-w7
     text: 'site, 1 agent · 1 tab · 2 panes · demo/site.*'

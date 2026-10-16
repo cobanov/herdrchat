@@ -133,12 +133,13 @@ it("draws w6 as the workspace, its agents and terminals under it", async () => {
   expect(screen.getByTestId('terminal-row-w6:p4')).toBeOnTheScreen();
 });
 
-// Android has no terminal: its rows would only open the screen saying so.
-// Without them w6's agents share one tab, so there is nothing to divide.
-it('lists no terminal rows where no terminal can open', async () => {
+// Android has no terminal: a shell's row would only open the screen saying
+// so. Without those, w6's agents share one tab, so there is nothing to divide.
+// The opencode agent keeps its row, or it would be in no list at all.
+it('lists only agents as terminal rows where no terminal can open', async () => {
   mockTerminalAvailable = false;
   const screen = await render(<ChatsList />);
-  expect(screen.queryAllByTestId(/^terminal-row-/)).toEqual([]);
+  expect(screen.queryAllByTestId(/^terminal-row-/).map((row) => row.props.testID)).toEqual(['terminal-row-w9:p1']);
   expect(screen.getByTestId('pane-row-w6:p1')).toBeOnTheScreen();
   expect(screen.getByTestId('pane-row-w6:p2')).toBeOnTheScreen();
   expect(screen.queryAllByTestId(/^tab-(header|divider)-w6:/)).toEqual([]);

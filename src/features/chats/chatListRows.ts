@@ -1,5 +1,5 @@
 import type { ListMode } from '@/lib/listModes';
-import { withTerminalRows, type ListItemWithTerminals } from '@/features/terminal/listRows';
+import { withAgentTerminals, withTerminalRows, type ListItemWithTerminals } from '@/features/terminal/listRows';
 import { agentRowKey, agentRows } from './agentRows';
 import { groupChats } from './chatGroups';
 import { rowKey, type ListedChat } from './listedChat';
@@ -11,8 +11,10 @@ import { rowKey, type ListedChat } from './listedChat';
  * Spaces hangs each workspace's panes that are not chats (a shell, a build)
  * under its card, after its agents, and they open the pane's terminal.
  * Agents lists agents: a shell is not one, and its row would sit under no
- * card (an agent row carries no `shellPanes`, see `agentRows`).
- * Neither has terminal rows where no terminal can open (`terminalAvailable`).
+ * card (an agent row carries no `shellPanes`, see `agentRows`). An agent the
+ * app has no reader for is one, so it is listed there as a terminal row of its
+ * own. Where no terminal can open (`terminalAvailable`, Android) only those
+ * agents keep a terminal row: a shell's would lead nowhere.
  */
 export function chatListRows(
   mode: ListMode,
@@ -22,6 +24,6 @@ export function chatListRows(
   terminalAvailable: boolean
 ): ListItemWithTerminals<ListedChat>[] {
   return mode === 'agents'
-    ? groupChats(agentRows(summaries), query, pinnedAt, agentRowKey)
+    ? withAgentTerminals(groupChats(agentRows(summaries), query, pinnedAt, agentRowKey), summaries, query)
     : withTerminalRows(groupChats(summaries, query, pinnedAt, rowKey), terminalAvailable);
 }

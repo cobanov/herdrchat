@@ -47,6 +47,7 @@ import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
 import { chatTitle, sameName } from '@/lib/chatTitle';
+import { integrationFor } from '@/lib/herdr/agents';
 import type { IntegrationName } from '@/lib/herdr/client';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
@@ -308,12 +309,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const integrationKind = thread.agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
     ?? thread.agents.find(agent => agent.agentSession === null)
     ?? thread.agents[0];
-  const agentKind: IntegrationName = integrationKind?.agent === 'codex' ||
-    integrationKind?.agent === 'pi' || integrationKind?.agent === 'omp'
-    ? integrationKind.agent
-    : 'claude';
+  // The agent's own integration; an agent herdr has none for gets no install button.
+  const agentKind: IntegrationName | null = integrationFor(integrationKind?.agent);
   const installIntegration = useCallback(() => {
-    if (client === null || installing) return;
+    if (client === null || installing || agentKind === null) return;
     setInstalling(true);
     setInstallError(null);
     void client
@@ -528,8 +527,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                 onBack={onBack}
                 title={heading}
                 sessionState={thread.sessionState}
-                agentKind={agentKind}
-                onInstallIntegration={client === null ? undefined : installIntegration}
+                agentKind={agentKind ?? undefined}
+                onInstallIntegration={client === null || agentKind === null ? undefined : installIntegration}
                 installing={installing}
                 installError={installError}
               />

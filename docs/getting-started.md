@@ -4,7 +4,7 @@
 
 You need an iPhone or iPad running iOS 17+ with
 [HerdrChat from the App Store](https://apps.apple.com/app/herdrchat/id6791874615), and a computer you administer. That computer
-runs [herdr](https://herdr.dev) and Claude Code, Codex, [Pi](https://pi.dev) or [OMP](https://omp.sh/). The phone connects over
+runs [herdr](https://herdr.dev) and Claude Code, Codex, Grok, Antigravity, [Pi](https://pi.dev) or [OMP](https://omp.sh/). The phone connects over
 SSH, usually through your existing Tailscale network. Keep SSH on your private
 network; there is no need to expose it to the internet.
 
@@ -49,6 +49,41 @@ Keep `~/.local/bin` before the original Codex directory on PATH, or use
 For manual host setup, run `herdr integration install codex` and install this
 repo's [named launcher](../scripts/herdr-codex.sh) as `herdrchat-codex` on the
 host's PATH. The helper needs Python 3 and Codex.
+
+**If a Codex chat says "Can't identify this chat":** Codex runs a hook only
+after you trust it, and the Herdr hook is what reports the session id. On the
+host, open Codex, run `/hooks` and trust the Herdr hook, then exit and resume
+the session. `herdr integration status` should list `codex` as current.
+
+### Grok
+
+On the host:
+
+```sh
+herdr integration install grok
+```
+
+The integration reports each session's id, which is the name of its folder
+under `~/.grok/sessions` (or `$GROK_HOME/sessions`). HerdrChat opens that exact
+folder's `updates.jsonl`, the conversation as Grok records it, and never the
+newest session in a working directory. Start or resume Grok inside a Herdr
+pane after installation, or choose **Grok** when creating a chat in HerdrChat.
+Grok takes its permission settings from its own configuration.
+
+### Antigravity
+
+On the host:
+
+```sh
+herdr integration install antigravity-cli
+```
+
+The integration reports each conversation's id, which is the name of its
+folder under `~/.gemini/antigravity-cli/brain`. HerdrChat opens that exact
+folder's `.system_generated/logs/transcript.jsonl`, the conversation as agy
+records it. Start agy inside a Herdr pane after installation, or choose
+**Antigravity** when creating a chat in HerdrChat. A chat whose agy started
+before the integration says it can't identify itself until agy is restarted.
 
 ### Pi and OMP (Oh My Pi)
 

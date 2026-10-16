@@ -11,10 +11,12 @@ import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
+import { agentSpec } from '@/lib/herdr/agents';
 import {
   hasSessionReference,
   isConversationalAgent,
   isPiFamily,
+  sendTarget,
   sessionSignature,
   type AgentInfo,
   type AgentStatus,
@@ -36,7 +38,7 @@ import {
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
-import { isSlashCommand } from '@/lib/slashCommands';
+import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
 import {
@@ -399,6 +401,8 @@ export function useThread(
     path: string;
     label: string | null;
     anchor: number;
+    /** Codex only: a rewound or forked rollout goes on in the file it was cut from. */
+    codexBase: boolean;
   } | null>(null);
   const boundSig = useRef<string | null>(null);
   /** The panes the bound session was seen in, sorted and joined. */
@@ -519,7 +523,7 @@ export function useThread(
     if (client === null || paging.current) return;
     if (Date.now() - olderFailedAt.current < OLDER_RETRY_MS) return;
     const source = olderSource.current;
-    if (source === null || source.anchor <= 0) return;
+    if (source === null || (source.anchor <= 0 && !source.codexBase)) return;
     const sig = boundSig.current;
 
     paging.current = true;
@@ -528,7 +532,22 @@ export function useThread(
       const store = new TranscriptStore(client.transport);
       for (let page = 0; page < OLDER_EMPTY_PAGES; page += 1) {
         const current = olderSource.current;
-        if (current === null || current.anchor <= 0) break;
+        if (current === null) break;
+        if (current.anchor <= 0) {
+          // The start of this file. A rewound or forked Codex rollout holds
+          // only its own turns, and its first line names the file the earlier
+          // ones are in: page on there, from where the inherited part ends.
+          const base = current.codexBase ? await store.codexHistoryBase(current.path) : null;
+          if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
+          olderSource.current = base === null
+            ? { ...current, codexBase: false }
+            : { ...current, path: base.path, anchor: base.endByte };
+          if (base === null) {
+            setReachedStart(true);
+            break;
+          }
+          continue;
+        }
 
         const older = await store.older(current.path, current.label, current.anchor, OLDER_LINES);
         if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
@@ -541,7 +560,7 @@ export function useThread(
           rebuild();
         }
 
-        if (older.reachedStart) {
+        if (older.reachedStart && !current.codexBase) {
           setReachedStart(true);
           break;
         }
@@ -642,17 +661,8 @@ export function useThread(
           const id = agent.agentSession!.value!;
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
-          let path = isPiFamily(agent.agent)
-            ? await store.ompTranscriptPath(id, agent.agentSession!.kind)
-            : agent.agent === 'codex'
-              ? await store.codexTranscriptPath(id)
-              : await store.claudeTranscriptPath(agent.cwd, id);
-          if (path === null) {
-            if (agent.agent === 'pi') throw new Error('The Pi session could not be located. Pi does not save a chat started with pi --no-session. Otherwise, resume that exact session on the host, then reload.');
-            if (agent.agent === 'omp') throw new Error('The OMP session could not be located. Install the OMP integration and resume that exact session on the host, then reload.');
-            if (agent.agent === 'codex') throw new Error('The Codex session is identified, but its transcript is not in CODEX_HOME/sessions or archived_sessions on this host. Start or resume that exact session on the host, then reload.');
-            throw new Error('The agent reported an invalid session id. Resume the session on the host, then reload.');
-          }
+          let path = await store.transcriptPath(agent);
+          if (path === null) throw new Error(agentSpec(agent.agent)?.missing ?? 'The agent reported an invalid session id. Resume the session on the host, then reload.');
           let probe = await store.fileProbe(path);
           if (probe.kind === 'absent' && agent.agent === 'claude') {
             // Not under the folder the pane's cwd names. The same session id may
@@ -664,8 +674,7 @@ export function useThread(
             }
           }
           if (probe.kind === 'absent') {
-            if (agent.agent === 'codex') store.forgetCodexTranscript(id);
-            if (isPiFamily(agent.agent) && agent.agentSession!.kind === 'id') store.forgetOmpTranscript(id);
+            store.forgetTranscript(agent);
             const previous = absentRetry.current.get(key);
             const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
             absentRetry.current.set(key, { at: Date.now() + delay, delay });
@@ -723,8 +732,9 @@ export function useThread(
         if (!current()) return;
         if (olderSource.current === null) {
           const anchor = source.recent?.startByte ?? source.cached!;
-          olderSource.current = { path: source.path, label: source.label, anchor };
-          setReachedStart(anchor <= 0);
+          const codexBase = source.agent === 'codex';
+          olderSource.current = { path: source.path, label: source.label, anchor, codexBase };
+          setReachedStart(anchor <= 0 && !codexBase);
         }
         if (!metaSeeded.current.has(source.key)) {
           metaSeeded.current.add(source.key);
@@ -978,7 +988,7 @@ export function useThread(
             const parsed = parseBlockedPrompt(raw);
             if (parsed.options.length > 0) {
               blocked = pendingInput;
-              parsedPrompt = { ...parsed, submitWithEnter: pendingInput.agent !== 'claude' };
+              parsedPrompt = { ...parsed, submitWithEnter: agentSpec(pendingInput.agent)?.digitAnswers !== true };
             }
           }
         } else if (blocked !== undefined) {
@@ -994,7 +1004,7 @@ export function useThread(
             // Claude answers on the digit alone; see `optionKeys`.
             parsedPrompt = parsed.options.length === 0
               ? null
-              : { ...parsed, submitWithEnter: blocked.agent !== 'claude' };
+              : { ...parsed, submitWithEnter: agentSpec(blocked.agent)?.digitAnswers !== true };
           }
         }
         setBlockedPrompt(parsedPrompt);
@@ -1158,10 +1168,7 @@ export function useThread(
           ? 'unknown'
           : 'idle';
 
-  const primaryPane =
-    agents.find((a) => a.focused && a.agent !== null) ??
-    agents.find((a) => a.agent !== null) ??
-    null;
+  const primaryPane = sendTarget(agents);
   const sessionMeta = primaryPane === null ? null
     : sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
 
@@ -1193,12 +1200,7 @@ export function useThread(
       try {
         const snapshot = await client.snapshot();
         const live = chatAgents(snapshot.agents, workspaceId, pane);
-        return (
-          live.find((a) => a.focused && a.agent !== null) ??
-          live.find((a) => a.agent !== null) ??
-          live[0] ??
-          fallback
-        );
+        return sendTarget(live) ?? live[0] ?? fallback;
       } catch {
         return fallback;
       }
@@ -1272,16 +1274,16 @@ export function useThread(
       try {
         const pane = await currentPane(polled);
 
-        if ((pane.agent === 'claude' || pane.agent === 'codex') && isSlashCommand(text)) {
+        if (isCatalogueAgent(pane.agent) && isSlashCommand(text)) {
           // Never `sendPrompt` and never a second Enter: see `sendCommand`.
           const sentAt = Date.now();
           await client.sendCommand(pane.paneId, text);
           if (!current()) return;
           watchOverlay(pane.paneId);
-          // Codex writes nothing to its transcript for a command, so there is
-          // no receipt to wait for and silence proves nothing; its panels
-          // still show when they open.
-          if (pane.agent === 'codex') return;
+          // Codex and Grok write nothing to their transcripts for a command,
+          // so there is no receipt to wait for and silence proves nothing;
+          // Codex's panels still show when they open.
+          if (pane.agent !== 'claude') return;
           const ran = () => confirmed() || overlaySeenAt.current >= sentAt;
           while (current() && !ran() && Date.now() - sentAt < COMMAND_CONFIRM_MS) {
             await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
