@@ -127,6 +127,8 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How far past its cursor a reopened chat catches up through the tail rather than a fresh window. */
+const CATCH_UP_BYTES = 64 * 1024;
 /** How long a burst of tail lines gathers before it is written and shown. */
 const TAIL_BATCH_MS = 100;
 /** First and longest wait before looking again for a sibling's absent transcript. */
@@ -730,9 +732,16 @@ export function useThread(
       const claudePaths = sources.filter(source => source.agent === 'claude').map(source => source.path);
       setTranscriptPaths(previous => previous.join('\n') === claudePaths.join('\n') ? previous : claudePaths);
 
-      // A cursor is a live-stream checkpoint, not a history-loading strategy.
-      // Even a small backlog is read in bulk; an unchanged file can use cache.
-      const changed = arrivals.current.length === 0 || sources.some(source => source.cached !== source.size);
+      // A cursor is a live-stream checkpoint, not a history-loading strategy: a
+      // backlog is read as one bounded window (#66, an 11 MB gap took minutes
+      // to replay line by line). A few lines past the cursor, a reply or two
+      // since the chat was last open, are the exception: the tail streams them
+      // from the cursor, where the window re-read 300 lines and replaced the
+      // cache. An unchanged file uses the cache as it is.
+      const smallGap = (source: { cached: number | null; size: number }) =>
+        source.cached !== null && source.cached < source.size && source.size - source.cached <= CATCH_UP_BYTES;
+      const changed = arrivals.current.length === 0 ||
+        sources.some(source => source.cached !== source.size && !smallGap(source));
       const windows = await Promise.all(sources.map(async source => ({
         ...source,
         recent: changed ? await loadRecent(store, source.path, source.label, source.size) : null,
