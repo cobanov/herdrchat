@@ -358,9 +358,9 @@ export function useThread(
     `setPollError(null)` and a tail that rejected earlier in the SAME iteration was
     wiped by it a few hundred milliseconds after appearing.
 
-    `startTail` is fired without await and its first await, `homeDirectory()` :
-    is serialized ahead of the poll's own `paneVisible` calls on one connection,
-    so its rejection lands first almost every time. And when no agent is blocked
+    `startTail` is fired without await, and its first host call starts ahead of
+    the poll's own `paneVisible` calls (each runs on a channel of its own,
+    side by side), so its rejection lands first almost every time. And when no agent is blocked
     and none is working, the poll has no awaits left at all between the two, so
     the clear follows immediately.
 
