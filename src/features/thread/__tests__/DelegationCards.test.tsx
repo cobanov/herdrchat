@@ -22,6 +22,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
 }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+jest.mock('@/features/usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('@/state/connections', () => ({ useConnections: () => null, clientFor: () => null }));
 
 type Card = Extract<ThreadItem, { kind: 'subagent' | 'workflow' }>;
