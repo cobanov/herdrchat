@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { SETUP_GUIDE_URL } from '@/lib/welcome';
 import { newConnection } from '@/state/connections';
 import { saveSetting } from '@/state/saveSetting';

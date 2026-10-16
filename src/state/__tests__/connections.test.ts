@@ -15,7 +15,7 @@ import {
 // (Hoisted above the import by babel-jest.)
 const mockCommands: string[] = [];
 const mockClosed: string[] = [];
-jest.mock('@/lib/herdr/sshTransport', () => ({
+jest.mock('@/state/sshTransport', () => ({
   SshHerdrTransport: class {
     id: string;
     constructor(id: string) {

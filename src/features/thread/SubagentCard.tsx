@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { openSubagent, useDelegationScope, useDelegationStates } from '@/features/thread/delegation';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { formatDuration, formatTokens, formatToolCalls } from '@/lib/subagents/format';
 import { subagentInput, type Delegation, type DelegationState, type ToolCall } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';

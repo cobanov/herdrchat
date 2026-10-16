@@ -4,7 +4,7 @@ import { Pressable } from 'react-native';
 import { Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { saveSetting } from '@/state/saveSetting';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';

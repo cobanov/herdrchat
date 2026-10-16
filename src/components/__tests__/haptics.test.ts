@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 
 jest.mock('expo-haptics', () => ({
   ...jest.requireActual('expo-haptics'),

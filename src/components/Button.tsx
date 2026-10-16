@@ -6,7 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Text } from './Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, spacing } from '@/theme/tokens';
 

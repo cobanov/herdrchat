@@ -19,7 +19,7 @@ import {
 } from '../hostTheme';
 import { reloadHostTheme, resetHostThemeToDefault, writeHostThemeReference } from '../hostThemeActions';
 
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
 /** The settings table, in memory, answering the three statements host themes use. */
 function fakeDb(initial: Record<string, string> = {}) {

@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { ActionRow, Divider, Section } from '@/components/SettingsList';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useConnections } from '@/state/connections';
 import { useSettings } from '@/state/settings';
 import { clearAttachmentCopies } from '@/state/attachmentFiles';

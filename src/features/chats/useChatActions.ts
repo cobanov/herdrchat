@@ -3,7 +3,7 @@ import type * as SQLite from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 
 import { confirmDestructive, showActionSheet, type SheetAction } from '@/components/ActionSheet';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import type { HerdrClient } from '@/lib/herdr/client';
 import { forgetWorkspace } from '@/state/threadCache';
 import { rowTitle } from './rowText';

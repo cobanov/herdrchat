@@ -16,7 +16,7 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
 }));
-jest.mock('@/lib/haptics', () => ({ haptics: { success: jest.fn(), error: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { success: jest.fn(), error: jest.fn() } }));
 
 /** One client per connection, each recording its renames. */
 const mockRenames: { connectionId: string; workspaceId: string; label: string }[] = [];

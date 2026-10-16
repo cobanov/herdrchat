@@ -2,7 +2,7 @@ import type * as Notifications from 'expo-notifications';
 
 import { targetOf } from '../useNotificationRouting';
 
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {} }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), push: jest.fn(), dismissTo: jest.fn() } }));
 
 const response = (data: Record<string, unknown>, payload?: Record<string, unknown>) =>

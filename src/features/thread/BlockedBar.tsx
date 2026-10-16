@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { PromptDetails } from '@/features/thread/PromptDetails';

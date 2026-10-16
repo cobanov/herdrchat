@@ -3,7 +3,7 @@ import { Pressable } from 'react-native';
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget } from '@/theme/tokens';
 
