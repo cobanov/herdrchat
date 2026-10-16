@@ -9,7 +9,7 @@ import { backoffDelay, needsTheUser } from '@/lib/poll';
 import type { ThreadWindow } from '@/lib/threadWindow';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
 import type { ChatMessage } from '@/lib/transcript/message';
-import { seedMessages } from '@/state/threadCache';
+import { seedIfSession, seedMessages } from '@/state/threadCache';
 
 import { useHostEvents } from '../useHostEvents';
 
@@ -46,6 +46,8 @@ interface Options {
   db: SQLite.SQLiteDatabase;
   connectionId: string;
   cacheKey: string;
+  /** The session the chat list last saw for this chat, when it opened from there. */
+  listedSig: string | undefined;
   workspaceId: string;
   pane: string | undefined;
   polling: boolean;
@@ -79,7 +81,7 @@ interface Options {
  * watchdog.
  */
 export function useAgentPoll({
-  client, db, connectionId, cacheKey, workspaceId, pane, polling, pollScale, aliveRef, boundSigRef, kickRef, agents,
+  client, db, connectionId, cacheKey, listedSig, workspaceId, pane, polling, pollScale, aliveRef, boundSigRef, kickRef, agents,
   setAgents, setLoading, shown, seed, bind, startTails, abortTails, dropSilentTails, readQuestion,
   watchingOverlay, readOverlay, closeOverlay,
 }: Options) {
@@ -217,10 +219,17 @@ export function useAgentPoll({
           The cache belongs to the session last bound to this chat; when the
           host is back and names a different one, `rebind` drops it and the
           history is reset, as it always was.
+
+          Opened from the list, only the session the list saw: herdr reuses
+          workspace slots, and a cache of the slot's previous chat showed under
+          the new chat's title until the host answered (HC-18). From a link or
+          a notification there is no such session to check against.
         */
         if (!offlineSeeded.current && boundSigRef.current === null && shown.isEmpty) {
           offlineSeeded.current = true;
-          const cached = await seedMessages(db, connectionId, cacheKey);
+          const cached = listedSig === undefined || listedSig === ''
+            ? await seedMessages(db, connectionId, cacheKey)
+            : await seedIfSession(db, connectionId, cacheKey, listedSig);
           if (!aliveRef.current || stopped || boundSigRef.current !== null || cached.length === 0) return;
           seed(cached);
         }
@@ -259,6 +268,7 @@ export function useAgentPoll({
     workspaceId,
     pane,
     cacheKey,
+    listedSig,
     polling,
     pollScale,
     aliveRef,
