@@ -299,6 +299,8 @@ CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(HOME, ".codex")
 CODEX_SESSIONS = os.path.join(CODEX_HOME, "sessions")
 CODEX_ARCHIVED = os.path.join(CODEX_HOME, "archived_sessions")
 GROK_SESSIONS = os.path.join(os.environ.get("GROK_HOME") or os.path.join(HOME, ".grok"), "sessions")
+# Antigravity CLI files a conversation's log in a folder named by its id.
+AGY_BRAIN = os.path.join(HOME, ".gemini", "antigravity-cli", "brain")
 SUMMARY_LIMIT = 200
 TAIL_BYTES = 1 << 20
 
@@ -312,7 +314,7 @@ def transcript_path(agent, session_id):
     absolute .jsonl with no ".." in it. A rewound Codex thread goes on in
     `rollout-<ts>-<id>_<rollout id>.jsonl`; every file there is that one
     thread's, so the one written last is the current one."""
-    if agent in ("pi", "omp"):
+    if agent in ("pi", "omp") or (agent == "agy" and (session_id or "").startswith("/")):
         path = session_id or ""
         ok = path.startswith("/") and path.endswith(".jsonl") and ".." not in path.split("/")
         return path if ok and os.path.isfile(path) else None
@@ -327,6 +329,9 @@ def transcript_path(agent, session_id):
         hits.sort(key=os.path.getmtime, reverse=True)
     elif agent == "grok":
         hits = glob.glob(os.path.join(GROK_SESSIONS, "*", session_id, "updates.jsonl"))
+    elif agent == "agy":
+        path = os.path.join(AGY_BRAIN, session_id, ".system_generated", "logs", "transcript.jsonl")
+        hits = [path] if os.path.isfile(path) else []
     else:
         hits = []
     return hits[0] if hits else None
@@ -356,10 +361,10 @@ def tail_entries(path):
 def describe_tool(name, args):
     """A pending tool call in a few words: what the agent is waiting to do."""
     args = args if isinstance(args, dict) else {}
-    questions = args.get("questions") if name == "AskUserQuestion" else None
+    questions = args.get("questions") if name in ("AskUserQuestion", "ask_question") else None
     if questions and isinstance(questions[0], dict) and questions[0].get("question"):
         return str(questions[0]["question"])
-    if str(name).lower() in ("bash", "run_terminal_command") and args.get("command"):
+    if str(name).lower() in ("bash", "run_terminal_command", "run_command") and args.get("command"):
         return "Run: " + str(args["command"]).strip().splitlines()[0]
     target = args.get("file_path") or args.get("notebook_path")
     if name in ("Edit", "Write", "MultiEdit", "NotebookEdit") and target:
@@ -367,6 +372,19 @@ def describe_tool(name, args):
     if name == "ExitPlanMode":
         return "Review the plan."
     return "Use " + name if name else ""
+
+
+def agy_arguments(args):
+    """agy logs each argument as JSON text; decoded, under the names describe_tool reads."""
+    names = {"CommandLine": "command", "AbsolutePath": "file_path"}
+    decoded = {}
+    for key, value in (args if isinstance(args, dict) else {}).items():
+        try:
+            value = json.loads(value) if isinstance(value, str) else value
+        except ValueError:
+            pass
+        decoded[names.get(key, key)] = value
+    return decoded
 
 
 def last_words(agent, entries, status):
@@ -408,6 +426,17 @@ def last_words(agent, entries, status):
                 tool = ((update.get("_meta") or {}).get("x.ai/tool") or {}).get("name") or update.get("title")
                 return describe_tool(tool, update.get("rawInput"))
             text = (update.get("content") or {}).get("text") if kind == "agent_message_chunk" else None
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        elif agent == "agy":
+            # agy's conversation log: the reply is a planner step's content,
+            # and its calls' arguments are each JSON text.
+            if entry.get("type") != "PLANNER_RESPONSE":
+                continue
+            calls = [c for c in (entry.get("tool_calls") or []) if isinstance(c, dict)]
+            if status == "blocked" and calls:
+                return describe_tool(calls[-1].get("name"), agy_arguments(calls[-1].get("args")))
+            text = entry.get("content")
             if isinstance(text, str) and text.strip():
                 return text.strip()
         elif agent in ("pi", "omp"):
@@ -462,7 +491,7 @@ def summarize(text, limit=SUMMARY_LIMIT):
 # An agent's own terminal title before the session has a topic, which names no
 # chat (`DEFAULT_TERMINAL_TITLES` in src/lib/chatTitle.ts): Claude Code says
 # "Claude Code", and before an agent starts the shell titles it with the command.
-DEFAULT_TERMINAL_TITLES = {"claude code", "claude", "codex", "omp", "grok"}
+DEFAULT_TERMINAL_TITLES = {"claude code", "claude", "codex", "omp", "grok", "agy"}
 LEADING_GLYPHS = re.compile(r"^[^\w\\]+")
 
 
@@ -491,7 +520,7 @@ def chat_title(entries, terminal_title):
 def notification_text(agent, status, label, terminal_title, session_id):
     """Title and body for a push: which chat, and what happened in the agent's
     own words. With NOTIFY_PREVIEW=0, only the chat's name and state."""
-    name = {"claude": "Claude", "codex": "Codex", "grok": "Grok", "pi": "Pi", "omp": "OMP"}.get(agent or "", agent or "agent")
+    name = {"claude": "Claude", "codex": "Codex", "grok": "Grok", "agy": "Antigravity", "pi": "Pi", "omp": "OMP"}.get(agent or "", agent or "agent")
     if not PREVIEW:
         title, body = (t.format(label=label, name=name) for t in STYLES[status])
         return title, body
