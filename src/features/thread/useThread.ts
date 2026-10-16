@@ -16,6 +16,7 @@ import {
   hasSessionReference,
   isConversationalAgent,
   isPiFamily,
+  sameAgents,
   sendTarget,
   sessionSignature,
   type AgentInfo,
@@ -901,7 +902,7 @@ export function useThread(
         const snapshot = await client.snapshot();
         if (!alive.current || stopped) return;
         const live = chatAgents(snapshot.agents, workspaceId, pane);
-        setAgents(live);
+        setAgents((previous) => (sameAgents(previous, live) ? previous : live));
         const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
         if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
 
@@ -1033,7 +1034,8 @@ export function useThread(
               : { ...parsed, submitWithEnter: agentSpec(blocked.agent)?.digitAnswers !== true };
           }
         }
-        setBlockedPrompt(parsedPrompt);
+        // The same question as last poll keeps its object, as the agents do.
+        setBlockedPrompt((previous) => (JSON.stringify(previous) === JSON.stringify(parsedPrompt) ? previous : parsedPrompt));
         setAskingPaneId(blocked?.paneId ?? null);
 
         // A reply in flight is confirmed (or orphaned) by what this poll saw.

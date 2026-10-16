@@ -126,10 +126,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
 
-  // The agents array is rebuilt by every status poll, so it cannot go in the
-  // dependency list below, the effect would re-run every couple of seconds and
-  // write to SQLite each time. A ref gives the callback the current value while
-  // staying stable itself.
+  // The agents change with every status change, so they cannot go in the
+  // dependency list below: the read marker belongs to focus and blur, not to
+  // an agent starting or stopping. A ref gives the callback the current value
+  // while staying stable itself.
   const agentsRef = useRef(thread.agents);
   useEffect(() => {
     agentsRef.current = thread.agents;
