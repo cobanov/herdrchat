@@ -23,6 +23,7 @@ import {
   POLL_TIMEOUT_MS,
   SCREEN_TIMEOUT_MS,
   SEND_TIMEOUT_MS,
+  WAKE_TIMEOUT_MS,
 } from './timeouts';
 import type { HerdrTransport } from './transport';
 import {
@@ -201,6 +202,17 @@ export class HerdrClient {
     const read = screen === null ? undefined : answers[1];
     const text = read?.ok === true ? field(field(read.result, 'read'), 'text') : null;
     return { snapshot: this.acceptSnapshot(first.result), screen: typeof text === 'string' ? text : null };
+  }
+
+  /**
+   * Back after a long time away: one trivial command on a short deadline. A
+   * connection that died while the app was suspended (iOS sends no
+   * keepalive) times out here, and the native layer drops it on that
+   * timeout, so the polls racing it fail fast and redial instead of waiting
+   * out their own 15 s on a dead socket.
+   */
+  async wake(): Promise<void> {
+    await this.transport.exec(withPath('true'), WAKE_TIMEOUT_MS).catch(() => undefined);
   }
 
   /** A snapshot answer decoded, and its version remembered for the capability gates. */

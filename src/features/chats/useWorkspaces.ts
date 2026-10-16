@@ -35,7 +35,7 @@ import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, 
 import type { BatchAnswer } from '@/lib/herdr/socket';
 import { keepUnchanged } from '@/lib/sameShape';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
-import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
+import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS, WAKE_AFTER_MS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -241,14 +241,21 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
   // A machine may have been added at the host meanwhile, too.
+  // After a long time away the connection may be dead under a suspended app;
+  // `wake` drops it in seconds rather than letting the first poll wait it out.
+  const awaySince = useRef<number | null>(null);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') awaySince.current ??= Date.now();
       if (state !== 'active') return;
+      const away = awaySince.current;
+      awaySince.current = null;
+      if (away !== null && Date.now() - away >= WAKE_AFTER_MS) void client?.wake();
       lastThemeCheck.current = null;
       lastMachineCheck.current = null;
     });
     return () => subscription.remove();
-  }, []);
+  }, [client]);
 
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
