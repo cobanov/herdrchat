@@ -4,7 +4,7 @@ import { ErrorBanner } from '@/components/ErrorBanner';
 import { Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';
 import { TERMINAL_BACK, type TerminalBackControl } from './backControl';

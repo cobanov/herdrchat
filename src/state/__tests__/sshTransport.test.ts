@@ -1,4 +1,4 @@
-import { MissingCredentialsError, SshHerdrTransport } from '../herdr/sshTransport';
+import { MissingCredentialsError, SshHerdrTransport } from '../sshTransport';
 
 const mockConnect = jest.fn();
 jest.mock('../../../modules/herdr-ssh/src', () => ({

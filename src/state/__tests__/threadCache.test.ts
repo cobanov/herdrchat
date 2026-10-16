@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { cacheStamp } from '@/lib/transcript/cacheVersion';
-import { appendMessages, forgetWorkspace, MAX_CACHED_MESSAGES, rebind, seedIfSession, seedMessages } from '../threadCache';
+import { appendMessages, clearThreadCache, forgetWorkspace, MAX_CACHED_MESSAGES, rebind, seedIfSession, seedMessages } from '../threadCache';
 
 /**
  * A real SQLite, from Node's own `node:sqlite`, behind the few calls the cache
@@ -117,4 +117,22 @@ itWithSqlite("seeds only the listed session's cache, and deletes nothing either 
   expect((await seedIfSession(db, 'host', 'w1', 'sess-a')).map((cached) => cached.id)).toEqual(['m1']);
   expect(await seedIfSession(db, 'host', 'w1', 'sess-b')).toEqual([]);
   expect(raw.prepare('SELECT COUNT(*) AS n FROM messages').all()[0]).toEqual({ n: 1 });
+});
+
+// A reload starts the chat from the host again: its messages and its cursors
+// go, and nothing of another chat's.
+itWithSqlite("clears one chat's messages and cursors for a reload, and nothing else", async () => {
+  const raw = new sqlite!.DatabaseSync(':memory:');
+  for (const table of ['messages', 'tail_cursors']) raw.exec(`CREATE TABLE ${table} (connection_id TEXT, workspace_id TEXT)`);
+  for (const table of ['messages', 'tail_cursors']) {
+    for (const key of ['w1', 'w2']) raw.prepare(`INSERT INTO ${table} VALUES (?, ?)`).run('host', key);
+  }
+  const db = {
+    runAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).run(...params),
+    withTransactionAsync: async (task: () => Promise<void>) => task(),
+  } as unknown as SQLiteDatabase;
+  await clearThreadCache(db, 'host', 'w1');
+  for (const table of ['messages', 'tail_cursors']) {
+    expect(raw.prepare(`SELECT workspace_id FROM ${table}`).all()).toEqual([{ workspace_id: 'w2' }]);
+  }
 });

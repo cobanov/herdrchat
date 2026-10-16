@@ -7,7 +7,7 @@ import { showActionSheet, type SheetAction } from './ActionSheet';
 import { BubbleImage } from './BubbleImage';
 import { Markdown } from './Markdown';
 import { Text } from './Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { copyOptions } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
 import { motion, radius, size, spacing } from '@/theme/tokens';

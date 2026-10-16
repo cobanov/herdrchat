@@ -12,7 +12,7 @@ import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
 
 import type { HerdrClient } from '@/lib/herdr/client';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError, type HerdrErrorCode } from '@/lib/herdr/protocol';
 import {
   needsAttention,
   sessionSignature,
@@ -128,7 +128,7 @@ export interface WorkspacesState {
   loading: boolean;
   error: string | null;
   /** The failure's code (`auth_failed`, `connect_failed`, …), for choosing a way out. */
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   /** True when the connect failed because herdr isn't installed on the host. */
   herdrMissing: boolean;
   /**
@@ -179,7 +179,7 @@ export function useWorkspaces(
   // effect body just to get back to the initial value.
   const [loading, setLoading] = useState(client !== null);
   const [error, setError] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<HerdrErrorCode | null>(null);
   const [herdrMissing, setHerdrMissing] = useState(false);
   const [serverStopped, setServerStopped] = useState(false);
 
@@ -192,7 +192,7 @@ export function useWorkspaces(
    */
   const failures = useRef(0);
   /** The code of the last failure, to tell a pause from a retry. */
-  const lastCode = useRef<string | null>(null);
+  const lastCode = useRef<HerdrErrorCode | null>(null);
 
   /** Every agent pane the last refresh saw; what the event stream watches. */
   const [paneIds, setPaneIds] = useState<string[]>([]);
@@ -369,7 +369,7 @@ export function useWorkspaces(
     } catch (thrown) {
       if (!alive.current) return true;
       const failure = thrown instanceof HerdrError ? thrown : null;
-      setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
+      setError(failure?.message ?? (errorText(thrown)));
       setErrorCode(failure?.code ?? null);
       lastCode.current = failure?.code ?? null;
       setHerdrMissing(failure?.code === 'herdr_not_found');
@@ -751,10 +751,4 @@ function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<stri
 
 export function summaryNeedsAttention(summary: ChatSummary): boolean {
   return needsAttention(summary.status);
-}
-
-/** A thrown value, as something a person can read. */
-export function errorText(thrown: unknown): string {
-  if (thrown instanceof HerdrError) return thrown.message;
-  return thrown instanceof Error ? thrown.message : String(thrown);
 }

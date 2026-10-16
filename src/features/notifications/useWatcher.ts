@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { HerdrClient } from '@/lib/herdr/client';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText } from '@/lib/herdr/protocol';
 import type { WatcherState } from '@/lib/notifier/watcher';
 
 export interface WatcherControl {
@@ -45,7 +45,7 @@ export function useWatcher(client: HerdrClient | null, enabled: boolean): Watche
     try {
       setState(await client.installWatcher());
     } catch (thrown) {
-      setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      setError(errorText(thrown));
     } finally {
       setBusy(false);
     }

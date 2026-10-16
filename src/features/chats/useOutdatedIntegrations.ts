@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { HerdrClient, IntegrationIssue } from '@/lib/herdr/client';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText } from '@/lib/herdr/protocol';
 
 export interface OutdatedIntegrations {
   /** Integrations the host reports as outdated or missing. Empty when none, or unknown. */
@@ -50,7 +50,7 @@ export function useOutdatedIntegrations(client: HerdrClient | null): OutdatedInt
       }
       setIssues((await client.integrationIssues()) ?? []);
     } catch (thrown) {
-      setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      setError(errorText(thrown));
     } finally {
       setUpdating(false);
     }
