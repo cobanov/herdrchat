@@ -18,7 +18,8 @@ it.each([false, true])('reads the latest exact Codex turn, including beyond the 
   writeFileSync(path,
     entry('turn_context', { model: 'gpt-old', effort: 'low' }) +
     entry('turn_context', { model: 'gpt-current', effort: 'high' }) +
-    entry('response_item', { type: 'function_call_output', output: 'x'.repeat(long ? 300_000 : 10) }) +
+    // Text, with spaces: a run of base64 characters would be stripped as a picture.
+    entry('response_item', { type: 'function_call_output', output: 'line of output '.repeat(long ? 20_000 : 1) }) +
     entry('event_msg', { type: 'token_count', info: { last_token_usage: { input_tokens: 1234 } } }));
   const commands: string[] = [];
   const transport: HerdrTransport = {

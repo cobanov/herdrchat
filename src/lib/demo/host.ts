@@ -538,10 +538,11 @@ export class DemoHost implements HerdrTransport {
     const previews = this.previewBatch(body);
     if (previews !== null) return previews;
 
-    const last = /^tail -c (\d+) '(.+?)' 2>\/dev\/null$/.exec(body);
+    // The demo has no pictures for the strip filter to take out.
+    const last = /^tail -c \d+ '(.+?)' 2>\/dev\/null \| sed -E '[^']*' \| tail -c (\d+)$/.exec(body);
     if (last !== null) {
-      const contents = this.read(last[2]!);
-      return out(contents === null ? '' : sliceLastBytes(contents, Number(last[1])));
+      const contents = this.read(last[1]!);
+      return out(contents === null ? '' : sliceLastBytes(contents, Number(last[2])));
     }
 
     return null;
@@ -559,7 +560,7 @@ export class DemoHost implements HerdrTransport {
     if (!body.endsWith('true') || !body.includes('[ -n "$f" ] && tail -c ')) return null;
     const claudeDir = `${DEMO_HOME}/.claude`;
     const step =
-      /f=(?:"([^"]*)"|'([^']*)'); (?:\[ -f "\$f" \] \|\| for g in "[^"]*"\/projects\/\*\/([A-Za-z0-9-]+)\.jsonl; do [^;]*; done; )?printf '\\n(\S+) %s\\n' '([A-Za-z0-9:_-]+)'; (head -n 2 "\$f" 2>\/dev\/null; printf '\\n'; )?\[ -n "\$f" \] && tail -c (\d+) "\$f" 2>\/dev\/null; /g;
+      /f=(?:"([^"]*)"|'([^']*)'); (?:\[ -f "\$f" \] \|\| for g in "[^"]*"\/projects\/\*\/([A-Za-z0-9-]+)\.jsonl; do [^;]*; done; )?printf '\\n(\S+) %s\\n' '([A-Za-z0-9:_-]+)'; (head -n 2 "\$f" 2>\/dev\/null; printf '\\n'; )?\[ -n "\$f" \] && tail -c \d+ "\$f" 2>\/dev\/null \| sed -E '[^']*' \| tail -c (\d+); /g;
     let stdout = '';
     for (const match of body.matchAll(step)) {
       const [, doubleQuoted, singleQuoted, anyFolderId, marker, key, header, bytes] = match;

@@ -646,7 +646,7 @@ export class TranscriptStore {
    * Null when the tail holds no assistant turn with usage yet.
    */
   async sessionMeta(path: string, agent: string | null = null, tailBytes = 262_144): Promise<SessionMeta | null> {
-    const text = await this.shell(`tail -c ${tailBytes} ${shellQuote(path)} 2>/dev/null`);
+    const text = await this.shell(strippedTail(shellQuote(path), tailBytes));
     let model: string | null = null;
     let effort: string | null = null;
     let contextTokens: number | null = null;
@@ -756,7 +756,7 @@ export class TranscriptStore {
       script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
       if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
-      script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
+      script += `[ -n "$f" ] && ${strippedTail('"$f"', tailBytes)}; `;
     }
     if (script.length === 0) return new Map();
     script += 'true'; // a workspace without a transcript must not fail the batch
@@ -917,6 +917,20 @@ const WINDOW_CHUNK_BYTES = 4 * 1024 * 1024;
 /** See `linesBefore`. */
 const STRIP_PICTURES =
   's|"[A-Za-z0-9+/=]{128}[A-Za-z0-9+/=]*"|""|g; s|"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=]*"|""|g';
+
+/**
+ * The last `bytes` of a transcript with its pictures stripped on the host.
+ * Stripped BEFORE it is cut: a chat that ended on a screenshot filled a plain
+ * `tail -c` with one picture line, so the preview found no line to show and
+ * the header no model. A megabyte is read, a picture or two, and at most
+ * `bytes` cross the network.
+ */
+function strippedTail(file: string, bytes: number): string {
+  return `tail -c ${STRIP_WINDOW_BYTES} ${file} 2>/dev/null | sed -E ${shellQuote(STRIP_PICTURES)} | tail -c ${bytes}`;
+}
+
+/** How far back `strippedTail` reads before it strips. */
+const STRIP_WINDOW_BYTES = 1024 * 1024;
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 
