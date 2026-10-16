@@ -278,6 +278,25 @@ describe('startNamedAgent', () => {
     expect(runs(commands)[0]).toContain('--permission-mode manual');
   });
 
+  // Seen on a real host: a new chat in a folder Claude had not been trusted
+  // with. herdr answers `agent_not_ready` and keeps the agent, waiting at its
+  // question; New chat showed that as an error and stayed open over it.
+  it('counts an agent waiting at a startup question as started', async () => {
+    const transport: HerdrTransport = {
+      exec: async (command: string) =>
+        ({
+          ok: true,
+          exitCode: 0,
+          stdout: command.includes('--help')
+            ? ''
+            : JSON.stringify({ error: { code: 'agent_not_ready', message: 'agent probe is blocked during startup and is not ready for prompts' } }),
+          stderr: '',
+        }) as never,
+      streamLines: async function* () {},
+    };
+    await expect(new HerdrClient(transport).startNamedAgent('p1', 'probe', 'claude', [], 'claude')).resolves.toBe(true);
+  });
+
   it('does not retry an error that is not about pane readiness', async () => {
     // A timeout may mean the agent DID launch. Retrying that is how you end up
     // with two agents in one pane.
