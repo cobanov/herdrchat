@@ -78,19 +78,11 @@ appId: dev.herdr.HerdrChat
     timeout: 10000
 
 # An agent's chat: the header's Terminal opens the agent's own screen.
-- scrollUntilVisible:
-    element:
-      id: chat-row-w2
-    direction: UP
-    centerElement: true
-- scrollUntilVisible:
-    element:
-      id: chat-row-w2
-    direction: DOWN
-    centerElement: true
-- waitForAnimationToEnd
-- tapOn:
-    id: chat-row-w2
+- runFlow:
+    file: _open-chat.yaml
+    env:
+      QUERY: Release notes
+      ROW: chat-row-w2
 - extendedWaitUntil:
     visible:
       id: thread-terminal
