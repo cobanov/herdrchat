@@ -217,6 +217,20 @@ it('refreshes an idle chat preview on the event that finished its turn', async (
   await unmount();
 });
 
+// Every poll built new rows, so the list and every row in it rendered again
+// every three seconds with nothing to show for it.
+it('keeps the same rows when a poll sees nothing new', async () => {
+  mockLive = false;
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  const rows = result.current.summaries;
+  const polls = fetch.mock.calls.length;
+  await act(async () => { await jest.advanceTimersByTimeAsync(7_000); });
+  expect(fetch.mock.calls.length).toBeGreaterThan(polls);
+  expect(result.current.summaries).toBe(rows);
+  await unmount();
+});
+
 it('keeps one poll when the stream connects', async () => {
   mockLive = false;
   const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
