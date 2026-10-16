@@ -10,6 +10,8 @@ import { resetWorkflowRuns, resumeStaleRuns, useWorkflowRun } from '../useWorkfl
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@/state/connections', () => ({ useConnections: () => null, clientFor: () => null }));
+let mockPolling = true;
+jest.mock('@/features/usePollGate', () => ({ usePollGate: () => mockPolling }));
 
 const DIR = '/home/dev/.claude/projects/-home-dev-app/s1';
 const RUN = 'wf_31a24808-cdf';
@@ -36,7 +38,10 @@ beforeEach(() => {
   resetWorkflowRuns();
   useDelegationStates.setState({ states: {} });
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  jest.useRealTimers();
+  mockPolling = true;
+});
 
 // Claude writes the run file only when the run ends: while it runs, its
 // agents are in the journal, and the run file wins once it appears.
@@ -125,5 +130,18 @@ it('reads nothing for a run id that is not inert', async () => {
   });
   expect(calls).toEqual([]);
   expect(result.current).toMatchObject({ absent: true, error: 'not a run id this app reads' });
+  await unmount();
+});
+
+// It polled every three seconds in the background too, where the app's other
+// polls stop.
+it('stops polling a running run while the app is paused', async () => {
+  const files = new Map([[workflowJournalPath(DIR, RUN), '{"type":"launched"}']]);
+  const client = host(files);
+  const exec = jest.spyOn(client.transport, 'exec');
+  mockPolling = false;
+  const { unmount } = await renderHook(() => useWorkflowRun(client, 'demo', [DIR], RUN, { active: true, awaitFile: true }));
+  await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+  expect(exec).not.toHaveBeenCalled();
   await unmount();
 });

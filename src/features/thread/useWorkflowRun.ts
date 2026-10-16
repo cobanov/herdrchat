@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { usePollGate } from '@/features/usePollGate';
 import { useDelegationStates, workflowAgentKey } from '@/features/thread/delegation';
 import { EMPTY_RUN as EMPTY, useRuns, type RunEntry } from '@/features/thread/workflowRuns';
 import type { HerdrClient } from '@/lib/herdr/client';
@@ -153,15 +154,17 @@ export function useWorkflowRun(
     (entry?.stale === true && awaitFile);
   // An array param re-made by every render must not restart the poll.
   const dirsKey = dirs.join('\u0000');
+  // Paused with the app's other polls: in the background, or under a sheet.
+  const polling = usePollGate();
 
   useEffect(() => {
-    if (!active || settled || client === null || runId === null || dirsKey.length === 0) return;
+    if (!active || !polling || settled || client === null || runId === null || dirsKey.length === 0) return;
     const folders = dirsKey.split('\u0000');
     const options = { ended: !awaitFile };
     void refreshRun(client, connectionId, folders, runId, options);
     const timer = setInterval(() => void refreshRun(client, connectionId, folders, runId, options), WORKFLOW_POLL_MS);
     return () => clearInterval(timer);
-  }, [active, settled, awaitFile, client, connectionId, dirsKey, runId]);
+  }, [active, polling, settled, awaitFile, client, connectionId, dirsKey, runId]);
 
   return entry;
 }
