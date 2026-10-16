@@ -94,13 +94,24 @@ export function isPiFamily(agent: string | null | undefined): boolean {
 }
 
 /**
- * True when the integration reports an exact native id, or a Pi/OMP session
- * path. A path is authoritative only for those; other agents require their id.
+ * True when the integration reports an exact native id, or the session path
+ * of an agent read by its path. A path is authoritative only for those; other
+ * agents require their id.
  */
 export function hasSessionReference(agent: AgentInfo): boolean {
   const session = agent.agentSession;
   return (session?.value ?? '') !== '' &&
-    (session?.kind === 'id' || (isPiFamily(agent.agent) && session?.kind === 'path'));
+    (session?.kind === 'id' || (readsPath(agent.agent) && session?.kind === 'path'));
+}
+
+/**
+ * The agents whose reported path is their session: Pi's and OMP's journal,
+ * whose integrations report it, and Gemini CLI's log, which HerdrChat's hook
+ * reports and nothing names by id.
+ */
+function readsPath(agent: string | null | undefined): boolean {
+  const reader = agentSpec(agent)?.reader;
+  return reader === 'pi' || reader === 'gemini';
 }
 
 /** The agents whose transcripts this app reads and whose panes it talks to. */
@@ -109,9 +120,13 @@ export const CONVERSATIONAL_AGENTS: readonly string[] = READABLE_AGENTS;
 /**
  * True for a pane holding an agent the app can hold a conversation with. A
  * plain shell, or an agent with no transcript reader, has no chat of its own.
+ * Nor has one herdr has no integration for (Gemini CLI) until HerdrChat's
+ * hook reported its session: its screen is its chat until then, rather than
+ * a thread waiting for a session that may never come.
  */
 export function isConversationalAgent(agent: AgentInfo): boolean {
-  return agent.agent !== null && CONVERSATIONAL_AGENTS.includes(agent.agent);
+  return agent.agent !== null && CONVERSATIONAL_AGENTS.includes(agent.agent) &&
+    (agentSpec(agent.agent)?.integration !== null || hasSessionReference(agent));
 }
 
 /**
@@ -158,7 +173,7 @@ export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
     .filter((agent) => agent.agent !== null && hasSessionReference(agent))
     // Claude's id stands bare, as it always has: cached chats are keyed by it.
-    .map((agent) => isPiFamily(agent.agent)
+    .map((agent) => readsPath(agent.agent)
       ? `${agent.agent}:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
       : agent.agent === 'claude'
         ? agent.agentSession?.value ?? ''
@@ -396,6 +411,9 @@ function sessionTitle(value: Record<string, unknown>): string | null {
       : '';
     return named !== '' ? named : title;
   }
+  // Gemini CLI's terminal title is its status and folder (`◇  Ready (app)`,
+  // `✦  <thought> (app)`), never a topic.
+  if (value.agent === 'gemini') return title;
   if (value.agent !== 'codex') return title ?? stripped;
   // Until the thread has a name, Codex's default title is the project's
   // folder alone ("kenneth"), which names no thread; a spinner or a

@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 
-import { integrationFor } from '@/lib/herdr/agents';
+import { agentSpec } from '@/lib/herdr/agents';
 import type { HerdrClient, IntegrationName } from '@/lib/herdr/client';
 import { installCodexLauncher } from '@/lib/herdr/codexLauncher';
-import type { AgentInfo } from '@/lib/herdr/models';
+import { isConversationalAgent, type AgentInfo } from '@/lib/herdr/models';
 import { errorText } from '@/lib/herdr/protocol';
 
 /**
@@ -14,24 +14,36 @@ import { errorText } from '@/lib/herdr/protocol';
  * the integration. Naming the command was better than nothing, but it still
  * meant putting the phone down and finding a terminal.
  *
+ * An agent herdr has no integration for may have HerdrChat's own hook
+ * instead (Gemini CLI's), which installs the same way from its screen chat.
+ *
  * `install` is undefined when there is nothing to install it with: no host,
- * or an agent herdr has no integration for.
+ * or an agent with neither.
  */
 export function useIntegrationInstall(client: HerdrClient | null, agents: readonly AgentInfo[]) {
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  // A chat waiting for its session before a screen chat beside it.
   const integrationKind = agents.find(agent => agent.agent === 'codex' && agent.agentSession === null)
+    ?? agents.find(agent => agent.agentSession === null && isConversationalAgent(agent))
     ?? agents.find(agent => agent.agentSession === null)
     ?? agents[0];
-  // The agent's own integration; an agent herdr has none for gets no install button.
-  const agentKind: IntegrationName | null = integrationFor(integrationKind?.agent);
+  const spec = agentSpec(integrationKind?.agent);
+  // The agent's own integration, or HerdrChat's hook where herdr has none;
+  // an agent with neither gets no install button.
+  const agentKind: IntegrationName | null = spec?.integration ?? null;
+  const installHook = spec?.installHook;
   const install = useCallback(() => {
-    if (client === null || installing || agentKind === null) return;
+    if (client === null || installing) return;
+    let task: Promise<void>;
+    if (installHook !== undefined) task = installHook(client.transport);
+    else if (agentKind !== null) {
+      task = client.installIntegration(agentKind)
+        .then(() => agentKind === 'codex' ? installCodexLauncher(client.transport) : undefined);
+    } else return;
     setInstalling(true);
     setInstallError(null);
-    void client
-      .installIntegration(agentKind)
-      .then(() => agentKind === 'codex' ? installCodexLauncher(client.transport) : undefined)
+    void task
       .then(() => {
         // Deliberately no success banner. The integration binds at SessionStart,
         // so this agent keeps reporting nothing until it is restarted, and a
@@ -43,11 +55,11 @@ export function useIntegrationInstall(client: HerdrClient | null, agents: readon
         setInstallError(errorText(thrown));
       })
       .finally(() => setInstalling(false));
-  }, [client, installing, agentKind]);
+  }, [client, installing, agentKind, installHook]);
   return {
     agentKind,
     installing,
     installError,
-    install: client === null || agentKind === null ? undefined : install,
+    install: client === null || (agentKind === null && installHook === undefined) ? undefined : install,
   };
 }

@@ -407,7 +407,7 @@ it('writes a burst of tail lines as one transaction and one cursor', async () =>
 // the history, and a message goes to it with no echo, since no transcript
 // would ever confirm one ("Failed to send").
 it('shows the screen of an agent it cannot read, and sends to it', async () => {
-  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'opencode' }]));
   jest.spyOn(client, 'paneVisible').mockResolvedValue('\u001b[1m> hello\u001b[0m  \n\n\n✦ Hi there.\n\n');
   const prompt = jest.spyOn(client, 'sendPrompt').mockResolvedValue('delivered');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
@@ -424,8 +424,20 @@ it('shows the screen of an agent it cannot read, and sends to it', async () => {
   await unmount();
 });
 
+// herdr has no Gemini integration. Without HerdrChat's hook nothing reports
+// its log, and the chat stays its screen, as before there was a reader.
+it('keeps a Gemini chat on its screen until its log is reported', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini', agentSession: null }]));
+  jest.spyOn(client, 'paneVisible').mockResolvedValue('> hello\n\n✦ Hi there.\n');
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(result.current.sessionState).toBe('unsupported');
+  expect(result.current.screen).toBe('> hello\n\n✦ Hi there.');
+  expect(result.current.canSend).toBe(true);
+  await unmount();
+});
+
 it('says so when an agent it cannot read never picks a message up', async () => {
-  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'opencode' }]));
   jest.spyOn(client, 'paneVisible').mockResolvedValue('> ');
   jest.spyOn(client, 'sendPrompt').mockResolvedValue('stalled');
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));

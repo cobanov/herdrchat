@@ -1,7 +1,7 @@
 # HerdrChat — conventions
 
 A React Native / Expo app for driving coding agents (Claude Code, Codex, Grok,
-Antigravity, Pi, OMP, and any other herdr detects) from a phone. Each herdr workspace is a
+Antigravity, Gemini CLI, Pi, OMP, and any other herdr detects) from a phone. Each herdr workspace is a
 chat; the transport is SSH over Tailscale, so nothing is
 exposed publicly.
 

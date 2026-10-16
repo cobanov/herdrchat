@@ -2,6 +2,7 @@ import snapshotFixture from './fixtures/snapshot.json';
 import workspaceListFixture from './fixtures/workspace-list.json';
 
 import {
+  decodeAgentInfo,
   decodeSnapshot,
   decodeTab,
   decodeWorkspace,
@@ -280,7 +281,22 @@ describe('session signature', () => {
   it('gives a chat only to the agents the app can talk to', () => {
     expect(['claude', 'codex', 'omp'].map((name) => isConversationalAgent(agent({ agent: name })))).toEqual([true, true, true]);
     expect(isConversationalAgent(agent({ agent: null }))).toBe(false);
-    expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
+    expect(isConversationalAgent(agent({ agent: 'opencode' }))).toBe(false);
+  });
+
+  // herdr has no Gemini integration: until HerdrChat's hook reports the log,
+  // a Gemini pane stays the screen chat it was (HC-64), not a thread waiting
+  // for a session that may never come. Its session is that log's path.
+  it('gives Gemini a chat once its log is reported, and keeps the path as its identity', () => {
+    const log = '/home/me/.gemini/tmp/app/chats/session-2026-10-16T09-00-1a2b3c4d.jsonl';
+    const reported = agent({ agent: 'gemini', agentSession: { agent: 'gemini', kind: 'path', source: 'herdrchat:gemini', value: log } });
+    expect(isConversationalAgent(agent({ agent: 'gemini', agentSession: null }))).toBe(false);
+    expect(isConversationalAgent(reported)).toBe(true);
+    expect(sessionSignature([reported])).toBe(`gemini:path:${encodeURIComponent(log)}`);
+    // Every other agent still needs its id: a path names Pi's, OMP's and Gemini's only.
+    expect(sessionSignature([agent({ agentSession: { agent: 'claude', kind: 'path', source: null, value: log } })])).toBeNull();
+    // Gemini's terminal title is its status and folder, never a topic.
+    expect(decodeAgentInfo({ agent: 'gemini', pane_id: 'p', workspace_id: 'w', terminal_title_stripped: 'Ready (app)' }).title).toBeNull();
   });
 
   it('tells a poll that saw nothing new from one that did', () => {
@@ -359,7 +375,8 @@ describe('session signature', () => {
 describe('agent name', () => {
   it('names the agents it knows, keeps herdr\'s id for the rest, and calls a shell a terminal', () => {
     expect(['claude', 'codex', 'omp', 'letta'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta']);
-    expect(agentName('gemini')).toBe('gemini');
+    expect(agentName('opencode')).toBe('opencode');
+    expect(agentName('gemini')).toBe('Gemini');
     expect(agentName(null)).toBe('Terminal');
   });
 });

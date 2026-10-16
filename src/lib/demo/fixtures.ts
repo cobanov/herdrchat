@@ -18,10 +18,11 @@ export interface DemoPane {
   cwd: string;
   agentStatus: 'idle' | 'working' | 'blocked' | 'done';
   /**
-   * Claude unless named; OMP reports its journal's path rather than an id.
-   * opencode stands for an agent the app has no reader for: its screen is its chat.
+   * Claude unless named; OMP reports its journal's path rather than an id,
+   * and so does Gemini, through HerdrChat's hook. opencode stands for an
+   * agent the app has no reader for: its screen is its chat.
    */
-  agent?: 'claude' | 'omp' | 'grok' | 'agy' | 'opencode';
+  agent?: 'claude' | 'omp' | 'grok' | 'agy' | 'gemini' | 'opencode';
   /**
    * The title the session gave itself, which titles its chat. Left out on
    * two of them, so the Demo also shows a chat titled by its workspace.
@@ -202,6 +203,16 @@ export const DEMO_WORKSPACES: readonly DemoWorkspace[] = [
     agentStatus: 'idle',
     agent: 'agy',
   },
+  {
+    // A Gemini CLI chat, read from its session log, whose path HerdrChat's hook reported.
+    workspaceId: 'wB',
+    label: 'scripts',
+    number: 11,
+    paneId: 'wB:p1',
+    cwd: '/home/demo/scripts',
+    agentStatus: 'idle',
+    agent: 'gemini',
+  },
 ];
 
 /**
@@ -259,6 +270,11 @@ export const DEMO_AGY_SESSIONS: Readonly<Record<string, string>> = {
 export function demoAgyPath(session: string): string {
   return `${DEMO_HOME}/.gemini/antigravity-cli/brain/${session}/.system_generated/logs/transcript.jsonl`;
 }
+
+/** Where each Gemini pane's log is: the path HerdrChat's hook reports as its session. */
+export const DEMO_GEMINI_PATHS: Readonly<Record<string, string>> = {
+  'wB:p1': '/home/demo/.gemini/tmp/scripts/chats/session-2026-08-20T10-15-5c1e2d3a.jsonl',
+};
 
 /** The Claude session id each demo workspace reports, and therefore its transcript filename. */
 export const DEMO_SESSION_IDS: Readonly<Record<string, string>> = {
@@ -619,6 +635,63 @@ export function agyLine(role: 'user' | 'assistant', text: string, index: number,
     : agyStep(index, timestamp, 'PLANNER_RESPONSE', { input_tokens: 21_400, cache_read_tokens: 0, content: text });
 }
 
+// MARK: - Gemini CLI
+//
+// Gemini's session log: its metadata, then a message a line, written again
+// under its id as it changes. The reply's tool call and its result arrive as
+// the same message a second time (Gemini CLI 0.64).
+
+const GEMINI_MODEL = 'gemini-3-pro-preview';
+
+function geminiMessage(id: string, timestamp: string, type: 'user' | 'gemini', fields: Record<string, unknown>): string {
+  return JSON.stringify({ id, timestamp, type, ...fields });
+}
+
+/** The reply's tool call, done: its result is what Gemini gave the model. */
+const GEMINI_CALL = {
+  id: 'run_shell_command_1',
+  name: 'run_shell_command',
+  args: { command: './deploy.sh --dry-run', description: 'Dry-run the deploy' },
+  result: [{ functionResponse: { id: 'run_shell_command_1', name: 'run_shell_command', response: {
+    output: '<untrusted_context>\nOutput: ./deploy.sh: line 12: jq: command not found\nExit Code: 127\n</untrusted_context>',
+  } } }],
+  status: 'success',
+  timestamp: '2026-08-20T10:15:31Z',
+};
+
+const GEMINI_REPLY = {
+  content: 'Running it the way CI does.',
+  thoughts: [{ subject: 'Reproducing', description: 'A dry run shows the first failing step.', timestamp: '2026-08-20T10:15:24Z' }],
+  tokens: { input: 9_412, output: 61, cached: 0, thoughts: 120, tool: 0, total: 9_593 },
+  model: GEMINI_MODEL,
+};
+
+const GEMINI_SEED: readonly string[] = [
+  JSON.stringify({ sessionId: '5c1e2d3a-0000-4000-8000-00000000000b', projectHash: 'd3m0', startTime: '2026-08-20T10:15:00Z', lastUpdated: '2026-08-20T10:15:00Z', kind: 'main' }),
+  geminiMessage('env-context', '2026-08-20T10:15:00Z', 'user', {
+    content: [{ text: '<session_context>\nThis is the Gemini CLI. We are setting up the context for our chat.\n</session_context>' }],
+  }),
+  geminiMessage('g-u1', '2026-08-20T10:15:20Z', 'user', { content: [{ text: 'why does deploy.sh fail on a clean checkout?' }] }),
+  JSON.stringify({ $set: { lastUpdated: '2026-08-20T10:15:20Z' } }),
+  geminiMessage('g-a1', '2026-08-20T10:15:26Z', 'gemini', GEMINI_REPLY),
+  // The same reply once its call is done: Gemini writes the whole message again.
+  geminiMessage('g-a1', '2026-08-20T10:15:26Z', 'gemini', { ...GEMINI_REPLY, toolCalls: [GEMINI_CALL] }),
+  // What Gemini sends the model back: a tool's answer, no one's message.
+  geminiMessage('g-u2', '2026-08-20T10:15:31Z', 'user', { content: GEMINI_CALL.result }),
+  geminiMessage('g-a2', '2026-08-20T10:15:38Z', 'gemini', {
+    content: 'It calls `jq` on line 12, and a clean machine has none. Install it, or let the script parse with python3.',
+    tokens: { input: 10_207, output: 44, cached: 8_192, thoughts: 0, tool: 0, total: 10_251 },
+    model: GEMINI_MODEL,
+  }),
+];
+
+/** One more Gemini message, a prompt or a reply, for when the demo is used. */
+export function geminiLine(role: 'user' | 'assistant', text: string, id: string, timestamp: string): string {
+  return role === 'user'
+    ? geminiMessage(id, timestamp, 'user', { content: [{ text }] })
+    : geminiMessage(id, timestamp, 'gemini', { content: text, model: GEMINI_MODEL, tokens: { input: 10_400, output: 20, cached: 0, thoughts: 0, tool: 0, total: 10_420 } });
+}
+
 /** The session id opencode's integration reports; no reader opens it. */
 export const DEMO_SCREEN_SESSION = 'ses_demo9docs';
 
@@ -638,6 +711,7 @@ export function transcriptFor(paneId: string): string {
   if (DEMO_OMP_PATHS[paneId] !== undefined) return `${OMP_SEED.join('\n')}\n`;
   if (DEMO_GROK_SESSIONS[paneId] !== undefined) return `${GROK_SEED.join('\n')}\n`;
   if (DEMO_AGY_SESSIONS[paneId] !== undefined) return `${AGY_SEED.join('\n')}\n`;
+  if (DEMO_GEMINI_PATHS[paneId] !== undefined) return `${GEMINI_SEED.join('\n')}\n`;
   const lines = paneId === 'w5:p1' ? historyLines() : SEEDS[paneId] ?? [];
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
@@ -767,6 +841,8 @@ export interface DemoFixtures {
   grokSessions: Readonly<Record<string, string>>;
   /** The conversation id each Antigravity pane reports. */
   agySessions: Readonly<Record<string, string>>;
+  /** Where a Gemini pane keeps its log, which HerdrChat's hook reports. */
+  geminiPaths: Readonly<Record<string, string>>;
   /** The transcript a pane starts with, as the file's contents. */
   transcript: (paneId: string) => string;
   /** The pane herdr reports as focused. */
@@ -831,6 +907,7 @@ export const DEMO_NUKU: DemoFixtures = {
   ompPaths: {},
   grokSessions: {},
   agySessions: {},
+  geminiPaths: {},
   transcript: (paneId) => {
     const lines = NUKU_SEEDS[paneId] ?? [];
     return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
@@ -851,6 +928,7 @@ export const DEMO_HOST: DemoFixtures = {
   ompPaths: DEMO_OMP_PATHS,
   grokSessions: DEMO_GROK_SESSIONS,
   agySessions: DEMO_AGY_SESSIONS,
+  geminiPaths: DEMO_GEMINI_PATHS,
   transcript: transcriptFor,
   focusedPaneId: 'w1:p1',
   machines: DEMO_MACHINES,

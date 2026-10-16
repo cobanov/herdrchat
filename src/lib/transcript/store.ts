@@ -78,6 +78,7 @@ export class TranscriptStore {
       case 'codex': return kind === 'id' ? this.codexTranscriptPath(value) : null;
       case 'grok': return kind === 'id' ? this.grokTranscriptPath(value) : null;
       case 'agy': return this.agyTranscriptPath(value, kind);
+      case 'gemini': return this.geminiTranscriptPath(value, kind);
       case 'pi': return this.ompTranscriptPath(value, kind);
       default: return null;
     }
@@ -233,6 +234,17 @@ export class TranscriptStore {
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
     const home = await this.homeDirectory();
     return `${home}/.gemini/antigravity-cli/brain/${value}/.system_generated/logs/transcript.jsonl`;
+  }
+
+  /**
+   * Gemini CLI's log, as HerdrChat's hook reported it (`geminiHook.ts`):
+   * `<home>/.gemini/tmp/<project>/chats/session-<time>-<id8>.jsonl` (0.64).
+   * Only a path of that shape is taken, and an id never: the file is named by
+   * the minute it started as well as by the id, so an id alone names no file.
+   */
+  geminiTranscriptPath(value: string, kind: string | null): string | null {
+    return kind === 'path' && /^\/.*\/\.gemini\/tmp\/[^/]+\/chats\/session-[^/]+\.jsonl$/.test(value) &&
+      !/[\0\r\n]/.test(value) && !value.split('/').includes('..') ? value : null;
   }
 
   /**
@@ -756,15 +768,16 @@ export class TranscriptStore {
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
         ompSessions.set(key, request.sessionKind === 'path' ? null : request.sessionId);
-      } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
-      else if (request.agent !== undefined && request.agent !== 'claude') {
+      } else if (request.agent !== undefined && request.agent !== 'claude') {
         // One broken session must not suppress every other row's preview.
+        // Each reader checks the value it is given; Gemini's is a path.
         const path = await this.transcriptPath({
-          agent: request.agent, cwd: request.cwd, agentSession: { kind: 'id', value: request.sessionId },
+          agent: request.agent, cwd: request.cwd, agentSession: { kind: request.sessionKind ?? 'id', value: request.sessionId },
         }).catch(() => null);
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
-      } else {
+      } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
+      else {
         const dir = projectDirName(request.cwd);
         const id = request.sessionId;
         script += `f="${CLAUDE_DIR_SHELL}/projects/${dir}/${id}.jsonl"; `;

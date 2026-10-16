@@ -3,6 +3,7 @@ import { isConversationalAgent } from '../herdr/models';
 import { DemoHost } from '../demo/host';
 import {
   DEMO_AGY_SESSIONS,
+  DEMO_GEMINI_PATHS,
   DEMO_GROK_SESSIONS,
   DEMO_NUKU_SESSION_IDS,
   DEMO_NUKU_WORKSPACES,
@@ -19,7 +20,7 @@ import { parseBlockedPrompt } from '../transcript/blockedPrompt';
 import { displayText, receiptKey } from '../transcript/message';
 import { parseMarkdown } from '../markdown';
 import { parsePaneOverlay } from '../transcript/paneOverlay';
-import { threadItems, toolRunSummary } from '../threadItems';
+import { threadItems, toolCallLine, toolRunSummary } from '../threadItems';
 import { screenText } from '../transcript/screen';
 import { TranscriptStore } from '../transcript/store';
 
@@ -47,7 +48,7 @@ describe('DemoHost as a herdr host', () => {
   it('lists workspaces, so the chat list has something to show', async () => {
     const client = new HerdrClient(new DemoHost());
     const workspaces = await client.workspaces();
-    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets']);
+    expect(workspaces.map((w) => w.label)).toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets', 'scripts']);
   });
 
   // A workspace with two agents, each a chat of its own in the list.
@@ -66,13 +67,13 @@ describe('DemoHost as a herdr host', () => {
     // Each titled by its own session, which titles its row and its thread.
     expect(agents.map((a) => a.title)).toEqual(['Archived projects migration', 'Save button wrap']);
     // The first five keep the one pane they always had; site's agent has a shell beside it.
-    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1, 1, 1]);
+    expect(snapshot.workspaces?.filter((w) => w.workspaceId !== 'w6').map((w) => w.paneCount)).toEqual([1, 1, 1, 1, 1, 2, 1, 1, 1, 1]);
   });
 
-  // Scratch, the OMP ledger, the Grok infra chat, the opencode docs chat and
-  // the Antigravity assets chat have no session title, so the Demo also shows
-  // chats titled by their workspace.
-  it('titles most chats by their session, and leaves five to their workspace', async () => {
+  // Scratch, the OMP ledger, the Grok infra chat, the opencode docs chat, the
+  // Antigravity assets chat and the Gemini scripts chat have no session
+  // title, so the Demo also shows chats titled by their workspace.
+  it('titles most chats by their session, and leaves six to their workspace', async () => {
     const client = new HerdrClient(new DemoHost());
     const { agents } = await client.snapshot();
     expect(agents.map((a) => [a.paneId, a.title])).toEqual([
@@ -87,6 +88,7 @@ describe('DemoHost as a herdr host', () => {
       ['w8:p1', null],
       ['w9:p1', null],
       ['wA:p1', null],
+      ['wB:p1', null],
     ]);
   });
 
@@ -153,6 +155,40 @@ describe('DemoHost as a filesystem', () => {
     const after = (await store.recent(path!, null, 100)).messages;
     expect(after.slice(-2).map((message) => [message.role, displayText(message)]))
       .toEqual([['user', 'and the 120?'], ['assistant', expect.stringContaining('and the 120?')]]);
+  });
+
+  // Gemini's log, whose path HerdrChat's hook reported. Its reply's tool
+  // call and result were written as the same message again.
+  it('reads a Gemini chat from the log its hook reported, the call with its result, and answers in its format', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    const gemini = (await client.snapshot()).agents.find((agent) => agent.agent === 'gemini')!;
+    expect(isConversationalAgent(gemini)).toBe(true);
+    const store = new TranscriptStore(host);
+    const path = await store.transcriptPath(gemini);
+    expect(path).toBe(DEMO_GEMINI_PATHS['wB:p1']);
+    const { messages } = await store.recent(path!, null, 100);
+    expect(messages.map((message) => [message.role, displayText(message)])).toEqual([
+      ['user', 'why does deploy.sh fail on a clean checkout?'],
+      ['assistant', 'Running it the way CI does.'],
+      ['assistant', expect.stringContaining('clean machine has none')],
+    ]);
+    expect(messages[1]?.segments.at(-1)).toEqual({
+      kind: 'toolResult', text: 'Output: ./deploy.sh: line 12: jq: command not found\nExit Code: 127', toolUseId: 'gemini-run_shell_command_1',
+    });
+    // What regression/gemini taps: the folded run, then its call.
+    const runs = threadItems(messages, { showSidechain: false }).flatMap((placed) => (placed.item.kind === 'tools' ? [placed.item] : []));
+    expect(runs.map((run) => [toolRunSummary(run.calls, run.thoughts.length), run.calls.map((call) => toolCallLine(call))]))
+      .toEqual([['Thought', []], ['Ran 1 command', [{ verb: 'Run', detail: './deploy.sh --dry-run' }]]]);
+    const preview = await store.latestMessages([{ workspaceId: 'wB', key: 'wB:p1', cwd: gemini.cwd, sessionId: path, sessionKind: 'path', agent: 'gemini' }]);
+    expect(displayText(preview.get('wB:p1')!)).toContain('clean machine has none');
+
+    await client.sendPrompt('wB:p1', 'and on CI?');
+    now += 10_000;
+    const after = (await store.recent(path!, null, 100)).messages;
+    expect(after.slice(-2).map((message) => [message.role, displayText(message)]))
+      .toEqual([['user', 'and on CI?'], ['assistant', expect.stringContaining('and on CI?')]]);
   });
 
   // An agent with no reader: its screen is its chat, and a prompt lands on it.
@@ -262,7 +298,7 @@ describe('DemoHost as an agent', () => {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
-      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets']);
+      .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets', 'scripts']);
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

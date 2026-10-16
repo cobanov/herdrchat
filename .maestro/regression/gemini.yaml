@@ -1,0 +1,43 @@
+# A Gemini CLI chat on the Demo: its session log, found by the path
+# HerdrChat's hook reported, its model in the header, a tool run whose result
+# came as the same message written again, a message sent and answered.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-wB
+    direction: DOWN
+    centerElement: true
+- assertVisible: .*Gemini.*
+- takeScreenshot: gemini-row-${APPEARANCE}
+- tapOn:
+    id: chat-row-wB
+- extendedWaitUntil:
+    visible: .*clean machine has none.*
+    timeout: 15000
+- assertVisible: .*gemini-3-pro-preview.*
+- waitForAnimationToEnd
+- tapOn: Ran 1 command
+# A list still scrolling to its end takes the first tap as "stop" on the
+# simulator; if the run did not open, tap it once more.
+- runFlow:
+    when:
+      notVisible: Run ./deploy.sh --dry-run
+    commands:
+      - waitForAnimationToEnd
+      - tapOn: Ran 1 command
+- tapOn: Run ./deploy.sh --dry-run
+- assertVisible: '(?s).*jq: command not found.*'
+- takeScreenshot: gemini-tool-${APPEARANCE}
+- tapOn:
+    id: composer-input
+- inputText: and on CI?
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*You said .and on CI\?.*
+    timeout: 15000
+- assertNotVisible: .*Failed to send.*
+- takeScreenshot: gemini-thread-${APPEARANCE}
+- tapOn:
+    id: thread-back

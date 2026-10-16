@@ -7,12 +7,16 @@
  * here plus, for its history, a reader in `src/lib/transcript/`.
  */
 
+import { installGeminiHook } from './geminiHook';
+import type { HerdrTransport } from './transport';
+
 /**
  * Which transcript reader serves an agent's history: where its sessions are
  * filed and in what format. Grok's is a log of ACP `session/update`s;
- * Antigravity's a log of its conversation's steps.
+ * Antigravity's a log of its conversation's steps; Gemini CLI's a log of
+ * messages, each written again as it changes.
  */
-export type HistoryReader = 'claude' | 'codex' | 'pi' | 'grok' | 'agy';
+export type HistoryReader = 'claude' | 'codex' | 'pi' | 'grok' | 'agy' | 'gemini';
 
 export interface AgentSpec {
   /** How a person sees it named. */
@@ -24,6 +28,11 @@ export interface AgentSpec {
    * agent herdr detects but has no integration for.
    */
   integration: string | null;
+  /**
+   * For an agent herdr has no integration for: installs HerdrChat's own hook
+   * on the host, which reports the session in the integration's place.
+   */
+  installHook?: (transport: HerdrTransport) => Promise<void>;
   /**
    * The terminal titles it sets before a conversation has a topic, which name
    * no chat (`Claude Code` in every pane).
@@ -95,6 +104,20 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     // numbers and takes the arrows.
     digitAnswers: true,
     missing: 'The Antigravity conversation is identified, but its transcript is not in ~/.gemini/antigravity-cli/brain on this host. Resume that exact conversation on the host, then reload.',
+  },
+  // Gemini CLI. herdr detects it but has no integration for it; HerdrChat's
+  // hook reports the log's path (`geminiHook.ts`). Until it has, the chat is
+  // its screen, as for an agent with no reader.
+  gemini: {
+    name: 'Gemini',
+    reader: 'gemini',
+    integration: null,
+    installHook: installGeminiHook,
+    // Before it starts, the shell's command title. Gemini's own titles are a
+    // status and the folder (`◇  Ready (app)`, windowTitle.ts in 0.64), never
+    // a topic, so `sessionTitle` reads none of them.
+    defaultTitles: ['gemini'],
+    missing: 'The Gemini session is identified, but its log is not in ~/.gemini/tmp on this host. Resume that exact session on the host, then reload.',
   },
   letta: { name: 'Letta', reader: null, integration: null, defaultTitles: [], missing: MISSING },
 };

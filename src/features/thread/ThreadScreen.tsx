@@ -272,6 +272,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
               agent={agentName(thread.agents.find((agent) => agent.agent !== null)?.agent ?? null)}
               topInset={headerHeight}
               bottomInset={bottomClearance}
+              onInstall={integration.install}
+              installing={integration.installing}
+              installError={integration.installError}
             />
           ) : thread.loading || rows.length === 0 ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>

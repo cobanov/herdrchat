@@ -48,6 +48,7 @@ import {
   grokLine,
   agyLine,
   demoAgyPath,
+  geminiLine,
   DEMO_SCREEN_SESSION,
   demoGrokPath,
   DEMO_HOME,
@@ -332,6 +333,8 @@ export class DemoHost implements HerdrTransport {
       if (grokSession !== undefined) this.paths.set(demoGrokPath(pane.cwd, grokSession), pane.paneId);
       const agySession = fixtures.agySessions[pane.paneId];
       if (agySession !== undefined) this.paths.set(demoAgyPath(agySession), pane.paneId);
+      const geminiPath = fixtures.geminiPaths[pane.paneId];
+      if (geminiPath !== undefined) this.paths.set(geminiPath, pane.paneId);
       const session = fixtures.sessionIds[pane.paneId];
       if (session !== undefined) {
         const dir = projectDirName(pane.cwd);
@@ -639,7 +642,8 @@ export class DemoHost implements HerdrTransport {
   /** True for a pane running Claude, the only agent with commands, shell mode and subagents here. */
   private isClaude(paneId: string): boolean {
     return this.fixtures.ompPaths[paneId] === undefined && this.fixtures.grokSessions[paneId] === undefined &&
-      this.fixtures.agySessions[paneId] === undefined && !this.isScreen(paneId);
+      this.fixtures.agySessions[paneId] === undefined && this.fixtures.geminiPaths[paneId] === undefined &&
+      !this.isScreen(paneId);
   }
 
   /** A prompt or reply in the pane's own agent's format. */
@@ -648,6 +652,7 @@ export class DemoHost implements HerdrTransport {
     if (this.fixtures.ompPaths[paneId] !== undefined) return ompLine(role, text, this.uuid(), this.stamp());
     if (this.fixtures.grokSessions[paneId] !== undefined) return grokLine(role, text, this.uuid(), this.stamp());
     if (this.fixtures.agySessions[paneId] !== undefined) return agyLine(role, text, ++this.counter, this.stamp());
+    if (this.fixtures.geminiPaths[paneId] !== undefined) return geminiLine(role, text, this.uuid(), this.stamp());
     return role === 'user' ? userLine(text, this.uuid(), this.stamp()) : replyLine(text, this.uuid(), this.stamp());
   }
 
@@ -700,6 +705,8 @@ export class DemoHost implements HerdrTransport {
           ? { agent: 'grok', kind: 'id', source: 'herdr:grok', value: this.fixtures.grokSessions[pane.paneId] ?? null }
           : pane.agent === 'agy'
             ? { agent: 'agy', kind: 'id', source: 'herdr:antigravity_cli', value: this.fixtures.agySessions[pane.paneId] ?? null }
+          : pane.agent === 'gemini'
+            ? { agent: 'gemini', kind: 'path', source: 'herdrchat:gemini', value: this.fixtures.geminiPaths[pane.paneId] ?? null }
           : pane.agent === 'opencode'
             ? { agent: 'opencode', kind: 'id', source: 'herdr:opencode', value: DEMO_SCREEN_SESSION }
           : { agent: 'claude', kind: 'id', source: 'herdr:claude', value: this.fixtures.sessionIds[pane.paneId] ?? null },

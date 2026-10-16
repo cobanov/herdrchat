@@ -387,7 +387,7 @@ export function toolCallLine(call: ToolCall): { verb: string; detail: string } {
 }
 
 export function toolKind(name: string): ToolKind {
-  // Claude names its tools in PascalCase, Codex, OMP, Grok and Antigravity in lower case.
+  // Claude names its tools in PascalCase, Codex, OMP, Grok, Antigravity and Gemini in lower case.
   const key = name.toLowerCase();
   if (COMMAND_TOOLS.has(key)) return 'command';
   if (EDIT_TOOLS.has(key)) return 'edit';
@@ -504,12 +504,12 @@ function workflowTitle(input: string | null): { name: string; description: strin
   return { name: meta.name ?? WORKFLOW_FALLBACK_NAME, description: meta.description };
 }
 
-/** Tool names, lower-cased: Claude's, Codex's and OMP's. */
-const COMMAND_TOOLS = new Set(['bash', 'bashoutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin', 'run_terminal_command', 'run_command']);
-const EDIT_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'search_replace', 'edit_file']);
-const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search', 'tool_search', 'list_dir', 'search_web']);
+/** Tool names, lower-cased: Claude's, Codex's, OMP's, Grok's, Antigravity's and Gemini CLI's. */
+const COMMAND_TOOLS = new Set(['bash', 'bashoutput', 'exec', 'exec_command', 'shell', 'local_shell', 'container.exec', 'write_stdin', 'run_terminal_command', 'run_command', 'run_shell_command']);
+const EDIT_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'search_replace', 'edit_file', 'write_file', 'replace']);
+const SEARCH_TOOLS = new Set(['grep', 'glob', 'find', 'ls', 'websearch', 'toolsearch', 'web_search', 'tool_search', 'list_dir', 'search_web', 'grep_search', 'list_directory', 'google_web_search']);
 const FETCH_TOOLS = new Set(['webfetch', 'fetch', 'web_fetch']);
-const TODO_TOOLS = new Set(['todowrite', 'taskcreate', 'taskupdate', 'update_plan', 'todo']);
+const TODO_TOOLS = new Set(['todowrite', 'taskcreate', 'taskupdate', 'update_plan', 'todo', 'write_todos']);
 
 /** A turn's shell command and output, or null when it carries neither. */
 function shellParts(message: ChatMessage): { command: string | null; output: { stdout: string; stderr: string } | null } | null {
