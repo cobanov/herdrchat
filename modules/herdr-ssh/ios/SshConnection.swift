@@ -297,12 +297,22 @@ actor SshConnection {
     do {
       return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
     } catch let failure as SshFailure {
-      if failure.code == "transport_failed" { await resetClient() }
+      if failure.code == "transport_failed" { await resetIfDisconnected() }
       throw failure
     } catch {
-      await resetClient()
+      await resetIfDisconnected()
       throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
     }
+  }
+
+  /// A failed command is not a failed connection. A host at its session limit
+  /// (OpenSSH `MaxSessions`, 10 by default) refuses a channel on a link that is
+  /// fine, and dropping the client for that killed every live tail and the
+  /// event stream with it. Only a client that lost its connection goes; a
+  /// deadline still drops it (`withDeadline`), for the half-open socket.
+  private func resetIfDisconnected() async {
+    if let client, client.isConnected { return }
+    await resetClient()
   }
 
   /// Race an operation against its deadline.
