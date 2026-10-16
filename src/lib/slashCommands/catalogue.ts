@@ -10,7 +10,7 @@
  * not run again on every scan.
  */
 import { SLASH_GREP_RETRY_MS } from '../herdr/timeouts';
-import { CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from './builtins';
+import { AGY_BUILTINS, CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from './builtins';
 import { dedupeCommands, type ScanResult } from './parse';
 import type { CatalogueAgent, CatalogueCommand, CommandSection, CommandSource } from './types';
 
@@ -102,6 +102,7 @@ export function catalogueFor(
 ): CatalogueCommand[] {
   if (agent === 'codex') return [...CODEX_BUILTINS];
   if (agent === 'grok') return [...GROK_BUILTINS];
+  if (agent === 'agy') return [...AGY_BUILTINS];
   const builtins = cache === null || cache.builtins.length === 0 ? CLAUDE_BUILTINS : cache.builtins;
   if (cache === null) return dedupeCommands(builtins);
   const project = cwd === null ? [] : (cache.projects[cwd] ?? []);

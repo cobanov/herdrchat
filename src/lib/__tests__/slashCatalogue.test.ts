@@ -3,7 +3,7 @@ import { DemoHost } from '../demo/host';
 import { DEMO_CLAUDE_BINARY, DEMO_CLAUDE_BINARY_STAT, DEMO_NOTES_CWD } from '../demo/slashCommands';
 import { SLASH_GREP_RETRY_MS, SLASH_SCAN_INTERVAL_MS, SLASH_SCAN_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
-import { CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from '../slashCommands/builtins';
+import { AGY_BUILTINS, CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from '../slashCommands/builtins';
 import {
   applyScan,
   catalogueFor,
@@ -183,6 +183,17 @@ describe('picking a command', () => {
     }
     expect(pickSlashCommand(grok('context')).action).toBe('send');
     expect(new Set(GROK_BUILTINS.map((entry) => entry.name)).size).toBe(GROK_BUILTINS.length);
+  });
+
+  // Antigravity's menu, from its own registry: the commands that end the
+  // conversation or the CLI are filled, the rest run on a tap.
+  it("offers Antigravity's commands, and fills those that end the conversation", () => {
+    expect(catalogueFor(null, 'agy', null).map((entry) => entry.name)).toEqual(AGY_BUILTINS.map((entry) => entry.name));
+    const agy = (name: string) => AGY_BUILTINS.find((entry) => entry.name === name)!;
+    for (const name of ['clear', 'exit', 'logout']) expect(pickSlashCommand(agy(name)).action).toBe('fill');
+    expect(pickSlashCommand(agy('context')).action).toBe('send');
+    expect(pickSlashCommand(agy('codesearch'))).toEqual({ action: 'fill', text: '/codesearch ', placeholder: '<query>' });
+    expect(new Set(AGY_BUILTINS.map((entry) => entry.name)).size).toBe(AGY_BUILTINS.length);
   });
 });
 
