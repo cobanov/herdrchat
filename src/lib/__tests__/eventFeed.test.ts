@@ -1,4 +1,4 @@
-import { EventFeed, interpret, RESYNC_EVENT, subscriptionsFor, type HostEvent } from '../herdr/events';
+import { concernsWorkspace, EventFeed, interpret, RESYNC_EVENT, subscriptionsFor, type HostEvent } from '../herdr/events';
 import { HerdrError } from '../herdr/protocol';
 import type { HerdrSocket, SocketEvent, Subscription } from '../herdr/socket';
 
@@ -264,4 +264,14 @@ describe('EventFeed', () => {
     await jest.advanceTimersByTimeAsync(120_000);
     expect(socket.calls).toHaveLength(1);
   });
+});
+
+// Another workspace's change woke every open chat's poll.
+it('tells an open chat which events are about it', () => {
+  const event = (workspaceId: string | null): HostEvent => ({ event: 'workspace.renamed', paneId: null, workspaceId, data: {} });
+  expect(concernsWorkspace(event('w2'), 'w2')).toBe(true);
+  expect(concernsWorkspace(event('w5'), 'w2')).toBe(false);
+  expect(concernsWorkspace(RESYNC_EVENT, 'w2')).toBe(true);
+  const exited = interpret({ kind: 'event', event: 'pane.exited', data: { pane_id: 'w5:p2' } } as never);
+  expect(concernsWorkspace(exited!, 'w2')).toBe(false);
 });
