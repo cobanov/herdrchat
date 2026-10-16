@@ -101,6 +101,23 @@ struct SshConfigRecord {
     precondition(!FileManager.default.fileExists(atPath: alive), "The wrapped command outlived its stream")
     print("PASS a wrapped stream runs while open and stops, with its cleanup, when cancelled")
 
+    // HC-95: a stream that is also written to, as the host's long-lived
+    // socket bridge is. Lines written to its stdin come back on its stdout.
+    let echoed = LineBox()
+    let input = InputBox()
+    let echo = try await connection.startStream(
+      "cat", startTimeoutMs: 5000,
+      onLine: { echoed.append($0) }, onEnd: { _ in }, onError: { _, _ in },
+      onInput: { input.set($0) }
+    )
+    guard let stdin = input.get() else { preconditionFailure("A started stream gave no stdin") }
+    for line in ["one", "two {\"id\":\"hc:x:1\"}"] { try await stdin.write(line + "\n") }
+    for _ in 0..<100 where echoed.count < 2 { try await Task.sleep(nanoseconds: 20_000_000) }
+    precondition(echoed.lines == ["one", "two {\"id\":\"hc:x:1\"}"], "stdin lines came back as \(echoed.lines)")
+    echo.cancel()
+    await echo.value
+    print("PASS a stream takes lines on its stdin and answers on its stdout")
+
     // #84: after a reset, the poll, tail, feed and previews all dial at once.
     // They must share one connection, not open one each and leak the extras.
     // `$SSH_CLIENT` carries the client's source port, so distinct values mean
@@ -322,4 +339,19 @@ struct SshConfigRecord {
     dropped.close()
     print("PASS PTY shell: clean output, typing, resize, exit status, hang-up, lost connection")
   }
+}
+
+final class LineBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var stored: [String] = []
+  var lines: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+  var count: Int { lines.count }
+  func append(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+}
+
+final class InputBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var input: StreamInput?
+  func set(_ value: StreamInput) { lock.lock(); input = value; lock.unlock() }
+  func get() -> StreamInput? { lock.lock(); defer { lock.unlock() }; return input }
 }
