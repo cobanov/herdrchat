@@ -4,11 +4,13 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-- scrollUntilVisible:
-    element:
-      id: chat-row-w5
-    direction: DOWN
-    centerElement: true
+# Found by searching, not by scrolling: the Demo's list is longer than a
+# screen, and its rows move between groups as agents finish, so a scrolled
+# row could be under the search field by the time it was tapped.
+- tapOn:
+    id: chat-search
+- inputText: journal
+- hideKeyboard
 - tapOn:
     id: chat-row-w5
 # Opens on the end of the conversation.
