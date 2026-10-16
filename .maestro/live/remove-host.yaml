@@ -1,0 +1,34 @@
+# Remove the host a live run added, by its id, which scripts/e2e-live.sh reads
+# from the app's database: Hosts, the Remove under its row, the confirmation.
+# The script then checks the database that it is gone. (The row reads to
+# VoiceOver as "Use <name>", so the name alone is no element to find.)
+appId: dev.herdr.HerdrChat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+    timeout: 20000
+- tapOn:
+    id: server-switcher
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: Hosts
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: server-${ID}
+    direction: DOWN
+- tapOn:
+    text: Remove
+    below:
+      id: server-${ID}
+# The confirmation is the system alert: its Remove is the one beside Cancel.
+- tapOn:
+    text: Remove
+    rightOf:
+      text: Cancel
+- extendedWaitUntil:
+    notVisible:
+      id: server-${ID}
+    timeout: 10000

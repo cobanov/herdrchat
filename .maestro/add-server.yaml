@@ -5,7 +5,12 @@
 # `herdr status server` all worked end to end.
 #
 # Needs HOST, USERNAME and SSH_KEY in the environment, see .maestro/README.md.
+# PORT and NAME are optional; scripts/e2e-live.sh sets both.
 appId: dev.herdr.HerdrChat
+# A plain value here would win over `-e`; `||` keeps it a default.
+env:
+  PORT: ${PORT || '22'}
+  NAME: ${NAME || 'test-host'}
 ---
 - stopApp
 - launchApp
@@ -25,11 +30,15 @@ appId: dev.herdr.HerdrChat
 
 - tapOn:
     id: "field-name"
-- inputText: "test-host"
-- assertVisible: "test-host"
+- inputText: ${NAME}
+- assertVisible: ${NAME}
 - tapOn:
     id: "field-host"
 - inputText: ${HOST}
+- tapOn:
+    id: "field-port"
+- eraseText
+- inputText: ${PORT}
 - tapOn:
     id: "field-username"
 - inputText: ${USERNAME}

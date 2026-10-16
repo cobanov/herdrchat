@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { DEMO_WORKING_SCREEN } from '../demo/scenarios';
+import { DEMO_GROK_WORKING_SCREEN, DEMO_WORKING_SCREEN } from '../demo/scenarios';
 import { extractLivePreview } from '../transcript/livePreview';
 
 const screen = (name: string) => readFileSync(join(__dirname, 'fixtures/screens', name), 'utf8');
@@ -47,4 +47,32 @@ it('takes the spinner, not a finished turn above it, as the anchor', () => {
   // line is chrome, and its answer is above the new prompt.
   const starting = [...lines.slice(0, 3), '', '❯ Now the next part', '', '─'.repeat(40), '❯', '─'.repeat(40), '  esc to interrupt'];
   expect(extractLivePreview(starting.join('\n'))).toBeNull();
+});
+
+/**
+ * Found by the live run (scripts/e2e-live.sh): under a Grok reply, "⠋ Thinking…
+ * 0.0s 2.6s ⇣1.46k [stop]" showed as the answer above the app's own "Writing…".
+ * Grok's spinner is a braille glyph, which the anchor did not know. These are
+ * Grok 4.7's screens, read with `herdr pane read`: waiting, writing with the
+ * last line of a list in view, and writing with the reply scrolled away and
+ * only the scrollbar beside the blank rows.
+ */
+it.each(['grok-waiting.txt', 'grok-responding.txt', 'grok-responding-scrolled.txt'])(
+  'shows none of Grok\'s status line as the answer (%s)',
+  (name) => {
+    expect(extractLivePreview(screen(name))).toBeNull();
+  }
+);
+
+// The Demo's Grok works under the same kind of screen (regression/grok).
+it('shows nothing for the Demo\'s Grok at work', () => {
+  expect(extractLivePreview(DEMO_GROK_WORKING_SCREEN)).toBeNull();
+});
+
+it('shows the prose above Grok\'s spinner', () => {
+  const writing = screen('grok-responding-scrolled.txt').replace(
+    '   ⠙ Responding…',
+    '   A tide pool keeps its water when the sea falls back, so its animals stay wet.\n   ⠙ Responding…'
+  );
+  expect(extractLivePreview(writing)).toBe('A tide pool keeps its water when the sea falls back, so its animals stay wet.');
 });

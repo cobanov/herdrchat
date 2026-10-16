@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test": "jest",
-    "e2e": "sh scripts/e2e.sh"
+    "e2e": "sh scripts/e2e.sh",
+    "e2e:live": "sh scripts/e2e-live.sh"
   },
   "dependencies": {
     "@react-native-masked-view/masked-view": "0.3.2",

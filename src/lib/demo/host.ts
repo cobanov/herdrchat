@@ -27,6 +27,7 @@ import {
   DEMO_TABLE_REPLY,
   DEMO_THINK_REPLY,
   DEMO_WORKING_SCREEN,
+  DEMO_GROK_WORKING_SCREEN,
   demoShellOutput,
   TRUST_OPTIONS,
   trustScreen,
@@ -983,15 +984,18 @@ export class DemoHost implements HerdrTransport {
     return silent();
   }
 
-  /** A long turn, working under the spinner until the reply lands. */
+  /** A long turn, working under the spinner until the reply lands: Claude's, or Grok's in its pane. */
   private thinkItOver(paneId: string): ExecResult {
+    const grok = this.fixtures.grokSessions[paneId] !== undefined;
     this.statuses.set(paneId, 'working');
     this.pending.push({
       paneId,
       prompt: '',
       dueAt: this.now() + THINK_MS,
-      screen: DEMO_WORKING_SCREEN,
-      lines: (next, timestamp) => [replyLine(DEMO_THINK_REPLY, next(), timestamp)],
+      screen: grok ? DEMO_GROK_WORKING_SCREEN : DEMO_WORKING_SCREEN,
+      lines: (next, timestamp) => [
+        grok ? this.lineFor(paneId, 'assistant', DEMO_THINK_REPLY) : replyLine(DEMO_THINK_REPLY, next(), timestamp),
+      ],
     });
     return silent();
   }
