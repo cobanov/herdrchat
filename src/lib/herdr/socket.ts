@@ -495,16 +495,23 @@ const PYTHON_BRIDGE = [
  * tools?" dialog when they are missing, on the host's screen, where nobody is
  * looking. So on Darwin it only counts when `xcode-select -p` says the tools
  * are there. Homebrew's python3 is fine anywhere.
+ *
+ * A Windows host (Git Bash, MSYS, Cygwin) never gets the python bridge:
+ * Windows CPython has no `AF_UNIX`, and stock Windows answers `command -v
+ * python3` with the Microsoft Store stub, which exits 49 (#158). Nor herdr's
+ * `remote-api-bridge`, which passes its check there and then answers nothing
+ * (herdrdev/herdr#5128). So it lands on the CLI: polling, no live events.
+ * shortcut: Windows skips remote-api-bridge outright; drop that once herdr#5128 ships a fix.
  */
 export function probeScript(herdr: string): string {
   const h = commandWord(herdr);
   return [
     `sock=$(${h} status server 2>/dev/null | sed -n 's/^socket: //p' | head -n 1)`,
     '[ -n "$sock" ] || sock="${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}"',
-    'py=$(command -v python3 2>/dev/null)',
+    'case "$(uname)" in MINGW*|MSYS*|CYGWIN*) win=1; py= ;; *) win=; py=$(command -v python3 2>/dev/null) ;; esac',
     'if [ -n "$py" ] && { [ "$(uname)" != Darwin ] || [ "$py" != /usr/bin/python3 ] || xcode-select -p >/dev/null 2>&1; }; then b=python3',
     `elif ${h} api-bridge >/dev/null 2>&1; then b=api-bridge`,
-    `elif [ "$(${h} remote-api-bridge --check </dev/null 2>/dev/null)" = herdr-api-bridge-v1 ]; then b=remote-api-bridge`,
+    `elif [ -z "$win" ] && [ "$(${h} remote-api-bridge --check </dev/null 2>/dev/null)" = herdr-api-bridge-v1 ]; then b=remote-api-bridge`,
     'else b=none; fi',
     'echo "BRIDGE $b"; echo "SOCK $sock"',
   ].join('; ');
