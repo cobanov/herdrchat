@@ -73,7 +73,8 @@ reader for its history, its herdr integration and its default titles live in
 that table; `TranscriptStore.transcriptPath` picks the lookup by the reader. A
 new agent is an entry there, a parser under `src/lib/transcript/` and a Demo
 pane, never another `=== 'codex'` branch in a feature. An agent with no
-reader stays a terminal row: the Terminal tab already covers it.
+reader stays a terminal row: the Terminal tab already covers it. Every step
+is in `docs/adding-an-agent.md`.
 
 **Live tails are keyed by session id, never by cwd.** Two agents in one
 directory collapse onto a single map entry, and the second one silently never

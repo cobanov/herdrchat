@@ -30,6 +30,8 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 - assertVisible: herdr, running
 - assertVisible: Tailscale, recommended
+# Every agent the app reads, Antigravity included.
+- assertVisible: .*Grok, Antigravity, Pi or OMP.*
 - assertVisible: Read the setup guide
 - takeScreenshot: welcome-2-${APPEARANCE}
 - tapOn:
