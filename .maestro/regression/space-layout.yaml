@@ -215,3 +215,19 @@ appId: dev.herdr.HerdrChat
     notVisible:
       id: space-layout-sheet
     timeout: 5000
+
+# w9 ("docs") holds only OpenCode, which the app cannot read: a terminal row
+# under the card, and still the space's one agent (HC-135).
+- tapOn:
+    id: chat-search
+- eraseText: 40
+- inputText: docs
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: terminal-row-w9:p1
+    timeout: 10000
+- assertVisible:
+    id: chat-row-w9
+    text: 'docs, 1 agent · 1 tab · 1 pane · demo/docs.*'
+- takeScreenshot: space-unreadable-agent-${APPEARANCE}
