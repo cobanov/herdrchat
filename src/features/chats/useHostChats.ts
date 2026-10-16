@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { HerdrClient } from '@/lib/herdr/client';
+import type { HerdrErrorCode } from '@/lib/herdr/protocol';
 import { machineConnectionId, type HostMachine } from '@/lib/herdr/machines';
 import { clientFor, machineConnection, type ServerConnection } from '@/state/connections';
 import { enabledMachines, useHostMachines } from '@/state/hostMachines';
@@ -35,7 +36,7 @@ import { useWorkspaces, type ChatSummary } from './useWorkspaces';
 export interface MachineFeed {
   summaries: ChatSummary[];
   error: string | null;
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   refresh: () => Promise<void>;
 }
 
@@ -75,7 +76,7 @@ export interface HostChatsState {
   summaries: ListedChat[];
   loading: boolean;
   error: string | null;
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   notices: MachineNoticeRow[];
   /** The host's id and each enabled machine's: whose reads and prefs to load. */
   connectionIds: readonly string[];

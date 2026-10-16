@@ -11,7 +11,7 @@ import {
   launchCommand,
   type PermissionMode,
 } from '@/lib/herdr/permissionMode';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText } from '@/lib/herdr/protocol';
 import { getSetting, setSetting } from '@/state/db';
 
 /** The agents a new chat can start. All have chat support once running. */
@@ -109,7 +109,7 @@ export function useStartChat(connectionId: string | null) {
       if (choice.agent === 'claude') await setSetting(db, key('permissionMode'), choice.mode);
       return creation;
     } catch (thrown) {
-      setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      setError(errorText(thrown));
       setCreating(false);
       return null;
     }

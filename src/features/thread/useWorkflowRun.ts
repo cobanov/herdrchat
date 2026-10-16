@@ -16,6 +16,7 @@ import {
   type WorkflowRun,
 } from '@/lib/subagents/workflowRun';
 import type { DelegationState } from '@/lib/threadItems';
+import { errorText } from '@/lib/herdr/protocol';
 
 export { resumeStaleRuns, type RunEntry } from '@/features/thread/workflowRuns';
 
@@ -104,7 +105,7 @@ export function refreshRun(
   })()
     .catch((thrown: unknown) => {
       const { entries, put } = useRuns.getState();
-      put(key, { ...(entries[key] ?? EMPTY), error: thrown instanceof Error ? thrown.message : String(thrown) });
+      put(key, { ...(entries[key] ?? EMPTY), error: errorText(thrown) });
     })
     .finally(() => inflight.delete(key));
   inflight.set(key, read);

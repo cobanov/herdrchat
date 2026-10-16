@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { HerdrClient, IntegrationName } from '@/lib/herdr/client';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText } from '@/lib/herdr/protocol';
 
 export interface OutdatedIntegrations {
   /** Integrations the host reports as outdated. Empty when none, or unknown. */
@@ -44,7 +44,7 @@ export function useOutdatedIntegrations(client: HerdrClient | null): OutdatedInt
       for (const name of outdated) await client.installIntegration(name);
       setOutdated((await client.outdatedIntegrations()) ?? []);
     } catch (thrown) {
-      setError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      setError(errorText(thrown));
     } finally {
       setUpdating(false);
     }

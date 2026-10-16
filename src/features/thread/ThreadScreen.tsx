@@ -57,7 +57,7 @@ import { composerInset } from '@/lib/composerInset';
 import { haptics } from '@/components/haptics';
 import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
 import { isShellDraft } from '@/lib/shellMode';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText } from '@/lib/herdr/protocol';
 import {
   clientFor,
   isMachineConnection,
@@ -89,7 +89,7 @@ async function gatherAttachments(source: 'library' | 'paste', room: number): Pro
     const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
     return { ready: added.filter((item): item is Attachment => item !== null) };
   } catch (thrown) {
-    return { error: `Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}` };
+    return { error: `Couldn't add the picture: ${errorText(thrown)}` };
   }
 }
 
@@ -350,7 +350,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
         setInstallError(null);
       })
       .catch((thrown: unknown) => {
-        setInstallError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setInstallError(errorText(thrown));
       })
       .finally(() => setInstalling(false));
   }, [client, installing, agentKind]);

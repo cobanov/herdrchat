@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { publishMutedChats } from '@/features/notifications/mutedChats';
 import { prefSource, type ChatPref, type PrefRef } from '@/lib/chatPrefs';
+import { errorText } from '@/lib/herdr/protocol';
 import { haptics } from '@/components/haptics';
 import type { ServerConnection } from '@/state/connections';
 import { loadChatPrefs, saveChatPref } from '@/state/db';
 import { agentPrefRow } from './agentRows';
 import { paneChats } from './chatGroups';
 import { rowKey, type ListedChat } from './listedChat';
-import { errorText } from './useWorkspaces';
 
 /**
  * Pinned and muted chats on one host, and the two toggles.

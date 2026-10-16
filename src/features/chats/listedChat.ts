@@ -1,3 +1,4 @@
+import type { HerdrErrorCode } from '@/lib/herdr/protocol';
 import type { ThreadRead } from '@/lib/unread';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
@@ -96,12 +97,12 @@ export function openFor(open: OpenChat | null, summary: Pick<ListedChat, 'connec
  * now."). Anything else is herdr's own sentence about the machine, which does
  * not say which machine it is, so the label goes first.
  */
-export function machineNotice(label: string, error: string, errorCode: string | null): string {
+export function machineNotice(label: string, error: string, errorCode: HerdrErrorCode | null): string {
   if (errorCode !== null && NAMES_THE_MACHINE.has(errorCode) && error.includes(label)) return error;
   return `${label}: ${error}`;
 }
 
-const NAMES_THE_MACHINE: ReadonlySet<string> = new Set([
+const NAMES_THE_MACHINE: ReadonlySet<HerdrErrorCode> = new Set<HerdrErrorCode>([
   'connect_failed', 'machine_auth_failed', 'machine_host_key', 'machine_timeout',
   'herdr_not_found', 'herdr_not_on_path', 'herdr_not_executable',
 ]);

@@ -7,6 +7,7 @@ import { agentIdFromPath } from '@/lib/subagents/paths';
 import type { ChatMessage } from '@/lib/transcript/message';
 import { TranscriptStore } from '@/lib/transcript/store';
 import { continueWindow } from '@/lib/transcript/window';
+import { errorText, HerdrError } from '@/lib/herdr/protocol';
 import { appendMessages, rebind, replaceMessages, seedMessages } from '@/state/threadCache';
 
 /** Lines a subagent's thread opens with, as the main thread's (see `useThread`). */
@@ -124,7 +125,7 @@ export function useTranscript(
           }, SUBAGENT_RESOLVE_RETRY_MS);
           return;
         }
-        if (probe.kind === 'unknown') throw new Error(`Couldn't read this agent's transcript: ${probe.reason}`);
+        if (probe.kind === 'unknown') throw new HerdrError('transcript_unreadable', `Couldn't read this agent's transcript: ${probe.reason}`);
         const recent = await store.recent(path, null, RECENT_LINES, probe.bytes);
         if (!alive) return;
         await replaceMessages(db, connectionId, cacheKey, agentId, recent.messages);
@@ -142,7 +143,7 @@ export function useTranscript(
       } catch (thrown) {
         if (!alive) return;
         setLoading(false);
-        setError(thrown instanceof Error ? thrown.message : String(thrown));
+        setError(errorText(thrown));
       }
     })();
     return () => {
@@ -193,7 +194,7 @@ export function useTranscript(
         if (controller.signal.aborted) return;
         // Usually the phone slept and took the stream with it: say so, and
         // follow again from where it stopped.
-        setError(`Updates paused. Reconnecting. ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+        setError(`Updates paused. Reconnecting. ${errorText(thrown)}`);
         setTimeout(() => {
           if (controller.signal.aborted) return;
           setError(null);
