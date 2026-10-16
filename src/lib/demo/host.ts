@@ -402,8 +402,10 @@ export class DemoHost implements HerdrTransport {
         return;
       }
     }
-    const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
+    // `tailScript` frames each line with its size; a bare `tail -f` does not.
+    const follow = /^tail -c \+(\d+) -f '(.+?)'( \| LC_ALL=C awk '[^']*')?$/.exec(withoutPath(command));
     if (follow === null) return;
+    const framed = follow[3] !== undefined;
 
     const path = follow[2]!;
     let cursor = Number(follow[1]) - 1;
@@ -418,7 +420,7 @@ export class DemoHost implements HerdrTransport {
         // incomplete line, or the empty string. Either way it is not ours yet.
         for (const line of lines.slice(0, -1)) {
           cursor += byteLength(line) + 1;
-          if (line.length > 0) yield line;
+          if (line.length > 0) yield framed ? `${byteLength(line)}\t${line}` : line;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, TAIL_POLL_MS));
