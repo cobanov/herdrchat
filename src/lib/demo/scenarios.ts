@@ -138,6 +138,21 @@ export const DEMO_WORKING_SCREEN = [
   '  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt',
 ].join('\n');
 
+/**
+ * The same for Grok, shaped like Grok 4.7's own screen: it keeps its reply
+ * scrolled out of view, so only its scrollbar is beside the blank rows, then
+ * its braille spinner and timer, and its composer box. The preview took the
+ * spinner line for the answer (src/lib/__tests__/fixtures/screens/grok-*).
+ */
+export const DEMO_GROK_WORKING_SCREEN = [
+  ...Array.from({ length: 6 }, () => `${' '.repeat(100)}█`),
+  `   ⠙ Responding… 0.4s${' '.repeat(70)}14s ⇣24.4k [stop]`,
+  `  ╭${'─'.repeat(96)}╮`,
+  `  │ ❯${' '.repeat(94)}│`,
+  `  ╰${'─'.repeat(60)} Grok 4.7 (xhigh) · always-approve ─╯`,
+  '  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts',
+].join('\n');
+
 export const DEMO_THINK_REPLY = 'Thought it over. The plan holds: ship the fix first, then the follow-ups.';
 
 // MARK: - A table

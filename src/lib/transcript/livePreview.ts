@@ -105,13 +105,14 @@ function isComposerFooter(line: string): boolean {
  * Claude's spinner or the line after a turn: a glyph, then a word. Starting
  * with one, not containing one: `·` is among the glyphs, and Claude's update
  * notice ("✔ Update installed · Restart to update") anchored the preview below
- * the spinner, which was then shown as the answer.
+ * the spinner, which was then shown as the answer. Grok's glyph is a braille
+ * dot pattern ("⠋ Responding… 0.8s").
  */
 function isSpinnerLike(line: string): boolean {
-  return SPINNER_GLYPHS.includes(line.charAt(0)) && /^.\s+\p{L}/u.test(line);
+  return (SPINNER_GLYPHS.includes(line.charAt(0)) || /^[\u2801-\u28ff]/u.test(line)) && /^.\s+\p{L}/u.test(line);
 }
 
-/** The spinner while Claude works ("✶ Propagating…"), not a finished turn's "✻ Worked for 1m". */
+/** The spinner while an agent works ("✶ Propagating…"), not a finished turn's "✻ Worked for 1m". */
 function isSpinnerLine(line: string): boolean {
   return isSpinnerLike(line) && line.includes('…');
 }
@@ -146,6 +147,8 @@ function isChrome(line: string): boolean {
   if (/^[-─=]+$/.test(line)) return true;
   // Codex animates a braille-dot field even without the queued-input panel.
   if (/^[\s\u2800-\u28ff]+$/u.test(line)) return true;
+  // A scrollbar beside blank rows: Grok keeps its reply scrolled out of view.
+  if (/^[\s\u2580-\u259f]+$/u.test(line)) return true;
   const lower = line.toLowerCase();
   return (
     lower.includes('manual mode') ||
