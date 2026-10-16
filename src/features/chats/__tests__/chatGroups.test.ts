@@ -74,6 +74,17 @@ it('finds an agent row by its folder or provider, and every agent by the workspa
   expect(groupChats([api], 'missing')).toEqual([]);
 });
 
+// herdr calls Antigravity `agy`; its row says "Antigravity", and the search
+// for that word found nothing on a real host.
+it('finds an agent by the name its row shows, not only herdr\'s id for it', () => {
+  const space = withAgents(chat('wJ', 'idle'), [
+    agentIn('wJ', 'wJ:p1', 'agy', '/Users/me/GitHub'),
+    agentIn('wJ', 'wJ:p2', 'grok', '/Users/me/GitHub'),
+  ]);
+  expect(ids(groupChats([space], 'antigravity'))).toEqual(['idle', 'wJ', 'pane:wJ:p1']);
+  expect(ids(groupChats([space], 'agy'))).toEqual(['idle', 'wJ', 'pane:wJ:p1']);
+});
+
 it('keeps an agent row under its workspace when the workspace is pinned', () => {
   const api = withAgents(chat('api', 'blocked'), [
     agentIn('api', 'api:p1', 'claude', '/a'),
