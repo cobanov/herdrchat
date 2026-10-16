@@ -1,5 +1,7 @@
-# Remove the host ${NAME} from the app, as scripts/e2e-live.sh does after its
-# probes: Hosts, its row's Remove, and the confirmation.
+# Remove the host a live run added, by its id, which scripts/e2e-live.sh reads
+# from the app's database: Hosts, the Remove under its row, the confirmation.
+# The script then checks the database that it is gone. (The row reads to
+# VoiceOver as "Use <name>", so the name alone is no element to find.)
 appId: dev.herdr.HerdrChat
 ---
 - launchApp
@@ -11,27 +13,22 @@ appId: dev.herdr.HerdrChat
     id: server-switcher
     retryTapIfNoChange: true
 - extendedWaitUntil:
-    visible:
-      id: server-demo
+    visible: Hosts
     timeout: 10000
-# A run that failed before Save has no host to remove.
 - scrollUntilVisible:
     element:
-      text: ${NAME}
+      id: server-${ID}
     direction: DOWN
-    timeout: 5000
-    optional: true
-- runFlow:
-    when:
-      visible: ${NAME}
-    commands:
-      - tapOn:
-          text: Remove
-          below:
-            text: ${NAME}
-      - tapOn:
-          id: action-sheet-option-0
-      - extendedWaitUntil:
-          notVisible:
-            text: ${NAME}
-          timeout: 10000
+- tapOn:
+    text: Remove
+    below:
+      id: server-${ID}
+# The confirmation is the system alert: its Remove is the one beside Cancel.
+- tapOn:
+    text: Remove
+    rightOf:
+      text: Cancel
+- extendedWaitUntil:
+    notVisible:
+      id: server-${ID}
+    timeout: 10000
