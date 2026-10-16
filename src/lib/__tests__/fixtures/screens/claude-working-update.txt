@@ -1,0 +1,10 @@
+⏺ The lint script counts violations per hundred words, and the limit is 2.5.
+
+❯ Where did this STE score come from?
+
+✶ Propagating…
+                                                                                                                           ✔ Update installed · Restart to update
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt

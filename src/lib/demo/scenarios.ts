@@ -6,7 +6,8 @@
  * one failure, the folder-trust question a first start asks, a reply with a
  * table, an agent restyling the app through the host's theme file, a
  * subagent handed the review (its files in
- * subagents.ts), a `!` line run in the agent's shell. The UI tests drive the
+ * subagents.ts), a `!` line run in the agent's shell, a long turn under
+ * Claude's spinner. The UI tests drive the
  * Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
@@ -21,6 +22,7 @@ export const DEMO_PHRASES = {
   table: 'compare the options',
   theme: 'restyle the app',
   delegate: 'delegate the review',
+  think: 'think it over',
 } as const;
 
 // MARK: - Slash command panels
@@ -116,6 +118,27 @@ export function panelFor(command: string): DemoPanel | null {
   if (name === '/effort') return { kind: 'effort', level: 2 };
   return null;
 }
+
+// MARK: - A long turn
+
+/**
+ * The pane while Claude works, as a phone read it in a report: the spinner,
+ * the update notice right under it, the composer and the mode line. The live
+ * preview took the spinner and the notice for the answer, and three working
+ * lines showed for one turn. What the Demo shows while it thinks it over.
+ */
+export const DEMO_WORKING_SCREEN = [
+  '❯ think it over',
+  '',
+  '✶ Propagating…',
+  `${' '.repeat(60)}✔ Update installed · Restart to update`,
+  '─'.repeat(96),
+  '❯ ',
+  '─'.repeat(96),
+  '  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt',
+].join('\n');
+
+export const DEMO_THINK_REPLY = 'Thought it over. The plan holds: ship the fix first, then the follow-ups.';
 
 // MARK: - A table
 
