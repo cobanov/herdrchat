@@ -200,5 +200,30 @@ appId: dev.herdr.HerdrChat
     timeout: 15000
 - assertNotVisible:
     id: blocked-bar
+
+# One working line for one turn. Reported from a phone: Claude's spinner and
+# its update notice showed as the answer, above the app's own working line.
+# The Demo works for eight seconds under that screen; by three, polls have
+# read it.
+- tapOn:
+    id: composer-input
+- inputText: think it over
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: working-indicator
+    timeout: 10000
+- extendedWaitUntil:
+    visible: '[3-7]s'
+    timeout: 10000
+- assertVisible: Working…
+- assertNotVisible:
+    id: live-preview
+- assertNotVisible: .*Update installed.*
+- assertNotVisible: .*Propagating.*
+- takeScreenshot: thread-working-${APPEARANCE}
+- extendedWaitUntil:
+    visible: .*The plan holds.*
+    timeout: 15000
 - tapOn:
     id: thread-back
