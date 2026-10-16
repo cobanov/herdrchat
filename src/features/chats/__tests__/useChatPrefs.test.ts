@@ -22,13 +22,17 @@ jest.mock('@/state/db', () => ({
 
 const db = {} as SQLiteDatabase;
 const host = { id: 'gimel', name: 'Gimel', host: 'gimel', port: 22, username: 'me' } as ServerConnection;
-const klawId = 'gimel/m-klaw';
+const klawId = 'klaw';
+const mockHosts: Record<string, ServerConnection> = {};
+jest.mock('@/state/connections', () => ({ resolveConnection: (id: string) => mockHosts[id] ?? null }));
+const klaw = { ...host, id: klawId, name: 'klaw', host: 'klaw' };
+Object.assign(mockHosts, { gimel: host, klaw });
 const w1: ChatSummary = {
   workspaceId: 'w1', title: 'notes', number: 1, status: 'idle', agents: [], panes: [], preview: null,
   sessionSig: 'sig-host', shellPanes: [], tabs: [], layouts: [], activeTabId: null, tabCount: 0, paneCount: 0, restoreError: null, sessionTitle: null, agentName: null,
 };
 const [hostRow] = listChats([w1], host.id, null) as [ListedChat];
-const [klawRow] = listChats([{ ...w1, title: 'kenneth-bot', sessionSig: 'sig-klaw' }], klawId, { id: 'm-klaw', label: 'klaw' }) as [ListedChat];
+const [klawRow] = listChats([{ ...w1, title: 'kenneth-bot', sessionSig: 'sig-klaw' }], klawId, { id: klawId, label: 'klaw' }) as [ListedChat];
 const summaries = [hostRow, klawRow];
 
 beforeEach(() => {
@@ -53,22 +57,23 @@ it('files a pin under the row\'s own connection, and reads it back by row', asyn
   expect(saveChatPref).toHaveBeenLastCalledWith(db, host.id, 'w1', 'sig-host', { pinnedAt: expect.any(Number) });
 });
 
-// The host's notifier does not watch its machines' sessions, so a mute there
-// would be a promise nothing keeps.
-it('offers no mute on a machine\'s row, and saves none', async () => {
+// Every host has its own notifier: a mute on another host's row is saved
+// under that host and told to it, not to the selected one.
+it('mutes another host\'s row on that host', async () => {
   mockSaved.set(klawId, new Map([['w1', { sessionSig: 'sig-klaw', pinnedAt: null, muted: true }]]));
   const { result } = await renderHook(() => useChatPrefs(db, host, summaries, [host.id, klawId]));
   await waitFor(() => expect(loadChatPrefs).toHaveBeenCalledTimes(2));
-  expect(result.current.canMute(klawRow)).toBe(false);
-  expect(result.current.isMuted(klawRow)).toBe(false);
-  expect(result.current.canMute(hostRow)).toBe(true);
+  expect(result.current.isMuted(klawRow)).toBe(true);
+  expect(result.current.isMuted(hostRow)).toBe(false);
 
   await act(async () => result.current.toggleMute(klawRow));
-  expect(saveChatPref).not.toHaveBeenCalled();
-  expect(publishMutedChats).not.toHaveBeenCalled();
+  expect(saveChatPref).toHaveBeenLastCalledWith(db, klawId, 'w1', 'sig-klaw', { muted: false });
+  await waitFor(() => expect(publishMutedChats).toHaveBeenLastCalledWith(db, klaw));
 
   await act(async () => result.current.toggleMute(hostRow));
-  expect(saveChatPref).toHaveBeenCalledWith(db, host.id, 'w1', 'sig-host', { muted: true });
+  expect(saveChatPref).toHaveBeenLastCalledWith(db, host.id, 'w1', 'sig-host', { muted: true });
+  // A row on no saved host offers nothing.
+  expect(result.current.canMute({ ...hostRow, connectionId: 'gone' })).toBe(false);
 });
 
 // The Agents view pins one agent of a workspace that runs several. Its pin is

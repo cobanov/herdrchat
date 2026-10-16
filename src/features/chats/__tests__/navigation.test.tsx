@@ -2,7 +2,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { useState } from 'react';
 import * as Native from 'react-native';
 
-import ChatsScreen from '../../../../app/index';
+import ChatsScreen from '../../../../app/(tabs)/index';
 import ThreadRoute from '../../../../app/chat/[workspaceId]';
 import { openChat } from '../navigation';
 import { useChatSelection } from '@/state/chatSelection';
@@ -29,7 +29,9 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
-  useConnections: (selector: (state: { hydrated: boolean }) => unknown) => selector({ hydrated: mockHydrated }),
+  useConnections: (selector: (state: { hydrated: boolean; connections: never[] }) => unknown) =>
+    selector({ hydrated: mockHydrated, connections: [] }),
+  isDemo: () => false,
 }));
 jest.mock('@/features/welcome/useWelcomeGate', () => ({ useWelcomeGate: () => {} }));
 jest.mock('@/features/chats/ChatsList', () => ({ __esModule: true, default: () => null }));

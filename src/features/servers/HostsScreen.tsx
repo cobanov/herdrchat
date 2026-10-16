@@ -10,7 +10,9 @@ import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, spacing } from '@/theme/tokens';
+import { radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
+import { chooseDeviceIcon } from '@/features/devices/chooseDeviceIcon';
 import { returnToChats } from '@/features/chats/navigation';
 import { getPushDeviceId } from '@/features/notifications/deviceId';
 import { isNamedSession } from '@/lib/herdr/session';
@@ -155,6 +157,7 @@ export default function ServersScreen() {
                   padding: spacing.md,
                   opacity: pressed ? 0.6 : 1,
                 })}>
+                <DeviceIconMark connectionId={connection.id} glyphSize={size.rowStatusGlyph} />
                 <View style={{ flex: 1, gap: spacing.xxs }}>
                   <Text variant="headline">{connection.name}</Text>
                   <Text variant="caption" color="secondary">
@@ -188,6 +191,8 @@ export default function ServersScreen() {
                       router.push({ pathname: '/server/[id]', params: { id: connection.id } })
                     }
                   />
+                  <View style={{ width: 1, backgroundColor: colors.separator }} />
+                  <RowAction label="Icon" onPress={() => chooseDeviceIcon(db, connection.id, connection.name)} />
                   <View style={{ width: 1, backgroundColor: colors.separator }} />
                   <RowAction label="Remove" destructive onPress={() => confirmDelete(connection)} />
                 </View>

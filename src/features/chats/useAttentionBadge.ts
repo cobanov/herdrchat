@@ -19,8 +19,8 @@ import { useBadge } from '@/state/badge';
  * Counted by workspace: a workspace and the agents listed under it are one
  * thing needing you, not two or three. What is open beside the list is left
  * out by `chatWantsYou`, down to the one agent when only that one is open.
- * A chat on one of the host's machines counts like the host's own, against
- * its own connection's reads.
+ * A chat on another host counts like the selected host's own, against its
+ * own connection's reads.
  */
 export function useAttentionBadge(
   summaries: readonly ListedChat[],

@@ -23,6 +23,12 @@ appId: dev.herdr.HerdrChat
     id: header-close
 - tapOn:
     id: chat-group-idle
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - assertVisible:

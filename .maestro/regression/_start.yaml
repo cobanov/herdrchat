@@ -41,5 +41,5 @@ appId: dev.herdr.HerdrChat
     id: header-close
 - extendedWaitUntil:
     visible:
-      id: chat-row-w2
+      id: chats-settings
     timeout: 10000

@@ -1,11 +1,13 @@
 import { memo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { StatusMark } from './StatusMark';
+import { useDeviceIcon } from '@/state/deviceIcons';
+import { rowTestKey, type HostRef } from './listedChat';
 import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -22,8 +24,8 @@ export interface RowAction {
 export const ChatRow = memo(function ChatRow({
   summary, testKey, unread, selected = false, pinned = false, muted = false, onPress, onLongPress, actions = [],
 }: {
-  /** With `machine`, a chat on one of the host's machines: its label leads the line under the title. */
-  summary: ChatSummary & { machine?: MachineRef | null };
+  /** With `host`, a chat on another host: its name leads the line under the title. */
+  summary: ChatSummary & { host?: HostRef | null; connectionId?: string };
   /**
    * What the testID is built from, when the row is not its workspace's: an
    * agent's row in the Agents view (`agentTestKey`), one of several in a
@@ -44,7 +46,7 @@ export const ChatRow = memo(function ChatRow({
    */
   actions?: readonly RowAction[];
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const previewHeight = useScaledLine(typography.footnote.lineHeight);
   const attention = summary.status === 'blocked';
   const working = summary.status === 'working';
@@ -56,6 +58,7 @@ export const ChatRow = memo(function ChatRow({
   const preview = summary.preview === null ? status
     : `${summary.preview.fromUser ? 'You: ' : ''}${summary.preview.text}`;
   // herdr's own sentence, which already says what to do about it.
+  const deviceIcon = useDeviceIcon(summary.connectionId);
   const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
 
   return (
@@ -69,8 +72,8 @@ export const ChatRow = memo(function ChatRow({
         actions.find((action) => action.name === event.nativeEvent.actionName)?.run();
       }}
       accessibilityLabel={[title, pinned ? 'Pinned' : '', muted ? 'Muted' : '', context, status, unread ? 'Unread' : '', restoreFailed ?? summary.preview?.text].filter(Boolean).join(', ')}
-      // `chat-row-w2` on the host, `chat-row-<machineId>-w1` on a machine
-      // (`rowTestKey`): workspace ids repeat across machines, and a
+      // `chat-row-w2` on the selected host, `chat-row-<hostId>-w1` on another
+      // (`rowTestKey`): workspace ids repeat across hosts, and a
       // connection id's slash has no place in a testID.
       testID={`chat-row-${testKey ?? rowTestKey(summary)}`}
       style={({ pressed }) => ({
@@ -88,7 +91,9 @@ export const ChatRow = memo(function ChatRow({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.sm, backgroundColor: colors.tintMuted, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name={agent?.agent === 'claude' ? 'asterisk' : 'chevron.left.forwardslash.chevron.right'} size={22} tintColor={colors.tint} />
+        {/* The computer's glyph when one was given in Hosts, so a list of several
+            says which is which; the agent is named on the line under the title. */}
+        <Icon name={deviceIcon ?? (agent?.agent === 'claude' ? 'asterisk' : 'chevron.left.forwardslash.chevron.right')} size={22} tintColor={colors.tint} />
       </View>
 
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
@@ -110,13 +115,7 @@ export const ChatRow = memo(function ChatRow({
       </View>
 
       <View style={{ alignItems: 'center', gap: spacing.sm }}>
-        {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-          <Icon
-            name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-            size={size.rowStatusGlyph}
-            tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-          />
-        )}
+        <StatusMark status={summary.status} unread={unread} />
         {working ? <Text variant="caption2" color="tint">now</Text> : summary.preview?.timestamp != null && (
           <Text variant="caption2" color="secondary">{formatListTime(summary.preview.timestamp)}</Text>
         )}

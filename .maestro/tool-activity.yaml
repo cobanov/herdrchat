@@ -22,6 +22,16 @@ appId: dev.herdr.HerdrChat
 - tapOn: '${APPEARANCE}'
 - tapOn:
     id: header-close
+# w1 is the first row: the list is swiped back to its top, since a row scrolled
+# up under the search field still counts as visible to Maestro. The drag starts
+# inside the list: a plain swipe begins on the search field, which does not scroll.
+- repeat:
+    times: 3
+    commands:
+      - swipe:
+          start: 50%, 35%
+          end: 50%, 85%
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w1
 - assertVisible: '.*Found it.*'

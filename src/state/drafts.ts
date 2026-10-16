@@ -17,8 +17,6 @@ export interface Draft {
 interface DraftsState {
   drafts: Readonly<Record<string, Draft>>;
   save: (key: string, text: string, sessionSig: string | null) => void;
-  /** Drop every draft typed on one connection, for a machine its host no longer lists. */
-  forgetConnection: (connectionId: string) => void;
 }
 
 /**
@@ -37,12 +35,6 @@ export const useDrafts = create<DraftsState>((set) => ({
       const drafts = Object.fromEntries(Object.entries(state.drafts).filter(([existing]) => existing !== key));
       if (text.length > 0) drafts[key] = { text, sessionSig };
       return { drafts };
-    }),
-  forgetConnection: (connectionId) =>
-    set((state) => {
-      const prefix = draftKey(connectionId, '');
-      const kept = Object.entries(state.drafts).filter(([key]) => !key.startsWith(prefix));
-      return kept.length === Object.keys(state.drafts).length ? state : { drafts: Object.fromEntries(kept) };
     }),
 }));
 

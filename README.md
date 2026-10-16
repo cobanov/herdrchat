@@ -68,36 +68,24 @@ For your own agents:
 
 1. Install HerdrChat from the [App Store](https://apps.apple.com/app/herdrchat/id6791874615) (free), or [build it locally](docs/getting-started.md#build-the-ios-app).
 2. Set up herdr and the [Claude, Codex, Pi or OMP integration](docs/getting-started.md#prepare-your-computer) on your computer.
-3. Add that computer in **Hosts** (in the **…** menu on Chats), test the SSH connection, and open a chat.
+3. Add that computer in **Hosts** (tap the host name on Chats), test the SSH connection, and open a chat.
 
 **On the App Store** for iPhone and iPad, iOS 17+. Android is experimental.
 Push notifications need extra setup on your host. See
 [setup and limitations](docs/getting-started.md).
 
-## Machines
+## Several computers
 
-If herdr on your host has other computers saved as machines
-(`herdr machine add <ssh-target>`), their chats show up in that host's chat
-list too, each row starting with the machine's name. There is nothing to set
-up on the phone: the app reaches each machine through the host, with the
-host's own `ssh` and its `~/.ssh/config`, so the machine never has to be
-reachable from the phone. Opening, following and sending work as they do for
-the host's own chats. Disabled machines are left out. Push notifications
-cover only the host's own chats for now, and a machine uses its host's theme.
+Add each computer that runs herdr in **Hosts**. Chats lists the chats of every
+host together: the selected host's first, then each other host's, with that
+host's name at the start of the row's second line. Give a host an icon in
+**Hosts** and its chats show it in place of the agent's. The phone connects to
+each host itself, so every one has to be reachable over SSH from the phone, on
+your tailnet for example. A host that does not answer keeps its rows and gets
+one line under the chats saying why.
 
-The host's `ssh` runs without a terminal (`BatchMode=yes`), inside the SSH
-session the app opened, so it has to reach the machine on its own: with a key
-file that the host's `~/.ssh/config` names for the machine (`IdentityFile`),
-not an agent that asks for approval on the host's screen or one only its
-desktop login has, and with the machine already in the host's
-`~/.ssh/known_hosts`. An interactive `ssh klaw` on the host can pass where this
-fails, so check it from another computer:
-`ssh <host> 'ssh -o BatchMode=yes klaw true'`. If that fails, add the key to the
-host's config, or run `ssh klaw` once on the host to accept its host key. The
-list says which of the two it is under the chats. herdr must also be where a
-non-interactive SSH session on the machine looks (`~/.local/bin`, `~/bin`,
-`/opt/homebrew/bin` or `/usr/local/bin`); one in `~/.cargo/bin` needs a link
-into `~/.local/bin`.
+The selected host is the one a new chat starts on, whose theme the app wears
+and whose errors fill the list.
 
 ## Terminal
 

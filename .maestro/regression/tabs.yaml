@@ -1,0 +1,58 @@
+# The tab bar: Chats and Computers. Computers lists the Demo, with a button
+# for its files and one for its terminal. Files browses the
+# Demo's home folder and one folder in it; the terminal is a login shell on the
+# Demo, the same terminal screen a pane's opens, pushed over the tabs.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+
+- tapOn: Computers
+- extendedWaitUntil:
+    visible:
+      id: device-demo
+    timeout: 5000
+- takeScreenshot: computers-${APPEARANCE}
+
+- tapOn:
+    id: device-files-demo
+- extendedWaitUntil:
+    visible:
+      id: files-entry-README.md
+    timeout: 5000
+- assertVisible:
+    id: files-entry-code
+- takeScreenshot: files-${APPEARANCE}
+- tapOn:
+    id: files-entry-code
+- extendedWaitUntil:
+    visible: This folder is empty.
+    timeout: 5000
+- tapOn:
+    id: files-up
+- extendedWaitUntil:
+    visible:
+      id: files-entry-README.md
+    timeout: 5000
+- tapOn:
+    id: files-devices
+- assertVisible:
+    id: device-demo
+
+- tapOn:
+    id: device-terminal-demo
+- extendedWaitUntil:
+    visible:
+      id: terminal-view
+    timeout: 10000
+- tapOn:
+    id: terminal-back
+- extendedWaitUntil:
+    visible:
+      id: device-demo
+    timeout: 5000
+
+- tapOn: Chats
+- extendedWaitUntil:
+    visible:
+      id: chats-settings
+    timeout: 5000

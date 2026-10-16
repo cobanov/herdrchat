@@ -16,7 +16,7 @@ export type ChatDetail = { kind: 'chat' } & ChatSelection;
 /** A pane's terminal in the iPad's detail column, beside the chats. */
 export interface TerminalDetail {
   kind: 'terminal';
-  /** The pane's connection: a host, or one of its machines. */
+  /** The pane's host. */
   connectionId: string;
   paneId: string;
   /** The pane's terminal (the snapshot's `terminal_id`), which a shell pane attaches by. */

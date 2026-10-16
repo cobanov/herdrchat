@@ -45,13 +45,12 @@ let mockHydrated = false;
 const mockWantedIds: (string | null)[] = [];
 jest.mock('@/state/connections', () => ({
   useConnections: (select: (state: { hydrated: boolean }) => unknown) => select({ hydrated: mockHydrated }),
-  useSelectedConnection: () => null,
+  useSelectedConnection: () => mockHostConnection,
   useConnectionFor: (id: string | null) => {
     mockWantedIds.push(id);
     if (id === null) return null;
-    return id.includes('/') ? mockConnection : mockHostConnection;
+    return id === 'mac' ? mockConnection : mockHostConnection;
   },
-  isMachineConnection: (connection: { kind?: string }) => connection.kind === 'machine',
   clientFor: () => null,
 }));
 let mockWorkspaceLabel: string | null = null;
@@ -231,7 +230,9 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   mockWorkspaceLabel = 'api';
   mockSessionTitle = 'Web build';
   mockSessionMeta = { model: 'claude-opus-4-6', effort: 'high' };
-  mockAgents = [{ agent: 'claude', paneId: 'w6:p2', agentSession: null }];
+  // In api/web: the label "api" names no folder of this one agent, and must
+  // still not title it over its session, as it titles the workspace's chat.
+  mockAgents = [{ agent: 'claude', paneId: 'w6:p2', agentSession: null, cwd: '/home/demo/api/web' }];
   const screen = await render(<ThreadScreen workspaceId="w6" paneId="w6:p2" title="api" />);
   expect(screen.getByTestId('thread-title')).toHaveTextContent('Web build');
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^api · Claude · .*high effort/);
@@ -240,23 +241,37 @@ it('leads a titled pane chat\'s line with its workspace, then its agent', async 
   mockAgents = [];
 });
 
-// A chat on one of the host's machines is opened for that machine's
-// connection, from the route, and its line says which machine first: the
-// same folder on two computers is two chats.
-it('resolves a machine chat from its route and leads its line with the machine', async () => {
+// A name someone gave the workspace (it names none of its folders) titles its
+// chat over the session's own title, as its row does.
+it('titles a workspace chat by a name someone gave the workspace', async () => {
+  mockLoading = false;
+  mockWorkspaceLabel = 'herdrchat';
+  mockSessionTitle = "NAS'taki steam2 dump dosyası";
+  mockAgents = [{ agent: 'claude', paneId: 'w3:p1', agentSession: null, cwd: '/Users/me/Developer' }];
+  const screen = await render(<ThreadScreen workspaceId="w3" title="herdrchat" />);
+  expect(screen.getByTestId('thread-title')).toHaveTextContent('herdrchat');
+  await screen.unmount();
+  mockSessionTitle = null;
+  mockAgents = [];
+});
+
+// A chat on another host is opened for that host's connection, from the
+// route, and its line says which host first: the same folder on two
+// computers is two chats.
+it('resolves another host\'s chat from its route and leads its line with the host', async () => {
   mockLoading = false;
   mockWorkspaceLabel = 'kenneth-bot';
   mockWorkingDirName = 'kenneth-bot';
   mockSessionTitle = 'Nightly digest';
   mockSessionMeta = { model: 'claude-opus-4-6', effort: null };
   mockAgents = [{ agent: 'claude', paneId: 'w1:p1', agentSession: null }];
-  mockConnection = { kind: 'machine', id: 'demo/demo-nuku', name: 'nuku', via: 'demo' };
+  mockConnection = { id: 'mac', name: 'nuku' };
   mockWantedIds.length = 0;
-  const screen = await render(<ThreadScreen connectionId="demo/demo-nuku" workspaceId="w1" title="Nightly digest" />);
-  expect(mockWantedIds).toContain('demo/demo-nuku');
+  const screen = await render(<ThreadScreen connectionId="mac" workspaceId="w1" title="Nightly digest" />);
+  expect(mockWantedIds).toContain('mac');
   expect(screen.getByTestId('thread-title')).toHaveTextContent('Nightly digest');
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^nuku · kenneth-bot · /);
-  // The status is its own text that never shrinks: the machine in front made
+  // The status is its own text that never shrinks: the host in front made
   // the one line long enough that the word at its end was the first cut.
   expect(screen.getByTestId('thread-meta')).toHaveProp('numberOfLines', 1);
   expect(screen.getByTestId('thread-meta')).toHaveStyle({ flexShrink: 1 });
@@ -324,25 +339,6 @@ it('says a workspace named after its folder once in the line', async () => {
   mockWorkspaceLabel = null;
   mockSessionTitle = null;
   mockAgents = [];
-});
-
-// A machine the host no longer lists: the host is still here, so the screen
-// says the machine is gone, names it from the host's cached list, and leads
-// back to the chats rather than to Hosts, where machines are not.
-it('says a chat\'s machine is gone, by name, when its host is still here', async () => {
-  const { useHostMachines } = jest.requireActual<typeof import('@/state/hostMachines')>('@/state/hostMachines');
-  useHostMachines.setState({ byHost: { gimel: [{ id: 'm-klaw', label: 'klaw', target: 'klaw', session: 'default', enabled: false }] } });
-  mockHydrated = true;
-  mockConnection = null;
-  mockHostConnection = { id: 'gimel', name: 'Gimel' };
-  const screen = await render(<ThreadScreen connectionId="gimel/m-klaw" workspaceId="w1" title="Chat" />);
-  expect(screen.getByText("This chat's machine is gone")).toBeOnTheScreen();
-  expect(screen.getByTestId('thread-machine-enable')).toHaveTextContent(/herdr machine enable klaw on Gimel/);
-  expect(screen.queryByTestId('thread-open-hosts')).toBeNull();
-  await screen.unmount();
-  mockHydrated = false;
-  mockHostConnection = null;
-  useHostMachines.setState({ byHost: {} });
 });
 
 // The palette offers what the terminal offers, and a pick does what Enter on

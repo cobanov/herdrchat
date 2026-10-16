@@ -1,22 +1,12 @@
 import * as SecureStore from 'expo-secure-store';
-import { useMemo } from 'react';
 import { create } from 'zustand';
 
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
-import { withMachine } from '@/lib/herdr/machine';
-import {
-  isUnderHost,
-  machineConnectionId,
-  splitMachineConnectionId,
-  type HostMachine,
-} from '@/lib/herdr/machines';
 import { withSession } from '@/lib/herdr/session';
-import type { HerdrTransport } from '@/lib/herdr/transport';
 import { MissingCredentialsError, SshHerdrTransport } from '@/lib/herdr/sshTransport';
 import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
-import { findEnabledMachine, useHostMachines } from './hostMachines';
 
 /**
  * A saved herdr host. Everything here is non-secret and lives in the local
@@ -205,89 +195,27 @@ export const useConnections = create<ConnectionsState>((set) => ({
     }),
 }));
 
-/** The selected HOST. A machine is never selected: its chats are in its host's list. */
+/** The selected host: the one a new chat starts on, whose errors are the list's. */
 export function useSelectedConnection(): ServerConnection | null {
   return useConnections(
     (state) => state.connections.find((connection) => connection.id === state.selectedId) ?? null
   );
 }
 
-// MARK: - Machines
-
-/**
- * A machine saved on a host (`herdr machine add`), as a connection of its own.
- *
- * Derived, never saved by the person: its id is `${hostId}/${machineId}`
- * (`machineConnectionId`), so everything keyed by connection id (the thread
- * cache, tail cursors, reads, drafts, pins, mutes) works unchanged, and its
- * client reaches it through the host (`withMachine`).
- */
-export interface MachineConnection {
-  kind: 'machine';
-  id: string;
-  /** The machine's label in herdr ("klaw"). */
-  name: string;
-  /** The id of the host it is reached through. */
-  via: string;
-  /** That host, as saved, for its transport and its name. */
-  host: ServerConnection;
-  machine: HostMachine;
-}
-
-/** Anything a chat can be on: a saved host, the Demo, or a machine of either. */
-export type Connection = ServerConnection | MachineConnection;
-
-export function isMachineConnection(connection: Connection): connection is MachineConnection {
-  return 'kind' in connection && connection.kind === 'machine';
-}
-
-export function machineConnection(host: ServerConnection, machine: HostMachine): MachineConnection {
-  return {
-    kind: 'machine',
-    id: machineConnectionId(host.id, machine.id),
-    name: machine.label,
-    via: host.id,
-    host,
-    machine,
-  };
+/** What a connection id names right now: a saved host or the Demo. Null for a removed host. */
+export function resolveConnection(id: string): ServerConnection | null {
+  return useConnections.getState().connections.find((connection) => connection.id === id) ?? null;
 }
 
 /**
- * What a connection id names right now: a saved host or the Demo, or, for an
- * id with a slash, an enabled machine its host last listed. Null for anything
- * else — a removed host, or a machine the host no longer lists or has
- * disabled, whose chats are not shown either.
+ * `resolveConnection` as a hook: the host a screen was opened for (a thread's
+ * `connectionId` param), kept current as hosts change. Stable while the host
+ * does not change, so a `useMemo(() => clientFor(connection))` does not churn.
  */
-export function resolveConnection(id: string): Connection | null {
-  const split = splitMachineConnectionId(id);
-  const hostId = split?.hostId ?? id;
-  const host = useConnections.getState().connections.find((connection) => connection.id === hostId) ?? null;
-  if (host === null || split === null) return host;
-  const machine = findEnabledMachine(useHostMachines.getState().byHost, split.hostId, split.machineId);
-  return machine === null ? null : machineConnection(host, machine);
-}
-
-/**
- * `resolveConnection` as a hook: the connection a screen was opened for (a
- * thread's `connectionId` param), kept current as hosts and their machine
- * lists change. Stable while neither the host nor the machine changes, so a
- * `useMemo(() => clientFor(connection))` does not churn.
- */
-export function useConnectionFor(id: string | null | undefined): Connection | null {
-  const split = id === null || id === undefined ? null : splitMachineConnectionId(id);
-  const hostId = split?.hostId ?? id ?? null;
-  const machineId = split?.machineId ?? null;
-  const host = useConnections(
-    (state) => (hostId === null ? null : state.connections.find((connection) => connection.id === hostId) ?? null)
+export function useConnectionFor(id: string | null | undefined): ServerConnection | null {
+  return useConnections(
+    (state) => (id === null || id === undefined ? null : state.connections.find((connection) => connection.id === id) ?? null)
   );
-  const machine = useHostMachines((state) =>
-    hostId === null || machineId === null ? null : findEnabledMachine(state.byHost, hostId, machineId)
-  );
-  return useMemo(() => {
-    if (host === null) return null;
-    if (machineId === null) return host;
-    return machine === null ? null : machineConnection(host, machine);
-  }, [host, machine, machineId]);
 }
 
 // MARK: - Clients
@@ -297,16 +225,8 @@ export function useConnectionFor(id: string | null | undefined): Connection | nu
 
 interface CachedClient {
   client: HerdrClient;
-  /** The socket to close, which only a host's own entry owns. */
+  /** The socket to close; the Demo has none. */
   transport: SshHerdrTransport | null;
-  /**
-   * What the host's commands go through before the session is bound: what a
-   * machine's client jumps through. The Demo's is its `DemoHost`, so the
-   * machine shares the host's fictional state.
-   */
-  raw: HerdrTransport;
-  /** For a machine: what it was built from, so a changed target or session rebuilds it. */
-  shape: string | null;
 }
 
 const clients = new Map<string, CachedClient>();
@@ -343,8 +263,7 @@ export const isDemo = (id: string): boolean => id === DEMO_CONNECTION_ID;
  * transport, so a screen can build its client with `useMemo` rather than an
  * effect that sets state on resolution.
  */
-export function clientFor(connection: Connection): HerdrClient {
-  if (isMachineConnection(connection)) return machineClientFor(connection);
+export function clientFor(connection: ServerConnection): HerdrClient {
   const existing = clients.get(connection.id);
   if (existing !== undefined) return existing.client;
 
@@ -353,7 +272,7 @@ export function clientFor(connection: Connection): HerdrClient {
     // demo that could hold a secret would be a demo worth attacking.
     const demo = new DemoHost();
     const client = new HerdrClient(demo);
-    clients.set(connection.id, { client, transport: null, raw: demo, shape: null });
+    clients.set(connection.id, { client, transport: null });
     return client;
   }
 
@@ -383,60 +302,22 @@ export function clientFor(connection: Connection): HerdrClient {
   // the transcript store, push registration — goes through this transport, so a
   // future call site cannot forget the session because it never has to know.
   const client = new HerdrClient(withSession(transport, connection.sessionName), connection.herdrPath);
-  clients.set(connection.id, { client, transport, raw: transport, shape: null });
+  clients.set(connection.id, { client, transport });
   return client;
 }
 
-/**
- * A machine's client: the host's own transport (one SSH connection for the
- * host and all its machines), jumped to the machine, then bound to the
- * machine's session — in that order, so `HERDR_SESSION` is exported on the
- * machine, where its herdr runs. Cached under the machine's id and dropped
- * with the host's (`invalidateClient`).
- *
- * `herdr` by name, not the host's `herdrPath`: that path is where herdr is on
- * the host, and the machine is another computer. `withPath` covers the usual
- * install places on the machine as it does on a host.
- */
-function machineClientFor(connection: MachineConnection): HerdrClient {
-  const { host, machine } = connection;
-  const shape = [machine.target, machine.session, host.name, machine.label].join('\n');
-  const existing = clients.get(connection.id);
-  if (existing !== undefined && existing.shape === shape) return existing.client;
-
-  // Built first: the machine rides on the host's transport, made there.
-  clientFor(host);
-  const hostEntry = clients.get(host.id);
-  if (hostEntry === undefined) throw new Error(`No client for ${host.id}`);
-  const names = { host: host.name || host.host, machine: machine.label };
-  const jumped = withMachine(hostEntry.raw, machine.target, names);
-  const client = new HerdrClient(withSession(jumped, machine.session), MACHINE_HERDR_PATH, names);
-  clients.set(connection.id, { client, transport: null, raw: jumped, shape });
-  return client;
-}
-
-const MACHINE_HERDR_PATH = 'herdr';
-
-/** A host's SSH transport, once its client is built. Null for a machine, which has none of its own. */
+/** A host's SSH transport, once its client is built. Null for the Demo. */
 export function transportFor(id: string): SshHerdrTransport | null {
   return clients.get(id)?.transport ?? null;
 }
 
-/**
- * Drop and close a host's cached client — after an edit or a delete — and its
- * machines' with it: they ride on the transport being closed, and an edited
- * host may now reach different machines, or the same ones as someone else.
- */
+/** Drop and close a host's cached client, after an edit or a delete. */
 export async function invalidateClient(id: string): Promise<void> {
-  for (const key of [...clients.keys()]) {
-    if (isUnderHost(key, id)) clients.delete(key);
-  }
   const entry = clients.get(id);
   if (entry === undefined) return;
   clients.delete(id);
   // The demo has no socket to close; dropping the client is the whole teardown,
-  // and it takes the fictional conversation with it. A machine has none of its
-  // own either: its commands ran on the host's.
+  // and it takes the fictional conversation with it.
   await entry.transport?.close();
 }
 

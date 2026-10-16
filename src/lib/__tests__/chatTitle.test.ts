@@ -20,6 +20,25 @@ describe('chatTitle', () => {
     expect(chatTitle({ ...parts, agentName: '  ' })).toBe('Feke animation smoothness');
   });
 
+  // herdr names a workspace after its pane's folder and follows it until
+  // someone renames it, so a label naming no folder was given by a person:
+  // "herdrchat" for a session Claude titled "NAS'taki steam2 dump dosyası".
+  it('is a workspace label someone chose, over the session title', () => {
+    const named = { ...parts, agentName: null, workspaceLabel: 'herdrchat', folders: ['/Users/me/Developer'] };
+    expect(chatTitle(named)).toBe('herdrchat');
+    expect(chatTitle({ ...named, agentName: 'reviewer' })).toBe('reviewer');
+  });
+
+  it('keeps the session title over a label herdr gave after the folder', () => {
+    const folder = { ...parts, agentName: null, workspaceLabel: 'Developer', folders: ['/Users/me/Developer'] };
+    expect(chatTitle(folder)).toBe('Feke animation smoothness');
+    // Any pane's folder counts: the label follows whichever pane is focused.
+    expect(chatTitle({ ...folder, folders: ['/Users/me/Developer/api', '/Users/me/Developer'] })).toBe('Feke animation smoothness');
+    // Without folders nothing tells the two apart, so the session wins as before.
+    expect(chatTitle({ ...folder, workspaceLabel: 'herdrchat', folders: undefined })).toBe('Feke animation smoothness');
+    expect(chatTitle({ ...folder, workspaceLabel: 'herdrchat', folders: [] })).toBe('Feke animation smoothness');
+  });
+
   it('is the workspace label without either', () => {
     expect(chatTitle({ ...parts, sessionTitle: null, agentName: null })).toBe('feke');
   });

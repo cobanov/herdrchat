@@ -169,26 +169,26 @@ describe('scanning a connection', () => {
     expect(useSlashCatalogues.getState().byConnection.h1).toBe(held);
   });
 
-  it('drops the answer of a scan in flight for a host that was removed, its machines\' too', async () => {
+  it('drops the answer of a scan in flight for a host that was removed', async () => {
     const gate = gated(new DemoHost());
     const { db } = fakeDb();
-    const scan = scanSlashCatalogue('h1/m-klaw', gate.transport, { host: true, cwds: [] });
+    const scan = scanSlashCatalogue('h1', gate.transport, { host: true, cwds: [] });
     await clearHostSettings(db, 'h1');
     await gate.release();
     await scan;
-    expect(useSlashCatalogues.getState().byConnection['h1/m-klaw']).toBeUndefined();
+    expect(useSlashCatalogues.getState().byConnection.h1).toBeUndefined();
   });
 });
 
 describe('persistence', () => {
-  it('writes each scan to its own row, a machine\'s beside its host\'s', async () => {
+  it('writes each host\'s scan to its own row', async () => {
     const { db, rows } = fakeDb();
     const stop = mirrorSlashCatalogues(db);
     await scanSlashCatalogue('h1', new DemoHost(), { host: true, cwds: [] });
-    await scanSlashCatalogue('h1/m-klaw', new DemoHost(), { host: true, cwds: [] });
+    await scanSlashCatalogue('h2', new DemoHost(), { host: true, cwds: [] });
     await Promise.resolve();
     expect(rows.get(slashCommandsKey('h1'))).toContain('release-notes');
-    expect(rows.get(slashCommandsKey('h1/m-klaw'))).toContain('release-notes');
+    expect(rows.get(slashCommandsKey('h2'))).toContain('release-notes');
     stop();
   });
 
@@ -214,11 +214,10 @@ describe('persistence', () => {
     expect(names('h1')).toContain('release-notes');
   });
 
-  it('goes with its host, rows and memory, its machines\' with it', async () => {
+  it('goes with its host, rows and memory', async () => {
     const { db, rows } = fakeDb();
     const stop = mirrorSlashCatalogues(db);
     await scanSlashCatalogue('h1', new DemoHost(), { host: true, cwds: [] });
-    await scanSlashCatalogue('h1/m-klaw', new DemoHost(), { host: true, cwds: [] });
     await scanSlashCatalogue('h2', new DemoHost(), { host: true, cwds: [] });
     await Promise.resolve();
     await clearHostSettings(db, 'h1');

@@ -12,7 +12,6 @@ jest.mock('../../usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => false }));
 jest.mock('@/state/settings', () => ({ useSettings: () => 1 }));
 jest.mock('@/state/hostTheme', () => ({ checkHostTheme: async () => true }));
-jest.mock('@/state/hostMachines', () => ({ refreshHostMachines: async () => true }));
 jest.mock('@/state/slashCommands', () => ({ scanSlashCatalogue: async () => undefined }));
 
 const pane = (paneId: string, overrides: Record<string, unknown> = {}): Pane =>

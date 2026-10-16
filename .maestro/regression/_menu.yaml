@@ -1,23 +1,42 @@
-# Open one row of the Chats menu, the "…" beside "+" in the Chats header:
+# Open one of the screens the Chats header reaches:
 #   - runFlow:
 #       file: _menu.yaml
 #       env:
 #         ITEM: Settings      # or Hosts, or New chat
-# The menu is the system action sheet (a centred card on iOS 26, a popover on
-# iPad), so its rows have no testIDs and are matched by their text. With the
-# tab bar gone, nothing on the chats screen itself reads "Settings", so waiting
-# for that row proves the sheet is up. While the sheet is up the screen under
-# it, "…" and "+" included, is out of the accessibility tree, so the row is
-# matched by its text alone: a `below: chats-menu` finds nothing to be below,
-# and the "+" (labelled "New chat") is not there to be confused with the row.
-# Every screen a row opens is a sheet closed by `header-close`.
+# Settings is the gear in the header, New chat the "+" beside it, and Hosts the
+# host's name under the title (`server-switcher`). Chats and Computers
+# are the tab bar under the screen. Every screen these open is a sheet closed
+# by `header-close`.
 appId: dev.herdr.HerdrChat
 ---
-- tapOn:
-    id: chats-menu
-- extendedWaitUntil:
-    visible: Settings
-    timeout: 5000
-- tapOn:
-    text: ${ITEM}
+- runFlow:
+    when:
+      true: ${ITEM == 'Settings'}
+    commands:
+      - tapOn:
+          id: chats-settings
+      - extendedWaitUntil:
+          visible:
+            id: header-close
+          timeout: 5000
+- runFlow:
+    when:
+      true: ${ITEM == 'Hosts'}
+    commands:
+      - tapOn:
+          id: server-switcher
+      - extendedWaitUntil:
+          visible:
+            id: header-close
+          timeout: 5000
+- runFlow:
+    when:
+      true: ${ITEM == 'New chat'}
+    commands:
+      - tapOn:
+          id: header-action
+      - extendedWaitUntil:
+          visible:
+            id: header-close
+          timeout: 5000
 - waitForAnimationToEnd

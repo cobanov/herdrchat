@@ -1,5 +1,5 @@
 import { memo, useRef } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { HoverView } from '../../../modules/herdr-keys/src/hover';
 import { Icon } from '@/components/Icon';
@@ -8,8 +8,10 @@ import type { LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { useHoverIntent } from '@/features/spaces/useHoverIntent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, size, spaceLayout, spacing } from '@/theme/tokens';
+import { StatusMark } from './StatusMark';
+import { useDeviceIcon } from '@/state/deviceIcons';
 import { AVATAR_SIZE, type RowAction } from './ChatRow';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import { spaceStats, spaceTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -29,7 +31,7 @@ import type { ChatSummary } from './useWorkspaces';
 export const SpaceCard = memo(function SpaceCard({
   summary, testKey, unread, pinned = false, muted = false, onOpenLayout, onHoverLayout, onLeaveLayout, onLongPress, actions = [],
 }: {
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { host?: HostRef | null; connectionId?: string };
   testKey?: string;
   unread: boolean;
   pinned?: boolean;
@@ -43,12 +45,12 @@ export const SpaceCard = memo(function SpaceCard({
   /** Offered to VoiceOver and Voice Control: the swipe's actions (`ChatRow`). */
   actions?: readonly RowAction[];
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const button = useRef<View>(null);
   const attention = summary.status === 'blocked';
-  const working = summary.status === 'working';
   const title = spaceTitle(summary);
   const stats = spaceStats(summary);
+  const deviceIcon = useDeviceIcon(summary.connectionId);
   const key = testKey ?? rowTestKey(summary);
   const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
   const hasLayout = summary.tabs.length > 0 || summary.layouts.length > 0;
@@ -89,7 +91,8 @@ export const SpaceCard = memo(function SpaceCard({
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
           style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.sm, backgroundColor: colors.tintMuted, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="square.stack.3d.up" size={size.chatBadgeGlyph} tintColor={colors.tint} />
+          {/* The computer's glyph when one was given in Hosts, as a chat's row has it. */}
+          <Icon name={deviceIcon ?? 'square.stack.3d.up'} size={size.chatBadgeGlyph} tintColor={colors.tint} />
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
@@ -102,13 +105,7 @@ export const SpaceCard = memo(function SpaceCard({
             <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">{restoreFailed}</Text>
           )}
         </View>
-        {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-          <Icon
-            name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-            size={size.rowStatusGlyph}
-            tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-          />
-        )}
+        <StatusMark status={summary.status} unread={unread} />
       </Pressable>
       {hasLayout && (
         <HoverView onHoverChange={hover} style={{ justifyContent: 'center', marginRight: spacing.xs }}>

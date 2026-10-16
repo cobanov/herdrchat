@@ -198,11 +198,9 @@ export async function saveConnection(
 }
 
 /**
- * Rows filed under a connection: the host's own, and those of every machine
- * saved on it, which are filed under `${hostId}/<machine>` (see
- * `machineConnectionId`). By prefix rather than by the machines the host lists
- * now, for the reason `forgetWorkspace` gives: one removed earlier left rows
- * too. `substr`, not LIKE, so an `_` in an id is not a wildcard.
+ * Rows filed under a connection: the host's own, and those of the machines
+ * the app reached through it before 0.14, filed under `${hostId}/<machine>`.
+ * `substr`, not LIKE, so an `_` in an id is not a wildcard.
  */
 const UNDER_CONNECTION = "(connection_id = ? OR substr(connection_id, 1, length(?) + 1) = ? || '/')";
 
@@ -379,10 +377,10 @@ export async function deleteSetting(db: SQLite.SQLiteDatabase, key: string): Pro
 
 /**
  * Settings remembered per host, keyed `<name>.<connection id>` (the last folder
- * and permission mode a new chat used, the cached theme and machine list).
+ * and permission mode a new chat used, the cached theme).
  * They go with the host, or a deleted host's folder would be offered to the
- * next one that happened to reuse its id. So do those of its machines, keyed
- * `<name>.<host id>/<machine id>`, which no other host's id can produce.
+ * next one that happened to reuse its id. So do those of the machines reached
+ * through it before 0.14, keyed `<name>.<host id>/<machine id>`.
  */
 export async function clearConnectionSettings(
   db: SQLite.SQLiteDatabase,
@@ -417,33 +415,13 @@ export async function loadHostThemeRows(
   return loadSettingsWithPrefix(db, HOST_THEME_KEY_PREFIX);
 }
 
-// MARK: - Host machines
-
-/**
- * The machines each host lists (`herdr machine list --json`), cached in
- * `settings` under `hostMachines.<connection id>` as JSON the list's own
- * parser reads, so their chats are listed at launch before the first poll.
- * `clearConnectionSettings` deletes it with the host.
- */
-export const HOST_MACHINES_KEY_PREFIX = 'hostMachines.';
-
-export const hostMachinesKey = (connectionId: string) => `${HOST_MACHINES_KEY_PREFIX}${connectionId}`;
-
-/** Every cached machine list, for the launch. */
-export async function loadHostMachineRows(
-  db: SQLite.SQLiteDatabase
-): Promise<{ key: string; value: string }[]> {
-  return loadSettingsWithPrefix(db, HOST_MACHINES_KEY_PREFIX);
-}
-
 // MARK: - Slash commands
 
 /**
  * Each connection's slash-command catalogue (`src/lib/slashCommands/catalogue.ts`),
  * cached in `settings` under `slashCommands.<connection id>` as
  * `serializeCatalogueCache` writes it, so the palette is complete at launch
- * before any scan. `clearConnectionSettings` deletes it with the host, and a
- * machine's (`slashCommands.<host id>/<machine id>`) with its host.
+ * before any scan. `clearConnectionSettings` deletes it with the host.
  */
 export const SLASH_COMMANDS_KEY_PREFIX = 'slashCommands.';
 

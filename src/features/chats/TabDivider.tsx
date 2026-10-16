@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { size, spacing } from '@/theme/tokens';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import type { ChatSummary } from './useWorkspaces';
 
 /** Where the rows' text starts, past the rail, the row's padding and its badge. */
@@ -17,7 +17,7 @@ const TEXT_INSET = size.paneIndent + spacing.md + size.paneBadge + spacing.md;
  * still reads as one workspace: the rail runs on through it, unbroken.
  */
 export const TabDivider = memo(function TabDivider({ summary, tabId, label, first }: {
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { host?: HostRef | null };
   tabId: string;
   /** The tab's name, null for one herdr only numbered: a line and no label. */
   label: string | null;

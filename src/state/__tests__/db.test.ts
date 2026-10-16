@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { clearCachedMessages, clearConnectionSettings, clearPrompts, deleteConnection, hostMachinesKey, inTransaction, loadChatPrefs, saveChatPref } from '../db';
+import { clearCachedMessages, clearConnectionSettings, clearPrompts, deleteConnection, inTransaction, loadChatPrefs, saveChatPref } from '../db';
 
 it('clears all transcript content, including list previews, but leaves credentials and host rows alone', async () => {
   const runAsync = jest.fn(async () => undefined);
@@ -137,11 +137,11 @@ itWithSqlite('clears a host\'s settings and its machines\', and nothing of its n
   const { raw, db } = realDb();
   raw.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
   const keys = [
-    hostMachinesKey('h1'),
+    'hostMachines.h1',
     'lastCwd.h1',
     'lastCwd.h1/m1',
     'notifyMode.h1/m2',
-    hostMachinesKey('h10'),
+    'hostMachines.h10',
     'lastCwd.h10/m1',
     'lastCwd.xh1/m1',
     'h1/m1',

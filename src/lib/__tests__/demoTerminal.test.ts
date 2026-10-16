@@ -1,6 +1,6 @@
 import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
-import { DEMO_HOST, DEMO_WORKSPACES } from '../demo/fixtures';
+import { DEMO_WORKSPACES } from '../demo/fixtures';
 import {
   DEMO_SHELL_PROMPT,
   DEMO_SHELL_PROMPT_TEXT,
@@ -54,14 +54,6 @@ describe('demoTerminalScreen', () => {
     const command = attachCommand({ paneId: 'w2:p1', kind: 'agent', terminalId: null, ...host })!;
     expect(demoTerminalScreen(command, host)).toBe(demoAgentScreen('claude', '/home/demo/notes'));
     expect(visible(demoAgentScreen('claude', '/home/demo/notes'))).toContain('Claude');
-  });
-
-  it("answers a machine's pane through the jump, with the machine's session", () => {
-    const machine = DEMO_HOST.machines[0]!;
-    const command = attachCommand({
-      paneId: 'w1:p1', kind: 'agent', terminalId: null, herdrPath: 'herdr', session: machine.session, machine: { target: machine.target },
-    })!;
-    expect(demoTerminalScreen(command, host)).toBe(demoAgentScreen('claude', '/home/demo/kenneth-bot'));
   });
 
   it('answers nothing for a command no Demo pane is attached by', () => {

@@ -36,6 +36,6 @@ jest.mock('@/theme/AppTheme', () => ({ AppTheme: () => null }));
  * checked by the cold-link step in `.maestro/regression/menu.yaml`; this pins
  * the setting that produces it.
  */
-it('anchors the root stack on the chats', () => {
-  expect(unstable_settings).toEqual({ anchor: 'index' });
+it('anchors the root stack on the tabs, whose first is the chats', () => {
+  expect(unstable_settings).toEqual({ anchor: '(tabs)' });
 });

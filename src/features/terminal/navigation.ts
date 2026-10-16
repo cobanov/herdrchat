@@ -6,7 +6,7 @@ import { chatSelectionOf, terminalOf, useChatSelection } from '@/state/chatSelec
 
 /** What `app/chat/terminal` is opened with. */
 export interface TerminalRouteParams {
-  /** The pane's connection: a host, or one of its machines (`${hostId}/${machineId}`). */
+  /** The pane's host. */
   connectionId: string;
   paneId: string;
   /** Which attach it takes (`paneKind`): `agent attach` by pane id, or `terminal attach` by terminal id. */

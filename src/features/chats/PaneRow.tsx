@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
@@ -7,8 +7,9 @@ import { titledBySession } from '@/lib/chatTitle';
 import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
+import { StatusMark } from './StatusMark';
 import { formatListTime } from './ChatRow';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import { paneContext, paneTitle, statusLabel } from './rowText';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
@@ -29,8 +30,8 @@ import type { ChatSummary, PaneSummary } from './useWorkspaces';
 export const PaneRow = memo(function PaneRow({
   summary, pane, unread, selected = false, pinned = false, muted = false, first = false, last = false, onPress, onLongPress,
 }: {
-  /** With `machine`, a workspace on one of the host's machines: named to VoiceOver, and on the card above. */
-  summary: ChatSummary & { machine?: MachineRef | null };
+  /** With `host`, a workspace on another host: named to VoiceOver, and on the card above. */
+  summary: ChatSummary & { host?: HostRef | null };
   pane: PaneSummary;
   unread: boolean;
   selected?: boolean;
@@ -49,7 +50,7 @@ export const PaneRow = memo(function PaneRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const { colors, reduceMotion } = useTheme();
+  const { colors } = useTheme();
   const previewHeight = useScaledLine(typography.footnote.lineHeight);
   const attention = pane.status === 'blocked';
   const working = pane.status === 'working';
@@ -58,7 +59,7 @@ export const PaneRow = memo(function PaneRow({
   const status = statusLabel(pane.status);
   const preview = pane.preview === null ? status : `${pane.preview.fromUser ? 'You: ' : ''}${pane.preview.text}`;
   const workspace = summary.title || summary.workspaceId;
-  const machine = summary.machine?.label;
+  const where = summary.host?.label;
   const context = paneContext(pane);
   // Only a title of the agent's own: falling back to the workspace label
   // repeated the card right above, on every untitled sibling alike.
@@ -85,7 +86,7 @@ export const PaneRow = memo(function PaneRow({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         // The title first, when the agent has one.
-        accessibilityLabel={[title ?? '', pinned ? 'Pinned' : '', muted ? 'Muted' : '', `${provider} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
+        accessibilityLabel={[title ?? '', pinned ? 'Pinned' : '', muted ? 'Muted' : '', `${provider} in ${workspace}${where === undefined ? '' : ` on ${where}`}`, folder, status, unread ? 'Unread' : '', pane.preview?.text].filter(Boolean).join(', ')}
         testID={`pane-row-${rowTestKey(summary, pane.paneId)}`}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -106,7 +107,7 @@ export const PaneRow = memo(function PaneRow({
 
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
           {/* The session's title, as the workspace chat's row has. The card
-              above already names the workspace and its machine, so neither
+              above already names the workspace and its host, so neither
               line here does: an agent with no title of its own leads with its
               provider. */}
           {title !== null && <Text variant="subhead" weight="600" numberOfLines={2}>{title}</Text>}
@@ -121,13 +122,7 @@ export const PaneRow = memo(function PaneRow({
         </View>
 
         <View style={{ alignItems: 'center', gap: spacing.xs }}>
-          {working && !reduceMotion ? <ActivityIndicator size="small" color={colors.tint} /> : (
-            <Icon
-              name={attention ? 'exclamationmark.circle' : working ? 'ellipsis.circle' : unread ? 'circle.fill' : 'circle'}
-              size={size.rowStatusGlyph}
-              tintColor={attention ? colors.attention : unread || working ? colors.tint : colors.secondaryLabel}
-            />
-          )}
+          <StatusMark status={pane.status} unread={unread} />
           {working ? <Text variant="caption2" color="tint">now</Text> : pane.preview?.timestamp != null && (
             <Text variant="caption2" color="secondary">{formatListTime(pane.preview.timestamp)}</Text>
           )}

@@ -34,6 +34,11 @@ appId: dev.herdr.HerdrChat
       id: chats-view
       text: Showing Agents\. Change view\.
     timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
 - assertVisible:
     id: chat-row-w2
     text: Release notes summary, Claude · demo/notes.*

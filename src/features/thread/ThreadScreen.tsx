@@ -46,7 +46,7 @@ import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/
 import { useFloatingKeyboardGap } from '@/features/thread/useFloatingKeyboardGap';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { chatKey } from '@/lib/chatKey';
-import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName } from '@/lib/chatTitle';
 import type { IntegrationName } from '@/lib/herdr/client';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
@@ -58,17 +58,14 @@ import { isShellDraft } from '@/lib/shellMode';
 import { HerdrError } from '@/lib/herdr/protocol';
 import {
   clientFor,
-  isMachineConnection,
   useConnectionFor,
   useConnections,
   useSelectedConnection,
 } from '@/state/connections';
-import { splitMachineConnectionId } from '@/lib/herdr/machines';
 import { markThreadRead } from '@/state/db';
 import { sessionDir } from '@/lib/subagents/paths';
 import { threadItems, type PlacedItem } from '@/lib/threadItems';
 import { modelDisplayName, settingsFromNotes } from '@/lib/transcript/sessionMeta';
-import { useHostMachines } from '@/state/hostMachines';
 import { useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayout } from '@/theme/tokens';
@@ -79,8 +76,7 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayo
  */
 export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
   /**
-   * The connection the chat is on: a host, or one of a host's machines
-   * (`${hostId}/${machineId}`). Absent (a notification, an older link): the
+   * The host the chat is on. Absent (a notification, an older link): the
    * selected host.
    */
   connectionId?: string;
@@ -94,16 +90,14 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const db = useSQLiteContext();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  // From the route, not the selected host: a chat on one of the host's
-  // machines is read, followed and sent to through the machine's client,
-  // whose transport jumps through the host. `useThread` and the transcript
-  // store see only a transport, so nothing below knows the difference.
+  // From the route, not the selected host: a chat on another host is read,
+  // followed and sent to through that host's client.
   const selected = useSelectedConnection();
   const wantedId = connectionId !== undefined && connectionId !== '' ? connectionId : selected?.id ?? null;
   const connection = useConnectionFor(wantedId);
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
-  /** The machine's label, which leads the subtitle, when the chat is on one. */
-  const machineLabel = connection !== null && isMachineConnection(connection) ? connection.name : null;
+  /** The host's name, which leads the subtitle, when it is not the selected host. */
+  const hostLabel = connection !== null && connection.id !== selected?.id ? connection.name : null;
   const listRef = useRef<FlashListRef<PlacedItem>>(null);
   const historyInteraction = useRef<number | null>(null);
 
@@ -118,15 +112,6 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
    */
   const hydrated = useConnections((state) => state.hydrated);
   const hostGone = hydrated && connection === null;
-  // A machine is gone when its host is still here but no longer lists it as
-  // enabled; the placeholder then says so, rather than that the host is gone.
-  const machineIds = wantedId === null ? null : splitMachineConnectionId(wantedId);
-  const viaHost = useConnectionFor(machineIds?.hostId ?? null);
-  const machineGone = hostGone && viaHost !== null;
-  // A disabled machine stays in its host's cached list, so its label is
-  // usually still known, for the command that brings it back.
-  const goneLabel = useHostMachines((state) =>
-    machineIds === null ? null : state.byHost[machineIds.hostId]?.find((item) => item.id === machineIds.machineId)?.label ?? null);
 
   const showSidechain = useSettings((state) => state.showSidechain);
 
@@ -201,6 +186,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
     agentName: thread.agentName,
     workspaceLabel: thread.workspaceLabel,
     workspaceId: null,
+    // One agent's chat of a workspace running several is titled by its session;
+    // a name someone gave the workspace titles the workspace's own chat (`rowTitle`).
+    folders: paneId === undefined || paneId === '' ? thread.agents.map((agent) => agent.cwd) : undefined,
   });
   const linkTitle = title?.trim() ?? '';
   const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
@@ -354,10 +342,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
    * wait for the first poll rather than guessing.
    */
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
-  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
+  const workspaceLine = thread.workspaceLabel !== null && !sameName(polledTitle, thread.workspaceLabel) ? thread.workspaceLabel : null;
   const subtitle = [
-    // The machine first: the same folder on two computers is two chats.
-    machineLabel,
+    // The host first: the same folder on two computers is two chats.
+    hostLabel,
     workspaceLine,
     paneAgent === undefined ? null : agentName(paneAgent.agent),
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
@@ -373,7 +361,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
    * The connection before the agent: "online" under a banner saying the chat
    * is offline or paused contradicted it (#4 acceptance). Its own text after
    * the line, which never shrinks: at the end of one truncated line it was the
-   * first word cut, and a machine's label in front made that the usual case,
+   * first word cut, and a host's name in front made that the usual case,
    * leaving the dot's colour as the only status on a phone.
    */
   const statusText = thread.offline ? 'offline' : thread.paused ? 'reconnecting' : statusWord(thread.status);
@@ -527,10 +515,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
           {hostGone ? (
             <View style={{ flex: 1, paddingTop: headerHeight }}>
               <MissingHost
-                machine={machineGone ? { label: goneLabel, host: viaHost.name } : null}
                 onBack={onBack}
                 onHosts={() => router.navigate('/hosts')}
-                onChats={() => router.navigate('/')}
               />
             </View>
           ) : thread.loading || rows.length === 0 ? (

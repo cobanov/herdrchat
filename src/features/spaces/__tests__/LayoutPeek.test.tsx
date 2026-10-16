@@ -13,7 +13,6 @@ jest.mock('@/features/usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('@/features/useHostEvents', () => ({ useHostEvents: () => false }));
 jest.mock('@/state/settings', () => ({ useSettings: () => 1 }));
 jest.mock('@/state/hostTheme', () => ({ checkHostTheme: async () => true }));
-jest.mock('@/state/hostMachines', () => ({ refreshHostMachines: async () => true }));
 jest.mock('@/state/slashCommands', () => ({ scanSlashCatalogue: async () => undefined }));
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, avatarPalette: jest.requireActual('@/theme/tokens').avatarPalette }),

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { publishMutedChats } from '@/features/notifications/mutedChats';
 import { prefSource, type ChatPref, type PrefRef } from '@/lib/chatPrefs';
 import { haptics } from '@/lib/haptics';
-import type { ServerConnection } from '@/state/connections';
+import { resolveConnection, type ServerConnection } from '@/state/connections';
 import { loadChatPrefs, saveChatPref } from '@/state/db';
 import { agentPrefRow } from './agentRows';
 import { paneChats } from './chatGroups';
@@ -19,11 +19,9 @@ import { errorText } from './useWorkspaces';
  * herdr hands its workspace slot to the next one (see `chatPrefs`). A chat
  * whose agent has not reported a session yet offers neither.
  *
- * The list also holds the chats of the host's machines, whose workspace ids
- * repeat the host's, so prefs are loaded and saved under each row's own
- * connection and `pinnedAt` is filed by `rowKey`. A machine's chat can be
- * pinned and not muted: muting is something the host's notifier is told, and
- * it does not watch its machines' sessions.
+ * The list holds the chats of every saved host, whose workspace ids repeat
+ * each other's, so prefs are loaded and saved under each row's own connection
+ * and `pinnedAt` is filed by `rowKey`.
  *
  * A row may name a chat other than its workspace's (`PrefRow.chatKey`): an
  * agent's row in the Agents view pins and mutes that agent's chat, filed
@@ -40,7 +38,7 @@ export function useChatPrefs(
   db: SQLite.SQLiteDatabase,
   connection: ServerConnection | null,
   summaries: readonly ListedChat[],
-  /** The host's id and its machines': whose prefs to load. */
+  /** Every listed host's id: whose prefs to load. */
   connectionIds: readonly string[] = connection === null ? [] : [connection.id]
 ): {
   pinnedAt: ReadonlyMap<string, number>;
@@ -122,14 +120,13 @@ export function useChatPrefs(
     [db, sourceOf, reload]
   );
 
-  const canMute = useCallback(
-    (summary: PrefRow) => connection !== null && summary.connectionId === connection.id,
-    [connection]
-  );
+  // Each row's own host is told, whose notifier sends its pushes.
+  const canMute = useCallback((summary: PrefRow) => resolveConnection(summary.connectionId) !== null, []);
 
   const toggleMute = useCallback(
     (summary: PrefRow) => {
-      if (connection === null || summary.sessionSig === null || !canMute(summary)) return;
+      const host = resolveConnection(summary.connectionId);
+      if (host === null || summary.sessionSig === null) return;
       haptics.selection();
       // Unmuting clears whatever silences the row: muted from its workspace's
       // card, the host is quiet about every agent in it, and an "Unmute" that
@@ -137,12 +134,12 @@ export function useChatPrefs(
       const source = sourceOf(summary, 'mute');
       const target = source ?? { key: prefKey(summary), sessionSig: summary.sessionSig };
       if (target.sessionSig === null) return;
-      void saveChatPref(db, connection.id, target.key, target.sessionSig, { muted: source === null })
+      void saveChatPref(db, host.id, target.key, target.sessionSig, { muted: source === null })
         .then(reload)
-        .then(() => publishMutedChats(db, connection))
-        .catch((thrown: unknown) => setError(`Couldn't update notifications on ${connection.name}. ${errorText(thrown)}`));
+        .then(() => publishMutedChats(db, host))
+        .catch((thrown: unknown) => setError(`Couldn't update notifications on ${host.name}. ${errorText(thrown)}`));
     },
-    [db, connection, canMute, sourceOf, reload]
+    [db, sourceOf, reload]
   );
 
   return {

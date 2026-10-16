@@ -23,12 +23,13 @@ export default function TerminalRoute() {
   const connectionId = params.connectionId ?? '';
   const paneId = params.paneId ?? '';
   const terminalId = terminalIdParam(params.terminalId);
-  const kind = params.kind === 'agent' ? 'agent' : 'shell';
+  const kind = params.kind === 'agent' || params.kind === 'login' ? params.kind : 'shell';
   const title = params.title !== undefined && params.title !== '' ? params.title : 'Terminal';
   useFocusEffect(useCallback(() => {
-    if (tablet && hydrated) openTerminal({ connectionId, paneId, kind, terminalId: terminalId ?? '', title });
+    // A login shell (the Terminal tab's) is no pane of the chats, so it is not handed to their split.
+    if (tablet && hydrated && kind !== 'login') openTerminal({ connectionId, paneId, kind, terminalId: terminalId ?? '', title });
   }, [tablet, hydrated, connectionId, paneId, kind, terminalId, title]));
-  if (tablet) return null;
+  if (tablet && kind !== 'login') return null;
   return (
     <TerminalScreen
       key={`${connectionId}:${paneId}:${terminalId ?? ''}`}

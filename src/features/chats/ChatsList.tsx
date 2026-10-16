@@ -36,14 +36,13 @@ import { useOutdatedIntegrations } from '@/features/chats/useOutdatedIntegration
 import { useAttentionBadge } from '@/features/chats/useAttentionBadge';
 import { useChatActions } from '@/features/chats/useChatActions';
 import { useHostChats } from '@/features/chats/useHostChats';
-import { MachineNotices } from '@/features/chats/MachineNotices';
-import { MachineFeeds } from '@/features/chats/MachineChats';
+import { HostNotices } from '@/features/chats/HostNotices';
+import { HostFeeds } from '@/features/chats/HostFeeds';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
 import { haptics } from '@/lib/haptics';
 import { chatKey } from '@/lib/chatKey';
-import { mainMenuActions, mainMenuLabel, mainMenuTitle } from '@/lib/mainMenu';
 import {
   LIST_MODE_SHEET_TITLE,
   emptyListState,
@@ -67,7 +66,7 @@ import { loadThreadReads, setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
 
 /**
  * Chats, the app's root, in one of two views picked from its title
@@ -78,13 +77,13 @@ import { minTouchTarget, radius, screenPadding, spacing, typography } from '@/th
  * in a tab bar.
  *
  * Thin by design: everything it knows comes from `useHostChats` (the host's
- * `useWorkspaces`, and one for each machine saved on the host), everything it
+ * `useWorkspaces`, and one for each other saved host), everything it
  * draws comes from `ChatRow`, and everything it does to a workspace comes from
  * `useChatActions`, on the row's own connection.
  */
 export default function ChatsList({ selectedWorkspaceId, selectedConnectionId, selectedTerminal }: {
   selectedWorkspaceId?: string;
-  /** The open chat's connection: the host's, or one of its machines'. Absent: the host's. */
+  /** The open chat's connection: the selected host's or another's. Absent: the selected host's. */
   selectedConnectionId?: string;
   /** The pane whose terminal is the iPad's detail. Never set with a chat: one detail at a time. */
   selectedTerminal?: OpenTerminal;
@@ -125,8 +124,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const connection = useSelectedConnection();
   const client = useMemo(() => (connection === null ? null : clientFor(connection)), [connection]);
 
-  // The host's chats and its machines' in one list. The host's error and
-  // loading are the list's; a machine's failure is a notice at the end.
+  // Every host's chats in one list. The selected host's error and loading
+  // are the list's; another host's failure is a notice at the end.
   const chats = useHostChats(connection, client);
   const { summaries, loading, error, errorCode, refresh, notices, connectionIds } = chats;
   const integrations = useOutdatedIntegrations(client);
@@ -178,7 +177,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   // two, left alone beside a shell when the other exited, kept that key while
   // its row was keyed `w6`.
   //
-  // By connection too: a machine's `w1` is not the host's `w1`.
+  // By connection too: one host's `w1` is not another's.
   const openConnectionId = selectedConnectionId ?? connection?.id ?? null;
   const selectedSummary = summaries.find((item) =>
     item.workspaceId === selectedWorkspaceId && item.connectionId === openConnectionId);
@@ -205,7 +204,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const actions = useChatActions<ListedChat>({
     client,
     connectionId: connection?.id ?? null,
-    // A machine's chat is renamed and closed on the machine.
+    // Another host's chat is renamed and closed on that host.
     targetOf: chats.targetOf,
     db,
     refresh,
@@ -354,17 +353,10 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     });
   };
 
-  const menuActions = mainMenuActions({
-    hasConnection: connection !== null,
-    newChat: () => router.push('/new-chat'),
-    hosts: () => router.navigate('/hosts'),
-    settings: () => router.navigate('/settings'),
-  });
-
   return (
     <Screen>
-      {/* One poll per machine saved on the host, feeding `useHostChats`. */}
-      {connection !== null && <MachineFeeds host={connection} />}
+      {/* One poll per other saved host, feeding `useHostChats`. */}
+      {connection !== null && <HostFeeds selectedId={connection.id} />}
       <Header
         title={listModeTitle(listMode)}
         titleMenu={{
@@ -377,9 +369,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
         actionSymbol="square.and.pencil"
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
-        menuTestID="chats-menu"
-        menuLabel={mainMenuLabel(menuActions)}
-        onMenu={() => showActionSheet({ title: mainMenuTitle(connection?.name), actions: menuActions })}
+        // New chat and Settings are the header's two glyphs; Hosts is the host's
+        // name under the title, and Chats and Computers are the tab bar.
+        menuSymbol="gearshape"
+        menuTestID="chats-settings"
+        menuLabel="Settings"
+        onMenu={() => router.navigate('/settings')}
       />
 
       {/* Rename and close fail outside the poll's own error path, so they get
@@ -489,7 +484,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             ) : null}
             {notices.length > 0 && (
               <View style={{ paddingHorizontal: screenPadding }}>
-                <MachineNotices notices={notices} />
+                <HostNotices notices={notices} />
               </View>
             )}
           </ScrollView>
@@ -514,25 +509,24 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           maintainVisibleContentPosition={{ disabled: true }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          // The list runs under the home indicator (the screen's safe area
-          // leaves the bottom edge to it), so the last row has to be able to
-          // scroll clear of it.
-          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + spacing.xl }}
+          // The list runs under the floating tab bar and the home indicator, so
+          // the last row has to be able to scroll clear of both.
+          contentContainerStyle={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + size.floatingBarClearance }}
           // Below the rows, not above them: the host answers the integration
           // check after the list has drawn, and a banner arriving on top pushed
           // every row down under a finger that was about to tap one (#4
           // acceptance: a tap meant for one chat opened the next).
           ListFooterComponent={
             <>
-              {error === null && integrations.outdated.length > 0 && (
+              {error === null && integrations.issues.length > 0 && (
                 <IntegrationBanner
-                  outdated={integrations.outdated}
+                  issues={integrations.issues}
                   updating={integrations.updating}
                   error={integrations.error}
                   onUpdate={() => void integrations.update()}
                 />
               )}
-              <MachineNotices notices={notices} />
+              <HostNotices notices={notices} />
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
               {askForStar && (
                 <View style={{ marginTop: spacing.lg }}>
@@ -592,10 +586,9 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
             const muted = prefs.isMuted(item);
             // Both belong to a conversation, so both wait for its session id.
             const personal = item.sessionSig !== null;
-            // Only the host's own chats notify, so only they can be muted.
             const mutable = personal && prefs.canMute(item);
-            // Compared on the row's own connection: a machine's `w1` is not
-            // the host's.
+            // Compared on the row's own connection: one host's `w1` is not
+            // another's.
             const openHere = openFor(open, item);
             const rowReads = readsOf(reads, item);
             const manage = () => actions.manageChat(item, personal ? [
@@ -701,7 +694,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   );
 }
 
-/** Every listed connection's read markers: the host's and each machine's. */
+/** Every listed host's read markers. */
 async function loadReads(db: Parameters<typeof loadThreadReads>[0], ids: string): Promise<ReadsByConnection> {
   const loaded = await Promise.all(ids.split('\n').map(async (id) => [id, await loadThreadReads(db, id)] as const));
   return new Map(loaded);

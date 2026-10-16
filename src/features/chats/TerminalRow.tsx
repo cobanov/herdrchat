@@ -6,7 +6,7 @@ import { Text } from '@/components/Text';
 import { TERMINAL_ROW_TITLE, type TerminalPane } from '@/lib/terminal/rows';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';
-import { rowTestKey, type MachineRef } from './listedChat';
+import { rowTestKey, type HostRef } from './listedChat';
 import { terminalContext } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
 
@@ -20,7 +20,7 @@ import type { ChatSummary } from './useWorkspaces';
  * conversation to summarise, and no pin, mute or rename either in this round.
  */
 export const TerminalRow = memo(function TerminalRow({ summary, terminal, first = false, last = false, selected = false, onPress }: {
-  summary: ChatSummary & { machine?: MachineRef | null };
+  summary: ChatSummary & { host?: HostRef | null };
   terminal: TerminalPane;
   /** The first row under the workspace's card: the rail reaches up to the card. */
   first?: boolean;
@@ -33,7 +33,7 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
   const { colors } = useTheme();
   const context = terminalContext(terminal.pane, terminal.processName);
   const workspace = summary.title || summary.workspaceId;
-  const machine = summary.machine?.label;
+  const where = summary.host?.label;
 
   return (
     <View style={{ flexDirection: 'row', paddingBottom: spacing.sm }}>
@@ -51,7 +51,7 @@ export const TerminalRow = memo(function TerminalRow({ summary, terminal, first 
         onPress={onPress}
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        accessibilityLabel={[`${TERMINAL_ROW_TITLE} in ${workspace}${machine === undefined ? '' : ` on ${machine}`}`, context].join(', ')}
+        accessibilityLabel={[`${TERMINAL_ROW_TITLE} in ${workspace}${where === undefined ? '' : ` on ${where}`}`, context].join(', ')}
         accessibilityHint="Opens the pane's terminal"
         testID={`terminal-row-${rowTestKey(summary, terminal.paneId)}`}
         style={({ pressed }) => ({

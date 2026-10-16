@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import type { TerminalPaneKind } from '@/lib/terminal/command';
 import { terminalTheme } from '@/lib/terminal/theme';
-import { isMachineConnection, useConnectionFor, useConnections } from '@/state/connections';
+import { useConnectionFor, useConnections } from '@/state/connections';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, terminal } from '@/theme/tokens';
 import { AccessoryBar, type StickyModifiers } from './AccessoryBar';
@@ -27,7 +27,7 @@ import { useTerminalShell } from './useTerminalShell';
  * own screen when the chat cannot show what it is asking.
  */
 export default function TerminalScreen({ connectionId, paneId, kind, terminalId, title, back, onBack }: {
-  /** The chat's connection: a host, or one of its machines. */
+  /** The chat's host. */
   connectionId: string;
   paneId: string;
   kind: TerminalPaneKind;
@@ -57,7 +57,9 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
   const setFontSize = useTerminalFont((state) => state.set);
   const [modifiers, setModifiers] = useState<StickyModifiers>({ control: false, alt: false });
   const keyboardShown = useKeyboardState((state) => state.isVisible);
-  const place = connection !== null && isMachineConnection(connection) ? connection.name : null;
+  // Named when it is not the selected host's: the list mixes every host's panes.
+  const selectedId = useConnections((state) => state.selectedId);
+  const place = connection !== null && connection.id !== selectedId ? connection.name : null;
 
   const header = (
     <TerminalHeader

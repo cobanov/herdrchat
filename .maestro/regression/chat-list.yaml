@@ -49,14 +49,22 @@ appId: dev.herdr.HerdrChat
 # Every row of the menu is there, and Cancel leaves it doing nothing. On
 # Android it was an alert, which keeps three buttons: Close chat and Cancel
 # were cut, and picking an action was the only way out.
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
 - longPressOn:
     id: chat-row-w2
 - assertVisible: Rename workspace…
 - assertVisible: Close chat
 - tapOn: Cancel
 - assertNotVisible: Close chat
-- assertVisible:
-    id: chat-row-w2
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
 
 # Trailing swipe: Rename and Close, and it closes again cleanly.
 # The Demo's two-agent workspace (w6) lists under Working, above Idle, with a

@@ -134,10 +134,16 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 
 # w2 has one agent and nothing else: still its chat, titled by its session.
+# It is in Idle, below the workspace whose layout just closed.
 - scrollUntilVisible:
     element:
       id: chat-row-w2
-    direction: UP
+    direction: DOWN
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
     centerElement: true
 - assertVisible:
     id: chat-row-w2

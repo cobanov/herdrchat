@@ -112,27 +112,27 @@ it('finds a chat, and an agent row, by its session title', () => {
   expect(ids(groupChats([{ ...api, panes }, solo], 'PARSER'))).toEqual(['idle', 'solo']);
 });
 
-// A machine's workspaces are numbered from w1 like the host's, so in one
-// host's list a workspace id does not name a row: pins and the agents under a
-// row go by the row's key, and the machine's label finds its chats.
-describe('chats on a host\'s machines', () => {
-  const onMachine = (summary: ChatSummary, label: string | null) => ({
-    ...summary, connectionId: label === null ? 'demo' : `demo/${label}`, machine: label === null ? null : { id: label, label },
+// Every host's workspaces are numbered from w1, so in a list of several a
+// workspace id does not name a row: pins and the agents under a row go by the
+// row's key, and the host's name finds its chats.
+describe('chats on several hosts', () => {
+  const onHost = (summary: ChatSummary, label: string | null) => ({
+    ...summary, connectionId: label ?? 'demo', host: label === null ? null : { id: label, label },
   });
   const key = (summary: { connectionId: string; workspaceId: string }) => `${summary.connectionId}\n${summary.workspaceId}`;
-  const host = onMachine(chat('w1', 'idle'), null);
-  const nuku = onMachine({ ...chat('w1', 'idle'), title: 'kenneth-bot' }, 'nuku');
+  const host = onHost(chat('w1', 'idle'), null);
+  const nuku = onHost({ ...chat('w1', 'idle'), title: 'kenneth-bot' }, 'nuku');
 
-  it('groups a machine\'s chat like any other, and keeps a pin to its own row', () => {
+  it('groups another host\'s chat like any other, and keeps a pin to its own row', () => {
     expect(groupChats([host, nuku], '', new Map(), key).filter((row) => row.kind === 'chat')).toHaveLength(2);
     const pinned = groupChats([host, nuku], '', new Map([[key(nuku), 1]]), key);
     expect(pinned.map((row) => (row.kind === 'chat' ? row.summary.connectionId : row.kind === 'group' ? row.id : ''))).toEqual([
-      'pinned', 'demo/nuku', 'idle', 'demo',
+      'pinned', 'nuku', 'idle', 'demo',
     ]);
   });
 
-  it('finds a machine\'s chats by its label, with every agent under them', () => {
-    const multi = onMachine(withAgents({ ...chat('w2', 'idle'), title: 'api' }, [
+  it('finds a host\'s chats by its name, with every agent under them', () => {
+    const multi = onHost(withAgents({ ...chat('w2', 'idle'), title: 'api' }, [
       agentIn('w2', 'w2:p1', 'claude', '/srv/api'),
       agentIn('w2', 'w2:p2', 'codex', '/srv/web'),
     ]), 'nuku');
@@ -144,9 +144,9 @@ describe('chats on a host\'s machines', () => {
       agentIn('w2', `${prefix}:p1`, 'claude', '/srv/api'),
       agentIn('w2', `${prefix}:p2`, 'claude', '/srv/api/web'),
     ];
-    const onHost = onMachine(withAgents(chat('w2', 'idle'), agents('host')), null);
-    const onNuku = onMachine(withAgents(chat('w2', 'idle'), agents('nuku')), 'nuku');
-    expect(ids(groupChats([onHost, onNuku], '', new Map(), key))).toEqual([
+    const onSelected = onHost(withAgents(chat('w2', 'idle'), agents('host')), null);
+    const onNuku = onHost(withAgents(chat('w2', 'idle'), agents('nuku')), 'nuku');
+    expect(ids(groupChats([onSelected, onNuku], '', new Map(), key))).toEqual([
       'idle', 'w2', 'pane:host:p1', 'pane:host:p2', 'w2', 'pane:nuku:p1', 'pane:nuku:p2',
     ]);
   });
@@ -194,4 +194,14 @@ describe('space cards', () => {
   it("still narrows a space's agent rows by a search", () => {
     expect(ids(groupChats([two], 'codex'))).toEqual(['idle', 'api', 'pane:api:p2']);
   });
+});
+
+it('lists the idle chat that finished last first, and the ones with no message after them', () => {
+  const at = (workspaceId: string, timestamp: number | null): ChatSummary => ({
+    ...chat(workspaceId, 'idle'),
+    preview: timestamp === null ? null : { text: 'done', timestamp, fromUser: false },
+  });
+  const items = groupChats([at('w1', 100), at('w2', null), at('w3', 300), chat('w4', 'done'), at('w5', 200)], '');
+  expect(items.filter((item) => item.kind === 'chat').map((item) => item.kind === 'chat' ? item.summary.workspaceId : ''))
+    .toEqual(['w3', 'w5', 'w1', 'w2', 'w4']);
 });

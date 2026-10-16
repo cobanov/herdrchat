@@ -64,11 +64,11 @@ it('falls back to the herdr name, and with neither leads with its provider', asy
   expect(bare.getByTestId('pane-row-w6:p1').props.accessibilityLabel).toMatch(/^Claude in api, /);
 });
 
-// On one of the host's machines the card above says which machine, so the
+// On another host the card above says which host, so the
 // row does not repeat it on screen; VoiceOver, which reads the row alone, still
-// hears it. Its testID carries the machine's id: the pane id repeats the host's.
-it('names its machine to VoiceOver only, and keeps a testID apart from the host\'s pane', async () => {
-  const onNuku = { ...api, machine: { id: 'demo-nuku', label: 'nuku' } };
+// hears it. Its testID carries the host's id: pane ids repeat across hosts.
+it('names its host to VoiceOver only, and keeps a testID apart from the selected host\'s pane', async () => {
+  const onNuku = { ...api, host: { id: 'demo-nuku', label: 'nuku' } };
   const screen = await render(<PaneRow summary={onNuku} pane={p2} unread={false} onPress={jest.fn()} />);
   expect(screen.getByText('Codex · api/web')).toBeOnTheScreen();
   expect(screen.queryByText(/nuku/)).toBeNull();

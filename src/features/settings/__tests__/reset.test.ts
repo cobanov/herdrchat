@@ -1,8 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { resolveHostTheme } from '@/lib/theme/resolve';
-import { hostMachinesKey, hostThemeKey } from '@/state/db';
-import { useHostMachines } from '@/state/hostMachines';
+import { hostThemeKey } from '@/state/db';
 import { useHostTheme } from '@/state/hostTheme';
 import { darkPalette, lightPalette } from '@/theme/tokens';
 
@@ -38,13 +37,12 @@ function fakeDb(initial: Record<string, string>) {
 
 // Erasing removed the cached theme's row, but the theme in memory stayed on
 // screen until the next launch found the row gone.
-it('erases each host’s theme and machines, in the table and on screen', async () => {
+it('erases each host’s theme and the machine rows of 0.13, in the table and on screen', async () => {
   const { db, rows } = fakeDb({
     [hostThemeKey('demo')]: '{"kind":"missing"}',
-    [hostMachinesKey('demo')]: '[{"id":"demo-nuku","target":"nuku"}]',
+    'hostMachines.demo': '[{"id":"demo-nuku","target":"nuku"}]',
     'lastCwd.demo/demo-nuku': '/home/demo',
   });
-  useHostMachines.getState().set('demo', [{ id: 'demo-nuku', label: 'nuku', target: 'nuku', session: 'default', enabled: true }]);
   const theme = resolveHostTheme(
     { kind: 'present', version: '1 1', text: '{"accent":"#B5562F"}' },
     { light: lightPalette, dark: darkPalette }
@@ -55,6 +53,5 @@ it('erases each host’s theme and machines, in the table and on screen', async 
   expect(remaining).toEqual([]);
   expect(useHostTheme.getState().byConnection.demo).toBeUndefined();
   expect(rows.has(hostThemeKey('demo'))).toBe(false);
-  expect(useHostMachines.getState().byHost.demo).toBeUndefined();
   expect([...rows.keys()]).toEqual([]);
 });

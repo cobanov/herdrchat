@@ -41,11 +41,22 @@ appId: dev.herdr.HerdrChat
     id: header-close
 - extendedWaitUntil:
     visible:
-      id: chat-row-w2
+      id: chats-settings
     timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
 
 # A chat: the list on the left, the thread on the right, with an agent call
 # running ("delegate the review", src/lib/demo/scenarios.ts).
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn:
     id: chat-row-w2
 - extendedWaitUntil:

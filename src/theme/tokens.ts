@@ -167,6 +167,14 @@ export const size = {
   paneBadgeGlyph: 15,
   /** A row's status mark: the unread dot, the attention circle. */
   rowStatusGlyph: 18,
+  /**
+   * Room under a tab's scroll view for the floating tab bar to pass over.
+   *
+   * Not `spacing.xxxl * 2`: doubling a spacing token to reach a clearance is how
+   * you end up unable to change either one. The bar's height is the system's,
+   * so this is measured generously rather than derived.
+   */
+  floatingBarClearance: 96,
   /** The tile holding a subagent card's icon. */
   agentTile: 22,
   /**
@@ -685,6 +693,16 @@ export interface Palette {
  * below clears 4.5:1 against the canvas AND against the two surfaces that sit on
  * it. Ratios in the comments are against `systemBackground`.
  */
+/**
+ * herdr's own agent-state colours (`status_color` in herdr's shell, Catppuccin
+ * Latte and Mocha), so a chat's mark reads the same here as in herdr's sidebar:
+ * working yellow, blocked red, done teal, idle green.
+ */
+export const STATUS_COLORS = {
+  light: { working: '#DF8E1D', blocked: '#D20F39', done: '#179299', idle: '#40A02B' },
+  dark: { working: '#F9E2AF', blocked: '#F38BA8', done: '#94E2D5', idle: '#A6E3A1' },
+} as const;
+
 export const lightPalette: Palette = {
   // Deeper than the brand periwinkle: `PERIWINKLE` itself measures 3.6:1 on this
   // canvas, and this token draws the back chevron, links and focused rims — all

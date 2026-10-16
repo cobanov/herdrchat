@@ -1,4 +1,4 @@
-import type { MachineRef } from './listedChat';
+import type { HostRef } from './listedChat';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 export const CHAT_GROUPS = [
@@ -71,18 +71,18 @@ export function paneChats<S extends ChatSummary>(summary: S): readonly S['panes'
 
 /**
  * Pinned chats first, in the order they were pinned, then by live state,
- * keeping the host's order within each group (chats without an agent too).
+ * keeping the host's order within each group (chats without an agent too),
+ * except Idle, where the chat that finished last comes first.
  *
  * A pinned chat stays in Pinned whatever it is doing: its row already says
  * when it needs you, and a pin that jumped away the moment the agent asked
  * something would not be a pin.
  *
- * A chat on one of the host's machines is grouped like any other, and found
- * by its machine's label too. `keyOf` names a row: the workspace id on one
- * host, `rowKey` once a list holds machines, whose workspace ids repeat the
- * host's.
+ * A chat on another host is grouped like any other, and found by its host's
+ * name too. `keyOf` names a row: the workspace id on one host, `rowKey` once a
+ * list holds several, whose workspace ids repeat each other's.
  */
-export function groupChats<S extends ChatSummary & { machine?: MachineRef | null }>(
+export function groupChats<S extends ChatSummary & { host?: HostRef | null }>(
   summaries: readonly S[],
   query: string,
   /** When each pinned chat was pinned, by `keyOf`. */
@@ -97,11 +97,11 @@ export function groupChats<S extends ChatSummary & { machine?: MachineRef | null
   const panesOf = new Map<string, readonly S['panes'][number][]>();
   const matches = summaries.filter((chat) => {
     const panes = paneChats(chat);
-    const own = [chat.title, chat.workspaceId, chat.machine?.label ?? ''];
+    const own = [chat.title, chat.workspaceId, chat.host?.label ?? ''];
     if (found([...own, ...chat.agents.map((agent) => `${agent.agent ?? ''} ${agent.cwd} ${agent.title ?? ''} ${agent.name ?? ''}`)])) {
       // A folder or provider shared by only some of the agents names those.
       // A search for the workspace's own name lists every agent in it.
-      // So does a search for the machine it is on.
+      // So does a search for the host it is on.
       const named = found(own) ? [] : panes.filter(paneMatches);
       panesOf.set(keyOf(chat), named.length > 0 ? named : panes);
       return true;
@@ -115,6 +115,8 @@ export function groupChats<S extends ChatSummary & { machine?: MachineRef | null
   return CHAT_GROUPS.flatMap(({ id, title }): ChatListItem<S>[] => {
     const chats = matches.filter((chat) => groupOf(chat) === id);
     if (id === 'pinned') chats.sort((a, b) => (pinned.get(keyOf(a)) ?? 0) - (pinned.get(keyOf(b)) ?? 0));
+    // The chat that finished last first, by its last message; one with none keeps its place after them.
+    if (id === 'idle') chats.sort((a, b) => (b.preview?.timestamp ?? 0) - (a.preview?.timestamp ?? 0));
     if (chats.length === 0) return [];
     return [
       { kind: 'group', id, title, count: chats.length },

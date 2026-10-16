@@ -15,28 +15,11 @@ it('offers Hosts for a chat whose host is gone', async () => {
   expect(screen.getByText("This chat's host is gone")).toBeOnTheScreen();
   await fireEvent.press(screen.getByTestId('thread-open-hosts'));
   expect(onHosts).toHaveBeenCalledTimes(1);
-  expect(screen.queryByTestId('thread-machine-enable')).toBeNull();
 });
 
-// Machines are not on the Hosts screen, and the host is fine: "Go to Hosts"
-// opened a screen saying all was well, as if the phone were the problem.
-it('leads back to the chats for a chat whose machine is gone, and names the way back', async () => {
-  const onHosts = jest.fn();
-  const onChats = jest.fn();
-  const screen = await render(<MissingHost machine={{ label: 'klaw', host: 'Gimel' }} onHosts={onHosts} onChats={onChats} />);
-  expect(screen.getByText("This chat's machine is gone")).toBeOnTheScreen();
-  expect(screen.queryByTestId('thread-open-hosts')).toBeNull();
-  expect(screen.getByTestId('thread-machine-enable')).toHaveTextContent(/run herdr machine enable klaw on Gimel/);
-  await fireEvent.press(screen.getByTestId('thread-host-back'));
-  expect(onChats).toHaveBeenCalledTimes(1);
-  expect(onHosts).not.toHaveBeenCalled();
-});
-
-it('goes back where there is a back, rather than to the list root', async () => {
+it('goes back where there is a back', async () => {
   const onBack = jest.fn();
-  const onChats = jest.fn();
-  const screen = await render(<MissingHost machine={{ label: null, host: 'Gimel' }} onBack={onBack} onHosts={jest.fn()} onChats={onChats} />);
+  const screen = await render(<MissingHost onBack={onBack} onHosts={jest.fn()} />);
   await fireEvent.press(screen.getByTestId('thread-host-back'));
   expect(onBack).toHaveBeenCalledTimes(1);
-  expect(onChats).not.toHaveBeenCalled();
 });

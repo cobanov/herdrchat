@@ -354,6 +354,14 @@ export function useThread(
   const [transcriptPaths, setTranscriptPaths] = useState<string[]>([]);
   /** When the thread first saw an agent without a session id, or null while all have one. */
   const noSessionSince = useRef<number | null>(null);
+  /**
+   * The agent kinds whose integration the host says is not installed, asked
+   * once the thread first waits for a session. Null until it answers. With it
+   * the thread says "install the integration" at once instead of after the
+   * grace period, which a question on screen keeps restarting.
+   */
+  const missingIntegrations = useRef<ReadonlySet<string> | null>(null);
+  const askedIntegrations = useRef(false);
   const polling = usePollGate();
   // The user's own battery/data tradeoff, applied on top of each screen's rate.
   const pollScale = useSettings((state) => state.pollScale);
@@ -914,7 +922,14 @@ export function useThread(
             noSessionSince.current = null;
           }
           const since = (noSessionSince.current ??= Date.now());
-          setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
+          if (!askedIntegrations.current) {
+            askedIntegrations.current = true;
+            void client.integrationIssues().then((issues) => {
+              missingIntegrations.current = new Set((issues ?? []).filter((issue) => issue.state === 'missing').map((issue) => issue.name));
+            });
+          }
+          const notInstalled = conversational.some((agent) => missingIntegrations.current?.has(agent.agent ?? '') === true);
+          setSessionState(notInstalled || Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
         } else {
           noSessionSince.current = null;
           setSessionState('ok');

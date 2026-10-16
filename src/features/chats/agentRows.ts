@@ -7,15 +7,15 @@ import { rowKey, rowTestKey, type ListedChat, type ListedPane } from './listedCh
 
 /**
  * The Agents view of the chats list: one row per conversational agent, flat,
- * across every workspace of the host and its machines (`listModes`).
+ * across every workspace of every listed host (`listModes`).
  *
  * A row here IS a chat summary, shaped exactly like the workspace of a
  * one-agent workspace: its agent's status, preview, session and title, and
- * the workspace's label, id, machine and connection. That is what lets the
+ * the workspace's label, id, host and connection. That is what lets the
  * Agents view share everything the Spaces view already has instead of growing
  * a second copy of it: `groupChats` groups and searches it, `ChatRow` and its
  * swipe draw it (`rowTitle` titles it by the session, `rowContext` leads its
- * line with the machine and the workspace), and rename and close act on its
+ * line with the host and the workspace), and rename and close act on its
  * workspace, which is where they act from an agent's row in Spaces too.
  *
  * What makes it the agent's row and not the workspace's is its `chatKey`: the
@@ -129,7 +129,7 @@ export function agentRowKey(row: Pick<AgentRow, 'connectionId' | 'chatKey'>): st
 /**
  * What an agent row's testID is built from: the workspace's own key for a
  * one-agent workspace (`chat-row-w2`, as in Spaces), the pane's for one agent
- * of several (`chat-row-w6:p2`), each led by the machine's id on a machine.
+ * of several (`chat-row-w6:p2`), each led by the host's id on another host.
  */
 export function agentTestKey(row: AgentRow): string {
   return rowTestKey(row, row.pane?.paneId);

@@ -1,8 +1,8 @@
-import { chatTitle, sameName, titledBySession } from '@/lib/chatTitle';
+import { chatTitle, sameName } from '@/lib/chatTitle';
 import { agentName, type AgentStatus, type Pane } from '@/lib/herdr/models';
 import { processLabel } from '@/lib/terminal/rows';
 import { paneChats } from './chatGroups';
-import type { MachineRef } from './listedChat';
+import type { HostRef } from './listedChat';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
 /**
@@ -34,17 +34,25 @@ export function rowTitle(summary: ChatSummary): string {
     agentName: multi ? null : summary.agentName,
     workspaceLabel: summary.title,
     workspaceId: summary.workspaceId,
+    // One agent's row of a workspace running several (`agentRows`) is titled
+    // by that agent's session: the workspace's name is the line below it.
+    folders: 'pane' in summary && summary.pane !== null ? undefined : workspaceFolders(summary),
   });
+}
+
+/** Every folder the workspace's panes are in, which herdr would have named it after. */
+export function workspaceFolders(summary: Pick<ChatSummary, 'agents' | 'shellPanes'>): string[] {
+  return [...summary.agents.map((agent) => agent.cwd), ...summary.shellPanes.map((shell) => shell.pane.cwd)];
 }
 
 /**
  * A space card's title (`spaceCardMode`): the workspace's label, after its
- * machine's when it is on one (`klaw · kenneth-bot`), since the card stands
+ * host's name when it is on another host (`klaw · kenneth-bot`), since the card stands
  * for the workspace and the line under it is its stats.
  */
-export function spaceTitle(summary: ChatSummary & { machine?: MachineRef | null }): string {
+export function spaceTitle(summary: ChatSummary & { host?: HostRef | null }): string {
   const label = chatTitle({ sessionTitle: null, agentName: null, workspaceLabel: summary.title, workspaceId: summary.workspaceId });
-  return [summary.machine?.label ?? '', label].filter(Boolean).join(' · ');
+  return [summary.host?.label ?? '', label].filter(Boolean).join(' · ');
 }
 
 /**
@@ -102,13 +110,12 @@ export function paneTitle(summary: ChatSummary, pane: PaneSummary): string {
  * title no longer does: `api · Claude · demo/server`. When the workspace is
  * named after its folder, the folder says it: `Claude · side/herdrchat`.
  *
- * A chat on one of the host's machines says which machine first, before
- * anything about the workspace: `klaw · kenneth-bot · Claude · demo/bot`. The
- * list mixes the host's chats with its machines', and the same folder on two
- * computers is two different chats.
+ * A chat on another host says which host first, before anything about the
+ * workspace: `klaw · kenneth-bot · Claude · demo/bot`. The list mixes every
+ * host's chats, and the same folder on two computers is two different chats.
  */
-export function rowContext(summary: ChatSummary & { machine?: MachineRef | null; ordinal?: string | null }): string {
-  const machine = summary.machine?.label ?? '';
+export function rowContext(summary: ChatSummary & { host?: HostRef | null; ordinal?: string | null }): string {
+  const host = summary.host?.label ?? '';
   const panes = paneChats(summary);
   if (panes.length === 0) {
     const agent = summary.agents.find((item) => item.focused && item.agent !== null)
@@ -119,17 +126,17 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null;
     // folder; said again in front, it pushed the folder off a phone's row.
     // Either folder shown: an agent in `api/web` of workspace `api` read
     // `api · Claude · api/web`.
-    const workspace = titledBySession(summary) && !parts.some((part) => sameName(summary.title, part)) ? summary.title.trim() : '';
-    return [machine, workspace, summary.ordinal ?? '', agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
+    const workspace = !sameName(rowTitle(summary), summary.title) && !parts.some((part) => sameName(summary.title, part)) ? summary.title.trim() : '';
+    return [host, workspace, summary.ordinal ?? '', agentName(agent?.agent ?? null), folder].filter(Boolean).join(' · ');
   }
   const names = [...new Set(panes.map((pane) => agentName(pane.agent.agent)))];
   const shared = sharedFolder(panes.map((pane) => pane.agent.cwd)).split('/').filter(Boolean).slice(-2).join('/');
-  return [machine, `${panes.length} agents`, names.join(', '), shared].filter(Boolean).join(' · ');
+  return [host, `${panes.length} agents`, names.join(', '), shared].filter(Boolean).join(' · ');
 }
 
 /**
  * The line under an agent's row in the Agents view, where no workspace card
- * sits above it to say where the agent lives: the machine, the workspace, then
+ * sits above it to say where the agent lives: the host, the workspace, then
  * the provider and the folder (`klaw · api · Claude · api/web`).
  *
  * The very rule `rowContext` gives a one-agent workspace, and by design: an
@@ -140,15 +147,15 @@ export function rowContext(summary: ChatSummary & { machine?: MachineRef | null;
  * several says which one it is (`AgentRow.ordinal`): `api · 2 of 2 · Claude`
  * would repeat its title, so it reads `2 of 2 · Claude · x/api`.
  */
-export function agentContext(row: ChatSummary & { machine?: MachineRef | null; ordinal?: string | null }): string {
+export function agentContext(row: ChatSummary & { host?: HostRef | null; ordinal?: string | null }): string {
   return rowContext(row);
 }
 
 /**
  * The line under one agent's title in a workspace that holds several: its
  * provider and folder. The workspace's card above already names the
- * workspace, and its machine when it is on one; said again on every agent's
- * row, the machine pushed the folder, the one thing telling the agents
+ * workspace, and its host when it is another; said again on every agent's
+ * row, the host pushed the folder, the one thing telling the agents
  * apart, off a phone's line.
  */
 export function paneContext(pane: PaneSummary): string {
@@ -160,7 +167,7 @@ export function paneContext(pane: PaneSummary): string {
  * The line under a terminal row's title ("Terminal"): what runs there and
  * where, `vim · api/web`. The folder is the program's own when herdr knows it
  * (`foreground_cwd`), since a shell that `cd`s moves on from where the pane
- * started. The card above names the workspace and the machine.
+ * started. The card above names the workspace and the host.
  */
 export function terminalContext(pane: Pick<Pane, 'agent' | 'title' | 'cwd' | 'foregroundCwd'>, processName: string | null): string {
   const folder = (pane.foregroundCwd ?? pane.cwd).split('/').filter(Boolean).slice(-2).join('/');

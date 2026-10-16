@@ -28,8 +28,7 @@ export function useChatActions<S extends ChatSummary = ChatSummary>({
   connectionId: string | null;
   /**
    * Where a row's actions run, when that is not the host's `client`: a chat
-   * on one of the host's machines is renamed and closed on that machine,
-   * through its own client. Null for a row nothing can be done to now.
+   * on another host is renamed and closed there, through its own client. Null for a row nothing can be done to now.
    */
   targetOf?: (summary: S) => { client: HerdrClient; connectionId: string } | null;
   db: SQLite.SQLiteDatabase;
@@ -60,8 +59,8 @@ export function useChatActions<S extends ChatSummary = ChatSummary>({
     (summary: S) => {
       const on = target(summary);
       if (on === null) return;
-      // The sheet resolves its client from the row's connection, so a
-      // machine's workspace is renamed on the machine.
+      // The sheet resolves its client from the row's connection, so another
+      // host's workspace is renamed on that host.
       router.push({
         pathname: '/rename-chat',
         params: { workspaceId: summary.workspaceId, title: summary.title, connectionId: on.connectionId },

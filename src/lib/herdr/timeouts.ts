@@ -194,80 +194,10 @@ export function withJsDeadline(
 }
 
 /**
- * Reaching a machine saved on the host (`herdr machine add`), through the
- * host's own `ssh` (see `machine.ts`).
- *
- * The jump's connect deadline. It is passed to `ssh` as `ConnectTimeout` and
- * added to every jumped command's own deadline, so the time the host spends
- * reaching the machine is never taken out of the command's budget: a poll that
- * may take fifteen seconds on the host may take fifteen on the machine, plus
- * this.
- */
-export const JUMP_CONNECT_TIMEOUT_MS = 10_000;
-
-/**
- * `ServerAliveInterval` on the jump: how often the host's `ssh` asks the
- * machine whether it is still there, with `ServerAliveCountMax=1`, so a machine
- * that went to sleep or off the network mid-command is given up within two of
- * these (one unanswered probe) rather than when TCP gives up, or, at the
- * default count of three, 45 seconds later.
- */
-export const JUMP_SERVER_ALIVE_MS = 5_000;
-
-/**
- * How long the phone's own connection to the host may take before the
- * host-side bound even starts: re-dialling the host (after the app comes back
- * to the foreground, say), opening the channel, and the host's login shell
- * (`$SHELL -c`, slow with fish or a heavy `.zshenv`) starting `sh`. The native
- * deadline counts all of that; the bound counts none of it.
- */
-export const JUMP_HOST_START_MS = 10_000;
-
-/**
- * How long the host-side bound waits, after asking the host's `ssh` to stop
- * (TERM), before it kills it outright. Inside `JUMP_DEADLINE_MARGIN_MS`, so even
- * an `ssh` that ignores the first signal is gone before the native deadline.
- */
-export const JUMP_KILL_GRACE_MS = 2_000;
-
-/**
- * How far the native deadline of a jumped command stays above the host-side
- * bound on the host's `ssh` (see `jumpCommand`): the host's own start
- * (`JUMP_HOST_START_MS`), which the native deadline includes and the bound does
- * not, then the bound's kill grace, then a second for the bound's own `sleep`
- * and the answer's way back.
- *
- * The bound has to fire first. When the native deadline fires instead, it
- * drops the phone's whole connection to the host (`resetClient()` on iOS,
- * `abandon()` on Android), the host's own event stream and every open live tail
- * with it, so one machine that hangs took its host down about once a minute.
- * With the bound first, the host stops its `ssh` to the machine, the command
- * ends with the bound's status, and the host's connection never notices.
- */
-export const JUMP_DEADLINE_MARGIN_MS = JUMP_HOST_START_MS + JUMP_KILL_GRACE_MS + 1_000;
-
-/**
- * `ControlPersist` on the jump: how long the host keeps a machine's shared
- * login open after its last command (see `JUMP_SCRIPT` in `machine.ts`). A
- * minute outlasts the gap between two polls and the machine-list refresh, so
- * a machine being looked at logs in once, and one left alone is let go.
- */
-export const JUMP_CONTROL_PERSIST_MS = 60_000;
-
-/**
- * How often a jumped stream's stdin hears a newline. The newline is what
- * keeps the machine's side of a stream alive while the host's channel is, and
- * what notices, within this long, that the machine's side has ended (see
- * `jumpStream`).
- */
-export const JUMP_KEEPALIVE_MS = 5_000;
-
-/**
  * Opening a terminal on a pane (`src/lib/terminal/command.ts`): the PTY
  * channel's handshake, plus the wait for the launch marker the native side
  * cuts the login shell's noise at. Only the start is bounded; the terminal
- * itself lives as long as the screen. A machine's terminal adds
- * `JUMP_CONNECT_TIMEOUT_MS` (see `terminalStartTimeout`).
+ * itself lives as long as the screen.
  */
 export const TERMINAL_START_TIMEOUT_MS = 20_000;
 
