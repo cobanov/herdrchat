@@ -899,6 +899,23 @@ it('uses the cache without a bulk read when the host file has not changed', asyn
   await unmount();
 });
 
+// A reply or two since the chat was last open re-read 300 lines and replaced
+// the cache; the tail streams just those lines from the cursor now. A big gap
+// is still one bounded window (#66).
+it.each([
+  ['a few lines past the cursor through the tail', 50_000 + 4_000, false],
+  ['a backlog past the catch-up limit as one window', 50_000 + 200_000, true],
+])('catches up %s', async (_case, size, window) => {
+  mockProbe = { kind: 'size', bytes: size };
+  jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
+  jest.mocked(tailCursor).mockResolvedValue(50_000);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(mockRecent.mock.calls.length > 0).toBe(window);
+  if (!window) expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 321 }]);
+  await unmount();
+});
+
 it('keeps readable cache on a failed bulk read and never falls back to byte zero', async () => {
   mockProbe = { kind: 'size', bytes: 8_000_000 };
   jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
@@ -1020,9 +1037,10 @@ it('continues the window on a tail restart, keeping older history and the list',
   await act(async () => { await result.current.loadOlder(); });
   expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a', 'b', 'c']);
 
-  // The stream ended; the next poll restarts it and re-reads a later window.
-  mockRecent.mockResolvedValue({ messages: [turn('b', 2), turn('c', 3), turn('d', 4)], consumedBytes: 60_000, startByte: 45_000 });
-  mockProbe = { kind: 'size', bytes: 60_000 };
+  // The stream ended; the next poll restarts it and re-reads a later window
+  // (a gap past the cursor too big to catch up through the tail).
+  mockRecent.mockResolvedValue({ messages: [turn('b', 2), turn('c', 3), turn('d', 4)], consumedBytes: 300_000, startByte: 285_000 });
+  mockProbe = { kind: 'size', bytes: 300_000 };
   const starts = mockTailStarts.length;
   await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
   expect(mockTailStarts.length).toBeGreaterThan(starts);
