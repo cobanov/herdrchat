@@ -17,6 +17,8 @@ import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
+  INTERRUPT_CHECK_MS,
+  INTERRUPT_CONFIRM_MS,
   LAUNCH_TIMEOUT_MS,
   POLL_TIMEOUT_MS,
   SCREEN_TIMEOUT_MS,
@@ -729,8 +731,34 @@ export class HerdrClient {
    * nothing is worse than one that costs an extra round-trip on hosts where the
    * first spelling is wrong. Whichever works, works.
    */
-  async interrupt(paneId: string): Promise<void> {
+  async interrupt(paneId: string, confirmMs = INTERRUPT_CONFIRM_MS): Promise<void> {
     await this.sendFirstAccepted(paneId, ['Escape', 'esc']);
+    // A key the host took is not an agent that stopped: a host that types an
+    // unknown key name as text takes it without an error. One Escape only: a
+    // second one into Claude opens its rewind menu.
+    if (!(await this.leftWorking(paneId, confirmMs))) {
+      throw new HerdrError('interrupt_unconfirmed', 'The agent is still working. Tap Stop again, or hold it to force quit.');
+    }
+  }
+
+  /**
+   * Whether the pane's agent has left `working` within `ms`. True too when
+   * the status cannot be read: a stop that may well have worked is not
+   * reported as failed.
+   */
+  private async leftWorking(paneId: string, ms: number): Promise<boolean> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      let status: AgentStatus | undefined;
+      try {
+        status = (await this.snapshot()).agents.find((agent) => agent.paneId === paneId)?.agentStatus;
+      } catch {
+        return true;
+      }
+      if (status !== 'working') return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, INTERRUPT_CHECK_MS));
+    }
   }
 
   /**

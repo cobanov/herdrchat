@@ -43,6 +43,7 @@ type AppErrorCode =
   | 'herdr_not_executable'
   | 'herdr_not_on_path'
   | 'home_unknown'
+  | 'interrupt_unconfirmed'
   | 'omp_session_ambiguous'
   | 'omp_session_invalid'
   | 'omp_session_mismatch'
