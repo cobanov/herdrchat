@@ -861,7 +861,8 @@ export class HerdrClient {
    * Create a new workspace rooted at `cwd` without stealing focus on the
    * desktop. Follow with `startAgent` on the returned root pane.
    */
-  async createWorkspace(cwd: string, label: string | null): Promise<WorkspaceCreation> {
+  async createWorkspace(path: string, label: string | null): Promise<WorkspaceCreation> {
+    const cwd = await this.hostFolder(path);
     const named = label !== null && label.length > 0 ? label : null;
     const result = await this.request(
       'workspace.create',
@@ -874,6 +875,22 @@ export class HerdrClient {
       }
     );
     return decodeWorkspaceCreation(result);
+  }
+
+  /**
+   * `path` as a folder on the host, absolute, `~` read as the home folder.
+   * herdr makes a workspace for a folder that does not exist in the home
+   * folder instead, without a word: on a real host a mistyped path started an
+   * agent, with the permissions just chosen for it, in `~`.
+   */
+  private async hostFolder(path: string): Promise<string> {
+    const output = await this.shell(hostFolderCommand(path), LAUNCH_TIMEOUT_MS).catch((thrown: unknown) => {
+      throw thrown instanceof HerdrError && thrown.code === 'ssh_command_failed'
+        ? new HerdrError('dir_missing', `There's no folder ${path} on the host. Check the path, or pick one with Choose folder on the host.`)
+        : thrown;
+    });
+    const folder = output.trim();
+    return folder.length > 0 ? folder : path;
   }
 
   /** Give a workspace a new label. The chat list reads it as the chat's title. */
@@ -1290,4 +1307,13 @@ function field(result: unknown, key: string): unknown {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The shell that prints the absolute folder `path` names on the host, with `~`
+ * as the home folder, and fails when there is no such folder. Exported for
+ * tests, which run it under a real `sh`.
+ */
+export function hostFolderCommand(path: string): string {
+  return `p=${shellQuote(path)}; case "$p" in '~') p=$HOME ;; '~/'*) p="$HOME/\${p#'~/'}" ;; esac; cd "$p" 2>/dev/null && pwd`;
 }

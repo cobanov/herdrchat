@@ -420,6 +420,9 @@ export class DemoHost implements HerdrTransport {
   /** `sh` reading transcripts. Returns null when the command is not one of these. */
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
+    // New chat's folder check (`hostFolderCommand`): every folder is there.
+    const folder = /^p='(.+?)'; case "\$p" in /.exec(body);
+    if (folder !== null) return out(`${folder[1]!.replace(/^~(?=\/|$)/, DEMO_HOME)}\n`);
     if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
 
     // The Files tab. The demo has a small home folder with one folder in it,
