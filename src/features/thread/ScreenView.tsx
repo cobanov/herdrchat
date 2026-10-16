@@ -1,16 +1,19 @@
 import { useRef } from 'react';
-import { ScrollView } from 'react-native';
+import { ScrollView, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { WaitingBar } from '@/components/Activity';
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
-import { screenPadding, spacing } from '@/theme/tokens';
+import { scrollStep, type ScrollEvent, type ScrollMode } from '@/lib/threadScroll';
+import { screenPadding, spacing, threadLayout } from '@/theme/tokens';
 
 /**
  * The chat of an agent whose history the app cannot read: its screen as the
  * host's terminal shows it now, under a line that says so. Monospace and set
  * apart from bubbles on purpose, so a terminal's text never passes for a
- * transcript. Kept at its end as it changes: it is a live screen, not history.
+ * transcript. Kept at its end as it changes, while the reader is there: it is
+ * a live screen, but a reader who scrolled up (to the hook's install button
+ * above it, on a real host) was pulled back down by every poll.
  *
  * An agent herdr has no integration for, but HerdrChat has a hook for (Gemini
  * CLI), is read once the hook reports its session: `onInstall` offers it.
@@ -33,13 +36,26 @@ export function ScreenView({
   installError?: string | null;
 }) {
   const scroll = useRef<ScrollView>(null);
+  // The thread's rule: follow the end until the reader scrolls away from it.
+  const mode = useRef<ScrollMode>('following');
+  const step = (event: ScrollEvent) => {
+    const next = scrollStep(mode.current, event, threadLayout.bottomSlack);
+    mode.current = next.mode;
+    if (next.toEnd) scroll.current?.scrollToEnd({ animated: false });
+  };
+  const readerScrolled = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => step({
+    kind: 'readerScrolled',
+    distanceFromEnd: nativeEvent.contentSize.height - nativeEvent.contentOffset.y - nativeEvent.layoutMeasurement.height,
+  });
   return (
     <ScrollView
       ref={scroll}
       testID="agent-screen"
       scrollIndicatorInsets={{ top: topInset }}
       keyboardDismissMode="interactive"
-      onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+      onScrollEndDrag={readerScrolled}
+      onMomentumScrollEnd={readerScrolled}
+      onContentSizeChange={() => step({ kind: 'resized' })}
       contentContainerStyle={{
         paddingTop: topInset + spacing.md,
         paddingHorizontal: screenPadding,
