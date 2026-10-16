@@ -75,6 +75,20 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayo
  * One conversation: a workspace's, or with `paneId` the one agent in that pane
  * of a workspace that holds several.
  */
+/**
+ * Pictures for the composer, from the library or the clipboard, or why not.
+ * Out here because the React Compiler skips a component holding a try/catch
+ * with a conditional in it, and this screen renders the whole thread.
+ */
+async function gatherAttachments(source: 'library' | 'paste', room: number): Promise<{ ready: Attachment[] } | { error: string }> {
+  try {
+    const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
+    return { ready: added.filter((item): item is Attachment => item !== null) };
+  } catch (thrown) {
+    return { error: `Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}` };
+  }
+}
+
 export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
   /**
    * The host the chat is on. Absent (a notification, an older link): the
@@ -239,15 +253,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
     if (room <= 0) return;
     setPreparing(true);
     setAttachError(null);
-    try {
-      const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
-      const ready = added.filter((item): item is Attachment => item !== null);
-      if (ready.length > 0) setAttachments((previous) => [...previous, ...ready].slice(0, MAX_ATTACHMENTS));
-    } catch (thrown) {
-      setAttachError(`Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
-    } finally {
-      setPreparing(false);
-    }
+    const gathered = await gatherAttachments(source, room);
+    if ('error' in gathered) setAttachError(gathered.error);
+    else if (gathered.ready.length > 0) setAttachments((previous) => [...previous, ...gathered.ready].slice(0, MAX_ATTACHMENTS));
+    setPreparing(false);
   };
   // Straight to the library, unless the clipboard holds a picture to paste.
   const offerAttachment = async () => {
