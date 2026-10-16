@@ -89,7 +89,7 @@ async function gatherAttachments(source: 'library' | 'paste', room: number): Pro
   }
 }
 
-export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
+export default function ThreadScreen({ connectionId, workspaceId, paneId, listedSig, title, onBack }: {
   /**
    * The host the chat is on. Absent (a notification, an older link): the
    * selected host.
@@ -98,6 +98,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   workspaceId: string;
   /** Absent: the workspace chat, every agent in it. */
   paneId?: string;
+  /** The session the chat list saw for this chat, which lets it open from its cache at once. */
+  listedSig?: string;
   title?: string;
   onBack?: () => void;
 }) {
@@ -135,7 +137,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId, listedSig);
   /** Where this chat's read marker and draft are kept; the bare workspace id for the workspace chat. */
   const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
