@@ -8,7 +8,7 @@ jest.mock('react-native-reanimated', () => jest.requireActual('react-native-rean
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').lightPalette, reduceMotion: true }),
 }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn() } }));
 
 const originalOS = Object.getOwnPropertyDescriptor(Platform, 'OS');
 afterEach(() => {

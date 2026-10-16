@@ -2,7 +2,7 @@ import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import type { CatalogueCommand, CommandSection, PaletteSection } from '@/lib/slashCommands';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';

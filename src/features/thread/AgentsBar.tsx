@@ -6,7 +6,7 @@ import { Text } from '@/components/Text';
 import { subagentOpener } from '@/features/thread/SubagentCard';
 import { useClock } from '@/features/thread/useClock';
 import type { DelegationScope } from '@/features/thread/delegation';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { agentKindLabel, agentsMark, agentsSummary, liveElapsed, matchingDelegation } from '@/lib/subagents/agentsBar';
 import { formatDuration, formatTokens } from '@/lib/subagents/format';
 import type { PlacedItem } from '@/lib/threadItems';

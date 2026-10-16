@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 import { Glass, useGlassAvailable } from '@/components/Glass';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';

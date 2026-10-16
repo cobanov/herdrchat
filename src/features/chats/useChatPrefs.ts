@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { publishMutedChats } from '@/features/notifications/mutedChats';
 import { prefSource, type ChatPref, type PrefRef } from '@/lib/chatPrefs';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { resolveConnection, type ServerConnection } from '@/state/connections';
 import { loadChatPrefs, saveChatPref } from '@/state/db';
 import { agentPrefRow } from './agentRows';

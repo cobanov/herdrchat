@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { REPO_URL } from '@/lib/welcome';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';

@@ -17,7 +17,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('@/state/connections', () => ({ useConnections: () => null, clientFor: () => null }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn(), light: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn(), light: jest.fn() } }));
 
 /** The Demo's pane, 12 s after its call: the reviewer and a fork, and one more. */
 const PANE: AgentsPane = parseAgentsPane(delegateScreen(12_000))!;

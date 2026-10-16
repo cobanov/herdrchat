@@ -8,7 +8,7 @@ import { useState } from 'react';
 
 import { useGlassAvailable } from '@/components/Glass';
 import { ActionRow, Divider, Section } from '@/components/SettingsList';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
 import { REPO_URL } from '@/lib/welcome';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';

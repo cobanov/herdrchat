@@ -41,7 +41,7 @@ import { HostFeeds } from '@/features/chats/HostFeeds';
 import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { chatKey } from '@/lib/chatKey';
 import {
   LIST_MODE_SHEET_TITLE,
