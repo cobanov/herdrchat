@@ -270,3 +270,59 @@ describe('HerdrClient over the socket', () => {
     await expect(client.paneVisible('w1:p1', 40)).resolves.toBe('❯ hello\n');
   });
 });
+
+describe('an open chat poll on one channel', () => {
+  const SNAPSHOT = '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}';
+  const replies: Record<string, string> = {
+    'session.snapshot': SNAPSHOT,
+    'pane.read': '{"id":"x","result":{"type":"pane_read","read":{"text":"⠋ Working"}}}',
+    'pane.report_metadata': '{"id":"x","result":{"type":"ok"}}',
+  };
+  /** A bridge host that answers each request of a batch in its own section. */
+  function batchHost() {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        if (isSocketProbe(command)) {
+          return { ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never;
+        }
+        commands.push(command);
+        const methods = [...command.matchAll(/"method":"([a-z_.]+)"/g)].map((match) => match[1] ?? '');
+        const stdout = methods.map((method, index) =>
+          `\n@@hc-batch-begin ${index}\n${replies[method] ?? ''}\n@@hc-batch-end ${index} 0\n`).join('');
+        return { ok: true, exitCode: 0, stdout, stderr: '' } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+  const methodsIn = (command: string) => [...command.matchAll(/"method":"([a-z_.]+)"/g)].map((match) => match[1]);
+
+  afterEach(() => jest.useRealTimers());
+
+  // A working chat read its snapshot and its screen on two channels each poll,
+  // and its presence on a third every 20 s.
+  it('asks for the snapshot, the screen and the presence together', async () => {
+    jest.useFakeTimers();
+    const { client, commands } = batchHost();
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on' }, ttlMs: 45_000, seq: 1 });
+    const polled = await client.pollSnapshot({ paneId: 'w1:p1', lines: 30 });
+    expect(commands).toHaveLength(1);
+    expect(methodsIn(commands[0] ?? '')).toEqual(['session.snapshot', 'pane.read', 'pane.report_metadata']);
+    expect(polled.screen).toBe('⠋ Working');
+    expect(polled.snapshot.version).toBe('0.9.0');
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(commands).toHaveLength(1);
+  });
+
+  it('sends a presence report on its own when no poll carries it', async () => {
+    jest.useFakeTimers();
+    const { client, commands } = batchHost();
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on' }, ttlMs: 45_000, seq: 1 });
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on', model: 'grok-5' }, ttlMs: 45_000, seq: 2 });
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(commands).toHaveLength(1);
+    expect(methodsIn(commands[0] ?? '')).toEqual(['pane.report_metadata']);
+    expect(commands[0]).toContain('"seq":2');
+  });
+});

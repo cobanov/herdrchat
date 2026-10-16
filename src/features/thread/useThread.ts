@@ -373,6 +373,8 @@ export function useThread(
   const failures = useRef(0);
   /** Asks the running status loop to poll soon. Set by the effect that owns it. */
   const kick = useRef<() => void>(() => undefined);
+  /** The screen the last poll read, which the next one asks for with its snapshot. */
+  const screenWant = useRef<{ paneId: string; lines: number } | null>(null);
   const streamLive = useHostEvents(
     client,
     agents.map((agent) => agent.paneId),
@@ -876,7 +878,20 @@ export function useThread(
       let keepFast = true;
       let needsUser = false;
       try {
-        const snapshot = await client.snapshot();
+        // The screen the last poll read rides with the snapshot: while an agent
+        // works or waits, every poll reads one, and on its own channel that was
+        // half of what an open chat asked the host.
+        const asked = screenWant.current;
+        const polled = await client.pollSnapshot(asked);
+        const snapshot = polled.snapshot;
+        let nextWant: { paneId: string; lines: number } | null = null;
+        /** A pane's visible screen: the one the batch brought, or a read of its own. */
+        const visible = async (paneId: string, lines: number): Promise<string> => {
+          nextWant ??= { paneId, lines };
+          return polled.screen !== null && asked?.paneId === paneId && asked.lines === lines
+            ? polled.screen
+            : client.paneVisible(paneId, lines);
+        };
         if (!alive.current || stopped) return;
         const live = chatAgents(snapshot.agents, workspaceId, pane);
         setAgents((previous) => (sameAgents(previous, live) ? previous : live));
@@ -985,7 +1000,7 @@ export function useThread(
           ? live.find((agent) => agent.inputPending && agent.agentStatus !== 'working')
           : undefined;
         if (pendingInput !== undefined) {
-          const raw = await client.paneVisible(pendingInput.paneId, 40);
+          const raw = await visible(pendingInput.paneId, 40);
           if (parsePaneOverlay(raw) !== null) {
             lookForPanel = true;
           } else {
@@ -996,7 +1011,7 @@ export function useThread(
             }
           }
         } else if (blocked !== undefined) {
-          const raw = await client.paneVisible(blocked.paneId, 40);
+          const raw = await visible(blocked.paneId, 40);
           if (blocked.agent === 'codex' && isMentionPopup(raw)) {
             parsedPrompt = {
               question: 'Codex has its file picker open. Close it here, or pick a file in the terminal.',
@@ -1050,11 +1065,12 @@ export function useThread(
           setOverlay(null);
         }
         if (working && primary !== undefined) {
-          const raw = await client.paneVisible(primary.paneId, 30);
+          const raw = await visible(primary.paneId, 30);
           setLivePreview(extractLivePreview(raw));
         } else {
           setLivePreview(null);
         }
+        screenWant.current = nextWant;
 
         /*
           Tail watchdog.

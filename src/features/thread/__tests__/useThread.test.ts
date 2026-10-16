@@ -363,6 +363,24 @@ it('keeps the same agents, and the same callbacks, when a poll sees nothing new'
   await unmount();
 });
 
+// While an agent works, every poll reads its screen for the live preview; the
+// next poll asks for that screen with its snapshot, on one channel.
+it('asks for the screen the last poll read together with the next snapshot', async () => {
+  mockLive = false;
+  const working = snapshot([{ ...agent, agentStatus: 'working' }]);
+  const polls = jest.spyOn(client, 'pollSnapshot').mockImplementation(async (screen) => ({
+    snapshot: working, screen: screen === null ? null : 'Writing the summary\n⠋ Working (3s · esc to interrupt)',
+  }));
+  const reads = jest.spyOn(client, 'paneVisible').mockResolvedValue('Writing the summary\n⠋ Working (3s · esc to interrupt)');
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(polls.mock.calls[0]?.[0]).toBeNull();
+  expect(reads).toHaveBeenCalledTimes(1);
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_500); });
+  expect(polls.mock.calls.at(-1)?.[0]).toEqual({ paneId: 'pane', lines: 30 });
+  expect(reads).toHaveBeenCalledTimes(1);
+  await unmount();
+});
+
 it('does not treat an unsupported agent as a Claude transcript', async () => {
   jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agent: 'gemini' }]));
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
