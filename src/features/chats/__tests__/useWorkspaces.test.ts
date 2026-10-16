@@ -3,7 +3,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
 import type { HostEvent } from '@/lib/herdr/events';
-import { useHostVersion } from '@/state/hostVersion';
+import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
 import { buildSummaries, refreshPreviews, useWorkspaces, type CachedPreview } from '../useWorkspaces';
@@ -590,18 +590,19 @@ describe('the host\'s machine list, riding on the list poll', () => {
     await unmount();
   });
 
-  // Settings shows the host's herdr version, which the host's poll records.
-  // A machine's poll runs beside it and used to overwrite it with the
-  // machine's own.
-  it('leaves the host\'s herdr version to the host\'s poll', async () => {
-    useHostVersion.setState({ version: null });
+  // Settings shows the host's herdr version, which the host's poll records,
+  // under that host: a machine's poll runs beside it and used to overwrite
+  // it, and another host's version showed until the new one answered.
+  it('records the herdr version under the host whose poll read it', async () => {
+    useHostVersion.setState({ versions: {} });
     const { unmount } = await renderHook(() => useWorkspaces(client, 'host/m-klaw'));
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
-    expect(useHostVersion.getState().version).toBeNull();
+    expect(useHostVersion.getState().versions).toEqual({});
     await unmount();
     const host = await renderHook(() => useWorkspaces(client, 'host'));
     await act(async () => { await jest.advanceTimersByTimeAsync(100); });
-    expect(useHostVersion.getState().version).toBe('0.9.0');
+    expect(hostVersionOf(useHostVersion.getState().versions, 'host')).toBe('0.9.0');
+    expect(hostVersionOf(useHostVersion.getState().versions, 'other')).toBeNull();
     await host.unmount();
   });
 

@@ -151,6 +151,8 @@ describe('context label', () => {
   it('reports thousands once past 1k', () => {
     expect(contextLabel(33_400)).toBe('ctx 33k');
     expect(contextLabel(999)).toBe('ctx 999');
+    // A usage block of zeros is not an empty context (HC-23).
+    expect(contextLabel(0)).toBeNull();
     expect(contextLabel(null)).toBeNull();
   });
 });

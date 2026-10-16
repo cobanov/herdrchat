@@ -12,7 +12,7 @@ import { haptics } from '@/components/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
 import { REPO_URL } from '@/lib/welcome';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
-import { useHostVersion } from '@/state/hostVersion';
+import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 import { saveSetting } from '@/state/saveSetting';
 import { explainTarget, formatDiagnostics, summarizeAgentExplain } from './diagnostics';
 
@@ -96,7 +96,7 @@ export function SupportSection() {
       hostCount,
       newArchitecture: report.fabric && report.bridgeless,
       glassAvailable,
-      herdrVersion: useHostVersion.getState().version,
+      herdrVersion: hostVersionOf(useHostVersion.getState().versions, selected?.id),
       agentExplain,
     });
     void Clipboard.setStringAsync(text);
