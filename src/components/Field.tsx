@@ -113,8 +113,12 @@ export function SegmentedField<T extends string | number>({
    * which is what a picker looks like when it has room to be read.
    *
    * 1.5 is where the accessibility sizes begin. Below it nothing changes.
+   *
+   * Too many choices stop fitting the same way at any size: six agents on New
+   * chat wrapped "Claude Code" onto two lines and broke "Antigravity" in the
+   * middle of the word.
    */
-  const stacked = fontScale >= STACK_ABOVE_FONT_SCALE;
+  const stacked = segmentsStack(fontScale, options.length);
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -172,3 +176,11 @@ export function SegmentedField<T extends string | number>({
  * not turn into a literal sprinkled across components.
  */
 export const STACK_ABOVE_FONT_SCALE = 1.5;
+
+/** The most choices a segmented control holds side by side; more stack as rows. */
+export const MAX_SEGMENTS = 4;
+
+/** Whether a segmented control of `count` choices stacks as rows at this text size. */
+export function segmentsStack(fontScale: number, count: number): boolean {
+  return fontScale >= STACK_ABOVE_FONT_SCALE || count > MAX_SEGMENTS;
+}
