@@ -299,13 +299,12 @@ function Span({
         </Text>
       );
     case 'code':
+      // The monospace face marks it, not a fill: iOS paints a span's fill
+      // from where it wraps to the end of that line, so `/ready` broken after
+      // its slash drew a bar across the rest of the line (HC-111). Nothing is
+      // added to keep it on one line: text copied from the bubble is the code.
       return (
-        <Text
-          mono
-          color={ink}
-          variant={variant}
-          weight={weight}
-          style={{ backgroundColor: onTint ? onTintWash.line : colors.fillSubtle }}>
+        <Text mono color={ink} variant={variant} weight={weight}>
           {span.text}
         </Text>
       );
