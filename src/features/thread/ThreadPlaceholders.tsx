@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { WaitingBar } from '@/components/Activity';
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
+import { agentOfIntegration } from '@/lib/herdr/agents';
 import { agentName } from '@/lib/herdr/models';
 import { spacing } from '@/theme/tokens';
 
@@ -107,7 +108,8 @@ export function ThreadPlaceholder({
   installing: boolean;
   installError: string | null;
 }) {
-  const name = agentName(agentKind ?? 'claude');
+  // The integration's name: agy's is `antigravity-cli`, which names no agent.
+  const name = agentName(agentOfIntegration(agentKind ?? 'claude'));
   return (
     <View
       style={{

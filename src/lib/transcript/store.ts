@@ -77,6 +77,7 @@ export class TranscriptStore {
       case 'claude': return kind === 'id' ? this.claudeTranscriptPath(agent.cwd, value) : null;
       case 'codex': return kind === 'id' ? this.codexTranscriptPath(value) : null;
       case 'grok': return kind === 'id' ? this.grokTranscriptPath(value) : null;
+      case 'agy': return this.agyTranscriptPath(value, kind);
       case 'pi': return this.ompTranscriptPath(value, kind);
       default: return null;
     }
@@ -214,6 +215,24 @@ export class TranscriptStore {
     const forget = () => { if (paths.get(id) === pending) paths.delete(id); };
     void pending.then(path => { if (path === null) forget(); }, forget);
     return pending;
+  }
+
+  /**
+   * Antigravity CLI keeps a conversation's log in a folder named by its id:
+   * `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`
+   * (measured against agy 1.3.6). herdr's integration reports that id, and the
+   * transcript's path when agy gives it, which is taken as reported. Beside the
+   * log is `transcript_full.jsonl`, which differs only in keeping tool output
+   * whole: the shorter one is what a phone wants.
+   */
+  async agyTranscriptPath(value: string, kind: string | null): Promise<string | null> {
+    if (kind === 'path') {
+      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
+        !value.split('/').includes('..') ? value : null;
+    }
+    if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
+    const home = await this.homeDirectory();
+    return `${home}/.gemini/antigravity-cli/brain/${value}/.system_generated/logs/transcript.jsonl`;
   }
 
   /**
