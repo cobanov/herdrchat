@@ -120,6 +120,8 @@ it('extends header material to the window edge, insets only controls, and reserv
   await fireEvent(screen.getByTestId('thread-line'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 220, height: 16 } } });
   // Whole parts from the start, however many the text size leaves room for.
   expect(screen.getByTestId('thread-meta')).toHaveTextContent(/^gpt-5\.6( · high effort)?$/);
+  // What was left out is still read out: the model and effort are the chat's state.
+  expect(screen.getByTestId('thread-meta')).toHaveProp('accessibilityLabel', 'gpt-5.6 · high effort · project-with-a-long-folder-name');
 });
 
 it('names the chat from the host, never by its id, and keeps a draft after leaving (#113)', async () => {

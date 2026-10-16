@@ -92,7 +92,9 @@ export function ThreadHeader({
                   style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
                   <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: dimmed ? colors.secondaryLabel : statusColor(status, colors) }} />
                   {subtitle.length > 0 && (
-                    <Text testID="thread-meta" variant="caption" color={tone} style={{ flexShrink: 1 }} numberOfLines={1}>
+                    // The whole line for VoiceOver: the parts left out for width
+                    // (the model, the effort) are still this chat's state.
+                    <Text testID="thread-meta" variant="caption" color={tone} style={{ flexShrink: 1 }} numberOfLines={1} accessibilityLabel={parts.join(' · ')}>
                       {subtitle}
                     </Text>
                   )}
