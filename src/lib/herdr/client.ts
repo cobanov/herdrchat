@@ -42,6 +42,21 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
  */
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
 
+/** A `pane.report_metadata` request, as the socket takes it. */
+interface MetadataReport {
+  pane_id: string;
+  source: string;
+  tokens: Record<string, string>;
+  ttl_ms: number;
+  seq: number;
+}
+
+/**
+ * How long a presence report waits for a poll to carry it before it goes out
+ * on its own. Shorter than the 20 s between reports, so none is skipped.
+ */
+const REPORT_WAIT_MS = 5_000;
+
 /** The built-in integrations HerdrChat can install and update. */
 /** A herdr integration target (`herdr integration install <name>`), from `AGENTS`. */
 export type IntegrationName = string;
@@ -157,6 +172,39 @@ export class HerdrClient {
     const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
       this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
     );
+    return this.acceptSnapshot(result);
+  }
+
+  /**
+   * An open chat's poll in one command where it was two or three: the
+   * snapshot, the visible screen of `screen.paneId` (the one the last poll
+   * needed), and any presence waiting to go out, on one SSH channel. Without
+   * a socket bridge (the CLI path), the snapshot alone and a null screen, which
+   * the caller reads as before.
+   */
+  async pollSnapshot(
+    screen: { paneId: string; lines: number } | null
+  ): Promise<{ snapshot: Snapshot; screen: string | null }> {
+    const reports = this.takeReports();
+    if ((screen === null && reports.length === 0) || (await this.socket.detect()) === null) {
+      for (const report of reports) void this.sendReport(report);
+      return { snapshot: await this.snapshot(), screen: null };
+    }
+    const answers = await this.socket.callMany([
+      { method: 'session.snapshot', params: {} },
+      ...(screen === null ? [] : [{ method: 'pane.read', params: { pane_id: screen.paneId, source: 'visible', lines: screen.lines } }]),
+      ...reports.map((report) => ({ method: 'pane.report_metadata', params: { ...report } })),
+    ], POLL_TIMEOUT_MS);
+    const first = answers[0];
+    if (first === undefined) throw new HerdrError('snapshot_missing', 'The host sent no snapshot.');
+    if (!first.ok) throw first.error;
+    const read = screen === null ? undefined : answers[1];
+    const text = read?.ok === true ? field(field(read.result, 'read'), 'text') : null;
+    return { snapshot: this.acceptSnapshot(first.result), screen: typeof text === 'string' ? text : null };
+  }
+
+  /** A snapshot answer decoded, and its version remembered for the capability gates. */
+  private acceptSnapshot(result: unknown): Snapshot {
     const snapshot = decodeSnapshot(field(result, 'snapshot'));
     // Remembered so the capability gates below can answer from it instead of
     // spending a round-trip on `--help`. The field has been in the snapshot all
@@ -713,17 +761,45 @@ export class HerdrClient {
    * `seq` orders concurrent reports. Best-effort throughout: decoration must
    * never take down a send.
    */
-  async reportMetadata(
+  /**
+   * Tell the host's sidebar something about a pane. Queued, not sent: the next
+   * poll that reads a snapshot carries it on its own channel
+   * (`pollSnapshot`), and only a report no poll picks up within
+   * `REPORT_WAIT_MS` goes out alone. The latest report for a pane wins.
+   */
+  reportMetadata(
     paneId: string,
     options: { source: string; tokens: Record<string, string>; ttlMs: number; seq: number }
-  ): Promise<void> {
-    const argv = [this.herdr, 'pane', 'report-metadata', paneId, '--source', options.source];
-    for (const [name, value] of Object.entries(options.tokens)) {
-      argv.push('--token', `${name}=${value}`);
-    }
-    argv.push('--ttl-ms', String(options.ttlMs), '--seq', String(options.seq));
+  ): void {
+    this.reports.set(paneId, {
+      pane_id: paneId, source: options.source, tokens: options.tokens, ttl_ms: options.ttlMs, seq: options.seq,
+    });
+    this.reportTimer ??= setTimeout(() => {
+      this.reportTimer = null;
+      for (const report of this.takeReports()) void this.sendReport(report);
+    }, REPORT_WAIT_MS);
+  }
+
+  private readonly reports = new Map<string, MetadataReport>();
+  private reportTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private takeReports(): MetadataReport[] {
+    if (this.reportTimer !== null) clearTimeout(this.reportTimer);
+    this.reportTimer = null;
+    const taken = [...this.reports.values()];
+    this.reports.clear();
+    return taken;
+  }
+
+  /** One report on its own: the socket where there is one, the CLI otherwise. */
+  private async sendReport(report: MetadataReport): Promise<void> {
     try {
-      checkEnvelope(await this.shell(shellCommand(argv), SEND_TIMEOUT_MS));
+      await this.request('pane.report_metadata', { ...report }, SEND_TIMEOUT_MS, async () => {
+        const argv = [this.herdr, 'pane', 'report-metadata', report.pane_id, '--source', report.source];
+        for (const [name, value] of Object.entries(report.tokens)) argv.push('--token', `${name}=${value}`);
+        argv.push('--ttl-ms', String(report.ttl_ms), '--seq', String(report.seq));
+        checkEnvelope(await this.shell(shellCommand(argv), SEND_TIMEOUT_MS));
+      });
     } catch {
       /* decoration, never fatal */
     }
