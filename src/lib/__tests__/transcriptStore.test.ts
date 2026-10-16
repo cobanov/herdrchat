@@ -707,15 +707,32 @@ describe('preview marker collision', () => {
  * `useWorkspaces.refresh` builds one on a three-second poll.
  */
 describe('lineStartBefore (#109)', () => {
-  const { store: subject } = store('a\nbb\nccc\n');
+  // The real shell, as for the window: the script seeks with dd and reads a
+  // chunk, and a canned answer would only test the canned answer.
+  const host = new ShellHost('a\nbb\nccc\n');
+  const subject = new TranscriptStore(host);
   it('finds the start of the line that ends at a boundary', async () => {
-    await expect(subject.lineStartBefore('/t.jsonl', 5)).resolves.toBe(2);
+    await expect(subject.lineStartBefore(host.path, 5)).resolves.toBe(2);
   });
   it('finds the start of the line a mid-line cursor is in', async () => {
-    await expect(subject.lineStartBefore('/t.jsonl', 4)).resolves.toBe(2);
+    await expect(subject.lineStartBefore(host.path, 4)).resolves.toBe(2);
   });
   it('is the start of the file for the first line', async () => {
-    await expect(subject.lineStartBefore('/t.jsonl', 1)).resolves.toBe(0);
+    await expect(subject.lineStartBefore(host.path, 1)).resolves.toBe(0);
+  });
+
+  // A reopen read the whole file before the cursor; it reads 64 KB now, and
+  // further back only for a line longer than that.
+  it('finds the start past the 64 KB it reads, and inside a line longer than it', async () => {
+    const lines = ['short', 'x'.repeat(200_000), 'é'.repeat(40_000), 'tail line', 'last'];
+    const big = new ShellHost(lines.join('\n') + '\n');
+    const bigStore = new TranscriptStore(big);
+    const bytes = Buffer.from(lines.join('\n') + '\n');
+    const expected = (byte: number) => bytes.subarray(0, byte - 1).lastIndexOf(0x0a) + 1;
+    for (const byte of [3, 6, 7, 100_000, 200_006, 200_007, 250_000, bytes.length - 6, bytes.length - 1, bytes.length]) {
+      await expect(bigStore.lineStartBefore(big.path, byte)).resolves.toBe(expected(byte));
+    }
+    expect(big.outputs.length).toBeGreaterThan(0);
   });
 });
 
