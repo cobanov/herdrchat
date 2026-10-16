@@ -1,184 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-import { backoffDelay, needsTheUser } from '@/lib/poll';
-import { useHostEvents } from '../useHostEvents';
-import { usePollGate } from '../usePollGate';
-import { useReportPresence } from './useReportPresence';
-import { useSettings } from '@/state/settings';
 import type * as SQLite from 'expo-sqlite';
 
+import { useSettings } from '@/state/settings';
+import type { OutgoingImage } from '@/lib/attachments/upload';
 import type { HerdrClient } from '@/lib/herdr/client';
-import { concernsWorkspace } from '@/lib/herdr/events';
-import { errorText, HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
-import { agentSpec } from '@/lib/herdr/agents';
-import {
-  hasSessionReference,
-  isConversationalAgent,
-  isPiFamily,
-  sameAgents,
-  sendTarget,
-  sessionSignature,
-  type AgentInfo,
-  type AgentStatus,
-} from '@/lib/herdr/models';
-import { TranscriptStore } from '@/lib/transcript/store';
-import type { ChatMessage, MessageSegment } from '@/lib/transcript/message';
-import { displayText, ECHO_ID_PREFIX, imagePaths, receiptKey } from '@/lib/transcript/message';
-import { promptWithImages } from '@/lib/transcript/images';
-import { uploadImage, type OutgoingImage } from '@/lib/attachments/upload';
-import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
-import {
-  blockedPromptSignature,
-  blockedPendingTimeout,
-  isMentionPopup,
-  parseBlockedPrompt,
-  resolveBlockedPending,
-  type BlockedPending,
-  type BlockedPrompt,
-} from '@/lib/transcript/blockedPrompt';
-import { extractLivePreview } from '@/lib/transcript/livePreview';
-import { screenText } from '@/lib/transcript/screen';
-import { batcher } from '@/lib/batcher';
-import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
-import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
-import { continueWindow } from '@/lib/transcript/window';
+import { sendTarget, sessionSignature, type AgentInfo, type AgentStatus } from '@/lib/herdr/models';
+import type { ChatMessage } from '@/lib/transcript/message';
+import type { BlockedPending, BlockedPrompt } from '@/lib/transcript/blockedPrompt';
+import type { PaneOverlay } from '@/lib/transcript/paneOverlay';
 import { modelDisplayName, type SessionMeta } from '@/lib/transcript/sessionMeta';
-import {
-  appendMessages,
-  rebind,
-  replaceMessages,
-  seedMessages,
-  clearThreadCache,
-  seedIfSession,
-  setTailCursor,
-  tailCursor,
-} from '@/state/threadCache';
+import { clearThreadCache } from '@/state/threadCache';
 import { resumeStaleRuns } from '@/features/thread/workflowRuns';
 
-/**
- * Transcript lines a thread opens with, about a hundred messages.
- *
- * Lines rather than bytes: a picture Claude reads is a line of up to a
- * megabyte, so a byte window opened a screenshot-heavy session on a dozen rows.
- * The host strips the picture data, so this is a few hundred kilobytes on the
- * wire. Older history is a scroll away.
- */
-const RECENT_LINES = 300;
-/**
- * On resume, the tail re-reads the line at the stored cursor: a disconnect can
- * leave the cursor mid-line, and re-reading the boundary line in full costs
- * nothing (dedupe drops what we've seen) while losing it costs a message. The
- * host says where that line starts (#109). A blind rewind by a byte count could
- * land inside a multi-byte character, and the lossy decode of that fragment
- * pushed the cursor a few bytes past where it really was. This fixed rewind is
- * only the fallback when the host cannot be asked.
- */
-const RESUME_REWIND = 4096;
-/**
- * One page of scroll-up history, in transcript lines: a screen or two of
- * conversation once tool calls fold into their summary rows.
- */
-const OLDER_LINES = 200;
-/**
- * How many pages a single pull may read while every one of them turns out to
- * be entirely deduped. A thread resumed from its cache anchors at the tail
- * cursor, so the first pages back are the cached window itself and yield
- * nothing new; stopping at the first of those left the reader at the top with
- * nothing happening.
- */
-const OLDER_EMPTY_PAGES = 6;
-/**
- * How long a failed page waits before the next scroll may ask again. The reader
- * asks on every scroll event near the top, and without this a host that keeps
- * failing would be asked a dozen times a second.
- */
-const OLDER_RETRY_MS = 2_000;
+import { usePollGate } from '../usePollGate';
+import { useAgentPoll } from './useAgentPoll';
+import { useBlockedPrompt } from './useBlockedPrompt';
+import { useDelivery, withoutDeliveryWarning } from './useDelivery';
+import { usePaneOverlay } from './usePaneOverlay';
+import { useReportPresence } from './useReportPresence';
+import { useSessionBinding, type SessionState } from './useSessionBinding';
+import { useThreadHistory } from './useThreadHistory';
+import { useTranscriptTails } from './useTranscriptTails';
 
-const STATUS_POLL_MS = 2000;
-/**
- * The status poll's rate while the host's event stream is live and no agent
- * is working. Status flips and turn ends arrive as events and trigger a poll
- * at once; this only catches what a dropped stream would lose. While an agent
- * IS working the fast rate stays, because the streaming preview and the tail
- * watchdog are screen reads that no event announces.
- */
-const LIVE_POLL_MS = 30_000;
-/** Coalesce a burst of events (working → done → idle) into one poll. */
-const EVENT_DEBOUNCE_MS = 250;
-/**
- * How long a tail may produce nothing while its agent is WORKING before it is
- * assumed dead and restarted.
- *
- * Generous on purpose. A working agent can genuinely go quiet for a while, a
- * long build, a slow test run, one tool call that takes a minute, and the cost
- * of waiting is a late restart, while the cost of firing early is a stream
- * needlessly torn down and re-established over SSH.
- */
-const TAIL_SILENCE_MS = 90_000;
-/**
- * How long an agent may go without reporting a session id before the thread
- * stops waiting and says the integration is probably missing.
- *
- * A freshly started Claude takes the better part of a minute to report, 48
- * seconds, measured, so accusing the host too early is a false alarm shown to
- * someone whose id is about to arrive. This is comfortably past that, and until
- * it elapses the thread says it is waiting rather than showing nothing.
- */
-const NO_SESSION_GRACE_MS = 80_000;
-const CODEX_RECEIPT_WAIT_MS = 5_000;
-/** How far past its cursor a reopened chat catches up through the tail rather than a fresh window. */
-const CATCH_UP_BYTES = 64 * 1024;
-/** How long a burst of tail lines gathers before it is written and shown. */
-const TAIL_BATCH_MS = 100;
-/** How much of an agent's screen stands in for the history the app cannot read. */
-const SCREEN_LINES = 80;
-/** First and longest wait before looking again for a sibling's absent transcript. */
-const ABSENT_RETRY_MS = 5_000;
-const ABSENT_RETRY_MAX_MS = 60_000;
-/** How long a send cut off by the connection waits for its transcript receipt. */
-const TRANSPORT_RECEIPT_WAIT_MS = 8_000;
-const RECEIPT_CHECK_MS = 100;
-const CODEX_DELIVERY_NOTICE = 'The input was sent to Codex, but its transcript has not confirmed delivery. Check the host before retrying.';
-const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
-const STALLED_WARNING = 'The agent never picked that up, it may be stuck at a prompt. Try again.';
-const UNCONFIRMED_WARNING = "Couldn't confirm delivery, the message may be stuck in the terminal. Try again.";
-const DELIVERY_UNKNOWN_WARNING =
-  "The connection dropped while sending, so the message may have arrived. Check the chat before sending it again.";
-const COMMAND_UNCONFIRMED_WARNING = "Couldn't see that command run. Check the terminal before sending it again.";
-/** Warnings about whether a message landed. Its transcript receipt answers them. */
-const DELIVERY_WARNINGS: ReadonlySet<string> = new Set([
-  CODEX_DELIVERY_NOTICE,
-  STALLED_WARNING,
-  UNCONFIRMED_WARNING,
-  DELIVERY_UNKNOWN_WARNING,
-  COMMAND_UNCONFIRMED_WARNING,
-]);
-
-/**
- * After a slash command, how long to look for the panel it may open. Claude
- * draws one within a second; this is the ceiling, not the usual case.
- */
-const OVERLAY_WATCH_MS = 8_000;
-/** When to look for a new panel straight after a command, before the poll comes round. */
-const OVERLAY_FIRST_LOOKS_MS = [400, 1_200] as const;
-/** Between a key into a panel and reading what it did. */
-const OVERLAY_SETTLE_MS = 300;
-/** When to look at a blocked pane again after answering it. */
-const ANSWER_LOOKS_MS = [400, 1_200] as const;
-/** Rows of screen to read: a panel plus the composer under it. */
-const OVERLAY_LINES = 40;
-/**
- * How long a command may show nothing at all before its bubble says so. It
- * counts as run on a transcript line, a panel, or the agent starting to work.
- */
-const COMMAND_CONFIRM_MS = 10_000;
-
-/** States that prove the agent read a prompt: it started, or it stopped to ask. */
-const REACTED = ['working', 'blocked'] as const;
-
-export type SessionState = 'ok' | 'waiting' | 'missing' | 'unsupported' | 'replaced';
+export type { SessionState } from './useSessionBinding';
 
 export interface ThreadState {
   loading: boolean;
@@ -268,22 +114,6 @@ export interface ThreadState {
 }
 
 /**
- * The panes a thread is about, out of a host snapshot: every pane in the
- * workspace, or with `paneId` only that one.
- *
- * Everything the thread does derives from this list, so a pane's chat binds,
- * tails, sends and reports presence for its own agent and nothing else, while
- * the workspace chat keeps every pane exactly as it always has. When the pane
- * is gone the list is empty, which unbinds the thread and holds sending the
- * way an emptied workspace does. Matching on the pane id rather than following
- * the session to another pane is deliberate: the pane is what the user picked
- * out of the list, and its row disappears with it.
- */
-function chatAgents(agents: readonly AgentInfo[], workspaceId: string, paneId: string | undefined): AgentInfo[] {
-  return agents.filter((agent) => agent.workspaceId === workspaceId && (paneId === undefined || agent.paneId === paneId));
-}
-
-/**
  * Drives one thread: tails the transcript into bubbles, tracks live
  * blocked/working state, and sends replies back through herdr.
  *
@@ -294,6 +124,15 @@ function chatAgents(agents: readonly AgentInfo[], workspaceId: string, paneId: s
  * `agent_session.value` IS the Claude transcript filename, rather than by
  * guessing the newest file in the project directory, because that guess opens a
  * previous session's history under a reused workspace.
+ *
+ * The work is split by concern, and this hook wires the parts together:
+ *
+ * - `useThreadHistory`: the messages on screen, the cache, paging up.
+ * - `useTranscriptTails`: the live transcript streams and the header's model.
+ * - `useSessionBinding`: which session the thread shows, and its state.
+ * - `useAgentPoll`: the status loop that drives the rest.
+ * - `useBlockedPrompt`, `usePaneOverlay`: a question, or a command's panel.
+ * - `useDelivery`: sending, and whether a message landed.
  */
 export function useThread(
   db: SQLite.SQLiteDatabase,
@@ -314,31 +153,8 @@ export function useThread(
    * would have each chat `rebind` away the other's history on every open.
    */
   const cacheKey = chatKey({ workspaceId, paneId: pane });
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(client !== null);
-  const [historyVersion, setHistoryVersion] = useState(0);
   const [agents, setAgents] = useState<AgentInfo[]>([...initialAgents]);
-  const [workspaceLabel, setWorkspaceLabel] = useState<string | null>(null);
-  const [blockedPrompt, setBlockedPrompt] = useState<BlockedPrompt | null>(null);
-  /** The pane with a question open, `blocked` or an idle one with input pending. */
-  const [askingPaneId, setAskingPaneId] = useState<string | null>(null);
-  const [blockedPending, setBlockedPending] = useState<BlockedPending | null>(null);
-  // Mirrors the state for the poll closure and for the synchronous double-tap
-  // guard in sendKeys, a second tap can land before React re-renders.
-  const blockedPendingRef = useRef<BlockedPending | null>(null);
-  const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
-  const [livePreview, setLivePreview] = useState<string | null>(null);
-  /** The agent's screen, for an agent whose history the app cannot read; null otherwise. */
-  const [screen, setScreen] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<PaneOverlay | null>(null);
-  const [overlayBusy, setOverlayBusy] = useState(false);
-  /** The pane the open panel is on, or null. Read by the poll, which must not re-run on it. */
-  const overlayPane = useRef<string | null>(null);
-  /** Until when the poll looks for a panel with no panel open yet. */
-  const overlayWatchUntil = useRef(0);
-  /** When a panel was last on screen, which confirms the command that opened it. */
-  const overlaySeenAt = useRef(0);
   /*
     Errors live in three slots, because each has its own owner and its own
     reason to go away. The poll clears only what the poll raised: a warning
@@ -346,891 +162,64 @@ export function useThread(
     sending the same prompt twice into a live agent, and a successful poll two
     seconds later is no reason to take it down (#82).
 
-    - `pollError`: the status loop's own failure. Cleared by its next success.
-    - `actionError`: a send, a blocked-prompt reply, an interrupt. Cleared on
-      dismiss, on the transcript receipt that answers it, or by the next send.
-    - `tailError`: the live transcript reader, below.
+    - `pollError` (`useAgentPoll`): the status loop's own failure. Cleared by
+      its next success.
+    - `actionError`, here: a send, a blocked-prompt reply, an interrupt.
+      Cleared on dismiss, on the transcript receipt that answers it, or by the
+      next send.
+    - `tailError` (`useTranscriptTails`): the live transcript reader.
   */
-  const [pollError, setPollError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  /*
-    Tail failures need their own slot, because the poll's success path ends in
-    `setPollError(null)` and a tail that rejected earlier in the SAME iteration was
-    wiped by it a few hundred milliseconds after appearing.
-
-    `startTail` is fired without await, and its first host call starts ahead of
-    the poll's own `paneVisible` calls (each runs on a channel of its own,
-    side by side), so its rejection lands first almost every time. And when no agent is blocked
-    and none is working, the poll has no awaits left at all between the two, so
-    the clear follows immediately.
-
-    Whether it was visible therefore depended on what the agents happened to be
-    doing, which is why this read as "the banner flickers" rather than as a bug.
-    The poll clears only what the poll raised.
-  */
-  const [tailError, setTailError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [reachedStart, setReachedStart] = useState(false);
-  const [sessionState, setSessionState] = useState<SessionState>('ok');
-  const [transcriptPaths, setTranscriptPaths] = useState<string[]>([]);
-  /** When the thread first saw an agent without a session id, or null while all have one. */
-  const noSessionSince = useRef<number | null>(null);
   const polling = usePollGate();
   // The user's own battery/data tradeoff, applied on top of each screen's rate.
   const pollScale = useSettings((state) => state.pollScale);
-  /** Consecutive failed polls, for the backoff. Reset by any success. */
-  const failures = useRef(0);
+  const aliveRef = useRef(true);
+  /** The session the thread shows, by its signature; null while none is bound. */
+  const boundSigRef = useRef<string | null>(null);
   /** Asks the running status loop to poll soon. Set by the effect that owns it. */
-  const kick = useRef<() => void>(() => undefined);
-  /** The screen the last poll read, which the next one asks for with its snapshot. */
-  const screenWant = useRef<{ paneId: string; lines: number } | null>(null);
-  const streamLive = useHostEvents(
-    client,
-    agents.map((agent) => agent.paneId),
-    polling,
-    (event) => {
-      if (concernsWorkspace(event, workspaceId)) kick.current();
-    }
-  );
-  const streamLiveRef = useRef(streamLive);
-  useEffect(() => {
-    streamLiveRef.current = streamLive;
-  }, [streamLive]);
-  const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
-
-  // Transcript arrivals and optimistic echoes are kept apart so an unconfirmed
-  // echo can sit at its send position rather than pinning to the bottom below
-  // newer messages.
-  const arrivals = useRef<ChatMessage[]>([]);
-  const echoes = useRef<ChatMessage[]>([]);
-  const echoBaselines = useRef(new Map<string, Set<string>>());
-  const claimedReceipts = useRef(new Set<string>());
-  const confirmedEchoIds = useRef(new Set<string>());
-  const seen = useRef<Set<string>>(new Set());
-  /**
-   * Where scroll-up reads from, and how far back it has already gone. Recorded
-   * from the first tail only: a workspace with two agents has two transcripts,
-   * and paging the focused one is what "load older" means to a reader.
-   */
-  const olderSource = useRef<{
-    path: string;
-    label: string | null;
-    anchor: number;
-    /** Codex only: a rewound or forked rollout goes on in the file it was cut from. */
-    codexBase: boolean;
-  } | null>(null);
-  const boundSig = useRef<string | null>(null);
-  /** The panes the bound session was seen in, sorted and joined. */
-  const boundPanes = useRef('');
-  /** Agents whose transcript file was absent, and when to look again (#99). */
-  const absentRetry = useRef(new Map<string, { at: number; delay: number }>());
-  /** The saved history was already put on screen for an unreachable host. */
-  const offlineSeeded = useRef(false);
-  const [offline, setOffline] = useState(false);
-  /**
-   * The session this thread had open ended and a different agent now holds
-   * the slot, not yet reporting its own session. Cleared when one binds.
-   */
-  const replaced = useRef(false);
-  const tails = useRef(new Map<string, AbortController>());
-  /**
-   * When each tail last produced anything, so the poll can tell a wedged stream
-   * from a quiet agent. See `TAIL_SILENCE_MS`.
-   */
-  const tailBeats = useRef(new Map<string, number>());
-  /**
-   * Tail failures in a row per session, cleared by anything the tail reads.
-   * The first is nearly always the phone sleeping and taking the stream with
-   * it, so it restarts quietly; only a restart that fails too is shown.
-   */
-  const tailFailures = useRef(new Map<string, number>());
-  /** The header is seeded from disk once per bound session; the tail does the rest. */
-  const metaSeeded = useRef(new Set<string>());
-  const alive = useRef(true);
-  const paging = useRef(false);
-  /** When a page last failed, for `OLDER_RETRY_MS`. */
-  const olderFailedAt = useRef(0);
-  const sending = useRef(false);
-
-  /**
-   * Fold one assistant line's metadata into the header.
-   *
-   * Merged rather than replaced: a turn can report a model with no usage yet, or
-   * usage on a line whose model field is absent, and blanking the other half
-   * each time would make the header flicker between complete and half-empty.
-   */
-  const applyMeta = useCallback((key: string, next: SessionMeta) => {
-    setSessionMetadata((prev) => ({
-      ...prev,
-      [key]: {
-        model: next.model ?? prev[key]?.model ?? null,
-        // Model and effort belong to one turn, never to a sibling agent.
-        effort: key.startsWith('pi:') || key.startsWith('omp:')
-          ? next.effort !== undefined ? next.effort : prev[key]?.effort
-          : next.model !== null ? next.effort ?? null : prev[key]?.effort ?? null,
-        contextTokens: next.contextTokens ?? prev[key]?.contextTokens ?? null,
-      },
-    }));
-  }, []);
-
-  const rebuild = useCallback(() => {
-    // Only a NEW host record can acknowledge a prompt. Matching all historical
-    // text made a second "again" disappear before it had even been sent.
-    echoes.current = echoes.current.filter((echo) => {
-      const before = echoBaselines.current.get(echo.id);
-      const receipt = arrivals.current.find(message => message.role === 'user' &&
-        !before?.has(message.id) && !claimedReceipts.current.has(message.id) &&
-        receiptKey(message) === receiptKey(echo));
-      if (receipt === undefined) return true;
-      claimedReceipts.current.add(receipt.id);
-      confirmedEchoIds.current.add(echo.id);
-      echoBaselines.current.delete(echo.id);
-      // The message arrived after all: a warning about its delivery is moot.
-      setActionError(previous => previous !== null && DELIVERY_WARNINGS.has(previous) ? null : previous);
-      return false;
-    });
-
-    if (echoes.current.length === 0) {
-      setMessages([...arrivals.current]);
-      return;
-    }
-    // Merge the two time-ordered lists, carrying the last known timestamp
-    // forward for arrivals that have none.
-    const merged: ChatMessage[] = [];
-    const pending = [...echoes.current].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-    let index = 0;
-    let last = 0;
-    for (const message of arrivals.current) {
-      const effective = message.timestamp ?? last;
-      last = effective;
-      while (index < pending.length && (pending[index]?.timestamp ?? Infinity) <= effective) {
-        merged.push(pending[index]!);
-        index += 1;
-      }
-      merged.push(message);
-    }
-    merged.push(...pending.slice(index));
-    setMessages(merged);
-  }, []);
-
-  /*
-    Open from the cache at once. The list saw this chat's session a moment
-    ago; when the cached messages are that session's, they show before the
-    first poll, and the thread is bound to it so the poll goes straight to the
-    tail rather than through a loading state. A host that names another
-    session by then is a rotation, and is handled as one. A cache of another
-    session is left alone here (`seedIfSession` only reads).
-  */
-  const seededFromList = useRef(false);
-  useEffect(() => {
-    if (listedSig === undefined || listedSig === '' || seededFromList.current) return;
-    seededFromList.current = true;
-    void seedIfSession(db, connectionId, cacheKey, listedSig).then((cached) => {
-      if (!alive.current || boundSig.current !== null || arrivals.current.length > 0 || cached.length === 0) return;
-      boundSig.current = listedSig;
-      arrivals.current = cached;
-      seen.current = new Set(cached.map((message) => message.id));
-      rebuild();
-      setLoading(false);
-    });
-  }, [db, connectionId, cacheKey, listedSig, rebuild]);
-
-  const ingest = useCallback(
-    async (incoming: readonly ChatMessage[], sig: string) => {
-      if (!alive.current || sig !== boundSig.current) return;
-      const fresh = incoming.filter((message) => !seen.current.has(message.id));
-      if (fresh.length === 0) return;
-      for (const message of fresh) seen.current.add(message.id);
-      arrivals.current.push(...fresh);
-      await appendMessages(db, connectionId, cacheKey, sig, fresh);
-      if (alive.current) rebuild();
-    },
-    [db, connectionId, cacheKey, rebuild]
-  );
-
-  /**
-   * Prepend a page of older history.
-   *
-   * Deliberately NOT written to the thread cache: `appendMessages` numbers rows
-   * with max(seq)+1, so persisting a page of old turns would file them after the
-   * newest ones and the thread would come back inverted on the next open. Pages
-   * live for this visit; reopening starts from the recent window again.
-   */
-  const loadOlder = useCallback(async () => {
-    if (client === null || paging.current) return;
-    if (Date.now() - olderFailedAt.current < OLDER_RETRY_MS) return;
-    const source = olderSource.current;
-    if (source === null || (source.anchor <= 0 && !source.codexBase)) return;
-    const sig = boundSig.current;
-
-    paging.current = true;
-    setLoadingOlder(true);
-    try {
-      const store = new TranscriptStore(client.transport);
-      for (let page = 0; page < OLDER_EMPTY_PAGES; page += 1) {
-        const current = olderSource.current;
-        if (current === null) break;
-        if (current.anchor <= 0) {
-          // The start of this file. A rewound or forked Codex rollout holds
-          // only its own turns, and its first line names the file the earlier
-          // ones are in: page on there, from where the inherited part ends.
-          const base = current.codexBase ? await store.codexHistoryBase(current.path) : null;
-          if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
-          olderSource.current = base === null
-            ? { ...current, codexBase: false }
-            : { ...current, path: base.path, anchor: base.endByte };
-          if (base === null) {
-            setReachedStart(true);
-            break;
-          }
-          continue;
-        }
-
-        const older = await store.older(current.path, current.label, current.anchor, OLDER_LINES);
-        if (!alive.current || sig !== boundSig.current || olderSource.current !== current) return;
-        olderSource.current = { ...current, anchor: older.startByte };
-
-        const fresh = older.messages.filter((message) => !seen.current.has(message.id));
-        for (const message of fresh) seen.current.add(message.id);
-        if (fresh.length > 0) {
-          arrivals.current.unshift(...fresh);
-          rebuild();
-        }
-
-        if (older.reachedStart && !current.codexBase) {
-          setReachedStart(true);
-          break;
-        }
-        // Only keep paging while the reader has been given nothing.
-        if (fresh.length > 0) break;
-      }
-    } catch {
-      // A failed reach for more history leaves the thread exactly as it was.
-      // The reader's next scroll asks again; surfacing a banner for it would
-      // push the conversation down to report that nothing happened.
-      olderFailedAt.current = Date.now();
-    } finally {
-      paging.current = false;
-      if (alive.current) setLoadingOlder(false);
-    }
-  }, [client, rebuild]);
-
-  const clearBlockedPending = useCallback(() => {
-    if (blockedPendingTimer.current !== null) {
-      clearTimeout(blockedPendingTimer.current);
-      blockedPendingTimer.current = null;
-    }
-    blockedPendingRef.current = null;
-    setBlockedPending(null);
-  }, []);
-
-  const resetHistory = useCallback(() => {
-    arrivals.current = [];
-    echoes.current = [];
-    echoBaselines.current.clear();
-    claimedReceipts.current.clear();
-    confirmedEchoIds.current.clear();
-    olderSource.current = null;
-    setReachedStart(false);
-    seen.current = new Set();
-    setMessages([]);
-    setFailedIds(new Set());
-    // A different session means a different model and a different context; the
-    // old header would otherwise persist over the new conversation.
-    metaSeeded.current.clear();
-    setSessionMetadata({});
-  }, []);
+  const kickRef = useRef<() => void>(() => undefined);
 
   // Cache reads happen after the snapshot identifies the live session. A route
   // opens without initial agents, so seeding here could flash a recycled chat.
   useEffect(() => {
-    alive.current = true;
+    aliveRef.current = true;
     return () => {
-      alive.current = false;
+      aliveRef.current = false;
     };
   }, []);
 
-  const startTails = useCallback(async (live: readonly AgentInfo[]) => {
-    if (client === null || boundSig.current === null) return;
-    const identified = live.filter(hasSessionReference);
-    if (identified.length === 0) return;
-    /*
-      An agent whose transcript file does not exist yet has no tail, and a
-      missing tail restarts every sibling (below). While a healthy sibling was
-      streaming, that aborted and re-opened its SSH tail on every poll, for as
-      long as the other file stayed absent (#99). So with something live, an
-      absent file is retried on a backoff instead; with nothing live there is
-      nothing to disturb, and it is retried every poll so a new chat's first
-      messages are not delayed.
-    */
-    const now = Date.now();
-    const someLive = identified.some(agent => tails.current.has(sessionSignature([agent])!));
-    const settled = identified.every(agent => {
-      const key = sessionSignature([agent])!;
-      if (tails.current.has(key)) return true;
-      const retry = absentRetry.current.get(key);
-      return someLive && retry !== undefined && now < retry.at;
-    });
-    if (settled) return;
+  const deliveryLanded = useCallback(() => setActionError(withoutDeliveryWarning), [setActionError]);
+  const history = useThreadHistory({ client, db, connectionId, cacheKey, aliveRef, boundSigRef, onConfirmed: deliveryLanded });
+  const { shown, rebuild, seed, ingest, showEnd, anchorOlder, reset: resetWindow, markFailed, unmarkFailed } = history;
+  const tails = useTranscriptTails({
+    client, db, connectionId, cacheKey, aliveRef, boundSigRef, kickRef, shown, ingest, showEnd, anchorOlder, setLoading,
+  });
+  const { startTails, abortTails, stopTails, resetMeta, dropSilentTails, setTailError } = tails;
 
-    // One opening snapshot for the whole workspace. Reserving every native
-    // session before awaiting also prevents an event from starting it twice.
-    // Restart siblings together when one stream dies, so two agents never
-    // replace each other's half of the cached window.
-    for (const controller of tails.current.values()) controller.abort();
-    tails.current.clear();
-    const controller = new AbortController();
-    const sig = boundSig.current;
-    const current = () => alive.current && !controller.signal.aborted && sig === boundSig.current;
-    const release = (key: string) => {
-      if (tails.current.get(key) === controller) {
-        tails.current.delete(key);
-        tailBeats.current.delete(key);
-      }
-    };
-    for (const agent of identified) tails.current.set(sessionSignature([agent])!, controller);
+  const resetHistory = useCallback(() => {
+    resetWindow();
+    resetMeta();
+  }, [resetWindow, resetMeta]);
 
-    try {
-      const store = new TranscriptStore(client.transport);
-      let openingError: string | null = null;
-      const sources = (await Promise.all(identified.map(async agent => {
-        try {
-          const id = agent.agentSession!.value!;
-          const key = sessionSignature([agent])!;
-          const label = live.length > 1 ? agent.agent : null;
-          let path = await store.transcriptPath(agent);
-          if (path === null) throw new HerdrError('session_invalid', agentSpec(agent.agent)?.missing ?? 'The agent reported an invalid session id. Resume the session on the host, then reload.');
-          let probe = await store.fileProbe(path);
-          if (probe.kind === 'absent' && agent.agent === 'claude') {
-            // Not under the folder the pane's cwd names. The same session id may
-            // be filed under a worktree's folder instead (#89).
-            const found = await store.findClaudeTranscript(id);
-            if (found !== null && found !== path) {
-              path = found;
-              probe = await store.fileProbe(path);
-            }
-          }
-          if (probe.kind === 'absent') {
-            store.forgetTranscript(agent);
-            const previous = absentRetry.current.get(key);
-            const delay = Math.min((previous?.delay ?? ABSENT_RETRY_MS / 2) * 2, ABSENT_RETRY_MAX_MS);
-            absentRetry.current.set(key, { at: Date.now() + delay, delay });
-            release(key);
-            return null; // A new agent can receive its first prompt before writing a file.
-          }
-          if (probe.kind === 'unknown') throw new HerdrError('transcript_unreadable', `Couldn't read this chat's transcript on the host: ${probe.reason}`);
-          if (isPiFamily(agent.agent)) await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
-          absentRetry.current.delete(key);
-          const cached = await tailCursor(db, connectionId, cacheKey, path);
-          return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
-        } catch (thrown) {
-          release(sessionSignature([agent])!);
-          openingError = errorText(thrown);
-          return null;
-        }
-      }))).filter(source => source !== null);
-      if (!current()) return;
-      const claudePaths = sources.filter(source => source.agent === 'claude').map(source => source.path);
-      setTranscriptPaths(previous => previous.join('\n') === claudePaths.join('\n') ? previous : claudePaths);
+  const primaryPane = sendTarget(agents);
+  const overlay = usePaneOverlay({ client, aliveRef, kickRef, setActionError });
+  const { readOverlay, watchOverlay, watchingOverlay, closeOverlay, overlaySeen } = overlay;
+  const asking = useBlockedPrompt({ client, aliveRef, kickRef, setActionError, pollScale, agents, primaryPane });
+  const { sessionState, bind } = useSessionBinding({
+    db, connectionId, cacheKey, listedSig, aliveRef, boundSigRef, shown, seed, stopTails, resetHistory, setLoading,
+  });
+  const poll = useAgentPoll({
+    client, db, connectionId, cacheKey, workspaceId, pane, polling, pollScale, aliveRef, boundSigRef, kickRef, agents,
+    setAgents, setLoading, shown, seed, bind, startTails, abortTails, dropSilentTails,
+    readQuestion: asking.readQuestion, watchingOverlay, readOverlay, closeOverlay,
+  });
+  const { resetBackoff, setPollError } = poll;
+  const delivery = useDelivery({
+    client, workspaceId, pane, aliveRef, boundSigRef, kickRef, setActionError, agents, primaryPane, loading, sessionState,
+    shown, rebuild, markFailed, unmarkFailed, watchOverlay, overlaySeen,
+  });
 
-      // A cursor is a live-stream checkpoint, not a history-loading strategy: a
-      // backlog is read as one bounded window (#66, an 11 MB gap took minutes
-      // to replay line by line). A few lines past the cursor, a reply or two
-      // since the chat was last open, are the exception: the tail streams them
-      // from the cursor, where the window re-read 300 lines and replaced the
-      // cache. An unchanged file uses the cache as it is.
-      const smallGap = (source: { cached: number | null; size: number }) =>
-        source.cached !== null && source.cached < source.size && source.size - source.cached <= CATCH_UP_BYTES;
-      const changed = arrivals.current.length === 0 ||
-        sources.some(source => source.cached !== source.size && !smallGap(source));
-      const windows = await Promise.all(sources.map(async source => ({
-        ...source,
-        recent: changed ? await loadRecent(store, source.path, source.label, source.size) : null,
-      })));
-      if (!current()) return;
-      if (changed && windows.length > 0) {
-        const latest = windows.flatMap(window => window.recent?.messages ?? []);
-        // A single transcript keeps host order even without timestamps.
-        if (windows.length > 1) latest.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-        await replaceMessages(db, connectionId, cacheKey, sig, latest);
-        if (!current()) return;
-        // A restart re-reads the end of the transcript. When that continues what
-        // is on screen, keep the older history the reader paged back to and the
-        // list as it is, so a reader mid-scroll stays put. Only a window that
-        // cannot continue (a gap, or the first read) is a new list.
-        const continued = continueWindow(arrivals.current, latest);
-        const keptOlder = continued !== null && continued.length > latest.length;
-        arrivals.current = continued ?? latest;
-        seen.current = new Set(arrivals.current.map(message => message.id));
-        if (!keptOlder) olderSource.current = null;
-        rebuild();
-        if (continued === null) setHistoryVersion(version => version + 1);
-      }
-
-      setTailError(openingError);
-      for (const source of windows) {
-        const followFrom = source.recent?.consumedBytes ?? await resumePoint(store, source.path, source.cached!);
-        if (source.recent !== null) {
-          await setTailCursor(db, connectionId, cacheKey, source.path, followFrom);
-        }
-        if (!current()) return;
-        if (olderSource.current === null) {
-          const anchor = source.recent?.startByte ?? source.cached!;
-          const codexBase = source.agent === 'codex';
-          olderSource.current = { path: source.path, label: source.label, anchor, codexBase };
-          setReachedStart(anchor <= 0 && !codexBase);
-        }
-        if (!metaSeeded.current.has(source.key)) {
-          metaSeeded.current.add(source.key);
-          void store.sessionMeta(source.path, source.agent).then(seeded => {
-            if (seeded !== null && current()) setSessionMetadata(prev => ({
-              ...prev,
-              [source.key]: {
-                model: prev[source.key]?.model ?? seeded.model,
-                effort: isPiFamily(source.agent)
-                  ? prev[source.key]?.effort !== undefined ? prev[source.key]?.effort : seeded.effort
-                  : prev[source.key]?.model != null ? prev[source.key]?.effort : seeded.effort,
-                contextTokens: prev[source.key]?.contextTokens ?? seeded.contextTokens,
-              },
-            }));
-          }).catch(() => { /* The next live turn can fill the header. */ });
-        }
-        tailBeats.current.set(source.key, Date.now());
-        void (async () => {
-          let restartNow = false;
-          // Lines arrive in bursts (a call, its result, the reply), and each
-          // one was a transaction, a cursor write and a rebuild of the whole
-          // list. A burst is one of each now, messages before the cursor.
-          const written = batcher<{ message: ChatMessage | null; consumed: number }>(async (chunks) => {
-            const messages = chunks.flatMap((chunk) => (chunk.message === null ? [] : [chunk.message]));
-            if (messages.length > 0) await ingest(messages, sig);
-            const last = chunks[chunks.length - 1];
-            if (current() && last !== undefined) await setTailCursor(db, connectionId, cacheKey, source.path, last.consumed);
-          }, TAIL_BATCH_MS);
-          try {
-            for await (const chunk of store.tail(source.path, source.label, followFrom, controller.signal)) {
-              if (!current()) break;
-              if (written.failure !== undefined) throw written.failure;
-              tailBeats.current.set(source.key, Date.now());
-              tailFailures.current.delete(source.key);
-              if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
-              written.push({ message: chunk.message, consumed: chunk.consumedBytes });
-            }
-            await written.drain();
-            if (written.failure !== undefined) throw written.failure;
-          } catch (thrown) {
-            if (current()) {
-              const failures = (tailFailures.current.get(source.key) ?? 0) + 1;
-              tailFailures.current.set(source.key, failures);
-              // With live events the poll that restarts a tail runs every 30 s,
-              // so the thread sat behind this banner for that long after every
-              // return from the background. Restart at once instead, and only
-              // say something when that restart fails as well.
-              if (failures === 1) restartNow = true;
-              else setTailError(`Conversation updates paused. Reconnecting. ${errorText(thrown)}`);
-            }
-          } finally {
-            release(source.key);
-            // After the release, or the poll would still find this tail running.
-            if (restartNow) kick.current();
-          }
-        })();
-      }
-      if (current()) {
-        setLoading(false);
-      }
-    } catch (thrown) {
-      if (current()) {
-        setLoading(false);
-        setTailError(errorText(thrown));
-        // Keep the last readable cache, and retry the bounded snapshot. Never
-        // fall back to tailing from byte zero on a failed bulk read.
-        controller.abort();
-        for (const agent of identified) release(sessionSignature([agent])!);
-      }
-    }
-  }, [client, db, connectionId, cacheKey, ingest, applyMeta, rebuild]);
-
-  /**
-   * Read the pane for a slash command's panel.
-   *
-   * Only while one is expected or open: this is a screen read over SSH, and a
-   * read on every poll of every thread is what sank the first attempt at
-   * slash commands (it queued behind itself and timed out unrelated calls).
-   */
-  const readOverlay = useCallback(async (paneId: string) => {
-    if (client === null) return;
-    const found = parsePaneOverlay(await client.paneVisible(paneId, OVERLAY_LINES));
-    if (!alive.current) return;
-    if (found !== null) overlaySeenAt.current = Date.now();
-    overlayPane.current = found === null ? null : paneId;
-    setOverlay(found);
-  }, [client]);
-
-  const watchOverlay = useCallback((paneId: string) => {
-    overlayWatchUntil.current = Date.now() + OVERLAY_WATCH_MS;
-    for (const delay of OVERLAY_FIRST_LOOKS_MS) {
-      setTimeout(() => {
-        if (alive.current && overlayPane.current === null) void readOverlay(paneId).catch(() => undefined);
-      }, delay);
-    }
-    kick.current();
-  }, [readOverlay]);
-
-  const sendOverlayKeys = useCallback(async (keys: readonly string[]) => {
-    const paneId = overlayPane.current;
-    if (client === null || paneId === null || overlayBusy) return;
-    setOverlayBusy(true);
-    try {
-      if (keys.length > 0) await client.sendKeys(paneId, keys);
-      await new Promise((resolve) => setTimeout(resolve, OVERLAY_SETTLE_MS));
-      // A panel can lead to another (a confirmation), so keep looking a while.
-      overlayWatchUntil.current = Date.now() + OVERLAY_WATCH_MS;
-      await readOverlay(paneId);
-    } catch (thrown) {
-      setActionError(errorText(thrown));
-    } finally {
-      if (alive.current) setOverlayBusy(false);
-    }
-  }, [client, overlayBusy, readOverlay]);
-
-  // Status poll, which doubles as the tail watchdog.
-  useEffect(() => {
-    // Backgrounded: iOS suspends these timers anyway, but the socket usually
-    // dies with them, so the honest thing is to stop and re-poll immediately on
-    // resume, which is what remounting this effect does.
-    if (client === null || !polling) return;
-    // A panel may already be open: opened from the desk, or left open when
-    // the app went to the background. Look once each time polling starts.
-    let lookForPanel = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let inFlight = false;
-    let again = false;
-    let stopped = false;
-
-    const schedule = (delayMs: number) => {
-      if (stopped) return;
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => void poll(), delayMs);
-    };
-
-    const poll = async () => {
-      if (stopped) return;
-      if (inFlight) {
-        // A kick landed mid-poll. Its cause may postdate what this poll read,
-        // so go once more when it finishes rather than dropping it.
-        again = true;
-        return;
-      }
-      inFlight = true;
-      let keepFast = true;
-      let needsUser = false;
-      try {
-        // The screen the last poll read rides with the snapshot: while an agent
-        // works or waits, every poll reads one, and on its own channel that was
-        // half of what an open chat asked the host.
-        const asked = screenWant.current;
-        const polled = await client.pollSnapshot(asked);
-        const snapshot = polled.snapshot;
-        let nextWant: { paneId: string; lines: number } | null = null;
-        /** A pane's visible screen: the one the batch brought, or a read of its own. */
-        const visible = async (paneId: string, lines: number): Promise<string> => {
-          nextWant ??= { paneId, lines };
-          return polled.screen !== null && asked?.paneId === paneId && asked.lines === lines
-            ? polled.screen
-            : client.paneVisible(paneId, lines);
-        };
-        if (!alive.current || stopped) return;
-        const live = chatAgents(snapshot.agents, workspaceId, pane);
-        setAgents((previous) => (sameAgents(previous, live) ? previous : live));
-        const workspace = snapshot.workspaces?.find((item) => item.workspaceId === workspaceId);
-        if (workspace !== undefined) setWorkspaceLabel(workspace.label.length > 0 ? workspace.label : null);
-
-        const conversational = live.filter(isConversationalAgent);
-        const unsupported = conversational.length === 0 && live.some(agent => agent.agent !== null);
-        const sig = sessionSignature(conversational);
-        const panes = conversational.map((agent) => agent.paneId).sort().join(',');
-
-        /*
-          The session this thread was showing is gone. Nothing reported a new
-          one, but either no agent is left in the workspace (closed on the
-          host) or different panes hold it (recreated, common in the iPad split
-          view). The old history and the send target would otherwise both
-          stay: the screen kept the old conversation and `send` went to the new
-          pane (#87). Unbind, clear the history, and hold sending until the new
-          agent says which session it is.
-        */
-        if (
-          sig === null &&
-          boundSig.current !== null &&
-          // No panes yet: bound from the cache before the first poll, which
-          // records them below.
-          (conversational.length === 0 || (boundPanes.current !== '' && panes !== boundPanes.current))
-        ) {
-          for (const controller of tails.current.values()) controller.abort();
-          tails.current.clear();
-          tailBeats.current.clear();
-          tailFailures.current.clear();
-          boundSig.current = null;
-          boundPanes.current = '';
-          resetHistory();
-          replaced.current = conversational.length > 0;
-        }
-        if (conversational.length === 0) replaced.current = false;
-        if (sig !== null) {
-          replaced.current = false;
-          boundPanes.current = panes;
-        }
-
-        // An agent that never reports a session id is almost always a host
-        // without `herdr integration install claude`. The thread cannot target
-        // a transcript without it and refuses to guess, so without this it just
-        // stays empty and blames nothing. Setting the same value twice is a
-        // no-op in React, so this does not re-render on every poll.
-        if (unsupported) {
-          noSessionSince.current = null;
-          setSessionState('unsupported');
-        } else if (replaced.current) {
-          noSessionSince.current = null;
-          setSessionState('replaced');
-        } else if (conversational.length > 0 && sig === null) {
-          // A question asked before the session starts, Claude's folder trust,
-          // is not a missing integration: the id arrives once it is answered,
-          // so the grace period only runs while nothing is being asked.
-          if (conversational.some((agent) => agent.inputPending || agent.agentStatus === 'blocked')) {
-            noSessionSince.current = null;
-          }
-          const since = (noSessionSince.current ??= Date.now());
-          setSessionState(Date.now() - since >= NO_SESSION_GRACE_MS ? 'missing' : 'waiting');
-        } else {
-          noSessionSince.current = null;
-          setSessionState('ok');
-        }
-        if (sig === null) setLoading(false);
-        if (sig !== null && sig !== boundSig.current) {
-          // Rotation, or a new chat reusing this workspace. Drop the old
-          // history rather than appending a different conversation to it.
-          for (const controller of tails.current.values()) controller.abort();
-          tails.current.clear();
-          tailBeats.current.clear();
-          tailFailures.current.clear();
-          const rotated = boundSig.current !== null;
-          const dropped = await rebind(db, connectionId, cacheKey, sig);
-          if (dropped || rotated) resetHistory();
-          if (stopped) return;
-          boundSig.current = sig;
-          setLoading(true);
-          const cached = await seedMessages(db, connectionId, cacheKey);
-          if (stopped) return;
-          arrivals.current = cached;
-          // Deduplicate what is ON SCREEN, not every cached row ever seen.
-          // Otherwise scroll-up can never recover cached-but-unmounted turns.
-          seen.current = new Set(cached.map(message => message.id));
-          rebuild();
-        }
-
-        void startTails(conversational);
-
-        let blocked = live.find((agent) => agent.agentStatus === 'blocked');
-        let parsedPrompt: BlockedPrompt | null = null;
-        // herdr sees a menu waiting for keys while it still calls the agent
-        // idle. A slash command's panel is one (the overlay path below reads
-        // it); anything else that parses as a question is answered like a
-        // blocked agent's. Claude's folder-trust question on a first start is
-        // the case: it refuses every prompt until answered, and nothing else
-        // on the phone could answer it.
-        const pendingInput = blocked === undefined
-          ? live.find((agent) => agent.inputPending && agent.agentStatus !== 'working')
-          : undefined;
-        if (pendingInput !== undefined) {
-          const raw = await visible(pendingInput.paneId, 40);
-          if (parsePaneOverlay(raw) !== null) {
-            lookForPanel = true;
-          } else {
-            const parsed = parseBlockedPrompt(raw);
-            if (parsed.options.length > 0) {
-              blocked = pendingInput;
-              parsedPrompt = { ...parsed, submitWithEnter: agentSpec(pendingInput.agent)?.digitAnswers !== true };
-            }
-          }
-        } else if (blocked !== undefined) {
-          const raw = await visible(blocked.paneId, 40);
-          if (blocked.agent === 'codex' && isMentionPopup(raw)) {
-            parsedPrompt = {
-              question: 'Codex has its file picker open. Close it here, or pick a file in the terminal.',
-              options: [],
-              dismissOnly: true,
-            };
-          } else {
-            const parsed = parseBlockedPrompt(raw);
-            // Claude answers on the digit alone; see `optionKeys`.
-            parsedPrompt = parsed.options.length === 0
-              ? null
-              : { ...parsed, submitWithEnter: agentSpec(blocked.agent)?.digitAnswers !== true };
-          }
-        }
-        // The same question as last poll keeps its object, as the agents do.
-        setBlockedPrompt((previous) => (JSON.stringify(previous) === JSON.stringify(parsedPrompt) ? previous : parsedPrompt));
-        setAskingPaneId(blocked?.paneId ?? null);
-
-        // A reply in flight is confirmed (or orphaned) by what this poll saw.
-        // Only the silent outcomes are handled here: the timeout banner belongs
-        // to the timer in sendKeys, which raises it as an action error.
-        const pending = blockedPendingRef.current;
-        if (pending !== null) {
-          const resolution = resolveBlockedPending(pending, {
-            blocked: blocked !== undefined,
-            promptSig: blockedPromptSignature(parsedPrompt),
-            now: Date.now(),
-            timeoutMs: blockedPendingTimeout(STATUS_POLL_MS * pollScale),
-          });
-          if (resolution === 'delivered' || resolution === 'superseded') clearBlockedPending();
-        }
-
-        const primary =
-          live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
-        const working = live.some((agent) => agent.agentStatus === 'working');
-        // A question can change under an agent that stays `blocked` (the next
-        // of several, then the review screen), and no status event says so. At
-        // the idle rate the answered question stayed up for half a minute and
-        // the chat had to be reopened to reach the next one.
-        keepFast = working || blocked !== undefined;
-
-        // A panel only sits over an idle Claude, and never beside a question.
-        const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
-        const panelAgent = primary?.agent === 'claude' || primary?.agent === 'codex';
-        if ((watching || lookForPanel) && blocked === undefined && !working && primary !== undefined && panelAgent) {
-          lookForPanel = false;
-          if (watching) keepFast = true;
-          await readOverlay(primary.paneId);
-        } else if (overlayPane.current !== null) {
-          overlayPane.current = null;
-          setOverlay(null);
-        }
-        if (working && primary !== undefined && !unsupported) {
-          const raw = await visible(primary.paneId, 30);
-          setLivePreview(extractLivePreview(raw));
-        } else {
-          setLivePreview(null);
-        }
-        // No reader for this agent's history: its screen is the conversation,
-        // read from the pane a message goes to, never a focused shell beside it.
-        const screenPane = unsupported ? sendTarget(live) : null;
-        if (screenPane !== null) {
-          setScreen(screenText(await visible(screenPane.paneId, SCREEN_LINES)));
-        } else {
-          setScreen(null);
-        }
-        screenWant.current = nextWant;
-
-        /*
-          Tail watchdog.
-
-          `startTail` returns early for a session already in `tails`, and that
-          entry is removed only when the generator finishes or throws. A stream
-          that dies WITHOUT throwing, a half-open TCP after the host sleeps or
-          the phone changes network, therefore leaves the entry in place
-          forever, and the restart the catch block promises can never happen.
-          The thread just stops receiving messages and looks idle.
-
-          Silence on its own proves nothing: a quiet agent writes no transcript
-          lines for hours, legitimately. Silence *while working* does, because a
-          working agent is by definition appending turns. A false positive costs
-          one restarted tail, which resumes from the persisted cursor and dedupes
-          whatever it re-reads, so the check is allowed to be wrong.
-        */
-        if (working) {
-          const now = Date.now();
-          for (const agent of conversational) {
-            const id = sessionSignature([agent]);
-            if (id === null || !tails.current.has(id)) continue;
-            const beat = tailBeats.current.get(id) ?? now;
-            if (now - beat < TAIL_SILENCE_MS) continue;
-            tails.current.get(id)?.abort();
-            tails.current.delete(id);
-            tailBeats.current.delete(id);
-          }
-        }
-        setPollError(null);
-        setOffline(false);
-        failures.current = 0;
-      } catch (thrown) {
-        if (!alive.current || stopped) return;
-        setLoading(false);
-        failures.current += 1;
-        needsUser = thrown instanceof HerdrError && needsTheUser(thrown.code);
-        setPollError(errorText(thrown));
-        setOffline(true);
-        /*
-          The host cannot be reached and nothing is on screen yet. The saved
-          messages were cut short before: they were read only after a snapshot
-          named the session, so an offline thread said "No agent is running"
-          over a conversation the phone had on disk (#97). Show them, read-only.
-          The cache belongs to the session last bound to this chat; when the
-          host is back and names a different one, `rebind` drops it and the
-          history is reset, as it always was.
-        */
-        if (!offlineSeeded.current && boundSig.current === null && arrivals.current.length === 0) {
-          offlineSeeded.current = true;
-          const cached = await seedMessages(db, connectionId, cacheKey);
-          if (!alive.current || stopped || boundSig.current !== null || cached.length === 0) return;
-          arrivals.current = cached;
-          seen.current = new Set(cached.map((message) => message.id));
-          rebuild();
-        }
-      } finally {
-        inFlight = false;
-        // The banner stays up throughout: backing off must never read as
-        // recovery. Only the interval changes. A failure only the user can fix
-        // pauses the loop instead (`needsTheUser`); Reload kicks it again.
-        if (alive.current && !stopped && !(needsUser && !again)) {
-          const base =
-            streamLiveRef.current && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
-          schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
-          again = false;
-        }
-      }
-    };
-    // Mid-poll, a kick only asks for one more round. Scheduling a timer
-    // instead lost it: the poll's own `schedule(backoff)` cleared that timer
-    // when it finished first (#88).
-    kick.current = () => {
-      if (inFlight) again = true;
-      else schedule(EVENT_DEBOUNCE_MS);
-    };
-    void poll();
-
-    // Captured now: by cleanup time `tails.current` may be a different map, and
-    // aborting the wrong one leaves real tails running against a dead screen.
-    const live = tails.current;
-    return () => {
-      stopped = true;
-      kick.current = () => undefined;
-      if (timer !== null) clearTimeout(timer);
-      for (const controller of live.values()) controller.abort();
-      live.clear();
-    };
-  }, [
-    client,
-    db,
-    connectionId,
-    workspaceId,
-    pane,
-    cacheKey,
-    startTails,
-    resetHistory,
-    clearBlockedPending,
-    polling,
-    pollScale,
-    rebuild,
-    readOverlay,
-  ]);
-
-  const blockedPane =
-    agents.find((a) => a.agentStatus === 'blocked') ??
-    agents.find((a) => a.paneId === askingPaneId) ??
-    null;
+  const blockedPane = asking.blockedPane;
   const status: AgentStatus = blockedPane !== null
     ? 'blocked'
     : agents.some((a) => a.agentStatus === 'working')
@@ -1241,9 +230,8 @@ export function useThread(
           ? 'unknown'
           : 'idle';
 
-  const primaryPane = sendTarget(agents);
   const sessionMeta = primaryPane === null ? null
-    : sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
+    : tails.sessionMetadata[sessionSignature([primaryPane]) ?? ''] ?? null;
 
   // Publish "driven from a phone, on this model" to the host's sidebar. Gated on
   // `polling` so a backgrounded app stops claiming presence it does not have.
@@ -1254,429 +242,61 @@ export function useThread(
     polling
   );
 
-  /**
-   * The pane to send to, re-read at the moment of sending.
-   *
-   * `primaryPane` comes from the poll, so by the time someone taps send it can
-   * be two seconds old. A pane id that has changed in that window, an agent
-   * restarted, a layout redrawn, sends the message somewhere it will not be
-   * read, and `pane run` succeeds against whatever is there, so the failure is
-   * silent. This is the same trap the Raycast extension's reviewers caught in
-   * its split targeting: don't act on an id you sampled a moment ago.
-   *
-   * Falls back to the polled pane if the check itself fails. A send that might
-   * go to a stale pane still beats a send that does not happen.
-   */
-  const currentPane = useCallback(
-    async (fallback: AgentInfo): Promise<AgentInfo> => {
-      if (client === null) return fallback;
-      try {
-        const snapshot = await client.snapshot();
-        const live = chatAgents(snapshot.agents, workspaceId, pane);
-        return sendTarget(live) ?? live[0] ?? fallback;
-      } catch {
-        return fallback;
-      }
-    },
-    [client, workspaceId, pane]
-  );
-
-  /**
-   * Submit, and let the host verify wherever it can.
-   *
-   * `agent prompt --wait` makes herdr watch its own agent and answer with what
-   * it saw. Its help: "when submission starts from a non-working state, --wait
-   * first requires an observed state change within 5000ms; otherwise it returns
-   * agent_prompt_stalled." That named error is exactly the stuck-in-the-composer
-   * case the blind Enter was written to guess at, observed by the process that
-   * owns the terminal, rather than inferred here from a fixed sleep.
-   *
-   * So on a modern host there are two outcomes and neither needs us to guess:
-   * `delivered` returns immediately, `stalled` fails the bubble honestly.
-   *
-   * `unverified` is the legacy path, for hosts with no `agent prompt` (and the
-   * fork's `written_to_pty`). There `pane run` only means keystrokes were sent,
-   * so the old dance survives, including the second Enter, which is unsafe in
-   * principle (if the first send DID land it submits an empty line into a live
-   * agent) but is also the only thing that recovers a stuck composer on a host
-   * with no alternative. It is narrowed to the one case it is for: the agent
-   * still sitting idle. An agent that went `blocked` read the prompt and opened
-   * a menu, and Enter there picks the highlighted option, usually "Yes", which
-   * approved a tool call nobody saw (#76). So the wait accepts `blocked` as a
-   * reaction, and the status is read again right before any Enter.
-   *
-   * `wasWorking` still guards all of it, and herdr's own caveat is why: --wait
-   * "does not track turns: if the agent is already working, that active turn's
-   * completion may match." Sending into a busy agent just queues, so there is
-   * nothing to wait for and waiting would match the wrong turn.
-   */
-  const deliver = useCallback(
-    async (text: string, echoId: string, polled: AgentInfo) => {
-      if (client === null) return;
-      // What the pane is doing right now. `idle` only when the host positively
-      // says so; a failed read or a vanished pane is `unknown`, never `idle`.
-      const paneState = async (paneId: string): Promise<'idle' | 'reacted' | 'unknown'> => {
-        try {
-          const snapshot = await client.snapshot();
-          const status = snapshot.agents.find((agent) => agent.paneId === paneId)?.agentStatus;
-          if (status === 'idle' || status === 'done') return 'idle';
-          if (status === 'working' || status === 'blocked') return 'reacted';
-          return 'unknown';
-        } catch {
-          return 'unknown';
-        }
-      };
-      const deliverySig = boundSig.current;
-      const current = () => alive.current && deliverySig === boundSig.current;
-      const confirmed = () => confirmedEchoIds.current.has(echoId);
-      // Wait for the transcript to show the message. When it doesn't, the
-      // bubble fails with `notice`, which says the message may have landed:
-      // never a blind retry, never a second Enter.
-      const awaitReceipt = async (notice: string, waitMs: number) => {
-        const deadline = Date.now() + waitMs;
-        while (current() && !confirmed() && Date.now() < deadline) {
-          await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
-        }
-        if (current() && !confirmed()) {
-          setFailedIds(previous => new Set(previous).add(echoId));
-          setActionError(notice);
-        }
-      };
-      const awaitCodexReceipt = () => awaitReceipt(CODEX_DELIVERY_NOTICE, CODEX_RECEIPT_WAIT_MS);
-      setIsSending(true);
-      try {
-        const pane = await currentPane(polled);
-
-        if (isCatalogueAgent(pane.agent) && isSlashCommand(text)) {
-          // Never `sendPrompt` and never a second Enter: see `sendCommand`.
-          const sentAt = Date.now();
-          await client.sendCommand(pane.paneId, text);
-          if (!current()) return;
-          watchOverlay(pane.paneId);
-          // Codex and Grok write nothing to their transcripts for a command,
-          // so there is no receipt to wait for and silence proves nothing;
-          // Codex's panels still show when they open.
-          if (pane.agent !== 'claude') return;
-          const ran = () => confirmed() || overlaySeenAt.current >= sentAt;
-          while (current() && !ran() && Date.now() - sentAt < COMMAND_CONFIRM_MS) {
-            await new Promise(resolve => setTimeout(resolve, RECEIPT_CHECK_MS));
-          }
-          if (!current() || ran() || (await paneState(pane.paneId)) === 'reacted') return;
-          setFailedIds((previous) => new Set(previous).add(echoId));
-          setActionError(COMMAND_UNCONFIRMED_WARNING);
-          return;
-        }
-
-        const wasWorking = pane.agentStatus === 'working';
-        const outcome = await client.sendPrompt(pane.paneId, text);
-        if (!current() || confirmed()) return;
-
-        if (pane.agent === 'codex' && outcome !== 'delivered') {
-          // Shared-service Codex TUIs may expose no observable composer state.
-          // The native transcript is stronger evidence than an idle PTY, and
-          // another Enter could submit twice. Wait for that receipt, never resend.
-          await awaitCodexReceipt();
-          return;
-        }
-
-        if (outcome === 'stalled') {
-          // The host watched and nothing moved. No guessing, no second Enter.
-          setFailedIds((previous) => new Set(previous).add(echoId));
-          setActionError(STALLED_WARNING);
-          return;
-        }
-
-        if (outcome === 'unverified' && !wasWorking) {
-          let accepted = await client.waitAgentStatus(pane.paneId, REACTED, 3500);
-          if (!accepted) {
-            // Enter only into a composer the host says is idle. It may have
-            // reacted just after the wait gave up; if its state is unknown, an
-            // Enter is not safe to guess and the bubble says so instead.
-            const state = await paneState(pane.paneId);
-            if (state === 'idle') {
-              await client.sendKeys(pane.paneId, ['Enter']);
-              accepted = await client.waitAgentStatus(pane.paneId, REACTED, 2500);
-            } else {
-              accepted = state === 'reacted';
-            }
-          }
-          if (!accepted) {
-            setFailedIds((previous) => new Set(previous).add(echoId));
-            setActionError(UNCONFIRMED_WARNING);
-          }
-        }
-      } catch (thrown) {
-        if (!current() || confirmed()) return;
-        if (polled.agent === 'codex' && thrown instanceof HerdrError &&
-            thrown.code === 'agent_prompt_unverifiable') {
-          await awaitCodexReceipt();
-          return;
-        }
-        if (thrown instanceof HerdrError && thrown.transport) {
-          // The connection failed mid-send: the prompt may well have landed.
-          // Reporting it as not delivered is how a retry sent it twice (#83).
-          await awaitReceipt(DELIVERY_UNKNOWN_WARNING, TRANSPORT_RECEIPT_WAIT_MS);
-          return;
-        }
-        setFailedIds((previous) => new Set(previous).add(echoId));
-        setActionError(errorText(thrown));
-      } finally {
-        setIsSending(false);
-      }
-    },
-    [client, currentPane, watchOverlay]
-  );
-
-  /**
-   * Send to an agent whose history the app cannot read. herdr's prompt call
-   * says whether the agent picked it up; a stall is said, never resent, and
-   * the screen the next poll reads shows the rest.
-   */
-  const sendToScreen = useCallback(
-    async (text: string, polled: AgentInfo) => {
-      if (client === null) return;
-      setIsSending(true);
-      try {
-        const pane = await currentPane(polled);
-        if ((await client.sendPrompt(pane.paneId, text)) === 'stalled') setActionError(STALLED_WARNING);
-      } catch (thrown) {
-        setActionError(errorText(thrown));
-      } finally {
-        setIsSending(false);
-        kick.current();
-      }
-    },
-    [client, currentPane]
-  );
-
-  const send = useCallback(
-    async (raw: string, images: readonly OutgoingImage[] = []): Promise<boolean> => {
-      const text = raw.trim();
-      if (
-        (text.length === 0 && images.length === 0) ||
-        primaryPane === null ||
-        sending.current ||
-        loading ||
-        sessionState === 'replaced' ||
-        (images.length > 0 && client === null)
-      ) {
-        return false;
-      }
-      sending.current = true;
-      // A new message is a new attempt; the last one's warning has done its job.
-      setActionError(null);
-      try {
-        // Pictures go to the host before the prompt that names them. One that
-        // cannot be written stops the send: better the draft back than a
-        // message pointing at a file that is not there.
-        const paths: string[] = [];
-        if (images.length > 0 && client !== null) {
-          setIsSending(true);
-          try {
-            for (const image of images) {
-              const uploaded = await uploadImage(client.transport, image, SEND_TIMEOUT_MS);
-              if (!uploaded.ok) {
-                setActionError(`Couldn't send the picture: ${uploaded.message}`);
-                return false;
-              }
-              paths.push(uploaded.path);
-            }
-          } finally {
-            setIsSending(false);
-          }
-        }
-        if (sessionState === 'unsupported') {
-          // No transcript will confirm an echo, so none is shown: the
-          // message lands on the agent's screen, which the next poll reads.
-          await sendToScreen(promptWithImages(text, paths), primaryPane);
-          return true;
-        }
-        const segments: MessageSegment[] = [
-          ...(text.length > 0 ? [{ kind: 'text' as const, text }] : []),
-          ...paths.map((path) => ({ kind: 'image' as const, path })),
-        ];
-        const echo: ChatMessage = {
-          id: `${ECHO_ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          role: 'user',
-          segments,
-          timestamp: Date.now(),
-          agentLabel: null,
-          isSidechain: false,
-        };
-        echoBaselines.current.set(echo.id, new Set(arrivals.current.map(message => message.id)));
-        echoes.current.push(echo);
-        rebuild();
-        await deliver(promptWithImages(text, paths), echo.id, primaryPane);
-        return true;
-      } finally {
-        sending.current = false;
-      }
-    },
-    [primaryPane, rebuild, deliver, sendToScreen, loading, sessionState, client]
-  );
-
-  /** Retries in flight, by echo id. A second tap on "retry" sent it twice (#100). */
-  const retrying = useRef(new Set<string>());
-  const retry = useCallback(
-    async (id: string) => {
-      const echo = echoes.current.find((message) => message.id === id);
-      if (echo === undefined || primaryPane === null || retrying.current.has(id)) return;
-      retrying.current.add(id);
-      setFailedIds((previous) => {
-        const next = new Set(previous);
-        next.delete(id);
-        return next;
-      });
-      try {
-        // The pictures are already on the host; only the prompt goes again.
-        await deliver(promptWithImages(displayText(echo), imagePaths(echo)), id, primaryPane);
-      } finally {
-        retrying.current.delete(id);
-      }
-    },
-    [primaryPane, deliver]
-  );
-
-  /**
-   * Answer a blocked prompt (or poke the primary pane).
-   *
-   * When the target is a blocked agent, the reply is marked pending BEFORE it
-   * is sent, and stays pending until a poll observes the agent act on it. The
-   * poll is what removes the bar, and at the slowest setting it runs every ten
-   * seconds, without the pending state that whole window accepts a second tap,
-   * which sends a second digit + Enter into an agent that already moved on.
-   *
-   * The ref check is synchronous on purpose: the disabled prop the pending
-   * state drives arrives only with the next render, and two fast taps fit
-   * inside that gap.
-   */
-  const sendKeys = useCallback(
-    async (keys: readonly string[]) => {
-      const pane = blockedPane ?? primaryPane;
-      if (client === null || pane === null) return;
-      if (blockedPendingRef.current !== null) return;
-
-      if (blockedPane !== null) {
-        const pending: BlockedPending = {
-          keys,
-          promptSig: blockedPromptSignature(blockedPrompt),
-          sentAt: Date.now(),
-        };
-        blockedPendingRef.current = pending;
-        setBlockedPending(pending);
-        // The banner is raised from here rather than from the poll: the poll's
-        // success path clears the error state, so a banner it raised itself
-        // would not survive its own iteration.
-        blockedPendingTimer.current = setTimeout(
-          () => {
-            if (!alive.current || blockedPendingRef.current !== pending) return;
-            clearBlockedPending();
-            setActionError(BLOCKED_PENDING_ERROR);
-          },
-          blockedPendingTimeout(STATUS_POLL_MS * pollScale)
-        );
-      }
-
-      try {
-        await client.sendKeys(pane.paneId, keys);
-        // Look again once the terminal has redrawn, rather than at the next
-        // poll: what comes after an answer is often another question.
-        for (const delay of ANSWER_LOOKS_MS) {
-          setTimeout(() => {
-            if (alive.current) kick.current();
-          }, delay);
-        }
-      } catch (thrown) {
-        // The keys never left the phone; nothing is pending on the host.
-        clearBlockedPending();
-        setActionError(errorText(thrown));
-      }
-    },
-    // `pollScale` belongs here: the pending window is derived from the poll
-    // interval, so a callback closing over a stale scale would arm the wrong
-    // deadline after the setting changed.
-    [client, blockedPane, primaryPane, blockedPrompt, clearBlockedPending, pollScale]
-  );
-
-  /**
-   * Stop the agent. `hard` sends Ctrl-C, which can end the session.
-   *
-   * Targets the working pane specifically rather than `blockedPane ??
-   * primaryPane` the way `sendKeys` does: a blocked agent is already stopped and
-   * waiting for an answer, so interrupting it would answer nothing and might
-   * dismiss the prompt the user is about to read.
-   */
-  const interrupt = useCallback(
-    async (hard = false) => {
-      const pane = agents.find((a) => a.agentStatus === 'working') ?? primaryPane;
-      if (client === null || pane === null) return;
-      try {
-        await (hard ? client.interruptHard(pane.paneId) : client.interrupt(pane.paneId));
-      } catch (thrown) {
-        setActionError(errorText(thrown));
-      }
-    },
-    [client, agents, primaryPane]
-  );
-
   const reload = useCallback(async () => {
     // A workflow given up on as gone quiet is looked at again.
     resumeStaleRuns();
-    for (const controller of tails.current.values()) controller.abort();
-    tails.current.clear();
-    tailBeats.current.clear();
-    tailFailures.current.clear();
+    stopTails();
     // Reload must replace the persisted messages too, otherwise a cold reopen
     // resurrects stale parsed bubbles that the fresh host read has removed.
     await clearThreadCache(db, connectionId, cacheKey);
-    if (!alive.current) return;
+    if (!aliveRef.current) return;
     resetHistory();
     setLoading(true);
-    failures.current = 0;
-    kick.current();
-  }, [db, connectionId, cacheKey, resetHistory]);
+    resetBackoff();
+    kickRef.current();
+  }, [db, connectionId, cacheKey, resetHistory, stopTails, resetBackoff]);
 
   const titled = titleAgent(agents);
 
   return {
     loading,
-    historyVersion,
+    historyVersion: history.historyVersion,
     canSend:
       client !== null &&
       primaryPane !== null &&
       !loading &&
-      !offline &&
+      !poll.offline &&
       sessionState !== 'replaced',
-    offline,
-    paused: tailError !== null,
-    transcriptPaths,
-    messages,
+    offline: poll.offline,
+    paused: tails.tailError !== null,
+    transcriptPaths: tails.transcriptPaths,
+    messages: history.messages,
     status,
     agents,
-    workspaceLabel,
+    workspaceLabel: poll.workspaceLabel,
     sessionTitle: titled?.title ?? null,
     agentName: titled?.name ?? null,
-    blockedPrompt,
-    blockedPending,
+    blockedPrompt: asking.blockedPrompt,
+    blockedPending: asking.blockedPending,
     isBlocked: blockedPane !== null,
-    overlay,
-    overlayBusy,
-    sendOverlayKeys,
+    overlay: overlay.overlay,
+    overlayBusy: overlay.overlayBusy,
+    sendOverlayKeys: overlay.sendOverlayKeys,
     sessionMeta,
-    livePreview,
-    screen,
+    livePreview: poll.livePreview,
+    screen: poll.screen,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
-    error: actionError ?? pollError ?? tailError,
-    isSending,
-    loadOlder,
-    loadingOlder,
-    reachedStart,
+    error: actionError ?? poll.pollError ?? tails.tailError,
+    isSending: delivery.isSending,
+    loadOlder: history.loadOlder,
+    loadingOlder: history.loadingOlder,
+    reachedStart: history.reachedStart,
     sessionState,
-    failedIds,
-    send,
-    retry,
-    sendKeys,
-    interrupt,
+    failedIds: history.failedIds,
+    send: delivery.send,
+    retry: delivery.retry,
+    sendKeys: asking.sendKeys,
+    interrupt: delivery.interrupt,
     clearError: () => {
       setActionError(null);
       setPollError(null);
@@ -1684,27 +304,4 @@ export function useThread(
     },
     reload,
   };
-}
-
-/** Where a tail resuming from `cursor` starts: the start of the line there. */
-async function resumePoint(store: TranscriptStore, path: string, cursor: number): Promise<number> {
-  try {
-    return await store.lineStartBefore(path, cursor);
-  } catch {
-    return Math.max(0, cursor - RESUME_REWIND);
-  }
-}
-
-/** The up-front history read, frozen at the size the probe measured. */
-function loadRecent(
-  store: TranscriptStore,
-  path: string,
-  label: string | null,
-  size: number
-): Promise<{
-  messages: ChatMessage[];
-  consumedBytes: number;
-  startByte: number;
-}> {
-  return store.recent(path, label, RECENT_LINES, size);
 }
