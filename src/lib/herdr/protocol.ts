@@ -17,6 +17,7 @@ import type { SshFailureCode } from '../../../modules/herdr-ssh/src';
  */
 type HerdrServerCode =
   | 'agent_blocked'
+  | 'agent_not_ready'
   | 'agent_input_pending'
   | 'agent_not_found'
   | 'agent_pane_busy'
