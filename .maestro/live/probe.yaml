@@ -13,8 +13,21 @@ env:
 - tapOn:
     id: header-action
 - assertVisible: New chat
+# The agent first, while the keyboard is down: with it up, a row low in the
+# picker sits behind it, and a tap there lands on the floating Start button
+# for the agent already chosen.
+- scrollUntilVisible:
+    element:
+      text: ${AGENT}
+    direction: DOWN
+- tapOn: ${AGENT}
+- assertVisible: Start ${AGENT}
 # New chat fills in the last folder used, and a tap puts the cursor
 # mid-path, so the field is cleared through its own Select All.
+- scrollUntilVisible:
+    element:
+      id: field-cwd
+    direction: UP
 - tapOn:
     id: field-cwd
 - tapOn:
@@ -28,7 +41,6 @@ env:
     id: field-label
 - eraseText: 60
 - inputText: ${LABEL}
-- tapOn: ${AGENT}
 - assertVisible: Start ${AGENT}
 - scrollUntilVisible:
     element:

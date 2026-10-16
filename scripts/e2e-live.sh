@@ -13,9 +13,11 @@
 # for each agent, starts a probe chat from New chat in a scratch folder, sends
 # one message and waits for the reply (.maestro/live/probe.yaml). On a pass or
 # a failure it closes the workspaces in the scratch folders, deletes the probe
-# sessions Claude and Grok filed for them, removes the host from the app, stops
-# the sshd and deletes the folder. It sends prompts only to the chats it
-# started.
+# sessions Claude, Grok and agy filed for them, removes the host from the app,
+# stops the sshd and deletes the folder. It sends prompts only to the chats it
+# started. Left behind: Claude's trust of each scratch folder in ~/.claude.json,
+# which every running Claude rewrites, and agy's summary database, which agy
+# holds open; both name folders that no longer exist.
 #
 # Needs the app on a booted simulator, built signed ad hoc: an unsigned build
 # has no keychain, and saving the host fails.
@@ -38,7 +40,9 @@ WORK=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/herdrchat-live.XXXXXX")" && pwd -P)
 SCRATCH="$WORK/chats"
 mkdir -p "$SCRATCH"
 NAME="live-$(date +%H%M%S)"
-added=""
+APP_DB="$(xcrun simctl get_app_container "$DEVICE" dev.herdr.HerdrChat data 2>/dev/null)/Documents/SQLite/herdrchat.db"
+# The host this run saved in the app, by its name: empty until it is saved.
+host_id() { sqlite3 "$APP_DB" "select id from connections where name = '$NAME'" 2>/dev/null; }
 
 # Each agent New chat can start: herdr's kind, its integration, its label there.
 agent_info() {
@@ -77,15 +81,59 @@ run() {
 cleanup() {
   status=$?
   trap - EXIT INT TERM
-  # The probe chats' workspaces: each one with a pane in the scratch folder.
-  "$HERDR" api snapshot 2>/dev/null | python3 -I -c '
-import json, sys
+  # The probe chats' workspaces, each one with a pane in the scratch folder,
+  # and the conversation ids agy reported in them, read before they close.
+  probes=$("$HERDR" api snapshot 2>/dev/null | python3 -I -c '
+import json, re, sys
 root = sys.argv[1] + "/"
-panes = json.load(sys.stdin)["result"]["snapshot"]["panes"]
-print("\n".join(sorted({p["workspace_id"] for p in panes if (p.get("cwd") or "").startswith(root)})))
-' "$SCRATCH" | while read -r id; do
-    [ -n "$id" ] && "$HERDR" workspace close "$id" >/dev/null 2>&1 && echo "closed workspace $id"
+panes = [p for p in json.load(sys.stdin)["result"]["snapshot"]["panes"] if (p.get("cwd") or "").startswith(root)]
+for workspace in sorted({p["workspace_id"] for p in panes}):
+    print("workspace", workspace)
+for p in panes:
+    value = (p.get("agent_session") or {}).get("value") or ""
+    uuid = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    found = re.fullmatch(uuid, value) or re.search(rf"/brain/({uuid})/", value)
+    if p.get("agent") == "agy" and found:
+        print("agy", found.group(found.lastindex or 0))
+' "$SCRATCH")
+  echo "$probes" | while read -r kind id; do
+    [ "$kind" = workspace ] && "$HERDR" workspace close "$id" >/dev/null 2>&1 && echo "closed workspace $id"
   done
+  # agy files a conversation by its id, and each prompt and trusted folder by path.
+  agy_home="$HOME/.gemini/antigravity-cli"
+  echo "$probes" | while read -r kind id; do
+    [ "$kind" = agy ] || continue
+    rm -rf "${agy_home:?}/brain/${id:?}" "${agy_home:?}/conversations/${id:?}.db" && echo "removed agy conversation $id"
+  done
+  python3 -I - "$SCRATCH" "$agy_home" <<'PY'
+import json, os, sys
+root, home = sys.argv[1] + "/", sys.argv[2]
+def replace(path, text):
+    with open(path + ".herdrchat-live", "w") as out:
+        out.write(text)
+    os.replace(path + ".herdrchat-live", path)
+history = os.path.join(home, "history.jsonl")
+if os.path.exists(history):
+    lines = open(history).readlines()
+    def ours(line):
+        try:
+            return (json.loads(line).get("workspace") or "").startswith(root)
+        except (ValueError, AttributeError):
+            return False
+    kept = [line for line in lines if not ours(line)]
+    if len(kept) != len(lines):
+        replace(history, "".join(kept))
+        print("removed", len(lines) - len(kept), "agy history lines")
+settings = os.path.join(home, "settings.json")
+if os.path.exists(settings):
+    data = json.load(open(settings))
+    trusted = data.get("trustedWorkspaces") or []
+    kept = [path for path in trusted if not path.startswith(root)]
+    if len(kept) != len(trusted):
+        data["trustedWorkspaces"] = kept
+        replace(settings, json.dumps(data, indent=2) + "\n")
+        print("removed", len(trusted) - len(kept), "agy trusted folders")
+PY
   # The agents' own records of the probe chats, filed by the scratch folder's
   # path: Claude's with / and . as -, Grok's URL-encoded.
   claude_dir=$(printf '%s' "$SCRATCH" | sed 's|[/.]|-|g')
@@ -93,7 +141,11 @@ print("\n".join(sorted({p["workspace_id"] for p in panes if (p.get("cwd") or "")
   for dir in "$HOME/.claude/projects/$claude_dir"-* "${GROK_HOME:-$HOME/.grok}/sessions/$grok_dir"%2F*; do
     [ -d "$dir" ] && rm -rf "$dir" && echo "removed $dir"
   done
-  [ -n "$added" ] && { run remove-host -e NAME="$NAME" .maestro/live/remove-host.yaml || status=1; }
+  id=$(host_id)
+  if [ -n "$id" ]; then
+    run remove-host -e ID="$id" .maestro/live/remove-host.yaml || status=1
+    [ -n "$(host_id)" ] && { echo "The app still has the host $NAME."; status=1; }
+  fi
   [ -f "$WORK/sshd.pid" ] && kill "$(cat "$WORK/sshd.pid")" 2>/dev/null
   rm -rf "${WORK:?}"
   echo "Output: $OUT"
@@ -126,7 +178,6 @@ until nc -z 127.0.0.1 "$PORT" 2>/dev/null; do
   sleep 0.1
 done
 
-added=1
 run add-host -e HOST=127.0.0.1 -e PORT="$PORT" -e NAME="$NAME" -e USERNAME="$(id -un)" \
   -e HERDR_PATH="$HERDR" -e SSH_KEY="$(cat "$WORK/client")" .maestro/add-server.yaml || exit 1
 
