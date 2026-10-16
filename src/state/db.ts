@@ -19,6 +19,9 @@ export const DATABASE_NAME = 'herdrchat.db';
 export async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
+    -- WAL's usual partner: a commit no longer waits on a disk flush, and a
+    -- crash still leaves a consistent database. This is a cache of the host.
+    PRAGMA synchronous = NORMAL;
 
     CREATE TABLE IF NOT EXISTS connections (
       id          TEXT PRIMARY KEY NOT NULL,
