@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Pressable, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TypingDots } from '@/components/Activity';
@@ -26,10 +26,11 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing } from '@/t
  * controls take insets.
  */
 export function ThreadHeader({
-  heading, subtitle, status, dimmed, statusText, onBack, onTerminal, onStop, onReload, onHeight, children,
+  heading, parts, status, dimmed, statusText, onBack, onTerminal, onStop, onReload, onHeight, children,
 }: {
   heading: string;
-  subtitle: string;
+  /** The line under the title, most telling first (`threadHeading`). */
+  parts: readonly string[];
   status: AgentStatus;
   /** Offline or reconnecting: the dot does not claim the agent's state. */
   dimmed: boolean;
@@ -43,7 +44,12 @@ export function ThreadHeader({
   children?: ReactNode;
 }) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  /** The line's width, once laid out; until then every part shows. */
+  const [lineWidth, setLineWidth] = useState<number | null>(null);
   const tone = status === 'blocked' ? 'attention' : 'secondary';
+  const reserved = (statusText?.length ?? 0) + (status === 'working' ? TYPING_DOTS_CHARS : 0);
+  const subtitle = (lineWidth === null ? parts : fitParts(parts, reserved, lineWidth, size.captionCharWidth * fontScale)).join(' · ');
   return (
     <View
       testID="thread-header-overlay"
@@ -80,7 +86,10 @@ export function ThreadHeader({
                 <Text testID="thread-title" variant="headline" numberOfLines={1}>
                   {heading}
                 </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                <View
+                  testID="thread-line"
+                  onLayout={(event) => setLineWidth(event.nativeEvent.layout.width)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
                   <View style={{ width: size.statusDot, height: size.statusDot, borderRadius: radius.full, backgroundColor: dimmed ? colors.secondaryLabel : statusColor(status, colors) }} />
                   {subtitle.length > 0 && (
                     <Text testID="thread-meta" variant="caption" color={tone} style={{ flexShrink: 1 }} numberOfLines={1}>
@@ -166,7 +175,7 @@ export function threadHeading(
     /** A /model or /effort that has just run, which wins over the last reply's. */
     commanded: ReturnType<typeof settingsFromNotes>;
   }
-): { heading: string; subtitle: string } {
+): { heading: string; parts: string[] } {
   const polledTitle = chatTitle({
     sessionTitle: thread.sessionTitle,
     agentName: thread.agentName,
@@ -177,7 +186,8 @@ export function threadHeading(
   const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
   const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
-  const subtitle = [
+  const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
+  const parts = [
     // The machine first: the same folder on two computers is two chats.
     machineLabel,
     workspaceLine,
@@ -185,14 +195,35 @@ export function threadHeading(
     commanded.model ?? modelDisplayName(thread.sessionMeta?.model ?? null),
     // "high effort", not a bare "high" that could be anything.
     effort === null ? null : `${effort} effort`,
-    // The folder, unless it is the workspace's own name already said first:
-    // the line is one line, and the less said the less of it is cut.
-    sameName(workspaceLine, thread.workingDirName) ? null : thread.workingDirName,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(' · ');
-  return { heading: polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat', subtitle };
+    // The folder, unless the workspace's own name or the title already said
+    // it: a chat titled by its folder read "docs" and then "docs" again under
+    // it (HC-112). The line is one line, and the less said the less is cut.
+    sameName(workspaceLine, thread.workingDirName) || sameName(heading, thread.workingDirName) ? null : thread.workingDirName,
+  ].filter((part): part is string => part !== null);
+  return { heading, parts };
 }
+
+/** Room the typing dots take after "working", in characters. */
+const TYPING_DOTS_CHARS = 4;
+
+/**
+ * The parts of the header's line that fit whole beside `reserved` characters
+ * of status, in a line `width` wide: the first always, the rest while they
+ * fit. One line cut to "her… · waiting" or "notes ·…" said nothing (HC-113);
+ * fewer parts said whole read better than more parts cut.
+ */
+export function fitParts(parts: readonly string[], reserved: number, width: number, charWidth: number): string[] {
+  const room = Math.floor(width / charWidth) - reserved - SEPARATOR.length;
+  const kept: string[] = [];
+  for (const part of parts) {
+    const length = kept.reduce((sum, line) => sum + line.length + SEPARATOR.length, 0) + part.length;
+    if (kept.length > 0 && length > room) break;
+    kept.push(part);
+  }
+  return kept;
+}
+
+const SEPARATOR = ' · ';
 
 /**
  * The word after the header's line. The connection before the agent: "online"
@@ -206,7 +237,9 @@ export function statusText(status: AgentStatus, offline: boolean, paused: boolea
     case 'working':
       return 'working';
     case 'blocked':
-      return 'waiting for reply';
+      // As the list's group says it. "waiting for reply" left the rest of
+      // the line a few letters on a phone (HC-113).
+      return 'needs you';
     case 'done':
       return 'done';
     case 'idle':

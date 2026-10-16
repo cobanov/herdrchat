@@ -97,7 +97,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
 
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
-  const { heading, subtitle } = threadHeading(thread, { title, paneId, machineLabel, commanded });
+  const { heading, parts } = threadHeading(thread, { title, paneId, machineLabel, commanded });
 
   // The pane the header's Terminal opens: this chat's own, or for a
   // workspace's chat the agent herdr has focused (the first, when none is).
@@ -372,7 +372,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
       </KeyboardAvoidingView>
       <ThreadHeader
         heading={heading}
-        subtitle={subtitle}
+        parts={parts}
         status={thread.status}
         dimmed={thread.offline || thread.paused}
         statusText={statusText(thread.status, thread.offline, thread.paused)}
