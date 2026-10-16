@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
+import type { HostEvent } from '@/lib/herdr/events';
 import { useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -11,12 +12,13 @@ import type { ChatMessage } from '@/lib/transcript/message';
 
 let mockPolling = true;
 let mockLive = true;
-let mockEvent: () => void = () => undefined;
+let mockEvent: (event?: HostEvent) => void = () => undefined;
 let mockPreview = 'Before';
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({
-  useHostEvents: (_client: unknown, _panes: unknown, _enabled: unknown, event: () => void) => {
-    mockEvent = event;
+  useHostEvents: (_client: unknown, _panes: unknown, _enabled: unknown, event: (event: HostEvent) => void) => {
+    // A status change on the first agent unless a test names another event.
+    mockEvent = (fired = { event: 'pane.agent_status_changed', paneId: 'pane', workspaceId: 'chat', data: {} }) => event(fired);
     return mockLive;
   },
 }));
@@ -333,6 +335,19 @@ it('fetches one preview per agent in a single batch, and files each by its pane'
   ]);
   expect(previews.get('w6:p1')).toMatchObject({ sessionSig: 'sess-1', preview: { text: 'from sess-1' } });
   expect(previews.get('w6:p2')).toMatchObject({ sessionSig: 'sess-2', preview: { text: 'from sess-2' } });
+});
+
+// One host event used to force a full sweep: every chat's transcript read
+// for one pane's news.
+it('reads the preview of the pane an event named, and only that one', async () => {
+  const { store, latestMessages } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  const tick = { current: 0 };
+  await refreshPreviews(store, twoAgents().agents, previews, tick);
+  await refreshPreviews(store, twoAgents().agents, previews, tick, new Set(['w6:p1']));
+  expect(latestMessages.mock.calls[1]?.[0].map((request) => request.key)).toEqual(['w6:p1']);
+  await refreshPreviews(store, twoAgents().agents, previews, tick, true);
+  expect(latestMessages.mock.calls[2]?.[0].map((request) => request.key)).toEqual(['w6:p1', 'w6:p2']);
 });
 
 it('between sweeps refreshes only the agent that is busy or moved', async () => {

@@ -192,11 +192,18 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
   const [paneIds, setPaneIds] = useState<string[]>([]);
   /** Asks the running loop for a refresh soon. Set by the effect that owns the loop. */
   const kick = useRef<() => void>(() => undefined);
-  const forcePreviews = useRef(true);
-  const live = useHostEvents(client, paneIds, polling, () => {
+  /**
+   * Previews to read on the next refresh whatever the counters say: the panes
+   * events named, or `true` for every one (the first refresh, a resync).
+   */
+  const forcePreviews = useRef<true | Set<string>>(true);
+  const live = useHostEvents(client, paneIds, polling, (event) => {
     // The event may report the final idle state after a fast turn. Its preview
-    // is still new, even though this agent is no longer working.
-    forcePreviews.current = true;
+    // is still new, even though this agent is no longer working. Only that
+    // pane's, though: one event forced every chat's transcript to be read.
+    const forced = forcePreviews.current;
+    if (event.paneId === null) forcePreviews.current = true;
+    else if (forced !== true) forced.add(event.paneId);
     kick.current();
   });
   const liveRef = useRef(live);
@@ -288,7 +295,7 @@ export function useWorkspaces(client: HerdrClient | null, connectionId: string |
       const store = new TranscriptStore(client.transport);
       dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
-      forcePreviews.current = false;
+      forcePreviews.current = new Set();
       processTick.current += 1;
       // Not awaited, and one round at a time: a round is one SSH exec for all
       // the panes, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you)
@@ -601,11 +608,12 @@ export async function refreshPreviews(
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
   tick: { current: number },
-  force = false,
+  force: boolean | ReadonlySet<string> = false,
   seqs: Map<string, number> = new Map()
 ): Promise<void> {
   tick.current += 1;
-  const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
+  const fullSweep = force === true || tick.current % 5 === 1; // includes the very first poll
+  const named = (paneId: string) => typeof force !== 'boolean' && force.has(paneId);
 
   const requests: PreviewRequest[] = [];
   /** The session each request was made for; the answer is filed under it. */
@@ -624,7 +632,7 @@ export async function refreshPreviews(
     const active = agent.agentStatus !== 'idle' && agent.agentStatus !== 'unknown';
     const last = seqs.get(agent.paneId);
     const moved = agent.stateChangeSeq !== null && last !== undefined && last !== agent.stateChangeSeq;
-    if (!fullSweep && !active && !moved && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
+    if (!fullSweep && !active && !moved && !named(agent.paneId) && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
 
     requests.push({
       workspaceId: agent.workspaceId,
