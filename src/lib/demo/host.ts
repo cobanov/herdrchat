@@ -25,6 +25,8 @@ import {
   DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
+  DEMO_THINK_REPLY,
+  DEMO_WORKING_SCREEN,
   demoShellOutput,
   TRUST_OPTIONS,
   trustScreen,
@@ -89,6 +91,8 @@ const TAIL_POLL_MS = 200;
  * work, its result. Long enough that a UI test sees the card running.
  */
 const DELEGATE_STEP_MS = 2_500;
+/** How long the long turn works: several polls, so a UI test sees what they read. */
+const THINK_MS = 8_000;
 
 function ok(result: unknown): ExecResult {
   return { ok: true, stdout: JSON.stringify({ id: 'demo', result }), stderr: '', exitCode: 0 };
@@ -241,6 +245,8 @@ interface Pending {
   lines?: (next: () => string, timestamp: string) => string[];
   /** What the scenario does to the host as its turns land, such as writing a file. */
   effect?: () => void;
+  /** What the pane shows until the turns land, when the scenario draws its work. */
+  screen?: string;
   dueAt: number;
 }
 
@@ -772,6 +778,8 @@ export class DemoHost implements HerdrTransport {
     // `pane read <pane> --source visible --lines N`
     if (argv[1] === 'pane' && argv[2] === 'read') {
       const paneId = argv[3] ?? '';
+      const working = this.pending.find((reply) => reply.paneId === paneId && reply.screen !== undefined);
+      if (working?.screen !== undefined) return out(working.screen);
       const panel = this.panels.get(paneId);
       if (panel !== undefined) return out(panel.kind === 'model' ? modelPanelScreen(panel) : effortPanelScreen(panel));
       const questions = this.questions.get(paneId);
@@ -817,6 +825,7 @@ export class DemoHost implements HerdrTransport {
       if (text.startsWith('!') && this.isClaude(paneId)) return this.shell(paneId, text.slice(1));
       this.append(paneId, this.lineFor(paneId, 'user', text));
       const asked = text.toLowerCase();
+      if (asked.includes(DEMO_PHRASES.think)) return this.thinkItOver(paneId);
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
@@ -966,6 +975,19 @@ export class DemoHost implements HerdrTransport {
         ));
       }
     }
+    return silent();
+  }
+
+  /** A long turn, working under the spinner until the reply lands. */
+  private thinkItOver(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + THINK_MS,
+      screen: DEMO_WORKING_SCREEN,
+      lines: (next, timestamp) => [replyLine(DEMO_THINK_REPLY, next(), timestamp)],
+    });
     return silent();
   }
 
