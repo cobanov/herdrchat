@@ -19,6 +19,7 @@ import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlacehol
 import { statusText, ThreadHeader, threadHeading } from '@/features/thread/ThreadHeader';
 import { ThreadControls } from '@/features/thread/ThreadControls';
 import { ThreadMessages } from '@/features/thread/ThreadMessages';
+import { useAnnouncements } from '@/features/thread/useAnnouncements';
 import { useAttachments } from '@/features/thread/useAttachments';
 import { useIntegrationInstall } from '@/features/thread/useIntegrationInstall';
 import { useReadMarker } from '@/features/thread/useReadMarker';
@@ -27,8 +28,9 @@ import { useThreadConnection } from '@/features/thread/useThreadConnection';
 import { useThreadKeyboard } from '@/features/thread/useThreadKeyboard';
 import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/thread/useSlashCommands';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
+import { lastReplyId } from '@/lib/announce';
 import { chatKey } from '@/lib/chatKey';
-import { sessionSignature } from '@/lib/herdr/models';
+import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
 import { paletteSections, pickSlashCommand, type CatalogueCommand } from '@/lib/slashCommands';
 import { isShellDraft } from '@/lib/shellMode';
@@ -93,6 +95,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
     transcripts: transcriptKey.length === 0 ? [] : transcriptKey.split('\n'),
   }), [client, connection?.id, workspaceId, transcriptKey]);
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
+  const agent = agentName(thread.agents.find((info) => info.agent !== null)?.agent ?? null);
+  const lastReply = useMemo(() => lastReplyId(thread.messages), [thread.messages]);
+  useAnnouncements({ blocked: thread.isBlocked ? (thread.blockedPrompt?.question ?? '') : null, lastReply }, agent, thread.loading);
 
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);

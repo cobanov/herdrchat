@@ -98,7 +98,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
             {item.command ?? 'Output'}
           </Text>
           {timeLabel !== null && (
-            <Text variant="caption2" color="tertiary">
+            <Text variant="caption2" color="secondary">
               {timeLabel}
             </Text>
           )}
@@ -113,7 +113,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
               </Text>
             </View>
           ) : empty ? (
-            <Text testID="shell-empty" variant="caption" color="tertiary">
+            <Text testID="shell-empty" variant="caption" color="secondary">
               {emptyLabel}
             </Text>
           ) : (
