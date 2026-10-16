@@ -1,4 +1,4 @@
-import { loadSecret } from '../connections';
+import { loadHostKeyPin, loadSecret, saveHostKeyPin } from '../connections';
 
 /**
  * A keychain that behaves like expo-secure-store on iOS: adding an item sets
@@ -31,6 +31,13 @@ jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {}, MissingC
 beforeEach(() => {
   mockItems.clear();
   mockFailAdd = null;
+});
+
+// HC-5: an empty pin would read back as "no pin", trust-on-first-use again.
+it('never stores an empty host key pin', async () => {
+  await saveHostKeyPin('host-1', '');
+  expect(mockItems.size).toBe(0);
+  await expect(loadHostKeyPin('host-1')).resolves.toBeNull();
 });
 
 // #102: the old migration re-saved the value, which never changes accessibility.
