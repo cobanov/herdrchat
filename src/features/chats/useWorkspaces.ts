@@ -22,6 +22,7 @@ import {
   type AgentStatus,
   type Pane,
   type RestoreError,
+  type Snapshot,
   type Tab,
   type TabLayout,
   type Workspace,
@@ -273,8 +274,11 @@ export function useWorkspaces(
   }, [listMode]);
   const alive = useRef(true);
 
-  /** Resolves true when the poll failed, so the loop knows whether to back off. */
-  const refresh = useCallback(async (): Promise<boolean> => {
+  /**
+   * Resolves true when the poll failed, so the loop knows whether to back off.
+   * `recent` is a snapshot already read, which this round uses instead of its own.
+   */
+  const refresh = useCallback(async (recent?: Snapshot): Promise<boolean> => {
     if (client === null) return false;
     try {
       // One call, not two. `api snapshot` returns the whole session — workspaces
@@ -285,7 +289,7 @@ export function useWorkspaces(
       // only when this herdr does not send the field, which is a real
       // possibility on a host we have not seen. Null means ask; empty means
       // there genuinely are none, and asking again would be pointless.
-      const snapshot = await client.snapshot();
+      const snapshot = recent ?? (await client.snapshot());
       // Rides along with the poll that already runs. Settings reads this rather
       // than asking the host itself — see `state/hostVersion`. The selected
       // host's only: another host's poll runs alongside it and would
@@ -391,6 +395,8 @@ export function useWorkspaces(
     let inFlight = false;
     let again = false;
     let stopped = false;
+    /** The next round asks the host itself: the first one, and any a kick asks for. */
+    let fresh = true;
 
     // A chained timeout rather than an interval: an interval on a slow host
     // stacks overlapping polls, and each one costs a round-trip.
@@ -403,7 +409,15 @@ export function useWorkspaces(
         return;
       }
       inFlight = true;
-      const failed = await refresh();
+      // On iPad the open chat beside this list reads the snapshot every couple
+      // of seconds. One it read within this round's interval is this round's,
+      // and the next round comes that much sooner, so the rows are never older
+      // than the interval. Alone, the list's own last read is a full interval
+      // old by now, so it asks as before.
+      const interval = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
+      const recent = fresh ? null : client.recentSnapshot(interval);
+      fresh = false;
+      const failed = await refresh(recent?.snapshot);
       inFlight = false;
       if (!alive.current || stopped) return;
       failures.current = failed ? failures.current + 1 : 0;
@@ -411,7 +425,7 @@ export function useWorkspaces(
       // starts it again.
       if (failed && needsTheUser(lastCode.current) && !again) return;
       const base = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
-      schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
+      schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current) - (recent?.ageMs ?? 0));
       again = false;
     };
     const schedule = (delayMs: number) => {
@@ -423,6 +437,7 @@ export function useWorkspaces(
     // instead lost it: the refresh's own `schedule(backoff)` cleared that timer
     // when it finished first, and "Needs you" waited for the next slow poll (#88).
     kick.current = () => {
+      fresh = true;
       if (inFlight) again = true;
       else schedule(EVENT_DEBOUNCE_MS);
     };
