@@ -73,6 +73,7 @@ export default function ServerEditScreen() {
   // credentials to, never whoever answers the next connect.
   const [observedFingerprint, setObservedFingerprint] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // The pin this host is already bound to, for the reader to compare against
   // `ssh-keygen -lf` on the machine itself. Read once: it only changes through
   // the flows on this screen, which set `observedFingerprint` anyway.
@@ -267,7 +268,17 @@ export default function ServerEditScreen() {
     }
   };
 
+  // A keychain or database write that failed left Save doing nothing at all.
   const save = async () => {
+    setSaveError(null);
+    try {
+      await saveHost();
+    } catch (thrown) {
+      setSaveError(`Could not save this host. ${errorText(thrown)}`);
+    }
+  };
+
+  const saveHost = async () => {
     const connection = draft();
     if (secret.length > 0) await saveSecret(connection.id, secret);
     if (connection.authKind === 'privateKey' && (secret.length > 0 || passphrase.length > 0)) {
@@ -403,6 +414,11 @@ export default function ServerEditScreen() {
         {test.kind === 'ok' && !test.live && (
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }} testID="test-no-bridge">
             No live events on this host: the app polls it instead, so updates arrive a few seconds late.
+          </Text>
+        )}
+        {saveError !== null && (
+          <Text variant="footnote" color="destructive" style={{ textAlign: 'center' }} testID="save-error">
+            {saveError}
           </Text>
         )}
         <FieldRow>
