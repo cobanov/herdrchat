@@ -644,9 +644,10 @@ export class TranscriptStore {
     void
   > {
     let consumed = startByte;
-    const command = withPath(`tail -c +${startByte + 1} -f ${shellQuote(path)}`);
-    for await (const line of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS, signal)) {
-      consumed += byteLength(line) + 1; // + the newline the framing stripped
+    const command = withPath(tailScript(path, startByte));
+    for await (const framed of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS, signal)) {
+      const { bytes, line } = unframe(framed);
+      consumed += bytes + 1; // + the newline the framing stripped
       const entry = parseTranscriptEntry(line, agentLabel);
       yield { message: entry.message, meta: entry.meta, consumedBytes: consumed };
     }
@@ -975,6 +976,35 @@ function strippedTail(file: string, bytes: number): string {
 
 /** How far back `strippedTail` reads before it strips. */
 const STRIP_WINDOW_BYTES = 1024 * 1024;
+
+/**
+ * The live tail's host side: from `startByte`, each line with its pictures
+ * stripped, after the size it has in the file (`<bytes>\t<line>`). A line with
+ * a screenshot was a megabyte across SSH, the bridge and `JSON.parse`, for a
+ * picture the thread shows as a path. The cursor counts the file's bytes, so
+ * the size comes from the host: `length` counts bytes in the C locale. The
+ * picture pattern is `STRIP_PICTURES`, spelt out rather than with `{128}`,
+ * which older mawk cannot read, and `fflush` sends each line as it lands.
+ */
+export function tailScript(path: string, startByte: number, follow = true): string {
+  const awk = [
+    'BEGIN { c = "[A-Za-z0-9+/=]"; p = "\\""; for (i = 0; i < 128; i++) p = p c; p = p c "*\\""',
+    '  d = "\\"data:[A-Za-z0-9.+/-]*;base64," c "*\\"" }',
+    '{ n = length($0); gsub(p, "\\"\\""); gsub(d, "\\"\\""); print n "\\t" $0; fflush() }',
+  ].join('\n');
+  return `tail -c +${startByte + 1}${follow ? ' -f' : ''} ${shellQuote(path)} | LC_ALL=C awk ${shellQuote(awk)}`;
+}
+
+/**
+ * A line of `tailScript`: its size in the file and its text. A line without
+ * the frame, as a host might send if its awk failed, counts as it reads.
+ */
+function unframe(framed: string): { bytes: number; line: string } {
+  const frame = /^(\d+)\t/.exec(framed);
+  return frame === null
+    ? { bytes: byteLength(framed), line: framed }
+    : { bytes: Number(frame[1]), line: framed.slice(frame[0].length) };
+}
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 
