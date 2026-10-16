@@ -296,7 +296,7 @@ class SshConnection(private val config: SshConfigRecord) {
 
     return withContext(Dispatchers.IO) {
       val reader = cmd.inputStream.bufferedReader()
-      val handle = StreamHandle(session)
+      val handle = StreamHandle(session, cmd)
       Thread {
         try {
           while (!handle.stopped) {
@@ -322,9 +322,23 @@ class SshConnection(private val config: SshConfigRecord) {
     val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   }
 
-  class StreamHandle(private val session: net.schmizz.sshj.connection.channel.direct.Session) {
+  class StreamHandle(
+    private val session: net.schmizz.sshj.connection.channel.direct.Session,
+    private val command: net.schmizz.sshj.connection.channel.direct.Session.Command,
+  ) {
     @Volatile var stopped = false
       private set
+
+    /**
+     * A line to the command's stdin: the host's socket bridge, which stays up
+     * for the connection and takes one request a line. One writer at a time,
+     * so two requests never interleave on the channel.
+     */
+    @Synchronized
+    fun write(text: String) {
+      command.outputStream.write(text.toByteArray(Charsets.UTF_8))
+      command.outputStream.flush()
+    }
 
     /**
      * Closing the session is what unblocks a `readLine()` parked on the channel.
