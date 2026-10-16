@@ -16,6 +16,13 @@ it('never repeats the title in the line under it', () => {
   expect(parts).not.toContain('docs');
 });
 
+// Seen on a real host: New chat names the workspace and its agent alike.
+it('leaves out the workspace when it has the title\'s name', () => {
+  const { heading, parts } = threadHeading(thread({ agentName: 'hc-probe', workspaceLabel: 'hc-probe', workingDirName: 'probe-grok' }), none);
+  expect(heading).toBe('hc-probe');
+  expect(parts).toEqual(['probe-grok']);
+});
+
 // HC-113: one line cut to "her… · waiting for reply" or "notes ·…".
 describe('the header line on a narrow screen', () => {
   const parts = ['herdrchat', 'Opus 5', 'high effort', 'herdrchat-app'];

@@ -185,8 +185,12 @@ export function threadHeading(
   const linkTitle = title?.trim() ?? '';
   const effort = commanded.effort ?? thread.sessionMeta?.effort ?? null;
   const paneAgent = paneId === undefined || paneId === '' ? undefined : thread.agents[0];
-  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) ? thread.workspaceLabel : null;
   const heading = polledTitle !== '' ? polledTitle : linkTitle !== '' ? linkTitle : 'Chat';
+  // Not when it is the title: a chat named in New chat gives the workspace and
+  // the agent the same name, and read "hc-probe", then "hc-probe · online".
+  const workspaceLine = thread.workspaceLabel !== null && titledBySession(thread) && !sameName(thread.workspaceLabel, heading)
+    ? thread.workspaceLabel
+    : null;
   const parts = [
     // The machine first: the same folder on two computers is two chats.
     machineLabel,
