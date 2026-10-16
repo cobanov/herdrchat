@@ -24,6 +24,7 @@ struct SshConfigRecord {
     print("PASS first contact, changed key, concurrent pin checks")
 
     try await shellPureChecks()
+    try keyChecks()
 
     guard CommandLine.arguments.count == 3 else {
       print("For loopback checks: swift run NativeChecks <test-key> <test-directory>")
@@ -202,6 +203,37 @@ struct SshConfigRecord {
   // MARK: - Terminal shells
 
   /// The launch line and the marker gate, with no host.
+  /// A passphrase-protected key, as `ssh-keygen` writes one, is read with its
+  /// passphrase and refused without it or with a wrong one (HC-7).
+  static func keyChecks() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("herdrchat-keys-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    for type in ["ed25519", "rsa"] {
+      let path = directory.appendingPathComponent(type).path
+      let keygen = Process()
+      keygen.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+      keygen.arguments = ["-q", "-t", type, "-N", "open sesame", "-f", path]
+      try keygen.run()
+      keygen.waitUntilExit()
+      precondition(keygen.terminationStatus == 0, "ssh-keygen failed for \(type)")
+      var config = SshConfigRecord()
+      config.privateKey = try String(contentsOfFile: path, encoding: .utf8)
+      config.passphrase = "open sesame"
+      _ = try SshConnection.authMethod(for: config)
+      for wrong in [nil, "", "not it"] as [String?] {
+        config.passphrase = wrong
+        do {
+          _ = try SshConnection.authMethod(for: config)
+          preconditionFailure("an encrypted \(type) key was read with passphrase \(wrong ?? "nil")")
+        } catch let failure as SshFailure {
+          precondition(failure.code == "bad_key")
+        }
+      }
+    }
+    print("PASS encrypted ed25519 and RSA keys read with their passphrase, refused without")
+  }
+
   static func shellPureChecks() async throws {
     let line = ShellLaunch.line(command: "herdr agent attach 'w1:p2'", nonce: "abc")
     let expected = #" exec /bin/sh -c 'echo HERDRCHAT_""SHELL_abc; herdr agent attach '\''w1:p2'\'''"# + "\r"
