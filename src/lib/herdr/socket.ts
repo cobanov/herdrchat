@@ -129,6 +129,32 @@ export class HerdrSocket {
       throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
     }
     const commands = paramsList.map((params) => commandFor(route, this.encode(method, params), this.herdr));
+    return this.runBatches(commands, timeoutMs);
+  }
+
+  /**
+   * Different requests on ONE SSH channel, as `callEach` sends one request
+   * with many params: run in order, each answer in its place, a failure as
+   * that entry's error. An open chat's poll asks for the snapshot, a screen
+   * and its presence at once this way, where it opened a channel for each.
+   */
+  async callMany(
+    requests: readonly { method: string; params: Record<string, unknown> }[],
+    timeoutMs: number
+  ): Promise<BatchAnswer[]> {
+    if (requests.length === 0) return [];
+    const route = await this.detect();
+    if (route === null) {
+      throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
+    }
+    return this.runBatches(
+      requests.map(({ method, params }) => commandFor(route, this.encode(method, params), this.herdr)),
+      timeoutMs
+    );
+  }
+
+  /** Bridge commands as few batches as fit, run in order; see `callEach`. */
+  private async runBatches(commands: readonly string[], timeoutMs: number): Promise<BatchAnswer[]> {
     const answers: BatchAnswer[] = [];
     for (const part of batchParts(commands)) {
       const result = await this.transport.exec(batchCommand(part), timeoutMs);
