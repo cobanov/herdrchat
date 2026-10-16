@@ -50,6 +50,7 @@ import {
   rebind,
   replaceMessages,
   seedMessages,
+  seedIfSession,
   setTailCursor,
   tailCursor,
 } from '@/state/threadCache';
@@ -298,7 +299,9 @@ export function useThread(
   connectionId: string,
   workspaceId: string,
   initialAgents: readonly AgentInfo[],
-  paneId?: string
+  paneId?: string,
+  /** The session the chat list last saw for this chat, when it opened from there. */
+  listedSig?: string
 ): ThreadState {
   /** Absent and empty both mean the workspace chat, as in `chatKey`. */
   const pane = paneId === undefined || paneId === '' ? undefined : paneId;
@@ -508,6 +511,28 @@ export function useThread(
     merged.push(...pending.slice(index));
     setMessages(merged);
   }, []);
+
+  /*
+    Open from the cache at once. The list saw this chat's session a moment
+    ago; when the cached messages are that session's, they show before the
+    first poll, and the thread is bound to it so the poll goes straight to the
+    tail rather than through a loading state. A host that names another
+    session by then is a rotation, and is handled as one. A cache of another
+    session is left alone here (`seedIfSession` only reads).
+  */
+  const seededFromList = useRef(false);
+  useEffect(() => {
+    if (listedSig === undefined || listedSig === '' || seededFromList.current) return;
+    seededFromList.current = true;
+    void seedIfSession(db, connectionId, cacheKey, listedSig).then((cached) => {
+      if (!alive.current || boundSig.current !== null || arrivals.current.length > 0 || cached.length === 0) return;
+      boundSig.current = listedSig;
+      arrivals.current = cached;
+      seen.current = new Set(cached.map((message) => message.id));
+      rebuild();
+      setLoading(false);
+    });
+  }, [db, connectionId, cacheKey, listedSig, rebuild]);
 
   const ingest = useCallback(
     async (incoming: readonly ChatMessage[], sig: string) => {
@@ -930,7 +955,9 @@ export function useThread(
         if (
           sig === null &&
           boundSig.current !== null &&
-          (conversational.length === 0 || panes !== boundPanes.current)
+          // No panes yet: bound from the cache before the first poll, which
+          // records them below.
+          (conversational.length === 0 || (boundPanes.current !== '' && panes !== boundPanes.current))
         ) {
           for (const controller of tails.current.values()) controller.abort();
           tails.current.clear();

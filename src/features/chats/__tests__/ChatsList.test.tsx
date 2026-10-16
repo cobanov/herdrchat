@@ -193,7 +193,8 @@ it('draws one agent beside a shell as a space, the agent and its terminal under 
   expect(screen.getByTestId('pane-row-w7:p1')).toHaveProp('accessibilityLabel', expect.stringMatching(/^Landing page copy, /));
   expect(screen.getByTestId('terminal-row-w7:p2')).toBeOnTheScreen();
   await fireEvent.press(screen.getByTestId('pane-row-w7:p1'));
-  expect(mockOpenChat).toHaveBeenCalledWith('demo', 'w7', 'Landing page copy', undefined);
+  // With the session the list saw, so the chat opens from its cache at once.
+  expect(mockOpenChat).toHaveBeenCalledWith('demo', 'w7', 'Landing page copy', undefined, '88888888-8888-4888-8888-888888888888');
 });
 
 // The lone agent's row is the workspace chat, so it is the one lit while

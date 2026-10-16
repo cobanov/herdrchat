@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { cacheStamp } from '@/lib/transcript/cacheVersion';
-import { appendMessages, forgetWorkspace, MAX_CACHED_MESSAGES, rebind, seedMessages } from '../threadCache';
+import { appendMessages, forgetWorkspace, MAX_CACHED_MESSAGES, rebind, seedIfSession, seedMessages } from '../threadCache';
 
 /**
  * A real SQLite, from Node's own `node:sqlite`, behind the few calls the cache
@@ -100,4 +100,21 @@ itWithSqlite('keeps a chat cache to its newest messages as it appends', async ()
   const rows = raw.prepare('SELECT COUNT(*) AS n, MIN(seq) AS low FROM messages').all()[0] as { n: number; low: number };
   expect(rows).toEqual({ n: MAX_CACHED_MESSAGES, low: 700 - MAX_CACHED_MESSAGES });
   expect((await seedMessages(db, 'host', 'w1')).at(-1)?.id).toBe('m699');
+});
+
+// What a chat shows the moment it opens: its cache, but only when the cache is
+// the session the list saw, and never deleting a cache it does not show.
+itWithSqlite("seeds only the listed session's cache, and deletes nothing either way", async () => {
+  const raw = new sqlite!.DatabaseSync(':memory:');
+  raw.exec(`CREATE TABLE messages (connection_id TEXT NOT NULL, workspace_id TEXT NOT NULL, session_sig TEXT NOT NULL,
+    message_id TEXT NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (connection_id, workspace_id, message_id))`);
+  const message = { id: 'm1', role: 'assistant', segments: [{ kind: 'text', text: 'hi' }], timestamp: 1, agentLabel: null, isSidechain: false };
+  raw.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)').run('host', 'w1', cacheStamp('sess-a'), 'm1', 0, JSON.stringify(message));
+  const db = {
+    getFirstAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).all(...params)[0] ?? null,
+    getAllAsync: async (sql: string, ...params: unknown[]) => raw.prepare(sql).all(...params),
+  } as unknown as SQLiteDatabase;
+  expect((await seedIfSession(db, 'host', 'w1', 'sess-a')).map((cached) => cached.id)).toEqual(['m1']);
+  expect(await seedIfSession(db, 'host', 'w1', 'sess-b')).toEqual([]);
+  expect(raw.prepare('SELECT COUNT(*) AS n FROM messages').all()[0]).toEqual({ n: 1 });
 });

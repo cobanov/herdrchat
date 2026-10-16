@@ -641,7 +641,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                   unread={isPaneUnread(item, pane, rowReads, openHere)}
                   onPress={() => {
                     Keyboard.dismiss();
-                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId);
+                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId,
+                      target.paneId === undefined ? item.sessionSig : pane.sessionSig);
                   }}
                   onLongPress={() => actions.manageChat(item, ownPersonal ? [
                     { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
@@ -666,7 +667,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 unread={agent === null ? isChatUnread(item, rowReads, openHere) : isAgentUnread(agent, rowReads, openHere)}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId);
+                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId,
+                    agent?.pane != null ? agent.pane.sessionSig : item.sessionSig);
                 }}
                 onLongPress={manage}
                 onSwiped={markHintSeen}

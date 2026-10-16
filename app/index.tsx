@@ -55,6 +55,7 @@ export default function ChatsScreen() {
           connectionId={chat.connectionId}
           workspaceId={chat.workspaceId}
           paneId={chat.paneId}
+          listedSig={chat.sig}
           title={chat.title}
           onBack={wide ? undefined : () => select(null)}
         />
