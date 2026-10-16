@@ -4,7 +4,7 @@
 #       env:
 #         ITEM: Settings      # or Hosts, or New chat
 # Settings is the gear in the header, New chat the "+" beside it, and Hosts the
-# host's name under the title (`server-switcher`). Chats, Files and Terminal
+# host's name under the title (`server-switcher`). Chats and Computers
 # are the tab bar under the screen. Every screen these open is a sheet closed
 # by `header-close`.
 appId: dev.herdr.HerdrChat

@@ -9,7 +9,7 @@ import { useHoverIntent } from '@/features/spaces/useHoverIntent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, motion, radius, size, spaceLayout, spacing } from '@/theme/tokens';
 import { StatusMark } from './StatusMark';
-import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
+import { useDeviceIcon } from '@/state/deviceIcons';
 import { AVATAR_SIZE, type RowAction } from './ChatRow';
 import { rowTestKey, type MachineRef } from './listedChat';
 import { spaceStats, spaceTitle, statusLabel } from './rowText';
@@ -50,6 +50,7 @@ export const SpaceCard = memo(function SpaceCard({
   const attention = summary.status === 'blocked';
   const title = spaceTitle(summary);
   const stats = spaceStats(summary);
+  const deviceIcon = useDeviceIcon(summary.connectionId);
   const key = testKey ?? rowTestKey(summary);
   const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
   const hasLayout = summary.tabs.length > 0 || summary.layouts.length > 0;
@@ -90,7 +91,8 @@ export const SpaceCard = memo(function SpaceCard({
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
           style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.sm, backgroundColor: colors.tintMuted, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="square.stack.3d.up" size={size.chatBadgeGlyph} tintColor={colors.tint} />
+          {/* The computer's glyph when one was given in Hosts, as a chat's row has it. */}
+          <Icon name={deviceIcon ?? 'square.stack.3d.up'} size={size.chatBadgeGlyph} tintColor={colors.tint} />
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
@@ -98,10 +100,7 @@ export const SpaceCard = memo(function SpaceCard({
             {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
             {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <DeviceIconMark connectionId={summary.connectionId} />
-            <Text variant="caption" color={attention ? 'attention' : 'secondary'} mono numberOfLines={2} style={{ flexShrink: 1 }}>{stats}</Text>
-          </View>
+          <Text variant="caption" color={attention ? 'attention' : 'secondary'} mono numberOfLines={2}>{stats}</Text>
           {restoreFailed !== null && (
             <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">{restoreFailed}</Text>
           )}

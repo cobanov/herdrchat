@@ -370,7 +370,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
         actionLabel="New chat"
         onAction={connection === null ? undefined : () => router.push('/new-chat')}
         // New chat and Settings are the header's two glyphs; Hosts is the host's
-        // name under the title, and Chats, Files and Terminal are the tab bar.
+        // name under the title, and Chats and Computers are the tab bar.
         menuSymbol="gearshape"
         menuTestID="chats-settings"
         menuLabel="Settings"

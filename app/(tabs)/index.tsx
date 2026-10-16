@@ -17,7 +17,7 @@ import { isUnderHost } from '@/lib/herdr/machines';
  * The app's root: the chats, and on iPad the open detail beside them, a
  * conversation or a pane's terminal.
  *
- * The first tab, beside Files and Terminal. Hosts and Settings are presented
+ * The first tab, beside Computers. Hosts and Settings are presented
  * above it from its header, and it is the screen the app opens on, which is
  * why the welcome gate runs here.
  */

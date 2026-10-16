@@ -6,7 +6,7 @@ import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens';
 import { StatusMark } from './StatusMark';
-import { DeviceIconMark } from '@/features/devices/DeviceIconMark';
+import { useDeviceIcon } from '@/state/deviceIcons';
 import { rowTestKey, type MachineRef } from './listedChat';
 import { rowContext, rowTitle, statusLabel } from './rowText';
 import type { ChatSummary } from './useWorkspaces';
@@ -58,6 +58,7 @@ export const ChatRow = memo(function ChatRow({
   const preview = summary.preview === null ? status
     : `${summary.preview.fromUser ? 'You: ' : ''}${summary.preview.text}`;
   // herdr's own sentence, which already says what to do about it.
+  const deviceIcon = useDeviceIcon(summary.connectionId);
   const restoreFailed = summary.restoreError !== null ? `Couldn't restore. ${summary.restoreError}` : null;
 
   return (
@@ -90,7 +91,9 @@ export const ChatRow = memo(function ChatRow({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.sm, backgroundColor: colors.tintMuted, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name={agent?.agent === 'claude' ? 'asterisk' : 'chevron.left.forwardslash.chevron.right'} size={22} tintColor={colors.tint} />
+        {/* The computer's glyph when one was given in Hosts, so a list of several
+            says which is which; the agent is named on the line under the title. */}
+        <Icon name={deviceIcon ?? (agent?.agent === 'claude' ? 'asterisk' : 'chevron.left.forwardslash.chevron.right')} size={22} tintColor={colors.tint} />
       </View>
 
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xxs }}>
@@ -99,10 +102,7 @@ export const ChatRow = memo(function ChatRow({
           {pinned && <Icon name="pin.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
           {muted && <Icon name="bell.slash.fill" size={size.rowBadgeGlyph} tintColor={colors.secondaryLabel} />}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-          <DeviceIconMark connectionId={summary.connectionId} />
-          <Text variant="caption" color="secondary" mono numberOfLines={1} style={{ flexShrink: 1 }}>{context}</Text>
-        </View>
+        <Text variant="caption" color="secondary" mono numberOfLines={1}>{context}</Text>
         {restoreFailed !== null ? (
           <Text variant="footnote" color="destructive" numberOfLines={2} testID="chat-row-restore-error">
             {restoreFailed}

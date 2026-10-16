@@ -5,8 +5,8 @@ import { useBadge } from '@/state/badge';
 import { useTheme } from '@/theme/ThemeProvider';
 
 /**
- * The three places the app is used from, as a real UIKit tab bar: the chats,
- * the files of the host and its machines, and a terminal on any of them.
+ * The two places the app is used from, as a real UIKit tab bar: the chats,
+ * and the computers (the host and its machines) with their files and terminals.
  *
  * `NativeTabs` renders the system's own tab bar rather than a JS imitation,
  * which on iOS 26 is the floating Liquid Glass bar, with the way it minimises
@@ -18,8 +18,8 @@ import { useTheme } from '@/theme/ThemeProvider';
  */
 export default function TabsLayout() {
   const { colors } = useTheme();
-  // Blocked agents plus unread threads, written by the chats list: with Files
-  // or Terminal open, the badge is the one thing that still says a chat wants you.
+  // Blocked agents plus unread threads, written by the chats list: with
+  // Computers open, the badge is the one thing that still says a chat wants you.
   const attention = useBadge((state) => state.count);
 
   return (
@@ -35,14 +35,9 @@ export default function TabsLayout() {
         {attention > 0 && <NativeTabs.Trigger.Badge>{String(attention)}</NativeTabs.Trigger.Badge>}
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="files">
-        <NativeTabs.Trigger.Icon sf={{ default: 'folder', selected: 'folder.fill' }} md="folder" />
-        <NativeTabs.Trigger.Label>Files</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="terminal">
-        <NativeTabs.Trigger.Icon sf={{ default: 'terminal', selected: 'terminal.fill' }} md="terminal" />
-        <NativeTabs.Trigger.Label>Terminal</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="computers">
+        <NativeTabs.Trigger.Icon sf={{ default: 'desktopcomputer', selected: 'desktopcomputer' }} md="computer" />
+        <NativeTabs.Trigger.Label>Computers</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

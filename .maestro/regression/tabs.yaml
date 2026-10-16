@@ -1,17 +1,22 @@
-# The tab bar: Chats, Files and Terminal. Files browses the Demo's home folder
-# and one folder in it, and Terminal opens a login shell on the Demo, the same
-# terminal screen a pane's opens, pushed over the tabs and closed by Back.
+# The tab bar: Chats and Computers. Computers lists the Demo and its machine,
+# each with a button for its files and one for its terminal. Files browses the
+# Demo's home folder and one folder in it; the terminal is a login shell on the
+# Demo, the same terminal screen a pane's opens, pushed over the tabs.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
 
-- tapOn: Files
+- tapOn: Computers
 - extendedWaitUntil:
     visible:
-      id: files-device-demo
+      id: device-demo
     timeout: 5000
+- assertVisible:
+    id: device-demo/demo-nuku
+- takeScreenshot: computers-${APPEARANCE}
+
 - tapOn:
-    id: files-device-demo
+    id: device-files-demo
 - extendedWaitUntil:
     visible:
       id: files-entry-README.md
@@ -33,16 +38,10 @@ appId: dev.herdr.HerdrChat
 - tapOn:
     id: files-devices
 - assertVisible:
-    id: files-device-demo
+    id: device-demo
 
-- tapOn: Terminal
-- extendedWaitUntil:
-    visible:
-      id: terminal-device-demo
-    timeout: 5000
-- takeScreenshot: terminal-tab-${APPEARANCE}
 - tapOn:
-    id: terminal-device-demo
+    id: device-terminal-demo
 - extendedWaitUntil:
     visible:
       id: terminal-view
@@ -51,7 +50,7 @@ appId: dev.herdr.HerdrChat
     id: terminal-back
 - extendedWaitUntil:
     visible:
-      id: terminal-device-demo
+      id: device-demo
     timeout: 5000
 
 - tapOn: Chats
@@ -59,8 +58,3 @@ appId: dev.herdr.HerdrChat
     visible:
       id: chats-settings
     timeout: 5000
-- scrollUntilVisible:
-    element:
-      id: chat-row-w2
-    direction: DOWN
-    centerElement: true

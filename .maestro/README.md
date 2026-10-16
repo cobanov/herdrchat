@@ -226,7 +226,7 @@ A fresh install with no host opens on the welcome, so every flow runs
 flows that only need Settings.
 
 The app opens on the chats list, titled by its view (Spaces or Agents, picked
-by tapping the title, `chats-view`), above a tab bar of Chats, Files and Terminal
+by tapping the title, `chats-view`), above a tab bar of Chats and Computers
 (`tabs.yaml`). New chat is the header's "+" (`header-action`), Settings its gear
 (`chats-settings`) and Hosts the host's name under the title (`server-switcher`);
 each opens as a sheet closed by Done (`header-close`). Flows reach them through

@@ -2,13 +2,20 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import { agentRows, agentTestKey, type AgentRow } from '../agentRows';
 import { ChatRow } from '../ChatRow';
+import { useDeviceIcons } from '@/state/deviceIcons';
 import { listChats } from '../listedChat';
 import type { ChatSummary } from '../useWorkspaces';
 
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
 }));
-jest.mock('@/components/Icon', () => ({ Icon: () => null }));
+// Drawn as an empty view named for its glyph, so a test can tell which one a row chose.
+jest.mock('@/components/Icon', () => ({
+  Icon: ({ name }: { name: string }) =>
+    jest.requireActual<typeof import('react')>('react').createElement(
+      jest.requireActual<typeof import('react-native')>('react-native').View, { testID: `icon-${name}` }
+    ),
+}));
 
 const summary = (agent: string | null): ChatSummary => ({
   workspaceId: 'w1',
@@ -156,4 +163,20 @@ it('draws an agent of several as a row of its own, found by its pane', async () 
   expect(screen.getByText('Parser · Codex · web/ui')).toBeOnTheScreen();
   expect(screen.getByTestId('chat-row-w1:p2').props.accessibilityLabel).toMatch(/^Save button wrap, Parser · Codex · web\/ui, Working/);
   expect(screen.queryByTestId('chat-row-w1')).toBeNull();
+});
+
+// The glyph a computer was given in Hosts takes the agent's place at the left
+// of its chats; the agent is still named on the line under the title.
+it('draws the computer\'s glyph in place of the agent\'s once one is chosen', async () => {
+  const row = { ...summary('claude'), connectionId: 'srv-1' };
+  const before = await render(<ChatRow summary={row} unread={false} onPress={jest.fn()} />);
+  // The avatar is hidden from VoiceOver, which reads the agent from the line instead.
+  expect(before.getByTestId('icon-asterisk', { includeHiddenElements: true })).toBeOnTheScreen();
+  await before.unmount();
+  useDeviceIcons.setState({ byConnection: { 'srv-1': 'laptopcomputer' } });
+  const after = await render(<ChatRow summary={row} unread={false} onPress={jest.fn()} />);
+  expect(after.getByTestId('icon-laptopcomputer', { includeHiddenElements: true })).toBeOnTheScreen();
+  expect(after.queryByTestId('icon-asterisk', { includeHiddenElements: true })).toBeNull();
+  expect(after.getByText('Claude · code/parser')).toBeOnTheScreen();
+  useDeviceIcons.setState({ byConnection: {} });
 });

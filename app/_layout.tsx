@@ -132,7 +132,7 @@ function RootStack() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.systemBackground },
         }}>
-        {/* The root: the tabs, Chats, Files and Terminal (app/(tabs)). iPad
+        {/* The root: the tabs, Chats and Computers (app/(tabs)). iPad
             keeps its selected conversation beside the chats on the Chats tab;
             only phones push the standalone thread route above it. Hosts and
             Settings are opened from the Chats header and presented below. */}
