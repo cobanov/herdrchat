@@ -9,6 +9,14 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, size, spacing } from '@/theme/tokens';
 
 /**
+ * Each picture's proportions once it has loaded, by its uri. A bubble starts
+ * square until its picture loads, and the thread list recycles rows: without
+ * this every picture jumped in height each time it scrolled back into view,
+ * and the list measured it again.
+ */
+const aspects = new Map<string, number>();
+
+/**
  * A picture in a bubble. The phone's own copy when it sent the picture, shown
  * at its own proportions and opened full screen on a tap; otherwise a label,
  * since the picture itself lives on the host.
@@ -19,7 +27,7 @@ export function BubbleImage({ path, onTint }: { path: string; onTint: boolean })
   // no insets and put the close button under the status bar.
   const insets = useSafeAreaInsets();
   const uri = localImageUri(path);
-  const [aspect, setAspect] = useState(1);
+  const [aspect, setAspect] = useState(() => (uri === null ? 1 : aspects.get(uri) ?? 1));
   const [open, setOpen] = useState(false);
 
   if (uri === null) {
@@ -49,9 +57,12 @@ export function BubbleImage({ path, onTint }: { path: string; onTint: boolean })
         <Image
           source={{ uri }}
           accessibilityIgnoresInvertColors
+          testID="bubble-image-picture"
           onLoad={(event) => {
             const { width, height } = event.nativeEvent.source;
-            if (width > 0 && height > 0) setAspect(width / height);
+            if (width <= 0 || height <= 0) return;
+            aspects.set(uri, width / height);
+            setAspect(width / height);
           }}
           style={{
             width: wide ? size.bubbleImage : size.bubbleImage * aspect,
