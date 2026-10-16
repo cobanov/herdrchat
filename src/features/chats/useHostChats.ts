@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { HerdrClient } from '@/lib/herdr/client';
+import type { HerdrErrorCode } from '@/lib/herdr/protocol';
 import { clientFor, isDemo, useConnections, type ServerConnection } from '@/state/connections';
 import { listChats, type ListedChat } from './listedChat';
 import { useWorkspaces, type ChatSummary } from './useWorkspaces';
@@ -29,7 +30,7 @@ import { useWorkspaces, type ChatSummary } from './useWorkspaces';
 export interface HostFeed {
   summaries: ChatSummary[];
   error: string | null;
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   refresh: () => Promise<void>;
 }
 
@@ -69,7 +70,7 @@ export interface HostChatsState {
   summaries: ListedChat[];
   loading: boolean;
   error: string | null;
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   notices: HostNoticeRow[];
   /** Every listed host's id: whose reads and prefs to load. */
   connectionIds: readonly string[];

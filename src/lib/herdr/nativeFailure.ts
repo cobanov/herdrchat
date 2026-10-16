@@ -1,3 +1,5 @@
+import type { SshFailureCode } from '../../../modules/herdr-ssh/src';
+
 /**
  * What a native SSH failure says to a person.
  *
@@ -31,7 +33,7 @@ const CAUSES: readonly [RegExp, string][] = [
   ],
 ];
 
-export function friendlyMessage(code: string, message: string): string {
+export function friendlyMessage(code: SshFailureCode, message: string): string {
   if (code === 'host_key_changed') return HOST_KEY_CHANGED_MESSAGE;
   if (message.trim().length > 0 && !LOOKS_INTERNAL.test(message)) return message;
   if (code === 'connect_failed' || code === 'transport_failed' || code === 'timeout') {
@@ -50,7 +52,7 @@ export function friendlyMessage(code: string, message: string): string {
   }
 }
 
-export function friendlyFailure<T extends { code: string; message: string }>(failure: T): T {
+export function friendlyFailure<T extends { code: SshFailureCode; message: string }>(failure: T): T {
   const message = friendlyMessage(failure.code, failure.message);
   return message === failure.message ? failure : { ...failure, message };
 }

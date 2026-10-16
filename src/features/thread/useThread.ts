@@ -9,7 +9,7 @@ import type * as SQLite from 'expo-sqlite';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { concernsWorkspace } from '@/lib/herdr/events';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError } from '@/lib/herdr/protocol';
 import { chatKey } from '@/lib/chatKey';
 import { titleAgent } from '@/lib/chatTitle';
 import { agentSpec } from '@/lib/herdr/agents';
@@ -718,7 +718,7 @@ export function useThread(
           const key = sessionSignature([agent])!;
           const label = live.length > 1 ? agent.agent : null;
           let path = await store.transcriptPath(agent);
-          if (path === null) throw new Error(agentSpec(agent.agent)?.missing ?? 'The agent reported an invalid session id. Resume the session on the host, then reload.');
+          if (path === null) throw new HerdrError('session_invalid', agentSpec(agent.agent)?.missing ?? 'The agent reported an invalid session id. Resume the session on the host, then reload.');
           let probe = await store.fileProbe(path);
           if (probe.kind === 'absent' && agent.agent === 'claude') {
             // Not under the folder the pane's cwd names. The same session id may
@@ -737,14 +737,14 @@ export function useThread(
             release(key);
             return null; // A new agent can receive its first prompt before writing a file.
           }
-          if (probe.kind === 'unknown') throw new Error(`Couldn't read this chat's transcript on the host: ${probe.reason}`);
+          if (probe.kind === 'unknown') throw new HerdrError('transcript_unreadable', `Couldn't read this chat's transcript on the host: ${probe.reason}`);
           if (isPiFamily(agent.agent)) await store.verifyOmpTranscript(path, agent.agentSession!.kind === 'id' ? id : null);
           absentRetry.current.delete(key);
           const cached = await tailCursor(db, connectionId, cacheKey, path);
           return { key, path, label, agent: agent.agent, size: probe.bytes, cached };
         } catch (thrown) {
           release(sessionSignature([agent])!);
-          openingError = thrown instanceof Error ? thrown.message : String(thrown);
+          openingError = errorText(thrown);
           return null;
         }
       }))).filter(source => source !== null);
@@ -852,7 +852,7 @@ export function useThread(
               // return from the background. Restart at once instead, and only
               // say something when that restart fails as well.
               if (failures === 1) restartNow = true;
-              else setTailError(`Conversation updates paused. Reconnecting. ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+              else setTailError(`Conversation updates paused. Reconnecting. ${errorText(thrown)}`);
             }
           } finally {
             release(source.key);
@@ -867,7 +867,7 @@ export function useThread(
     } catch (thrown) {
       if (current()) {
         setLoading(false);
-        setTailError(thrown instanceof Error ? thrown.message : String(thrown));
+        setTailError(errorText(thrown));
         // Keep the last readable cache, and retry the bounded snapshot. Never
         // fall back to tailing from byte zero on a failed bulk read.
         controller.abort();
@@ -916,7 +916,7 @@ export function useThread(
       overlayWatchUntil.current = Date.now() + OVERLAY_WATCH_MS;
       await readOverlay(paneId);
     } catch (thrown) {
-      setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+      setActionError(errorText(thrown));
     } finally {
       if (alive.current) setOverlayBusy(false);
     }
@@ -1210,7 +1210,7 @@ export function useThread(
         setLoading(false);
         failures.current += 1;
         needsUser = thrown instanceof HerdrError && needsTheUser(thrown.code);
-        setPollError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setPollError(errorText(thrown));
         setOffline(true);
         /*
           The host cannot be reached and nothing is on screen yet. The saved
@@ -1469,7 +1469,7 @@ export function useThread(
           return;
         }
         setFailedIds((previous) => new Set(previous).add(echoId));
-        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(errorText(thrown));
       } finally {
         setIsSending(false);
       }
@@ -1612,7 +1612,7 @@ export function useThread(
       } catch (thrown) {
         // The keys never left the phone; nothing is pending on the host.
         clearBlockedPending();
-        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(errorText(thrown));
       }
     },
     // `pollScale` belongs here: the pending window is derived from the poll
@@ -1636,7 +1636,7 @@ export function useThread(
       try {
         await (hard ? client.interruptHard(pane.paneId) : client.interrupt(pane.paneId));
       } catch (thrown) {
-        setActionError(thrown instanceof HerdrError ? thrown.message : String(thrown));
+        setActionError(errorText(thrown));
       }
     },
     [client, agents, primaryPane]

@@ -5,9 +5,10 @@ import { useCallback, useState } from 'react';
 import { confirmDestructive, showActionSheet, type SheetAction } from '@/components/ActionSheet';
 import { haptics } from '@/components/haptics';
 import type { HerdrClient } from '@/lib/herdr/client';
+import { errorText } from '@/lib/herdr/protocol';
 import { forgetWorkspace } from '@/state/threadCache';
 import { rowTitle } from './rowText';
-import { errorText, type ChatSummary } from './useWorkspaces';
+import type { ChatSummary } from './useWorkspaces';
 
 /**
  * Rename and close, as the three affordances that reach them: a swipe action, a

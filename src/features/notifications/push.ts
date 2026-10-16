@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-import { HerdrError, transportError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError, transportError } from '@/lib/herdr/protocol';
 import { SEND_TIMEOUT_MS } from '@/lib/herdr/timeouts';
 import { shellQuote, withPath } from '@/lib/herdr/shell';
 import type { HerdrTransport } from '@/lib/herdr/transport';
@@ -59,7 +59,7 @@ export type PushStatus =
  */
 export function errorDetail(thrown: unknown): string | undefined {
   if (thrown === undefined || thrown === null) return undefined;
-  const text = (thrown instanceof Error ? thrown.message : String(thrown)).trim();
+  const text = errorText(thrown).trim();
   return text.length > 0 ? text : undefined;
 }
 
