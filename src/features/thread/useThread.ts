@@ -39,6 +39,7 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { batcher } from '@/lib/batcher';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
 import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
@@ -125,6 +126,8 @@ const TAIL_SILENCE_MS = 90_000;
  */
 const NO_SESSION_GRACE_MS = 80_000;
 const CODEX_RECEIPT_WAIT_MS = 5_000;
+/** How long a burst of tail lines gathers before it is written and shown. */
+const TAIL_BATCH_MS = 100;
 /** First and longest wait before looking again for a sibling's absent transcript. */
 const ABSENT_RETRY_MS = 5_000;
 const ABSENT_RETRY_MAX_MS = 60_000;
@@ -760,16 +763,26 @@ export function useThread(
         tailBeats.current.set(source.key, Date.now());
         void (async () => {
           let restartNow = false;
+          // Lines arrive in bursts (a call, its result, the reply), and each
+          // one was a transaction, a cursor write and a rebuild of the whole
+          // list. A burst is one of each now, messages before the cursor.
+          const written = batcher<{ message: ChatMessage | null; consumed: number }>(async (chunks) => {
+            const messages = chunks.flatMap((chunk) => (chunk.message === null ? [] : [chunk.message]));
+            if (messages.length > 0) await ingest(messages, sig);
+            const last = chunks[chunks.length - 1];
+            if (current() && last !== undefined) await setTailCursor(db, connectionId, cacheKey, source.path, last.consumed);
+          }, TAIL_BATCH_MS);
           try {
             for await (const chunk of store.tail(source.path, source.label, followFrom, controller.signal)) {
               if (!current()) break;
+              if (written.failure !== undefined) throw written.failure;
               tailBeats.current.set(source.key, Date.now());
               tailFailures.current.delete(source.key);
               if (chunk.meta !== null) applyMeta(source.key, chunk.meta);
-              if (chunk.message !== null) await ingest([chunk.message], sig);
-              if (!current()) break;
-              await setTailCursor(db, connectionId, cacheKey, source.path, chunk.consumedBytes);
+              written.push({ message: chunk.message, consumed: chunk.consumedBytes });
             }
+            await written.drain();
+            if (written.failure !== undefined) throw written.failure;
           } catch (thrown) {
             if (current()) {
               const failures = (tailFailures.current.get(source.key) ?? 0) + 1;
