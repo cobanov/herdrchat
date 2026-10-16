@@ -113,6 +113,9 @@ npx expo run:ios
 ```
 
 The local SSH module requires a native development build, not Expo Go.
+After an Xcode update, run `npm ci` again before building: Expo keeps a part
+of the app it built with the previous Xcode, and the build then fails with
+`cannot find type '__ObjC::expo'`.
 For a physical device, use `npx expo run:ios --device` and select your unlocked,
 trusted iPhone. Start Metro again later with `npm start`.
 

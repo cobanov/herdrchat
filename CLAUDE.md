@@ -151,6 +151,13 @@ The iOS build needs Xcode's Metal toolchain (SwiftTerm compiles a shader);
 Changes under `modules/*/ios` or `.../android` need a native rebuild;
 Fast Refresh does not reload native code.
 
+After an Xcode update, `npm ci` before the next build. Expo builds
+`ExpoModulesJSI` into `node_modules` on the first build and keys that cache on
+the Swift compiler, not the Xcode build, so Xcode 27.1 reused 27.0's slice and
+every build failed with `cannot find type '__ObjC::expo'` (expo/expo#50365).
+Deleting `node_modules/expo-modules-jsi/apple/Products/*/*/.build-hash` does
+the same. CI installs fresh and never sees it.
+
 ## Not yet built
 
 Notifications: the app registers its token on the host and installs the
