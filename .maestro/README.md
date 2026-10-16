@@ -323,6 +323,19 @@ panel, but the actions behind it are Rename and Close, one of which stops every
 process in a workspace on a real machine. A flow that runs against a live host
 must not have that as its failure mode, so the swipe is verified by hand.
 
+### Against this Mac, in one command
+
+`npm run e2e:live` (`scripts/e2e-live.sh`) runs the app against the Mac it is
+on, for what the Demo cannot show: it starts its own sshd on 127.0.0.1 with a
+key made for the run, adds the host with `add-server`, and for each agent
+whose herdr integration is current starts a probe chat from New chat in a
+scratch folder (`live/probe.yaml`): the startup question answered, one
+message, the agent's reply. `LIVE_AGENTS="claude grok"` picks the agents and
+`LIVE_PICTURE=1` also sends a picture (`live/picture.yaml`). Pass or fail, it
+closes the probe workspaces, removes the host (`live/remove-host.yaml`), stops
+the sshd and deletes the key. It needs a simulator build signed ad hoc
+(`CODE_SIGN_IDENTITY=-`), since an unsigned one cannot save a host's key.
+
 ## Credentials
 
 `codex-thread.yaml` requires two disposable Codex sessions in the same folder.

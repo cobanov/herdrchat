@@ -1,0 +1,25 @@
+# A picture to the open probe chat: the newest photo in the library, which
+# scripts/e2e-live.sh adds with `simctl addmedia`, and a question only the
+# picture answers: docs/screenshots/chats-dark.png is titled Spaces. The picker
+# is the system's, so the taps are positions: the first photo, then Add.
+appId: dev.herdr.HerdrChat
+---
+- tapOn:
+    id: composer-attach
+- waitForAnimationToEnd
+- tapOn:
+    point: 17%,27%
+- tapOn:
+    point: 90%,15%
+- extendedWaitUntil:
+    visible:
+      id: composer-attachment-remove-0
+    timeout: 10000
+- tapOn:
+    id: composer-input
+- inputText: What is the large title at the top of this screenshot? Answer with it only.
+- runFlow: ../regression/_send.yaml
+- extendedWaitUntil:
+    visible: ".*\\bSpaces\\b.*"
+    timeout: 180000
+- takeScreenshot: ${LABEL}-picture
