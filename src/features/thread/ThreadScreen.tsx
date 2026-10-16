@@ -18,6 +18,7 @@ import { MissingHost, ThreadPlaceholder } from '@/features/thread/ThreadPlacehol
 import { statusText, ThreadHeader, threadHeading } from '@/features/thread/ThreadHeader';
 import { ThreadControls } from '@/features/thread/ThreadControls';
 import { ThreadMessages } from '@/features/thread/ThreadMessages';
+import { useAnnouncements } from '@/features/thread/useAnnouncements';
 import { useAttachments } from '@/features/thread/useAttachments';
 import { useIntegrationInstall } from '@/features/thread/useIntegrationInstall';
 import { useReadMarker } from '@/features/thread/useReadMarker';
@@ -27,6 +28,7 @@ import { useThreadKeyboard } from '@/features/thread/useThreadKeyboard';
 import { paletteAgent, useProjectSlashScan, useSlashCommands } from '@/features/thread/useSlashCommands';
 import { useThreadScroll } from '@/features/thread/useThreadScroll';
 import { ScreenView } from '@/features/thread/ScreenView';
+import { lastReplyId } from '@/lib/announce';
 import { chatKey } from '@/lib/chatKey';
 import { agentName, sessionSignature } from '@/lib/herdr/models';
 import { draftKey, useDrafts, visibleDraft } from '@/state/drafts';
@@ -94,6 +96,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
     transcripts: transcriptKey.length === 0 ? [] : transcriptKey.split('\n'),
   }), [client, connection?.id, workspaceId, transcriptKey]);
   const waiting = !thread.isBlocked && (thread.status === 'working' || thread.isSending);
+  const agent = agentName(thread.agents.find((info) => info.agent !== null)?.agent ?? null);
+  const lastReply = useMemo(() => lastReplyId(thread.messages), [thread.messages]);
+  useAnnouncements({ blocked: thread.isBlocked ? (thread.blockedPrompt?.question ?? '') : null, lastReply }, agent, thread.loading);
 
   // A /model or /effort that has just run wins over the last reply's.
   const commanded = useMemo(() => settingsFromNotes(thread.messages), [thread.messages]);
@@ -269,7 +274,7 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
           ) : thread.sessionState === 'unsupported' && !thread.loading ? (
             <ScreenView
               text={thread.screen}
-              agent={agentName(thread.agents.find((agent) => agent.agent !== null)?.agent ?? null)}
+              agent={agent}
               topInset={headerHeight}
               bottomInset={bottomClearance}
               onInstall={integration.install}
