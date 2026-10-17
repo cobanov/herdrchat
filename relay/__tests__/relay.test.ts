@@ -4,12 +4,14 @@
 import { webcrypto } from 'node:crypto';
 
 import {
+  FCM_CHANNEL,
   LIMITS,
   apnsPayload,
   base64url,
   handle,
   parsePush,
   providerToken,
+  resetGoogleTokenCache,
   resetTokenCache,
   type RelayDeps,
   type RelayEnv,
@@ -59,7 +61,7 @@ beforeEach(async () => {
 
 describe('request shape', () => {
   it('accepts what the watcher sends', () => {
-    expect(parsePush(push)).toEqual({ ...push, env: 'production' });
+    expect(parsePush(push)).toEqual({ ...push, service: 'apns', env: 'production' });
   });
 
   it.each([
@@ -177,7 +179,117 @@ describe('handler', () => {
     const { value } = deps();
     expect(await handle({ method: 'GET', path: '/', ip: null, contentLength: null, body: '' }, env, value)).toEqual({
       status: 200,
-      body: { service: 'herdrchat-relay', configured: true },
+      body: { service: 'herdrchat-relay', configured: true, fcm: false },
     });
+  });
+});
+
+// Android: Google's push service, through the Firebase project's service account.
+describe('FCM', () => {
+  const FCM_TOKEN = 'cXyZ0123abcd:APA91b' + 'Ab-_9'.repeat(30);
+  const androidPush = { ...push, service: 'fcm', token: FCM_TOKEN };
+
+  async function serviceAccount() {
+    const pair = (await subtle.generateKey(
+      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true,
+      ['sign', 'verify']
+    )) as CryptoKeyPair;
+    const der = Buffer.from(await subtle.exportKey('pkcs8', pair.privateKey)).toString('base64');
+    const json = JSON.stringify({
+      project_id: 'herdrchat-test',
+      client_email: 'relay@herdrchat-test.iam.gserviceaccount.com',
+      private_key: `-----BEGIN PRIVATE KEY-----\n${der}\n-----END PRIVATE KEY-----\n`,
+    });
+    return { json, publicKey: pair.publicKey };
+  }
+
+  /** Google's token endpoint, then FCM's reply. */
+  function google(fcm: { status: number; body?: string } = { status: 200, body: '{"name":"projects/x/messages/1"}' }) {
+    const calls: { url: string; init: { method: string; headers: Record<string, string>; body: string } }[] = [];
+    const value: RelayDeps = {
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        if (url === 'https://oauth2.googleapis.com/token') {
+          return { status: 200, text: async () => '{"access_token":"ya29.test","expires_in":3599}' };
+        }
+        return { status: fcm.status, text: async () => fcm.body ?? '' };
+      },
+      subtle,
+      now: () => 1_800_000_000,
+    };
+    return { value, calls };
+  }
+
+  beforeEach(() => resetGoogleTokenCache());
+
+  it('accepts a registration token, and an APNs token is still checked as hex', () => {
+    expect(parsePush(androidPush)).toEqual({ ...androidPush, env: 'production' });
+    expect(parsePush({ ...androidPush, token: 'has spaces' })).toMatch(/token/);
+    expect(parsePush({ ...push, token: FCM_TOKEN })).toMatch(/token/);
+    expect(parsePush({ ...push, service: 'webpush' })).toMatch(/service/);
+  });
+
+  it('signs in as the service account and sends a data message to the token', async () => {
+    const account = await serviceAccount();
+    const { value, calls } = google();
+    const result = await handle(post(androidPush), { ...env, FCM_SERVICE_ACCOUNT: account.json }, value);
+    expect(result).toEqual({ status: 200, body: { ok: true } });
+
+    const [exchange, send] = calls;
+    const assertion = new URLSearchParams(exchange?.init.body).get('assertion') ?? '';
+    const [header, claims, signature] = assertion.split('.');
+    expect(JSON.parse(Buffer.from(header ?? '', 'base64url').toString())).toEqual({ alg: 'RS256', typ: 'JWT' });
+    expect(JSON.parse(Buffer.from(claims ?? '', 'base64url').toString())).toEqual({
+      iss: 'relay@herdrchat-test.iam.gserviceaccount.com',
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: 1_800_000_000,
+      exp: 1_800_003_600,
+    });
+    const valid = await subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      account.publicKey,
+      Buffer.from(signature ?? '', 'base64url'),
+      new TextEncoder().encode(`${header}.${claims}`)
+    );
+    expect(valid).toBe(true);
+
+    expect(send?.url).toBe('https://fcm.googleapis.com/v1/projects/herdrchat-test/messages:send');
+    expect(send?.init.headers.authorization).toBe('Bearer ya29.test');
+    expect(JSON.parse(send?.init.body ?? '')).toEqual({
+      message: {
+        token: FCM_TOKEN,
+        data: { title: push.title, message: push.body, channelId: FCM_CHANNEL, workspace: 'w1', connection: 'srv-1' },
+        android: { priority: 'HIGH', ttl: '3600s' },
+      },
+    });
+  });
+
+  it('reuses its access token', async () => {
+    const account = await serviceAccount();
+    const { value, calls } = google();
+    const withAccount = { ...env, FCM_SERVICE_ACCOUNT: account.json };
+    await handle(post(androidPush), withAccount, value);
+    await handle(post(androidPush), withAccount, value);
+    expect(calls.filter((call) => call.url.includes('oauth2'))).toHaveLength(1);
+  });
+
+  it.each([
+    ['UNREGISTERED', 404, 'Unregistered'],
+    ['SENDER_ID_MISMATCH', 403, 'DeviceTokenNotForTopic'],
+    ['INVALID_ARGUMENT', 400, 'INVALID_ARGUMENT'],
+  ])('passes %s on in the words the watcher knows', async (code, status, reason) => {
+    const account = await serviceAccount();
+    const body = JSON.stringify({ error: { code: status, status: 'X', details: [{ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode: code }] } });
+    const { value } = google({ status, body });
+    expect(await handle(post(androidPush), { ...env, FCM_SERVICE_ACCOUNT: account.json }, value)).toEqual({ status, body: { reason } });
+  });
+
+  it('says so when it has no service account, and still sends to iPhones', async () => {
+    const { value, calls } = deps();
+    expect(await handle(post(androidPush), env, value)).toEqual({ status: 503, body: { reason: 'RelayNotConfigured' } });
+    expect(calls).toHaveLength(0);
+    expect((await handle(post(push), env, value)).status).toBe(200);
   });
 });

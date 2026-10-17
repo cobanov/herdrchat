@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useMemo, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { Linking, Platform, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { ROW_INSET, Section } from '@/components/SettingsList';
@@ -25,6 +25,8 @@ import { setSetting } from '@/state/db';
 import { encodeBool, useSettings } from '@/state/settings';
 import { spacing } from '@/theme/tokens';
 
+const SYSTEM_SETTINGS = Platform.OS === 'ios' ? 'iOS Settings' : 'Android Settings';
+
 /**
  * Push notifications, and the several distinct ways turning them on can fail.
  *
@@ -47,7 +49,7 @@ export function NotificationsSection() {
   const [note, setNote] = useState<{
     message: string;
     detail?: string;
-    /** True when iOS owns the switch, so the app can only point at it. */
+    /** True when the system owns the switch, so the app can only point at it. */
     systemDenied?: boolean;
   } | null>(null);
 
@@ -104,7 +106,7 @@ export function NotificationsSection() {
         // screen and leaving someone to find it was the previous behaviour, and
         // it is exactly what a deep link is for.
         setNote({
-          message: 'Notifications are turned off for HerdrChat in iOS Settings.',
+          message: `Notifications are turned off for HerdrChat in ${SYSTEM_SETTINGS}.`,
           systemDenied: true,
         });
         return;
@@ -144,7 +146,7 @@ export function NotificationsSection() {
       title="Notifications"
       // Says where a notification goes before anyone flips the switch (#95):
       // this is the one feature that passes through something of ours.
-      footer="Your phone registers its push token on the host over SSH. A watcher there sends each notification through the HerdrChat relay, which signs it for Apple and keeps nothing. If you build the app yourself, the watcher can use your own push key instead.">
+      footer="Your phone registers its push token on the host over SSH. A watcher there sends each notification through the HerdrChat relay, which signs it for Apple or Google and keeps nothing. If you build the app yourself, the watcher can use your own push key instead.">
       <Toggle
         label="Notify when an agent needs me"
         detail="Blocked or finished agents, pushed from your own machine."
@@ -175,7 +177,7 @@ export function NotificationsSection() {
           )}
           {note.systemDenied === true && (
             <Button
-              title="Open iOS Settings"
+              title={`Open ${SYSTEM_SETTINGS}`}
               variant="tinted"
               onPress={() => void Linking.openSettings()}
               testID="open-ios-settings"

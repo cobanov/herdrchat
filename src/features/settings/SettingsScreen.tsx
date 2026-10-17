@@ -156,20 +156,16 @@ export default function SettingsScreen() {
                 onChange={(next) => update('haptics', next)}
                 testID="toggle-haptics"
               />
-              {/* iOS only: the hardware Return is a key command in herdr-keys,
-                  which has no Android side, so there Return is always a newline. */}
-              {Platform.OS === 'ios' && (
-                <>
-                  <Divider />
-                  <Toggle
-                    label="Return sends"
-                    detail="With a hardware keyboard, Return sends; Shift-Return or Option-Return starts a new line. Command-Return always sends. The on-screen keyboard's Return always starts a new line."
-                    value={settings.returnSends}
-                    onChange={(next) => update('returnSends', next)}
-                    testID="toggle-return-sends"
-                  />
-                </>
-              )}
+              <Divider />
+              <Toggle
+                label="Return sends"
+                detail={Platform.OS === 'ios'
+                  ? "With a hardware keyboard, Return sends; Shift-Return or Option-Return starts a new line. Command-Return always sends. The on-screen keyboard's Return always starts a new line."
+                  : "With a hardware keyboard, Enter sends; Shift-Enter or Alt-Enter starts a new line. Ctrl-Enter always sends. The on-screen keyboard's Enter always starts a new line."}
+                value={settings.returnSends}
+                onChange={(next) => update('returnSends', next)}
+                testID="toggle-return-sends"
+              />
             </Section>
           </HighlightOnLink>
 
@@ -196,9 +192,7 @@ export default function SettingsScreen() {
             </Text>
           </View></>}
 
-          {/* iOS only: notifications go through APNs and Android has no push
-              path yet, so there the switch could only ever explain that. */}
-          {show('notifications') && Platform.OS === 'ios' && <HighlightOnLink section="notifications" target={target} onMeasure={onMeasure}>
+          {show('notifications') && <HighlightOnLink section="notifications" target={target} onMeasure={onMeasure}>
             <NotificationsSection />
           </HighlightOnLink>}
 
@@ -215,7 +209,7 @@ export default function SettingsScreen() {
           <Text variant="caption" color="secondary" style={{ paddingHorizontal: ROW_INSET }}>
             HerdrChat reaches your machines over SSH on your tailnet. Keys are stored in the device
             keychain and never leave it. Nothing goes to a server of ours, except notifications if
-            you turn them on: those pass through a relay that forwards them to Apple and keeps
+            you turn them on: those pass through a relay that forwards them to Apple or Google and keeps
             nothing.
           </Text></>}
 

@@ -10,10 +10,11 @@ import type { HerdrTransport } from '@/lib/herdr/transport';
  * Push notifications.
  *
  * The host already knows when an agent blocks or finishes: it is the machine
- * running them. So the phone gets an APNs device token from Apple and writes it
- * onto the host over the SSH connection it already has, and a watcher on the
- * host (`scripts/herdr-apns-notifier.py`) sends a notification when an agent
- * needs you.
+ * running them. So the phone gets a device token (APNs from Apple on iOS, FCM
+ * from Google on Android) and writes it onto the host over the SSH connection
+ * it already has, and a watcher on the host (`scripts/herdr-apns-notifier.py`)
+ * sends a notification when an agent needs you. Android's always goes through
+ * the relay, which holds the app's Firebase account.
  *
  * Apple accepts a push only when it is signed by the team that built the app,
  * so for the App Store build the watcher hands each notification to the
@@ -97,9 +98,19 @@ export async function existingPushToken(): Promise<PushStatus> {
   return pushToken(false);
 }
 
+/**
+ * The Android channel pushes arrive on; the relay names it in each message
+ * (`FCM_CHANNEL` in relay/src/relay.ts). Android 13 asks for permission only
+ * once a channel exists, so it is made before asking.
+ */
+export const PUSH_CHANNEL = 'agents';
+
 async function pushToken(mayPrompt: boolean): Promise<PushStatus> {
-  if (Platform.OS !== 'ios') {
-    return { state: 'unsupported', reason: 'Push notifications are iOS-only in this build.' };
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(PUSH_CHANNEL, {
+      name: 'Agents',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
   }
   const existing = await Notifications.getPermissionsAsync();
   const granted =
@@ -124,8 +135,9 @@ async function pushToken(mayPrompt: boolean): Promise<PushStatus> {
     // that can.
     return {
       state: 'unsupported',
-      reason:
-        'This device could not register for push. The Simulator never can; on a real device, check that the build has the push entitlement.',
+      reason: Platform.OS === 'android'
+        ? 'This device could not register for push. Check that it has Google Play services and that this build was made with its Firebase file.'
+        : 'This device could not register for push. The Simulator never can; on a real device, check that the build has the push entitlement.',
       detail: errorDetail(thrown),
     };
   }
@@ -158,7 +170,9 @@ export async function uploadPushToken(
    */
   muted: readonly string[] = []
 ): Promise<void> {
-  const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId, muted });
+  // `service` only on Android, so an iPhone's file stays as watchers before version 7 read it.
+  const service = Platform.OS === 'android' ? { service: 'fcm' } : {};
+  const payload = JSON.stringify({ token, bundleId, env: 'production', connection: connectionId, muted, ...service });
   const file = `${shellQuote(deviceId)}.json`;
   // Builds before session folders wrote a named session's token to the shared
   // folder, where the default session's watcher pushed to it. Moving it is
