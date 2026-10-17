@@ -190,7 +190,9 @@ EOF
 echo "==> Exporting signed .ipa…"
 # No auth key here: passing it re-engages the cloud-signing path the manual
 # ExportOptions above exists to avoid.
-xcodebuild -exportArchive \
+# Apple's rsync first: export copies SwiftSupport with flags Homebrew's rsync
+# (3.5) rejects, and it failed with only "exportArchive Copy failed".
+PATH="/usr/bin:$PATH" xcodebuild -exportArchive \
   -archivePath "$ARCHIVE" \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$PLIST"
