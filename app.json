@@ -83,6 +83,7 @@
         }
       ],
       "./plugins/withAndroidAccent",
+      "./plugins/withCompactTabBar",
       "expo-sharing"
     ]
   }
