@@ -19,9 +19,9 @@ import { useTerminalShell } from './useTerminalShell';
 
 /**
  * A herdr pane's own terminal: whatever runs in it, live, in colour, typed
- * into. SwiftTerm draws it, fed natively by a PTY channel on the host's SSH
- * connection (`modules/herdr-terminal`, `modules/herdr-ssh`); none of the
- * pane's bytes cross into JavaScript.
+ * into. SwiftTerm (iOS) or Termux's emulator (Android) draws it, fed natively
+ * by a PTY channel on the host's SSH connection (`modules/herdr-terminal`,
+ * `modules/herdr-ssh`); none of the pane's bytes cross into JavaScript.
  *
  * For a pane no chat can show (a shell, a build, `vim`), and for an agent's
  * own screen when the chat cannot show what it is asking.
@@ -81,9 +81,7 @@ export default function TerminalScreen({ connectionId, paneId, kind, terminalId,
           <EmptyState
             symbol="terminal"
             title="No terminal here"
-            body={Platform.OS === 'ios'
-              ? 'This build of the app has no terminal in it. Install a newer one.'
-              : 'The terminal is on iPhone and iPad only for now.'}
+            body="This build of the app has no terminal in it. Install a newer one."
           />
         ) : (
           <EmptyState symbol="server.rack" title="Host not found" body="The host this pane is on is no longer saved in the app." />

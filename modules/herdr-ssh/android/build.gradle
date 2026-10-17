@@ -23,6 +23,8 @@ android {
 }
 
 dependencies {
+  // Where a terminal shell's bytes meet its view (herdr-terminal); see that module's README.
+  implementation project(':herdr-shell-registry')
   // Same stack the Compose app shipped: sshj for the protocol, BouncyCastle and
   // eddsa for the key formats it defers to (ed25519 keys are unreadable without
   // them), and a no-op slf4j binding so sshj's logging doesn't pull in a backend.

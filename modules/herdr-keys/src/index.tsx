@@ -1,6 +1,6 @@
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 import type { ComponentType } from 'react';
-import { Platform, View, type ViewProps } from 'react-native';
+import { View, type ViewProps } from 'react-native';
 
 export interface SubmitShortcutViewProps extends ViewProps {
   /** Command-Return on a hardware keyboard, while a field inside has focus. */
@@ -48,11 +48,10 @@ type NativeProps = ViewProps & {
   pasteShortcut: boolean;
 };
 
-// iOS only, and only in a build that contains the module: Android has no
-// implementation, and Jest or an older dev client has no native side. Either
-// way the children still render, in a plain view.
+// Only in a build that contains the module: Jest or an older dev client has
+// no native side, and the children still render, in a plain view.
 const Native: ComponentType<NativeProps> | null =
-  Platform.OS === 'ios' && requireOptionalNativeModule('HerdrKeys') !== null
+  requireOptionalNativeModule('HerdrKeys') !== null
     ? requireNativeView<NativeProps>('HerdrKeys')
     : null;
 
@@ -62,7 +61,8 @@ const Native: ComponentType<NativeProps> | null =
  * into `onNewlineShortcut` and a pasted picture into `onPasteShortcut`, while
  * the text field inside it is focused. The shortcuts people expect from a chat
  * composer on a hardware keyboard (#113, #155); without one it is an ordinary
- * view, and on Android it is a plain view always.
+ * view. On Android the same keys with Ctrl (or Meta) for Command, and Alt for
+ * Option.
  */
 export function SubmitShortcutView({
   onSubmitShortcut,

@@ -7,7 +7,7 @@ const theme = {
   ansi: Array.from({ length: 16 }, () => '#808080'), dark: true,
 };
 
-// Jest has no native side, as Android and an older dev client have none: the
+// Jest has no native side, as an older dev client has none: the
 // screen must still render, and the Demo's feed must report it went nowhere.
 it('renders a plain view and feeds nothing without the native terminal', async () => {
   expect(isTerminalAvailable).toBe(false);
