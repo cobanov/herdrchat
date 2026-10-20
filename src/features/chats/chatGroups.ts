@@ -1,3 +1,4 @@
+import { agentName } from '@/lib/herdr/models';
 import type { HostRef } from './listedChat';
 import type { ChatSummary, PaneSummary } from './useWorkspaces';
 
@@ -91,14 +92,17 @@ export function groupChats<S extends ChatSummary & { host?: HostRef | null }>(
 ): ChatListItem<S>[] {
   const needle = query.trim().toLowerCase();
   const found = (texts: readonly string[]) => texts.some((text) => text.toLowerCase().includes(needle));
+  // An agent by its herdr id and by the name its row shows: herdr's `agy` is
+  // "Antigravity" on the row, and a search for that found nothing.
+  const agentWords = (kind: string | null) => (kind === null ? '' : `${kind} ${agentName(kind)}`);
   // A chat is found by the title its row shows, the session's, as well.
-  const paneMatches = (pane: PaneSummary) => found([`${pane.agent.agent ?? ''} ${pane.agent.cwd}`, pane.sessionTitle ?? '', pane.agentName ?? '']);
+  const paneMatches = (pane: PaneSummary) => found([`${agentWords(pane.agent.agent)} ${pane.agent.cwd}`, pane.sessionTitle ?? '', pane.agentName ?? '']);
   /** The pane rows to list under a chat: all of them when the workspace itself matched. */
   const panesOf = new Map<string, readonly S['panes'][number][]>();
   const matches = summaries.filter((chat) => {
     const panes = paneChats(chat);
     const own = [chat.title, chat.workspaceId, chat.host?.label ?? ''];
-    if (found([...own, ...chat.agents.map((agent) => `${agent.agent ?? ''} ${agent.cwd} ${agent.title ?? ''} ${agent.name ?? ''}`)])) {
+    if (found([...own, ...chat.agents.map((agent) => `${agentWords(agent.agent)} ${agent.cwd} ${agent.title ?? ''} ${agent.name ?? ''}`)])) {
       // A folder or provider shared by only some of the agents names those.
       // A search for the workspace's own name lists every agent in it.
       // So does a search for the host it is on.

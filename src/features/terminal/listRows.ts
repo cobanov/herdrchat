@@ -1,7 +1,8 @@
-import type { ChatListItem } from '@/features/chats/chatGroups';
+import { CHAT_GROUPS, type ChatGroupId, type ChatListItem } from '@/features/chats/chatGroups';
 import { terminalContext } from '@/features/chats/rowText';
 import type { ChatSummary } from '@/features/chats/useWorkspaces';
 import type { TerminalRouteParams } from '@/features/terminal/navigation';
+import { agentName, type AgentStatus } from '@/lib/herdr/models';
 import { groupByTab } from '@/lib/spaces/tabGroups';
 import { paneKind } from '@/lib/terminal/command';
 import type { TerminalPane } from '@/lib/terminal/rows';
@@ -13,6 +14,8 @@ export interface TerminalListItem<S extends ChatSummary = ChatSummary> {
   terminal: S['shellPanes'][number];
   first: boolean;
   last: boolean;
+  /** Under no card (the Agents view): no rail, no indent. */
+  standalone?: boolean;
 }
 
 export type ListItemWithTerminals<S extends ChatSummary = ChatSummary> = ChatListItem<S> | TerminalListItem<S>;
@@ -34,14 +37,14 @@ export type ListItemWithTerminals<S extends ChatSummary = ChatSummary> = ChatLis
  * For the workspaces view only. A view of agents lists agents; a shell is
  * not one, and its row would be under no card.
  *
- * None where no terminal can open (`terminalAvailable` false, Android): every
- * row would lead to a screen saying so.
+ * Where no terminal can open (`terminalAvailable` false, Android) a shell has
+ * no row, since every one would lead to a screen saying so; an agent the app
+ * has no reader for keeps its row, or it would be in no list at all.
  */
 export function withTerminalRows<S extends ChatSummary>(
   rows: readonly ChatListItem<S>[],
   terminalAvailable: boolean
 ): ListItemWithTerminals<S>[] {
-  if (!terminalAvailable) return [...rows];
   type Member = Extract<ChatListItem<S>, { kind: 'pane' }> | TerminalListItem<S>;
   const out: ListItemWithTerminals<S>[] = [];
   /** The workspace card whose rows are being listed, with its agents' rows so far. */
@@ -52,7 +55,9 @@ export function withTerminalRows<S extends ChatSummary>(
     const summary = open;
     const members: Member[] = [
       ...panes,
-      ...summary.shellPanes.map((terminal): Member => ({ kind: 'terminal', summary, terminal, first: false, last: false })),
+      ...summary.shellPanes
+        .filter((terminal) => terminalAvailable || terminal.pane.agent !== null)
+        .map((terminal): Member => ({ kind: 'terminal', summary, terminal, first: false, last: false })),
     ];
     const groups = groupByTab(members, (row) => (row.kind === 'pane' ? row.pane.agent.tabId : row.terminal.pane.tabId), summary.tabs);
     const ordered = groups.length > 1 ? groups.flatMap((group) => group.rows) : members;
@@ -85,6 +90,40 @@ export function withTerminalRows<S extends ChatSummary>(
   }
   flush();
   return out;
+}
+
+/**
+ * The Agents view's rows, with each agent the app has no reader for as a
+ * terminal row of its own, in the group its status puts it in. Spaces lists it
+ * as a terminal row under its workspace; here it was in no list at all. It
+ * hangs under no card, so it is drawn standalone, and a search finds it by its
+ * agent, folder, title or workspace as it finds an agent's row.
+ */
+export function withAgentTerminals<S extends ChatSummary>(
+  rows: readonly ChatListItem<S>[],
+  summaries: readonly S[],
+  query: string
+): ListItemWithTerminals<S>[] {
+  const needle = query.trim().toLowerCase();
+  const terminals = summaries.flatMap((summary) => summary.shellPanes
+    .filter(({ pane }) => pane.agent !== null && (needle === '' ||
+      [pane.agent, agentName(pane.agent), pane.cwd, pane.title ?? '', summary.title].some((text) => text.toLowerCase().includes(needle))))
+    .map((terminal): TerminalListItem<S> => ({ kind: 'terminal', summary, terminal, first: true, last: true, standalone: true })));
+  if (terminals.length === 0) return [...rows];
+  const groupOf = (status: AgentStatus): ChatGroupId => (status === 'blocked' ? 'needs-you' : status === 'working' ? 'working' : 'idle');
+  const sections = new Map<ChatGroupId, ChatListItem<S>[]>();
+  let current: ChatGroupId | null = null;
+  for (const row of rows) {
+    if (row.kind === 'group') current = row.id;
+    if (current !== null) sections.set(current, [...(sections.get(current) ?? []), row]);
+  }
+  return CHAT_GROUPS.flatMap(({ id, title }): ListItemWithTerminals<S>[] => {
+    const [head, ...listed] = sections.get(id) ?? [];
+    const extra = terminals.filter((row) => groupOf(row.terminal.pane.agentStatus) === id);
+    if (extra.length === 0) return head === undefined ? [] : [head, ...listed];
+    const count = (head?.kind === 'group' ? head.count : 0) + extra.length;
+    return [{ kind: 'group', id, title, count }, ...listed, ...extra];
+  });
 }
 
 /**

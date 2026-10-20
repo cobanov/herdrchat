@@ -1,6 +1,7 @@
 # The chats title is a picker: Spaces (a card per workspace, each agent of a
 # workspace that runs several hung under it) or Agents (every agent a row of
-# its own, flat). On the Demo, w2 "notes" has one agent and w6 "api" two, so
+# its own, flat; an agent the app cannot read, a terminal row). On the Demo,
+# w2 "notes" has one agent and w6 "api" two, so
 # Agents lists w2's agent as `chat-row-w2` (a one-agent workspace keeps its
 # workspace's testID) and w6's agents as `chat-row-w6:p1` and
 # `chat-row-w6:p2` (`agentTestKey`: the pane's id, since the two share their
@@ -44,11 +45,11 @@ appId: dev.herdr.HerdrChat
     text: Release notes summary, Claude · demo/notes.*
 # w6's agents, each a full row titled by its session, its line naming its
 # workspace only when no folder on it does (here both folders say "api"). p2
-# is working, so it sits in Working; p1 is idle, below it.
+# is working, so it sits in Working, above w2's Idle; p1 is idle, below it.
 - scrollUntilVisible:
     element:
       id: chat-row-w6:p2
-    direction: DOWN
+    direction: UP
     centerElement: true
 - assertVisible:
     id: chat-row-w6:p2
@@ -69,6 +70,17 @@ appId: dev.herdr.HerdrChat
     id: pane-row-w6:p1
 - assertNotVisible:
     id: terminal-row-w6:p3
+# The Demo's opencode (w9, "docs") has no reader: it is an agent all the same,
+# so it has a terminal row of its own here, under no card, in Idle.
+- scrollUntilVisible:
+    element:
+      id: terminal-row-w9:p1
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: terminal-row-w9:p1
+    text: Terminal in docs, opencode · demo/docs
+- takeScreenshot: list-agents-terminal-${APPEARANCE}
 # Back to the top (w1 needs you, so it leads the list) for the screenshot.
 - scrollUntilVisible:
     element:

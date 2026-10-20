@@ -2,10 +2,9 @@ import { Pressable, View } from 'react-native';
 
 import { Text } from '@/components/Text';
 import type { IntegrationIssue } from '@/lib/herdr/client';
+import { agentName } from '@/lib/herdr/models';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/tokens';
-
-const NAMES = { claude: 'Claude', codex: 'Codex', pi: 'Pi', omp: 'OMP' } as const;
 
 /**
  * herdr on this host reports a chat-agent integration as out of date, usually
@@ -26,7 +25,7 @@ export function IntegrationBanner({
   onUpdate: () => void;
 }) {
   const { colors } = useTheme();
-  const names = issues.map((issue) => NAMES[issue.name]).join(' and ');
+  const names = issues.map((issue) => agentName(issue.name)).join(' and ');
   const missing = issues.some((issue) => issue.state === 'missing');
 
   return (

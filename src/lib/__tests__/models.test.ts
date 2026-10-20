@@ -9,6 +9,7 @@ import {
   isConversationalAgent,
   agentName,
   needsAttention,
+  sendTarget,
   sessionSignature,
   toAgentStatus,
   type AgentInfo,
@@ -100,6 +101,24 @@ describe('snapshot decoding', () => {
     }).agents;
     expect(named?.title).toBe('Explain Codex agent controls');
     expect(untitled?.title).toBe('fix the build');
+  });
+
+  // Grok's terminal title: `grok` until the session has a name, then
+  // `<session> - grok`, with a spinner and activity text ahead of it during a
+  // turn (herdr's grok.toml, Grok 1.0.34).
+  it('titles a Grok agent by its session, never by its bare `grok` title', () => {
+    const [fresh, named, working, asking] = decodeSnapshot({
+      agents: [
+        { pane_id: 'p1', agent: 'grok', terminal_title_stripped: 'grok' },
+        { pane_id: 'p2', agent: 'grok', terminal_title_stripped: 'Deploy check flake - grok' },
+        { pane_id: 'p3', agent: 'grok', terminal_title_stripped: '⠧ Reading files - Deploy check flake - grok' },
+        { pane_id: 'p4', agent: 'grok', terminal_title_stripped: '⚠ Action Required - grok' },
+      ],
+    }).agents;
+    expect(fresh?.title).toBeNull();
+    expect(named?.title).toBe('Deploy check flake');
+    expect(working?.title).toBe('Deploy check flake');
+    expect(asking?.title).toBeNull();
   });
 
   // Codex 0.162 titles the terminal with the project's folder alone until the
@@ -261,6 +280,17 @@ describe('session signature', () => {
     expect(['claude', 'codex', 'omp'].map((name) => isConversationalAgent(agent({ agent: name })))).toEqual([true, true, true]);
     expect(isConversationalAgent(agent({ agent: null }))).toBe(false);
     expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
+  });
+
+  // A focused agent the app cannot read used to take a Claude chat's message.
+  it('sends to the agent whose transcript the chat shows, even when another is focused', () => {
+    const claude = agent({ paneId: 'p1' });
+    const other = agent({ paneId: 'p2', agent: 'opencode', focused: true });
+    const shell = agent({ paneId: 'p3', agent: null, focused: true });
+    expect(sendTarget([other, claude])?.paneId).toBe('p1');
+    expect(sendTarget([claude, agent({ paneId: 'p4', focused: true })])?.paneId).toBe('p4');
+    expect(sendTarget([shell, other])?.paneId).toBe('p2');
+    expect(sendTarget([shell])).toBeNull();
   });
 
   it('deduplicates agents reporting the same session', () => {

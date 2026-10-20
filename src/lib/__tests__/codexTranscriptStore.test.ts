@@ -16,10 +16,13 @@ class CodexHost implements HerdrTransport {
   matches = path + '\n';
   header = header;
   fail = false;
+  /** What Codex's state database says the thread's current rollout is. */
+  pointer = '';
   file = `${header}\n${reply}\n`;
   async exec(command: string): Promise<ExecResult> {
     this.commands.push(command);
     if (this.fail) return { ok: false, code: 'connect_failed', message: 'Offline' };
+    if (command.includes('sqlite3')) return ok(this.pointer);
     if (command.includes('find ')) return ok(this.matches);
     if (command.includes('head -n 1')) return ok(this.header);
     // `windowScript`: the whole file is one window, as "<start> <end>" and its lines.
@@ -61,6 +64,56 @@ describe('exact Codex transcript resolution', () => {
     second.matches = '';
     expect(await new TranscriptStore(second).codexTranscriptPath(id)).toBeNull();
     await expect(new TranscriptStore(first).codexTranscriptPath('other-id')).rejects.toMatchObject({ code: 'codex_session_invalid' });
+  });
+
+  // A rewind (Codex 0.157+) goes on in `rollout-<ts>-<id>_<rollout id>.jsonl`
+  // and leaves the old file; reading the old one showed reverted turns and
+  // never a new one.
+  it("follows a rewound thread into the file Codex's state database names", async () => {
+    const host = new CodexHost();
+    const rewound = path.replace(`-${id}.jsonl`, `-${id}_0199aa00-0000-7000-8000-000000000001.jsonl`);
+    host.matches = `${path}\n${rewound}\n`;
+    host.pointer = `${rewound}\n`;
+    expect(await new TranscriptStore(host).codexTranscriptPath(id)).toBe(rewound);
+    const script = host.commands.join('\n');
+    expect(script).toContain(`rollout-*-${id}_*.jsonl`);
+    expect(script).toContain('select rollout_path from threads');
+    expect(script).not.toMatch(/ls -t|sort|newest/);
+  });
+
+  it('finds the file a rewound rollout was cut from, by its exact rollout id and never by guess', async () => {
+    const host = new CodexHost();
+    const rolloutId = '0199aa00-0000-7000-8000-000000000001';
+    const prefix = path.replace(`-${id}.jsonl`, `-${id}_${rolloutId}.jsonl`);
+    const meta = (base: unknown) => JSON.stringify({ type: 'session_meta', payload: { id, history_base: base } });
+    host.header = meta({ thread_id: rolloutId, end_ordinal_exclusive: 12, end_byte_offset: 4096 });
+    host.matches = `${prefix}\n`;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toEqual({ path: prefix, endByte: 4096 });
+    expect(host.commands.at(-1)).toContain(`rollout-*_${rolloutId}.jsonl`);
+    host.matches = `${prefix}\n${prefix.replace('/sessions/', '/archived_sessions/')}\n`;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    host.header = header;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    host.header = meta({ thread_id: '../x', end_byte_offset: 10 });
+    const before = host.commands.length;
+    expect(await new TranscriptStore(host).codexHistoryBase(path)).toBeNull();
+    expect(host.commands.length).toBe(before + 1);
+  });
+
+  it('says a compressed rollout is there but unreadable, rather than not found', async () => {
+    const host = new CodexHost();
+    host.matches = `${path}.zst\n`;
+    await expect(new TranscriptStore(host).codexTranscriptPath(id)).rejects.toMatchObject({ code: 'codex_session_compressed' });
+    host.matches = `${path}\n${path}.zst\n`;
+    expect(await new TranscriptStore(host).codexTranscriptPath(id)).toBe(path);
+  });
+
+  it('opens a lone rewound file without asking the database', async () => {
+    const host = new CodexHost();
+    const rewound = path.replace(`-${id}.jsonl`, `-${id}_0199aa00-0000-7000-8000-000000000001.jsonl`);
+    host.matches = `${rewound}\n`;
+    expect(await new TranscriptStore(host).codexTranscriptPath(id)).toBe(rewound);
+    expect(host.commands.some((command) => command.includes('sqlite3'))).toBe(false);
   });
 
   it('rejects duplicate files and mismatched metadata without reading messages', async () => {
@@ -118,7 +171,8 @@ describe('exact Codex transcript resolution', () => {
 
   it('keeps a failed Codex lookup from preventing other previews', async () => {
     const host = new CodexHost();
-    host.matches += path + '\n';
+    // Two files for one id and no word from Codex's database: ambiguous.
+    host.matches += path.replace('/sessions/', '/archived_sessions/') + '\n';
     await new TranscriptStore(host).latestMessages([
       { workspaceId: 'w2', cwd: '/same-folder', sessionId: id, agent: 'codex' },
       { workspaceId: 'w1', cwd: '/same-folder', sessionId: 'claude-id', agent: 'claude' },

@@ -1,0 +1,20 @@
+# Open the row ${ROW} by searching for ${QUERY}. The Demo's list is longer
+# than a screen, and a row scrolled to near its end sits under the floating
+# tab bar, where a tap lands on the tab and scrolls the list to the top.
+appId: dev.herdr.HerdrChat
+---
+- scrollUntilVisible:
+    element:
+      id: chat-search
+    direction: UP
+- tapOn:
+    id: chat-search
+- eraseText: 40
+- inputText: ${QUERY}
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: ${ROW}
+    timeout: 10000
+- tapOn:
+    id: ${ROW}

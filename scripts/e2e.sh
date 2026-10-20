@@ -23,9 +23,9 @@
 set -u
 cd "$(dirname "$0")/.."
 
-ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/history regression/multi-agent regression/welcome regression/subagents regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/notifications smoke new-chat tool-activity thread-header"
+ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/grok regression/agy regression/history regression/multi-agent regression/welcome regression/subagents regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/notifications smoke new-chat tool-activity thread-header"
 BOTH_THEMES="smoke regression/chat-list regression/thread regression/tabs regression/terminal"
-THREAD_FLOWS="regression/thread regression/keyboard regression/composer-keys regression/history regression/subagents regression/slash-commands regression/shell-commands regression/omp tool-activity thread-header"
+THREAD_FLOWS="regression/thread regression/keyboard regression/composer-keys regression/history regression/subagents regression/slash-commands regression/shell-commands regression/omp regression/grok regression/agy tool-activity thread-header"
 
 # The flows a changed file can break. Shared code (components, theme, state,
 # the Demo, src/lib, native iOS code, dependencies) can break any screen, so it

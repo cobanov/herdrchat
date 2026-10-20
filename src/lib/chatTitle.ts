@@ -1,3 +1,4 @@
+import { AGENTS } from './herdr/agents';
 import { isConversationalAgent, type AgentInfo } from './herdr/models';
 
 /**
@@ -102,11 +103,9 @@ export function titleAgent(agents: readonly AgentInfo[]): AgentInfo | null {
  *
  * Compared ignoring case, after any leading glyphs and space.
  */
-export const DEFAULT_TERMINAL_TITLES: Readonly<Record<'claude' | 'codex' | 'omp', readonly string[]>> = {
-  claude: ['Claude Code', 'claude'],
-  codex: ['codex'],
-  omp: ['omp'],
-};
+export const DEFAULT_TERMINAL_TITLES: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Object.entries(AGENTS).map(([kind, agent]) => [kind, agent.defaultTitles])
+);
 
 const DEFAULTS = new Set(Object.values(DEFAULT_TERMINAL_TITLES).flat().map((title) => title.toLowerCase()));
 

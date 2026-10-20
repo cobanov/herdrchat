@@ -3,7 +3,7 @@ import { DemoHost } from '../demo/host';
 import { DEMO_CLAUDE_BINARY, DEMO_CLAUDE_BINARY_STAT, DEMO_NOTES_CWD } from '../demo/slashCommands';
 import { SLASH_GREP_RETRY_MS, SLASH_SCAN_INTERVAL_MS, SLASH_SCAN_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
-import { CLAUDE_BUILTINS, CODEX_BUILTINS } from '../slashCommands/builtins';
+import { CLAUDE_BUILTINS, CODEX_BUILTINS, GROK_BUILTINS } from '../slashCommands/builtins';
 import {
   applyScan,
   catalogueFor,
@@ -173,6 +173,17 @@ describe('picking a command', () => {
     }
     expect(fillsOnPick(claude('model'))).toBe(false);
   });
+
+  // Grok runs a command when it is picked; the ones that end or throw away
+  // the session are filled, never sent from a tap.
+  it("fills Grok's commands that end or throw away the session", () => {
+    const grok = (name: string) => GROK_BUILTINS.find((entry) => entry.name === name)!;
+    for (const name of ['new', 'quit', 'home', 'delete', 'logout', 'compact']) {
+      expect(pickSlashCommand(grok(name)).action).toBe('fill');
+    }
+    expect(pickSlashCommand(grok('context')).action).toBe('send');
+    expect(new Set(GROK_BUILTINS.map((entry) => entry.name)).size).toBe(GROK_BUILTINS.length);
+  });
 });
 
 describe('the folders the periodic scan re-reads', () => {
@@ -194,6 +205,7 @@ describe('the cached catalogue', () => {
       [...CLAUDE_BUILTINS].sort((a, b) => (a.section === b.section ? 0 : a.section === 'builtin' ? -1 : 1)).map((entry) => entry.name)
     );
     expect(catalogueFor(null, 'codex', null)).toEqual(CODEX_BUILTINS);
+    expect(catalogueFor(emptyCatalogueCache(), 'grok', '/w')).toEqual(GROK_BUILTINS);
     expect(catalogueFor(emptyCatalogueCache(), 'claude', null).length).toBe(CLAUDE_BUILTINS.length);
   });
 

@@ -34,7 +34,8 @@ export type SlashPick =
  * Commands, Claude's and Codex's, that end the agent, the session or the
  * sign-in, or throw the conversation away: `/exit`, `/quit`, `/logout`,
  * `/restart`, `/stop` (Claude: stop this background session), `/clear` (a new
- * session, so a new chat), and Codex's `/delete` and `/archive`.
+ * session, so a new chat), Codex's `/delete` and `/archive`, and Grok's
+ * `/home` (it leaves the session for the welcome screen).
  */
 export const DESTRUCTIVE_COMMANDS: ReadonlySet<string> = new Set([
   'exit',
@@ -45,6 +46,7 @@ export const DESTRUCTIVE_COMMANDS: ReadonlySet<string> = new Set([
   'clear',
   'delete',
   'archive',
+  'home',
 ]);
 
 /**

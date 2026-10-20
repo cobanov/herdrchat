@@ -7,6 +7,8 @@
  * throw.
  */
 
+import { agentSpec, READABLE_AGENTS } from './agents';
+
 /** Semantic agent state as reported by herdr (socket API `AgentStatus`). */
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
@@ -88,7 +90,7 @@ export interface AgentInfo {
  * Herdr integrations report its exact path. One reader serves both.
  */
 export function isPiFamily(agent: string | null | undefined): boolean {
-  return agent === 'pi' || agent === 'omp';
+  return agentSpec(agent)?.reader === 'pi';
 }
 
 /**
@@ -102,7 +104,7 @@ export function hasSessionReference(agent: AgentInfo): boolean {
 }
 
 /** The agents whose transcripts this app reads and whose panes it talks to. */
-export const CONVERSATIONAL_AGENTS: readonly string[] = ['claude', 'codex', 'pi', 'omp'];
+export const CONVERSATIONAL_AGENTS: readonly string[] = READABLE_AGENTS;
 
 /**
  * True for a pane holding an agent the app can hold a conversation with. A
@@ -113,20 +115,19 @@ export function isConversationalAgent(agent: AgentInfo): boolean {
 }
 
 /**
- * How the agents herdr detects are named to a person. Letta Code joined in
- * herdr 0.9.1 (#120); anything else shows herdr's own id.
+ * The pane a chat sends to: an agent whose transcript the thread shows, the
+ * focused one first. Focus alone sent a Claude chat's message to a focused
+ * agent the app cannot read, so the echo never confirmed ("Failed to send").
+ * Any other agent only when the chat has no conversational one.
  */
-export const AGENT_NAMES: Readonly<Record<string, string>> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  pi: 'Pi',
-  omp: 'OMP',
-  letta: 'Letta',
-};
+export function sendTarget(agents: readonly AgentInfo[]): AgentInfo | null {
+  const pick = (pool: readonly AgentInfo[]) => pool.find((a) => a.focused) ?? pool[0] ?? null;
+  return pick(agents.filter(isConversationalAgent)) ?? pick(agents.filter((a) => a.agent !== null));
+}
 
-/** A pane's agent by name: "Claude", herdr's own id for one not named above, "Terminal" for a shell. */
+/** A pane's agent by name: "Claude", herdr's own id for one `AGENTS` doesn't name, "Terminal" for a shell. */
 export function agentName(kind: string | null): string {
-  return kind === null ? 'Terminal' : AGENT_NAMES[kind] ?? kind;
+  return kind === null ? 'Terminal' : agentSpec(kind)?.name ?? kind;
 }
 
 /**
@@ -139,11 +140,12 @@ export function agentName(kind: string | null): string {
 export function sessionSignature(agents: readonly AgentInfo[]): string | null {
   const ids = agents
     .filter((agent) => agent.agent !== null && hasSessionReference(agent))
+    // Claude's id stands bare, as it always has: cached chats are keyed by it.
     .map((agent) => isPiFamily(agent.agent)
       ? `${agent.agent}:${agent.agentSession?.kind}:${encodeURIComponent(agent.agentSession?.value ?? '')}`
-      : agent.agent === 'codex'
-        ? `codex:${agent.agentSession?.value ?? ''}`
-        : agent.agentSession?.value ?? '')
+      : agent.agent === 'claude'
+        ? agent.agentSession?.value ?? ''
+        : `${agent.agent}:${agent.agentSession?.value ?? ''}`)
     .filter((value) => value !== '');
   if (ids.length === 0) return null;
   return [...new Set(ids)].sort().join(',');
@@ -366,6 +368,17 @@ export function decodeAgentInfo(raw: unknown): AgentInfo {
 function sessionTitle(value: Record<string, unknown>): string | null {
   const title = optionalStr(value.title);
   const stripped = optionalStr(value.terminal_title_stripped);
+  if (value.agent === 'grok') {
+    // Grok titles its terminal `grok`, or `<session> - grok` once the session
+    // has a name; during a turn a braille spinner and activity text lead it,
+    // and a prompt adds "⚠ Action Required" (herdr's grok.toml). The session
+    // is the segment before ` - grok`; a bare `grok` names no chat.
+    const parts = stripped?.split(' - ') ?? [];
+    const named = parts.length >= 2 && parts[parts.length - 1] === 'grok'
+      ? (parts[parts.length - 2] ?? '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^Action Required\b/, '').trim()
+      : '';
+    return named !== '' ? named : title;
+  }
   if (value.agent !== 'codex') return title ?? stripped;
   // Until the thread has a name, Codex's default title is the project's
   // folder alone ("kenneth"), which names no thread; a spinner or a

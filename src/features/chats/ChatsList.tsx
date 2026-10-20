@@ -569,6 +569,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                   terminal={terminal}
                   first={row.first}
                   last={row.last}
+                  standalone={row.standalone}
                   selected={openTerminalKey === `${summary.connectionId}\n${terminal.paneId}`}
                   onPress={() => {
                     Keyboard.dismiss();
