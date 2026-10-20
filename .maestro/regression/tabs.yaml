@@ -39,10 +39,12 @@ appId: dev.herdr.HerdrChat
 - runFlow:
     when:
       platform: iOS
-    # The share sheet has no Close button on iOS 27; it goes with a swipe down.
+    # The share sheet has no Close button on iOS 27; it goes with a swipe down
+    # from its title. At 62% the swipe began on the sheet's top edge on a Pro
+    # Max and left it open.
     commands:
       - swipe:
-          start: 50%, 62%
+          start: 50%, 67%
           end: 50%, 98%
           duration: 300
       - waitForAnimationToEnd
