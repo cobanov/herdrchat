@@ -8,7 +8,12 @@
  */
 
 /** The agents with a catalogue. OMP panes get none. */
-export type CatalogueAgent = 'claude' | 'codex';
+export type CatalogueAgent = 'claude' | 'codex' | 'grok';
+
+/** True for an agent the palette has a catalogue for. */
+export function isCatalogueAgent(kind: string | null | undefined): kind is CatalogueAgent {
+  return kind === 'claude' || kind === 'codex' || kind === 'grok';
+}
 
 /** A palette section, in display order (see `SECTION_ORDER`). */
 export type CommandSection = 'builtin' | 'skills' | 'commands' | 'plugins';

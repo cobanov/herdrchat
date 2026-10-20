@@ -8,14 +8,11 @@
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
-- scrollUntilVisible:
-    element:
-      id: chat-row-w2
-    direction: DOWN
-    centerElement: true
-- waitForAnimationToEnd
-- tapOn:
-    id: chat-row-w2
+- runFlow:
+    file: _open-chat.yaml
+    env:
+      QUERY: Release notes
+      ROW: chat-row-w2
 # Send stays off until the thread has loaded; wait for its history first.
 - extendedWaitUntil:
     visible:
@@ -63,14 +60,11 @@ appId: dev.herdr.HerdrChat
     checked: false
 - tapOn:
     id: header-close
-- scrollUntilVisible:
-    element:
-      id: chat-row-w2
-    direction: DOWN
-    centerElement: true
-- waitForAnimationToEnd
-- tapOn:
-    id: chat-row-w2
+- runFlow:
+    file: _open-chat.yaml
+    env:
+      QUERY: Release notes
+      ROW: chat-row-w2
 - extendedWaitUntil:
     visible:
       id: composer-input

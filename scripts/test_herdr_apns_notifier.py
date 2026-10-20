@@ -257,8 +257,11 @@ class PreviewTests(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         root = Path(self.dir.name)
         self.claude, self.codex = root / "claude", root / "codex"
+        self.archived, self.grok, self.pi = root / "archived", root / "grok", root / "pi"
         (self.claude / "-Users-me-work").mkdir(parents=True)
         (self.codex / "2026" / "09" / "25").mkdir(parents=True)
+        for folder in (self.archived, self.grok, self.pi):
+            folder.mkdir()
 
     def tearDown(self):
         self.dir.cleanup()
@@ -266,6 +269,7 @@ class PreviewTests(unittest.TestCase):
     def notifier(self, env=None):
         notifier = load_notifier(env)
         notifier.CLAUDE_PROJECTS, notifier.CODEX_SESSIONS = str(self.claude), str(self.codex)
+        notifier.CODEX_ARCHIVED, notifier.GROK_SESSIONS = str(self.archived), str(self.grok)
         return notifier
 
     def claude_transcript(self, session, *entries):
@@ -317,6 +321,48 @@ class PreviewTests(unittest.TestCase):
             "type": "task_complete", "last_agent_message": "Release notes are written."}}) + "\n")
         self.assertEqual(notifier.notification_text("codex", "done", "docs", "Write notes", "c-0000001"),
                          ("docs · Write notes", "Release notes are written."))
+
+    def test_a_rewound_codex_thread_quotes_the_file_it_goes_on_in(self):
+        notifier = self.notifier()
+        day = self.codex / "2026" / "09" / "25"
+        old = day / "rollout-2026-09-25T10-00-00-c-0000002.jsonl"
+        old.write_text(json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "Reverted turn."}}) + "\n")
+        os.utime(old, (1, 1))
+        (day / "rollout-2026-09-25T11-00-00-c-0000002_r-0000001.jsonl").write_text(json.dumps(
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "After the rewind."}}) + "\n")
+        self.assertEqual(notifier.notification_text("codex", "done", "docs", "", "c-0000002")[1], "After the rewind.")
+
+    @staticmethod
+    def grok_update(update):
+        return {"method": "session/update", "params": {"sessionId": "g", "update": update}}
+
+    def test_grok_quotes_its_reply_and_names_the_command_it_waits_on(self):
+        notifier = self.notifier()
+        folder = self.grok / "%2FUsers%2Fme%2Finfra" / "01a13fe8-0000-7000-8000-000000000008"
+        folder.mkdir(parents=True)
+        log = folder / "updates.jsonl"
+        log.write_text("".join(json.dumps(self.grok_update(u)) + "\n" for u in (
+            {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "The check waits for /ready now."}},
+            {"sessionUpdate": "turn_completed", "stop_reason": "end_turn"},
+        )))
+        session = "01a13fe8-0000-7000-8000-000000000008"
+        self.assertEqual(notifier.notification_text("grok", "done", "infra", "Deploy check - grok", session),
+                         ("infra · Deploy check", "The check waits for /ready now."))
+        with log.open("a") as handle:
+            handle.write(json.dumps(self.grok_update({"sessionUpdate": "tool_call", "toolCallId": "c", "title": "Run",
+                "rawInput": {"command": "npm run deploy"}, "_meta": {"x.ai/tool": {"name": "run_terminal_command"}}})) + "\n")
+        self.assertEqual(notifier.notification_text("grok", "blocked", "infra", "grok", session),
+                         ("infra", "Waiting for you: Run: npm run deploy"))
+
+    def test_pi_quotes_its_journal_by_the_path_it_reports(self):
+        notifier = self.notifier()
+        journal = self.pi / "2026-09-28T09-00-00_s.jsonl"
+        journal.write_text(json.dumps({"type": "message", "message": {"role": "assistant",
+            "content": [{"type": "text", "text": "The last day is counted now."}]}}) + "\n")
+        self.assertEqual(notifier.notification_text("pi", "done", "ledger", "pi", str(journal))[1],
+                         "The last day is counted now.")
+        self.assertEqual(notifier.notification_text("pi", "done", "ledger", "", str(self.pi / ".." / "pi" / journal.name))[1],
+                         "Pi finished its task.")
 
     def test_never_reads_a_transcript_its_session_does_not_name(self):
         notifier = self.notifier()

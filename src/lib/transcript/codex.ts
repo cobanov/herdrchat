@@ -69,7 +69,10 @@ function responseMessage(
     case 'message': {
       const role = payload.role;
       if (role !== 'user' && role !== 'assistant') return null;
-      // Internal analysis is not a user-facing assistant response.
+      // Internal analysis is not a user-facing assistant response. Codex
+      // rollouts before 0.157 mark it with `channel`; later ones carry a
+      // `phase` instead (commentary, partial answer, final answer), and the
+      // TUI shows every phase, so this does too.
       if (payload.channel === 'analysis') return null;
       const content = contentText(payload.content, role === 'user');
       if (role === 'user') {
@@ -93,6 +96,34 @@ function responseMessage(
         input: preview(payload.arguments ?? payload.input),
         ...(typeof payload.call_id === 'string' ? { id: payload.call_id } : {}),
       }] };
+    // Calls the Responses API runs itself, recorded since before 0.155 but
+    // never shown: a model's local shell (an argv, its output a
+    // `function_call_output`), web search and image generation (no output
+    // item), and tool search with its own output item.
+    case 'local_shell_call': {
+      const command = record(payload.action)?.command;
+      const argv = Array.isArray(command) ? command.filter((part): part is string => typeof part === 'string') : [];
+      return toolUse('local_shell', { command: argv.join(' ') }, payload.call_id);
+    }
+    case 'web_search_call': {
+      const action = record(payload.action);
+      const queries = Array.isArray(action?.queries) ? action.queries.filter((query) => typeof query === 'string') : [];
+      const query = action?.query ?? (queries.length > 0 ? queries.join(', ') : action?.url ?? action?.pattern);
+      return toolUse('web_search', typeof query === 'string' ? { query } : action, payload.id);
+    }
+    case 'tool_search_call':
+      return toolUse('tool_search', payload.arguments, payload.call_id);
+    case 'image_generation_call':
+      return toolUse('image_generation', { prompt: payload.revised_prompt }, payload.id);
+    case 'tool_search_output': {
+      const found = Array.isArray(payload.tools) ? payload.tools.length : 0;
+      return { role: 'user', segments: [{
+        kind: 'toolResult',
+        text: `Found ${found} ${found === 1 ? 'tool' : 'tools'}`,
+        ...(typeof payload.call_id === 'string' ? { toolUseId: payload.call_id } : {}),
+        ...(payload.status === 'failed' ? { isError: true } : {}),
+      }] };
+    }
     case 'function_call_output':
     case 'custom_tool_call_output': {
       const text = outputText(payload.output);
@@ -141,6 +172,13 @@ function contentText(content: unknown, omitHarness = false): string {
 /** How many pictures a content list carries. */
 function imageCount(content: unknown): number {
   return Array.isArray(content) ? content.filter((block: unknown) => record(block)?.type === 'input_image').length : 0;
+}
+
+/** A call as a tool row: its name, its input as JSON, and the id its result names. */
+function toolUse(name: string, input: unknown, id: unknown): Pick<ChatMessage, 'role' | 'segments'> {
+  return { role: 'assistant', segments: [{
+    kind: 'toolUse', name, input: preview(input), ...(typeof id === 'string' ? { id } : {}),
+  }] };
 }
 
 function preview(value: unknown): string | null {

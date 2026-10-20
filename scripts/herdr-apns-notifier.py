@@ -57,7 +57,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 6
+WATCHER_VERSION = 7
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -282,8 +282,13 @@ def workspace_labels():
 
 # ---- What the agent said. Read from the end of its own transcript.
 PREVIEW = os.environ.get("NOTIFY_PREVIEW", "1").strip().lower() not in ("0", "false", "no", "off")
-CLAUDE_PROJECTS = os.path.join(HOME, ".claude", "projects")
-CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
+# Where each agent keeps its sessions, as the app reads them: each honours its
+# own variable, as far as this service's environment carries it.
+CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude"), "projects")
+CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(HOME, ".codex")
+CODEX_SESSIONS = os.path.join(CODEX_HOME, "sessions")
+CODEX_ARCHIVED = os.path.join(CODEX_HOME, "archived_sessions")
+GROK_SESSIONS = os.path.join(os.environ.get("GROK_HOME") or os.path.join(HOME, ".grok"), "sessions")
 SUMMARY_LIMIT = 200
 TAIL_BYTES = 1 << 20
 
@@ -291,13 +296,27 @@ TAIL_BYTES = 1 << 20
 def transcript_path(agent, session_id):
     """The transcript a session id names. The id IS the file name: two chats
     opened on one folder share a project directory, so "the newest file there"
-    can belong to the other chat. Without an id there is nothing safe to read."""
+    can belong to the other chat. Without an id there is nothing safe to read.
+
+    Pi and OMP report the journal's own path, which is read only when it is an
+    absolute .jsonl with no ".." in it. A rewound Codex thread goes on in
+    `rollout-<ts>-<id>_<rollout id>.jsonl`; every file there is that one
+    thread's, so the one written last is the current one."""
+    if agent in ("pi", "omp"):
+        path = session_id or ""
+        ok = path.startswith("/") and path.endswith(".jsonl") and ".." not in path.split("/")
+        return path if ok and os.path.isfile(path) else None
     if not session_id or not re.fullmatch(r"[0-9A-Za-z-]{8,64}", session_id):
         return None
     if agent == "claude":
         hits = glob.glob(os.path.join(CLAUDE_PROJECTS, "*", session_id + ".jsonl"))
     elif agent == "codex":
-        hits = glob.glob(os.path.join(CODEX_SESSIONS, "*", "*", "*", "rollout-*-" + session_id + ".jsonl"))
+        hits = [hit for root in (CODEX_SESSIONS, CODEX_ARCHIVED)
+                for name in ("rollout-*-" + session_id + ".jsonl", "rollout-*-" + session_id + "_*.jsonl")
+                for hit in glob.glob(os.path.join(root, "**", name), recursive=True)]
+        hits.sort(key=os.path.getmtime, reverse=True)
+    elif agent == "grok":
+        hits = glob.glob(os.path.join(GROK_SESSIONS, "*", session_id, "updates.jsonl"))
     else:
         hits = []
     return hits[0] if hits else None
@@ -330,7 +349,7 @@ def describe_tool(name, args):
     questions = args.get("questions") if name == "AskUserQuestion" else None
     if questions and isinstance(questions[0], dict) and questions[0].get("question"):
         return str(questions[0]["question"])
-    if name == "Bash" and args.get("command"):
+    if str(name).lower() in ("bash", "run_terminal_command") and args.get("command"):
         return "Run: " + str(args["command"]).strip().splitlines()[0]
     target = args.get("file_path") or args.get("notebook_path")
     if name in ("Edit", "Write", "MultiEdit", "NotebookEdit") and target:
@@ -370,6 +389,28 @@ def last_words(agent, entries, status):
                 if isinstance(command, list):
                     command = " ".join(map(str, command))
                 return "Run: " + str(command) if command else "Approve a change."
+        elif agent == "grok":
+            # An ACP update log: the reply is a message chunk, and what a
+            # waiting Grok waits on is the newest tool call.
+            update = (entry.get("params") or {}).get("update") or {}
+            kind = update.get("sessionUpdate")
+            if status == "blocked" and kind == "tool_call":
+                tool = ((update.get("_meta") or {}).get("x.ai/tool") or {}).get("name") or update.get("title")
+                return describe_tool(tool, update.get("rawInput"))
+            text = (update.get("content") or {}).get("text") if kind == "agent_message_chunk" else None
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        elif agent in ("pi", "omp"):
+            message = entry.get("message") or {}
+            if entry.get("type") != "message" or message.get("role") != "assistant":
+                continue
+            blocks = [b for b in (message.get("content") or []) if isinstance(b, dict)]
+            calls = [b for b in blocks if b.get("type") == "toolCall"]
+            if status == "blocked" and calls:
+                return describe_tool(calls[-1].get("name"), calls[-1].get("arguments"))
+            text = "\n\n".join(b.get("text") or "" for b in blocks if b.get("type") == "text").strip()
+            if text:
+                return text
     return ""
 
 
@@ -411,7 +452,7 @@ def summarize(text, limit=SUMMARY_LIMIT):
 # An agent's own terminal title before the session has a topic, which names no
 # chat (`DEFAULT_TERMINAL_TITLES` in src/lib/chatTitle.ts): Claude Code says
 # "Claude Code", and before an agent starts the shell titles it with the command.
-DEFAULT_TERMINAL_TITLES = {"claude code", "claude", "codex", "omp"}
+DEFAULT_TERMINAL_TITLES = {"claude code", "claude", "codex", "omp", "grok"}
 LEADING_GLYPHS = re.compile(r"^[^\w\\]+")
 
 
@@ -426,6 +467,10 @@ def chat_title(entries, terminal_title):
             if title:
                 return str(title).strip()
     title = (terminal_title or "").strip()
+    # Grok: `<session> - grok`, activity text ahead of it during a turn.
+    parts = title.split(" - ")
+    if len(parts) >= 2 and parts[-1] == "grok":
+        title = re.sub(r"^Action Required\b", "", LEADING_GLYPHS.sub("", parts[-2])).strip()
     if not title or title.startswith("\\") or "--resume" in title or re.search(r"[0-9a-f]{8}-[0-9a-f]{4}", title):
         return ""
     if LEADING_GLYPHS.sub("", title).strip().lower() in DEFAULT_TERMINAL_TITLES:
@@ -436,7 +481,7 @@ def chat_title(entries, terminal_title):
 def notification_text(agent, status, label, terminal_title, session_id):
     """Title and body for a push: which chat, and what happened in the agent's
     own words. With NOTIFY_PREVIEW=0, only the chat's name and state."""
-    name = {"claude": "Claude", "codex": "Codex"}.get(agent or "", agent or "agent")
+    name = {"claude": "Claude", "codex": "Codex", "grok": "Grok", "pi": "Pi", "omp": "OMP"}.get(agent or "", agent or "agent")
     if not PREVIEW:
         title, body = (t.format(label=label, name=name) for t in STYLES[status])
         return title, body

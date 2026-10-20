@@ -1,4 +1,5 @@
 import { exitCodeError } from '../herdr/client';
+import { agentSpec } from '../herdr/agents';
 import { isPiFamily } from '../herdr/models';
 import { HerdrError, transportError } from '../herdr/protocol';
 import { shellQuote, withPath } from '../herdr/shell';
@@ -51,14 +52,44 @@ const claudeDirByTransport = new WeakMap<HerdrTransport, Promise<string>>();
  */
 const CLAUDE_DIR_COMMAND = 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"';
 const CLAUDE_DIR_SHELL = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
-const codexPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
-const ompPathsByTransport = new WeakMap<HerdrTransport, Map<string, Promise<string | null>>>();
+/** Located transcripts per transport, one map per agent whose lookup is a search. */
+type PathCache = WeakMap<HerdrTransport, Map<string, Promise<string | null>>>;
+const codexPathsByTransport: PathCache = new WeakMap();
+const ompPathsByTransport: PathCache = new WeakMap();
+const grokPathsByTransport: PathCache = new WeakMap();
 
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
 
   constructor(transport: HerdrTransport) {
     this.transport = transport;
+  }
+
+  /**
+   * The transcript of the session an agent reported, by its exact id or path,
+   * or null when the report cannot name one. `AGENTS[kind].reader` picks how;
+   * an agent with no reader has none.
+   */
+  async transcriptPath(agent: SessionRef): Promise<string | null> {
+    const value = agent.agentSession?.value ?? '';
+    const kind = agent.agentSession?.kind ?? null;
+    switch (agentSpec(agent.agent)?.reader) {
+      case 'claude': return kind === 'id' ? this.claudeTranscriptPath(agent.cwd, value) : null;
+      case 'codex': return kind === 'id' ? this.codexTranscriptPath(value) : null;
+      case 'grok': return kind === 'id' ? this.grokTranscriptPath(value) : null;
+      case 'agy': return this.agyTranscriptPath(value, kind);
+      case 'pi': return this.ompTranscriptPath(value, kind);
+      default: return null;
+    }
+  }
+
+  /** Drop a located transcript that turned out absent, so the next try searches again. */
+  forgetTranscript(agent: SessionRef): void {
+    const value = agent.agentSession?.value ?? '';
+    const reader = agentSpec(agent.agent)?.reader;
+    if (reader === 'codex') this.forgetCodexTranscript(value);
+    if (reader === 'grok') grokPathsByTransport.get(this.transport)?.delete(value);
+    if (reader === 'pi' && agent.agentSession?.kind === 'id') this.forgetOmpTranscript(value);
   }
 
   /**
@@ -164,43 +195,167 @@ export class TranscriptStore {
    */
   async codexTranscriptPath(sessionId: string): Promise<string | null> {
     if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
-    let paths = codexPathsByTransport.get(this.transport);
+    return this.remembered(codexPathsByTransport, sessionId, () => this.findCodexTranscript(sessionId));
+  }
+
+  /**
+   * A lookup's answer, kept per transport and id. Missing files and failed
+   * reads are not kept: they must be retried when the next event arrives.
+   */
+  private remembered(cache: PathCache, id: string, find: () => Promise<string | null>): Promise<string | null> {
+    let paths = cache.get(this.transport);
     if (paths === undefined) {
       paths = new Map();
-      codexPathsByTransport.set(this.transport, paths);
+      cache.set(this.transport, paths);
     }
-    const cached = paths.get(sessionId);
+    const cached = paths.get(id);
     if (cached !== undefined) return cached;
-    const pending = this.findCodexTranscript(sessionId);
-    paths.set(sessionId, pending);
-    const forget = () => { if (paths.get(sessionId) === pending) paths.delete(sessionId); };
-    // Missing files and failed reads must be retried when the next event arrives.
+    const pending = find();
+    paths.set(id, pending);
+    const forget = () => { if (paths.get(id) === pending) paths.delete(id); };
     void pending.then(path => { if (path === null) forget(); }, forget);
     return pending;
+  }
+
+  /**
+   * Antigravity CLI keeps a conversation's log in a folder named by its id:
+   * `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`
+   * (measured against agy 1.3.6). herdr's integration reports that id, and the
+   * transcript's path when agy gives it, which is taken as reported. Beside the
+   * log is `transcript_full.jsonl`, which differs only in keeping tool output
+   * whole: the shorter one is what a phone wants.
+   */
+  async agyTranscriptPath(value: string, kind: string | null): Promise<string | null> {
+    if (kind === 'path') {
+      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
+        !value.split('/').includes('..') ? value : null;
+    }
+    if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
+    const home = await this.homeDirectory();
+    return `${home}/.gemini/antigravity-cli/brain/${value}/.system_generated/logs/transcript.jsonl`;
+  }
+
+  /**
+   * Grok files a session as a folder named by its id, under a folder for its
+   * cwd: `${GROK_HOME:-~/.grok}/sessions/<encoded cwd>/<id>/updates.jsonl`, the
+   * ACP updates that are its conversation. The folder is found by that exact
+   * id, never by cwd or recency; the encoding of a long cwd is Grok's to
+   * change, the id is not.
+   */
+  async grokTranscriptPath(sessionId: string): Promise<string | null> {
+    if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+    return this.remembered(grokPathsByTransport, sessionId, async () => {
+      const output = await this.shell(
+        'grok_dir="${GROK_HOME:-$HOME/.grok}/sessions"; ' +
+        `[ ! -d "$grok_dir" ] || find "$grok_dir" -mindepth 2 -maxdepth 2 -type d -name ${shellQuote(sessionId)}`
+      );
+      const dirs = output.split('\n').filter(dir => dir.length > 0);
+      if (dirs.length === 0) return null;
+      if (dirs.length !== 1) {
+        throw new HerdrError('grok_session_ambiguous',
+          'More than one Grok session folder has this session id. Nothing was opened. Check the duplicate session folders on the host.');
+      }
+      const dir = dirs[0]!;
+      if (!dir.startsWith('/') || !dir.endsWith(`/${sessionId}`) || /[\0\r\n]/.test(dir)) {
+        throw new HerdrError('grok_session_invalid', 'The host returned an invalid Grok session path.');
+      }
+      return `${dir}/updates.jsonl`;
+    });
+  }
+
+  /**
+   * Codex rollouts whose file name matches one of `names`, in the live and the
+   * archived sessions. Each path must match `own`, or the host is not trusted.
+   */
+  private async findCodexRollouts(names: readonly string[], own: RegExp): Promise<string[]> {
+    const output = await this.shell(
+      'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
+      'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
+      'if [ -d "$codex_dir" ]; then ' +
+      `find "$codex_dir" -type f \\( ${names.map((name) => `-name ${shellQuote(name)}`).join(' -o ')} \\) || exit $?; ` +
+      'fi; done'
+    );
+    const paths = [...new Set(output.split('\n').filter(path => path.length > 0))];
+    if (paths.some(path => !path.startsWith('/') || !own.test(path) || path.includes('\0'))) {
+      throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
+    }
+    return paths;
+  }
+
+  /**
+   * Where the earlier history of a rewound or forked Codex rollout lives. Its
+   * first line, `session_meta`, names the prefix file in `history_base` by
+   * rollout id (a thread id, or the `_<rollout id>` of a rewind) and the byte
+   * where the inherited part ends. Null when the file has none, or when the
+   * prefix is not exactly one file: never a guess.
+   */
+  async codexHistoryBase(path: string): Promise<{ path: string; endByte: number } | null> {
+    let rolloutId: unknown;
+    let endByte: unknown;
+    try {
+      const raw: unknown = JSON.parse(await this.shell(`head -n 1 ${shellQuote(path)}`));
+      const payload = typeof raw === 'object' && raw !== null && 'payload' in raw ? raw.payload : null;
+      const base = typeof payload === 'object' && payload !== null && 'history_base' in payload ? payload.history_base : null;
+      if (typeof base !== 'object' || base === null) return null;
+      rolloutId = 'thread_id' in base ? base.thread_id : null;
+      endByte = 'end_byte_offset' in base ? base.end_byte_offset : null;
+    } catch {
+      return null;
+    }
+    if (typeof rolloutId !== 'string' || !/^[A-Za-z0-9-]+$/.test(rolloutId)) return null;
+    if (typeof endByte !== 'number' || !Number.isInteger(endByte) || endByte <= 0) return null;
+    const prefixes = await this.findCodexRollouts(
+      [`rollout-*-${rolloutId}.jsonl`, `rollout-*_${rolloutId}.jsonl`],
+      new RegExp(`[-_]${rolloutId}\\.jsonl$`)
+    );
+    const prefix = prefixes.length === 1 ? prefixes[0] : undefined;
+    return prefix === undefined || prefix === path ? null : { path: prefix, endByte };
+  }
+
+  /** Which of a thread's rollout files Codex is writing, by its own state database. */
+  private async currentCodexRollout(sessionId: string, paths: readonly string[]): Promise<string> {
+    const output = await this.shell(
+      'for db in "${CODEX_HOME:-$HOME/.codex}"/state_*.sqlite; do ' +
+      `[ -f "$db" ] && sqlite3 -readonly "$db" ${shellQuote(`select rollout_path from threads where id = '${sessionId}'`)} 2>/dev/null; ` +
+      'done; true'
+    );
+    const current = output.split('\n').find(line => paths.includes(line.trim()))?.trim();
+    if (current === undefined) {
+      throw new HerdrError('codex_session_ambiguous',
+        "More than one Codex transcript has this session id, and Codex's state database did not say which is current. Nothing was opened. Check the session files on the host.");
+    }
+    return current;
   }
 
   forgetCodexTranscript(sessionId: string): void {
     codexPathsByTransport.get(this.transport)?.delete(sessionId);
   }
 
+  /**
+   * Since Codex 0.157 a rewind (`thread/revert`) writes the thread on into a
+   * new file, `rollout-<ts>-<id>_<rollout id>.jsonl`, and leaves the old one;
+   * only Codex's state database says which is current
+   * (`threads.rollout_path`). Every file of the id is found, and when there is
+   * more than one, that pointer picks, never recency. Without it (no `sqlite3`
+   * on the host, a schema this was not written against) nothing is opened.
+   */
   private async findCodexTranscript(sessionId: string): Promise<string | null> {
-    const output = await this.shell(
-      'codex_root="${CODEX_HOME:-$HOME/.codex}"; ' +
-      'for codex_dir in "$codex_root/sessions" "$codex_root/archived_sessions"; do ' +
-      'if [ -d "$codex_dir" ]; then ' +
-      `find "$codex_dir" -type f -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} || exit $?; ` +
-      'fi; done'
+    const found = await this.findCodexRollouts(
+      [`rollout-*-${sessionId}.jsonl`, `rollout-*-${sessionId}_*.jsonl`,
+        `rollout-*-${sessionId}.jsonl.zst`, `rollout-*-${sessionId}_*.jsonl.zst`],
+      new RegExp(`-${sessionId}(?:_[A-Za-z0-9-]+)?\\.jsonl(?:\\.zst)?$`)
     );
-    const paths = output.split('\n').filter(path => path.length > 0);
+    // Codex can compress a rollout untouched for 7 days (`.jsonl.zst`,
+    // rollout/src/compression.rs, off by default at 0.163). `head` and the
+    // tail cannot read one, and "not found" would send the reader looking
+    // for a file that is there.
+    const paths = found.filter(path => path.endsWith('.jsonl'));
+    if (paths.length === 0 && found.length > 0) {
+      throw new HerdrError('codex_session_compressed',
+        "Codex compressed this chat's history on the host, and HerdrChat can't read a compressed Codex history yet. Read it in Codex on the host.");
+    }
     if (paths.length === 0) return null;
-    if (paths.length !== 1) {
-      throw new HerdrError('codex_session_ambiguous',
-        'More than one Codex transcript has this session id. Nothing was opened. Check the duplicate session files on the host.');
-    }
-    const path = paths[0];
-    if (path === undefined || !path.startsWith('/') || !path.endsWith(`-${sessionId}.jsonl`) || path.includes('\0')) {
-      throw new HerdrError('codex_session_invalid', 'The host returned an invalid Codex transcript path.');
-    }
+    const path = paths.length === 1 ? paths[0]! : await this.currentCodexRollout(sessionId, paths);
     const header = await this.shell(`head -n 1 ${shellQuote(path)}`);
     let valid = false;
     try {
@@ -228,18 +383,7 @@ export class TranscriptStore {
         !value.split('/').includes('..') ? value : null;
     }
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
-    let paths = ompPathsByTransport.get(this.transport);
-    if (paths === undefined) {
-      paths = new Map();
-      ompPathsByTransport.set(this.transport, paths);
-    }
-    const cached = paths.get(value);
-    if (cached !== undefined) return cached;
-    const pending = this.findOmpTranscript(value);
-    paths.set(value, pending);
-    const forget = () => { if (paths.get(value) === pending) paths.delete(value); };
-    void pending.then(path => { if (path === null) forget(); }, forget);
-    return pending;
+    return this.remembered(ompPathsByTransport, value, () => this.findOmpTranscript(value));
   }
 
   forgetOmpTranscript(sessionId: string): void {
@@ -613,19 +757,21 @@ export class TranscriptStore {
         script += `f=${shellQuote(path)}; `;
         ompSessions.set(key, request.sessionKind === 'path' ? null : request.sessionId);
       } else if (!/^[A-Za-z0-9-]+$/.test(request.sessionId)) continue;
-      else if (request.agent === 'codex') {
-        // One broken Codex session must not suppress every other row's preview.
-        const path = await this.codexTranscriptPath(request.sessionId).catch(() => null);
+      else if (request.agent !== undefined && request.agent !== 'claude') {
+        // One broken session must not suppress every other row's preview.
+        const path = await this.transcriptPath({
+          agent: request.agent, cwd: request.cwd, agentSession: { kind: 'id', value: request.sessionId },
+        }).catch(() => null);
         if (path === null) continue;
         script += `f=${shellQuote(path)}; `;
-      } else if (request.agent === undefined || request.agent === 'claude') {
+      } else {
         const dir = projectDirName(request.cwd);
         const id = request.sessionId;
         script += `f="${CLAUDE_DIR_SHELL}/projects/${dir}/${id}.jsonl"; `;
         // Not under the cwd's folder (a worktree session, #89): the exact id
         // in any project folder. Never a different file.
         script += `[ -f "$f" ] || for g in "${CLAUDE_DIR_SHELL}"/projects/*/${id}.jsonl; do [ -f "$g" ] && f=$g && break; done; `;
-      } else continue;
+      }
       script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
       if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
@@ -677,6 +823,13 @@ export class TranscriptStore {
     if (result.exitCode !== 0) throw exitCodeError(result.exitCode, result.stderr);
     return result.stdout;
   }
+}
+
+/** What locating a transcript needs from an agent: herdr's `AgentInfo` has it all. */
+export interface SessionRef {
+  agent: string | null;
+  cwd: string;
+  agentSession: { kind: string | null; value: string | null } | null;
 }
 
 /**
