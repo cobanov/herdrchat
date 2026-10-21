@@ -81,8 +81,10 @@ done
 # E2E_DRY_RUN=1: say what would run, and run nothing.
 if [ -n "${E2E_DRY_RUN:-}" ]; then echo "$RUNS" | tr ' ' '\n' | sed '/^$/d'; exit 0; fi
 
+# Leaves out the second simulator: booted from a previous run, it would be
+# picked as it is, still holding the app it was last given.
 booted() {
-  xcrun simctl list devices booted -j | python3 -c 'import json,sys; [print(x["udid"]) for r in json.load(sys.stdin)["devices"].values() for x in r if x["state"]=="Booted"]'
+  xcrun simctl list devices booted -j | python3 -c 'import json,sys; [print(x["udid"]) for r in json.load(sys.stdin)["devices"].values() for x in r if x["state"]=="Booted" and x["name"]!="HerdrChat E2E 2"]'
 }
 
 # A second simulator like the first, made once and kept, with the first's app
