@@ -42,7 +42,7 @@
 <div class="wrap prose">
 
   <h1>Privacy Policy</h1>
-  <p class="stamp">HerdrChat · last updated 26 September 2026</p>
+  <p class="stamp">HerdrChat · last updated 17 October 2026</p>
 
   <div class="callout">
     <p>
@@ -50,7 +50,7 @@
       The app talks over SSH to a computer you own and administer, using
       credentials you supply. The only system of ours anything passes through is
       a push relay, and only if you turn notifications on; it forwards each
-      notification to Apple and keeps nothing.
+      notification to Apple (iPhone) or Google (Android) and keeps nothing.
     </p>
   </div>
 
@@ -59,7 +59,7 @@
     Nothing. HerdrChat collects no personal data, stores nothing on any system of
     ours, and contains no analytics, advertising, tracking or crash-reporting
     SDKs. The notification relay described below handles a notification only
-    for the moment it takes to hand it to Apple. The
+    for the moment it takes to hand it to Apple or Google. The
     app's Apple privacy manifest declares <code>NSPrivacyTracking = false</code>
     and an empty set of collected data types, which matches the “Data Not
     Collected” label on the App Store.
@@ -137,7 +137,8 @@
   <h2>Notifications</h2>
   <p>
     Notifications are off until you turn them on. When you do, your device's
-    Apple Push Notification token is written to a file on <em>your own host</em>
+    push token (Apple Push Notification service on iPhone, Firebase Cloud
+    Messaging on Android) is written to a file on <em>your own host</em>
     over the same SSH connection, and the app can install a small watcher there
     that notices when an agent is waiting for you or has finished.
   </p>
@@ -145,7 +146,10 @@
     Apple delivers a notification only when it is signed with the push key of
     the team that published the app, so the watcher sends each one to the
     HerdrChat relay at <code>push.herdrchat.cobanov.dev</code>, which signs it
-    and passes it to Apple. What the relay receives is the device token, the
+    and passes it to Apple. Android works the same way with Google: Firebase
+    Cloud Messaging delivers only for the app's own Firebase project, so the
+    relay signs in as that project and passes the notification to Google. What
+    the relay receives is the device token, the
     notification's title and text, and identifiers the app uses to open the
     right chat: the workspace, session and host entry. The title is the chat's
     name. The text is a line or two in the agent's own words, read on your host
@@ -163,8 +167,9 @@
   <p>
     If you build and sign the app yourself, the watcher can use your own Apple
     push key and send directly to Apple instead, and nothing passes through the
-    relay. The token identifies your installation of the app so Apple can
-    deliver to it; it does not identify you. Turning notifications off removes
+    relay; on Android, notifications always go through the relay. The token
+    identifies your installation of the app so Apple or Google can deliver to
+    it; it does not identify you. Turning notifications off removes
     the token from your hosts.
   </p>
 

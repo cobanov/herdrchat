@@ -1,5 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,9 +59,9 @@ export function FolderBrowser({ device, onClose }: { device: Device; onClose: ()
       const copy = new File(downloads, entry.name);
       if (copy.exists) copy.delete();
       copy.write(result.value, { encoding: 'base64' });
-      // shortcut: Android's Share takes no file, so the copy stays in the app's cache there.
+      // React Native's Share takes a file only on iOS; Android's share sheet needs a content URI, which expo-sharing makes.
       if (Platform.OS === 'ios') await Share.share({ url: copy.uri });
-      else return `Saved to the app's storage as ${entry.name}. Sharing a file is iPhone and iPad only for now.`;
+      else await Sharing.shareAsync(copy.uri);
       return null;
     });
 

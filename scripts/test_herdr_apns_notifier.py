@@ -83,7 +83,7 @@ class RoutingPayloadTests(unittest.TestCase):
                 patch.object(notifier, "workspace_labels", return_value={"w1": "api"}), \
                 patch.object(notifier, "device_tokens", return_value=token_files), \
                 patch.object(notifier, "send_push",
-                             side_effect=lambda tok, t, b, extra=None, env="production": seen.append((tok, extra, env)) or (200, None)), \
+                             side_effect=lambda tok, t, b, extra=None, env="production", service="apns": seen.append((tok, extra, env)) or (200, None)), \
                 patch.object(notifier.time, "sleep"):
             with self.assertRaises(KeyboardInterrupt):
                 notifier.main()
@@ -91,7 +91,7 @@ class RoutingPayloadTests(unittest.TestCase):
 
     def test_each_device_gets_its_own_connection_and_the_session(self):
         notifier = load_notifier()
-        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset()), ("tok-b", None, "sandbox", frozenset())])
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset(), "apns"), ("tok-b", None, "sandbox", frozenset(), "apns")])
         self.assertEqual(seen, [
             ("tok-a", {"workspace": "w1", "label": "api", "session": "sess-1", "connection": "conn-a"}, "production"),
             ("tok-b", {"workspace": "w1", "label": "api", "session": "sess-1"}, "sandbox"),
@@ -118,10 +118,10 @@ class RoutingPayloadTests(unittest.TestCase):
                 patch.object(notifier.os, "makedirs"), \
                 patch.object(notifier, "snapshot_agents", side_effect=snapshots), \
                 patch.object(notifier, "workspace_labels", return_value={"w1": "ledger"}), \
-                patch.object(notifier, "device_tokens", return_value=[("tok-a", "c", "production", frozenset({path})),
-                                                                       ("tok-b", "c", "production", frozenset())]), \
+                patch.object(notifier, "device_tokens", return_value=[("tok-a", "c", "production", frozenset({path}), "apns"),
+                                                                       ("tok-b", "c", "production", frozenset(), "apns")]), \
                 patch.object(notifier, "send_push",
-                             side_effect=lambda tok, t, b, extra=None, env="production": seen.append((tok, extra)) or (200, None)), \
+                             side_effect=lambda tok, t, b, extra=None, env="production", service="apns": seen.append((tok, extra)) or (200, None)), \
                 patch.object(notifier.time, "sleep"):
             with self.assertRaises(KeyboardInterrupt):
                 notifier.main()
@@ -130,8 +130,8 @@ class RoutingPayloadTests(unittest.TestCase):
 
     def test_a_chat_muted_on_one_phone_still_reaches_the_other(self):
         notifier = load_notifier()
-        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset({"sess-1"})),
-                                              ("tok-b", "conn-b", "production", frozenset({"sess-other"}))])
+        seen = self.run_one_change(notifier, [("tok-a", "conn-a", "production", frozenset({"sess-1"}), "apns"),
+                                              ("tok-b", "conn-b", "production", frozenset({"sess-other"}), "apns")])
         self.assertEqual([tok for tok, _extra, _env in seen], ["tok-b"])
 
 
@@ -147,7 +147,7 @@ class TokenTests(unittest.TestCase):
                 path.write_text(json.dumps(data))
                 os.utime(path, (1000 + age, 1000 + age))
             self.assertEqual(sorted(notifier.device_tokens()),
-                             [("tok-a", "conn-a", "production", frozenset()), ("tok-b", None, "production", frozenset())])
+                             [("tok-a", "conn-a", "production", frozenset(), "apns"), ("tok-b", None, "production", frozenset(), "apns")])
 
     def test_reads_the_muted_sessions_and_ignores_anything_else_there(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -156,8 +156,8 @@ class TokenTests(unittest.TestCase):
             Path(folder, "a.json").write_text(json.dumps({"token": "tok-a", "muted": ["s1", 5, "s2"]}))
             Path(folder, "b.json").write_text(json.dumps({"token": "tok-b", "muted": "s1"}))
             self.assertEqual(sorted(notifier.device_tokens()),
-                             [("tok-a", None, "production", frozenset({"s1", "s2"})),
-                              ("tok-b", None, "production", frozenset())])
+                             [("tok-a", None, "production", frozenset({"s1", "s2"}), "apns"),
+                              ("tok-b", None, "production", frozenset(), "apns")])
 
 
 class RelayTests(unittest.TestCase):
@@ -187,6 +187,30 @@ class RelayTests(unittest.TestCase):
             "body": "claude is waiting for a reply.", "data": {"workspace": "w1", "connection": "c"},
         })
 
+    def test_an_android_token_says_so_and_goes_through_the_relay_even_with_a_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            notifier = load_notifier()
+            notifier.TOKENS_DIR = folder
+            Path(folder, "pixel.json").write_text(json.dumps({"token": "fcm-tok", "service": "fcm", "connection": "c"}))
+            self.assertEqual(notifier.device_tokens(), [("fcm-tok", "c", "production", frozenset(), "fcm")])
+        sent = {}
+
+        class Reply:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        def urlopen(request, timeout):
+            sent["body"] = json.loads(request.data)
+            return Reply()
+
+        with patch.multiple(notifier, KEY_ID="k", TEAM_ID="t", KEY_PATH=__file__), \
+                patch.object(notifier.urllib.request, "urlopen", side_effect=urlopen), \
+                patch.object(notifier, "_send_direct", side_effect=AssertionError("Apple cannot deliver to Android")):
+            self.assertEqual(notifier.send_push("fcm-tok", "t", "b", {"workspace": "w1"}, service="fcm"), (200, None))
+        self.assertEqual(sent["body"]["service"], "fcm")
+        self.assertEqual(sent["body"]["token"], "fcm-tok")
+
     def test_reads_apples_reason_from_a_refusal(self):
         notifier = load_notifier()
         error = urllib.error.HTTPError(notifier.RELAY_URL, 410, "Gone", {}, io.BytesIO(b'{"reason":"Unregistered"}'))
@@ -201,7 +225,7 @@ class RelayTests(unittest.TestCase):
                 Path(folder, f"{name}.json").write_text(json.dumps({"token": token, "env": "production"}))
             notifier.forget_token("dead")
             self.assertEqual(sorted(os.listdir(folder)), ["b.json"])
-            self.assertEqual(notifier.device_tokens(), [("alive", None, "production", frozenset())])
+            self.assertEqual(notifier.device_tokens(), [("alive", None, "production", frozenset(), "apns")])
 
 
 

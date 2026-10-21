@@ -22,6 +22,36 @@ appId: dev.herdr.HerdrChat
 - assertVisible:
     id: files-entry-code
 - takeScreenshot: files-${APPEARANCE}
+# A file downloads and opens the system's share sheet, on Android too (it once
+# only said the file stayed in the app's storage). The sheet is the system's,
+# so the check is that no error took its place; its screenshot must be opened.
+- tapOn:
+    id: files-entry-README.md
+- waitForAnimationToEnd
+- takeScreenshot: files-share-${APPEARANCE}
+- assertNotVisible:
+    id: error-banner
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    # The share sheet has no Close button on iOS 27; it goes with a swipe down
+    # from its title. At 62% the swipe began on the sheet's top edge on a Pro
+    # Max and left it open.
+    commands:
+      - swipe:
+          start: 50%, 67%
+          end: 50%, 98%
+          duration: 300
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: files-entry-code
+    timeout: 5000
 - tapOn:
     id: files-entry-code
 - extendedWaitUntil:

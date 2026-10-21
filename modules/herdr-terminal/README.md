@@ -1,8 +1,9 @@
 # herdr-terminal
 
-The terminal emulator for a herdr pane, as a local Expo module. iOS only for
-now; elsewhere `TerminalView` renders an empty view and `isTerminalAvailable`
-is false.
+The terminal emulator for a herdr pane, as a local Expo module: SwiftTerm on
+iOS, Termux's emulator on Android (see "Android" below). Where the native side
+is missing (Jest, an older build), `TerminalView` renders an empty view and
+`isTerminalAvailable` is false.
 
 ## Why SwiftTerm
 
@@ -109,5 +110,30 @@ with `SetEnv AUTO_TMUX=1` in the desktop's `~/.ssh/config` for that host
 What to check by hand on a device is listed in `.maestro/README.md`
 ("Terminal, by hand on a device").
 
-Changing anything under `ios/` needs a native rebuild (`npx expo prebuild
---clean`, then `npx expo run:ios`).
+## Android
+
+`android/` draws the emulator of [Termux](https://github.com/termux/termux-app)
+(`terminal-emulator` and `terminal-view`, v0.118.0, from JitPack, which the
+app's root `build.gradle` already lists). Those two libraries are Apache 2.0,
+an exception to the rest of Termux, which is GPLv3; nothing else of Termux is
+used. Pinned, like SwiftTerm: move it deliberately.
+
+Termux's own `TerminalView` is final and drives a `TerminalSession`, which
+forks a local process through JNI, so it cannot show a remote shell.
+`HerdrTerminalView` therefore owns a `TerminalEmulator` (it writes to any
+`TerminalOutput`), draws it with Termux's `TerminalRenderer`, and does the
+keyboard and touch itself, following Termux's input code: `TYPE_NULL` input,
+Return as `\r`, Ctrl and Alt applied to the next character. The props,
+events and ref calls are the iOS ones. `herdr-ssh` on Android opens the shell
+with an exec request on the PTY (sshj can; Citadel cannot), so there is no
+login shell, MOTD or marker in front of the attach, and the rc-file caveat
+above is iOS only.
+
+A long press starts a selection and dragging moves its end; lifting offers
+Copy. Termux's renderer draws a selection in reverse video, so `selection` in
+the theme is unused on Android. Meta-K (the Windows or Command key on a
+hardware keyboard) clears the scrollback, as Command-K does on iOS; a mouse
+wheel or trackpad scrolls as a swipe does.
+
+Changing anything under `ios/` or `android/` needs a native rebuild (`npx expo
+prebuild --clean`, then `npx expo run:ios` or `npx expo run:android`).

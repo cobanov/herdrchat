@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send an iOS push when a herdr agent needs you or finishes.
+"""Send a push to the phone when a herdr agent needs you or finishes.
 
 Runs on the herdr host (the machine the agents run on). Polls herdr with
 `herdr api snapshot`, and when an agent becomes `blocked` (waiting for your
@@ -20,6 +20,9 @@ Two ways to reach Apple:
   APNS_KEY_ID, APNS_TEAM_ID and APNS_KEY_PATH to your own APNs key.
 
 Dependency-free: python3 and, in direct mode, `openssl` and `curl`.
+
+Android phones register an FCM token instead ("service": "fcm" in the file);
+those always go through the relay, which holds the app's Firebase account.
 
 Device tokens: the HerdrChat app writes its token to
 ~/.config/herdrchat/apns-tokens/<id>.json over SSH (under sessions/<name>/
@@ -57,7 +60,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 7
+WATCHER_VERSION = 8
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -155,8 +158,9 @@ def mode():
 
 
 def device_tokens():
-    """Registered devices: (APNs token, the app's connection id for this host,
-    the token's APNs environment, the session ids muted on that phone).
+    """Registered devices: (token, the app's connection id for this host,
+    the token's APNs environment, the session ids muted on that phone, and
+    "apns" or "fcm": which push service the token belongs to).
 
     The connection id is how a tap on the phone knows which of its hosts sent
     the push. Token files from app builds before it have none (None here).
@@ -178,7 +182,8 @@ def device_tokens():
         env = "sandbox" if data.get("env") in ("sandbox", "development") else "production"
         muted = data.get("muted")
         muted = frozenset(m for m in muted if isinstance(m, str)) if isinstance(muted, list) else frozenset()
-        entry = (tok, data.get("connection"), env, muted)
+        service = "fcm" if data.get("service") == "fcm" else "apns"
+        entry = (tok, data.get("connection"), env, muted, service)
         if tok not in best or entry[1] or not best[tok][1]:
             best[tok] = entry
     return list(best.values())
@@ -201,24 +206,29 @@ def forget_token(device_token: str):
             continue
 
 
-def send_push(device_token: str, title: str, body: str, extra=None, env="production"):
-    """Deliver one notification. Returns (http status, Apple's reason or None).
+def send_push(device_token: str, title: str, body: str, extra=None, env="production", service="apns"):
+    """Deliver one notification. Returns (http status, the push service's reason or None).
 
     `extra` rides at the payload root beside `aps`. The app reads `workspace`
     (and optional `label`, `session`, `connection`) from it to open the tapped
-    thread."""
-    if mode() == "direct":
+    thread. An Android token always goes through the relay: a key of your own
+    signs for Apple only."""
+    if mode() == "direct" and service == "apns":
         return _send_direct(device_token, title, body, extra, FORCED_ENV or env)
-    return _send_relay(device_token, title, body, extra, env)
+    return _send_relay(device_token, title, body, extra, env, service)
 
 
-def _send_relay(device_token, title, body, extra, env):
+def _send_relay(device_token, title, body, extra, env, service="apns"):
+    fields = {
+        "token": device_token, "env": env,
+        "title": title[:120], "body": body[:240], "data": extra or {},
+    }
+    if service == "fcm":
+        # Only then: an iPhone's request stays exactly what it was.
+        fields["service"] = "fcm"
     request = urllib.request.Request(
         RELAY_URL,
-        data=json.dumps({
-            "token": device_token, "env": env,
-            "title": title[:120], "body": body[:240], "data": extra or {},
-        }).encode(),
+        data=json.dumps(fields).encode(),
         headers={"content-type": "application/json", "user-agent": "herdrchat-notifier"},
         method="POST",
     )
@@ -562,11 +572,12 @@ def main():
                         # Lets the app tell this chat from a later one in the
                         # same workspace slot.
                         extra["session"] = session["value"]
-                    for tok, connection, env, muted in tokens:
+                    for tok, connection, env, muted, service in tokens:
                         if session_id and session_id in muted:
                             continue
                         status, reason = send_push(
-                            tok, title, body, dict(extra, connection=connection) if connection else extra, env=env
+                            tok, title, body, dict(extra, connection=connection) if connection else extra,
+                            env=env, service=service,
                         )
                         if status != 200:
                             print(f"[apns] push failed ({status} {reason or ''}) for token …{tok[-6:]}", file=sys.stderr)

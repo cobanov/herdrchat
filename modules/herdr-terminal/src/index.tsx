@@ -1,6 +1,6 @@
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 import type { ComponentType, Ref } from 'react';
-import { Platform, View, type ViewProps } from 'react-native';
+import { View, type ViewProps } from 'react-native';
 
 /**
  * The terminal's colours. Any CSS colour string React Native accepts. Build
@@ -83,10 +83,9 @@ interface NativeModuleShape {
   feed(shellId: string, base64: string): boolean;
 }
 
-// iOS only, and only in a build that contains the module: Android has no
-// emulator yet, and Jest or an older dev client has no native side.
-const nativeModule =
-  Platform.OS === 'ios' ? requireOptionalNativeModule<NativeModuleShape>('HerdrTerminal') : null;
+// Only in a build that contains the module: Jest or an older dev client has
+// no native side.
+const nativeModule = requireOptionalNativeModule<NativeModuleShape>('HerdrTerminal');
 
 const Native: ComponentType<NativeProps> | null =
   nativeModule !== null ? requireNativeView<NativeProps>('HerdrTerminal') : null;
@@ -104,9 +103,10 @@ export function feed(shellId: string, base64: string): boolean {
 }
 
 /**
- * A herdr pane's terminal: SwiftTerm, fed natively by a herdr-ssh shell.
- * Where there is no native terminal (Android, Jest), an empty view of the
- * same layout; check `isTerminalAvailable` to say why.
+ * A herdr pane's terminal: SwiftTerm on iOS, Termux's emulator on Android,
+ * fed natively by a herdr-ssh shell. Where there is no native terminal (Jest,
+ * an older build), an empty view of the same layout; check
+ * `isTerminalAvailable` to say why.
  */
 export function TerminalView({
   onSizeChange,

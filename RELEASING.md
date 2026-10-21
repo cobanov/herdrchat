@@ -138,7 +138,7 @@ one-time setup:
    | Item | Answer |
    |---|---|
    | Privacy policy | https://herdrchat.cobanov.dev/privacy/ |
-   | Data safety | No data collected or shared. Host details and SSH keys stay on the device (Android Keystore) and go only to the user's own host. Notifications are iOS-only, so the relay is not involved on Android. |
+   | Data safety | No data collected or shared. Host details and SSH keys stay on the device (Android Keystore) and go only to the user's own host. Notifications go through the relay to Firebase Cloud Messaging; the relay keeps nothing (see `site/privacy/`). |
    | Content rating | Utility / productivity, no objectionable content |
    | Target audience | 18+, a developer tool |
    | Ads, government, financial features | None |
@@ -168,8 +168,21 @@ wrangler deploy
 # service" enabled, and can be downloaded only once.
 wrangler secret put APNS_KEY_ID          # the 10-character key id
 wrangler secret put APNS_KEY < AuthKey_XXXXXXXXXX.p8
-curl https://push.herdrchat.cobanov.dev/   # {"configured":true}
+curl https://push.herdrchat.cobanov.dev/   # {"configured":true,"fcm":true}
 ```
+
+Android goes through the same Worker to Firebase Cloud Messaging. Once, in the
+Firebase console: add an Android app with package `dev.herdr.herdrchat`,
+download its `google-services.json` to the repo root and set
+`"googleServicesFile": "./google-services.json"` under `android` in `app.json`;
+then Project settings → Service accounts → Generate new private key, and
+
+```bash
+wrangler secret put FCM_SERVICE_ACCOUNT < herdrchat-firebase-adminsdk.json
+```
+
+The service account key is a secret: it goes to the Worker and nowhere else.
+`google-services.json` is not one (it ships inside every APK).
 
 The Worker is tested with the app (`npx jest relay`). It has no request logs or
 traces by design (`observability` is off in `wrangler.toml`); keep it that way,

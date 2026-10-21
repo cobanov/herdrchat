@@ -11,4 +11,6 @@ package has (the simulator build failed with "missing required module
 '_AtomicsShims'").
 
 `swift run --package-path modules/herdr-shell-registry RegistryChecks` runs its
-checks on macOS. Not a JavaScript module: it has no `src/`.
+checks on macOS. The Android twin is `android/` (Kotlin, the same contract),
+with JUnit checks: `cd android && ./gradlew :herdr-shell-registry:testDebugUnitTest`.
+Not a JavaScript module: it has no `src/`.

@@ -263,15 +263,7 @@ class SshConnection(private val config: SshConfigRecord) {
     // Opening the channel is bounded too: it is a round-trip on a connection
     // that may have died since the last command.
     val (session, cmd) = withDeadline(startTimeoutMs) {
-      val client = try {
-        connected()
-      } catch (failure: SshFailure) {
-        throw failure
-      } catch (error: IOException) {
-        resetClient()
-        connected()
-      }
-      val session = client.startSession()
+      val session = liveClient().startSession()
       try {
         session to session.exec(command)
       } catch (error: Exception) {
@@ -304,8 +296,123 @@ class SshConnection(private val config: SshConfigRecord) {
     }
   }
 
+  /** The client, dialled once more if the cached one turns out dead. */
+  private suspend fun liveClient(): SSHClient =
+    try {
+      connected()
+    } catch (failure: SshFailure) {
+      throw failure
+    } catch (error: IOException) {
+      resetClient()
+      connected()
+    }
+
+  /** How a shell ended, as JavaScript receives it in `onShellClosed`. */
+  data class ShellEnd(val reason: String, val exitCode: Int?, val message: String?)
+
+  /**
+   * Open a pseudo-terminal and run `command` in it, under `/bin/sh -c`
+   * whatever the login shell is. Output goes to [onOutput] on a reader
+   * thread, the end to [onClose] once, except after the handle's `close()`,
+   * which is the app's own doing and reports nothing.
+   *
+   * Unlike iOS (Citadel opens a PTY only with a login shell, so the command
+   * is typed into it, see `ios/ShellLaunch.swift`), sshj sends an exec request
+   * on the PTY: no MOTD or prompt to cut away, and no rc file that starts tmux
+   * gets in first. The line is the one iOS types, minus its marker, so every
+   * login shell (fish too) parses it the same way.
+   */
+  suspend fun openShell(
+    command: String,
+    cols: Int,
+    rows: Int,
+    term: String,
+    startTimeoutMs: Int,
+    onOutput: (ByteArray) -> Unit,
+    onClose: (ShellEnd) -> Unit,
+  ): ShellHandle {
+    val (client, session, cmd) = withDeadline(startTimeoutMs) {
+      val client = liveClient()
+      val session = client.startSession()
+      try {
+        session.allocatePTY(term, maxOf(cols, 1), maxOf(rows, 1), 0, 0, emptyMap())
+        Triple(client, session, session.exec(" exec /bin/sh -c " + shellQuote(command)))
+      } catch (error: Exception) {
+        runCatching { session.close() }
+        throw error
+      }
+    }
+    val handle = ShellHandle(session, cmd.outputStream)
+    Thread {
+      var failure: Exception? = null
+      try {
+        val buffer = ByteArray(8192)
+        val input = cmd.inputStream
+        while (true) {
+          val read = input.read(buffer)
+          if (read < 0) break
+          if (read > 0) onOutput(buffer.copyOf(read))
+        }
+        // The exit status can trail the end of output by a moment.
+        runCatching { cmd.join(2, java.util.concurrent.TimeUnit.SECONDS) }
+      } catch (error: Exception) {
+        failure = error
+      }
+      runCatching { session.close() }
+      if (handle.closed) return@Thread
+      onClose(
+        when {
+          !client.isConnected -> ShellEnd("connection_lost", null, failure?.message)
+          failure != null -> ShellEnd("transport_failed", null, failure.message ?: "The terminal's connection failed.")
+          else -> ShellEnd("exited", cmd.exitStatus ?: 0, null)
+        },
+      )
+    }.apply { isDaemon = true }.start()
+    return handle
+  }
+
+  /**
+   * One open PTY shell. Writes and resizes go through one thread of their
+   * own, in order, off the caller's: a write waits when the channel's window
+   * is full, and the caller is the main thread or Expo's single queue.
+   */
+  class ShellHandle(
+    private val session: net.schmizz.sshj.connection.channel.direct.Session,
+    private val output: java.io.OutputStream,
+  ) {
+    @Volatile var closed = false
+      private set
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+      Thread(task).apply { isDaemon = true }
+    }
+
+    fun write(data: ByteArray) = submit {
+      output.write(data)
+      output.flush()
+    }
+
+    fun resize(cols: Int, rows: Int) = submit {
+      (session as net.schmizz.sshj.connection.channel.direct.Session.Shell).changeWindowDimensions(cols, rows, 0, 0)
+    }
+
+    private fun submit(work: () -> Unit) {
+      if (closed) return
+      runCatching { writer.execute { runCatching(work) } }
+    }
+
+    /** Hang up: the channel closes and the host sends the command SIGHUP. */
+    fun close() {
+      closed = true
+      writer.shutdown()
+      Thread { runCatching { session.close() } }.apply { isDaemon = true }.start()
+    }
+  }
+
   private companion object {
     const val CONNECT_TIMEOUT_MS = 15_000
+
+    /** POSIX single quoting. */
+    fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
     /** Detached work for deadlines and teardown; never waited on by structure. */
     val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   }

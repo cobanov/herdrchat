@@ -1,0 +1,24 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.herdrterminal'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.herdrterminal"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  implementation project(':herdr-shell-registry')
+  // Termux's emulator and renderer (Apache 2.0, unlike the rest of Termux),
+  // from JitPack, which the app's root build.gradle already lists. Pinned:
+  // see the README before moving it.
+  implementation "com.github.termux.termux-app:terminal-emulator:v0.118.0"
+  implementation "com.github.termux.termux-app:terminal-view:v0.118.0"
+}

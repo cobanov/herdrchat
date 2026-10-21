@@ -336,7 +336,9 @@ export class HerdrClient {
       shellCommand([this.herdr, 'integration', 'install', name]),
       INSTALL_TIMEOUT_MS
     );
-    checkEnvelope(output);
+    // herdr 0.9 says "installed pi integration to …" in plain text; a failure
+    // already threw on its exit code. Only an envelope has anything to check.
+    if (output.trimStart().startsWith('{')) checkEnvelope(output);
   }
 
   /**

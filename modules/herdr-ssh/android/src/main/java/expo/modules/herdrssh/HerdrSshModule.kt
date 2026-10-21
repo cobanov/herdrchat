@@ -1,5 +1,8 @@
 package expo.modules.herdrssh
 
+import android.util.Base64
+import expo.modules.herdrshellregistry.EchoShell
+import expo.modules.herdrshellregistry.ShellRegistry
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -8,6 +11,7 @@ import expo.modules.kotlin.records.Record
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Android ships a cut-down BouncyCastle under the provider name "BC", and sshj
@@ -54,11 +58,12 @@ class SshConfigRecord : Record {
 class HerdrSshModule : Module() {
   private val connections = ConcurrentHashMap<String, SshConnection>()
   private val streams = ConcurrentHashMap<String, SshConnection.StreamHandle>()
+  private val shells = ConcurrentHashMap<String, SshConnection.ShellHandle>()
 
   override fun definition() = ModuleDefinition {
     Name("HerdrSsh")
 
-    Events("onStreamLine", "onStreamEnd", "onStreamError")
+    Events("onStreamLine", "onStreamEnd", "onStreamError", "onShellClosed")
 
     OnCreate { Crypto.ensureBouncyCastle() }
 
@@ -135,7 +140,77 @@ class HerdrSshModule : Module() {
       streams.remove(streamId)?.stop()
     }
 
+    // Terminal shells. A shell's output never comes through here: it goes to
+    // the terminal view through `ShellRegistry`, and keystrokes come straight
+    // back. JavaScript opens, sizes and closes it, writes the accessory bar's
+    // keys, and hears how it ended.
+
+    AsyncFunction("openShell") Coroutine {
+      id: String, shellId: String, command: String, cols: Int, rows: Int, term: String, startTimeoutMs: Int ->
+      val registry = ShellRegistry.shared
+      if (id == DEMO_CONNECTION) {
+        EchoShell.open(shellId, registry)
+        return@Coroutine mapOf("ok" to true, "shellId" to shellId)
+      }
+      val connection = connections[id] ?: return@Coroutine notConnected
+      // Registered before the channel opens, so a command that ends at once
+      // unregisters after this, never before it.
+      val pending = AtomicReference<SshConnection.ShellHandle?>()
+      registry.register(shellId, ShellRegistry.Input(
+        write = { pending.get()?.write(it) },
+        resize = { cols, rows -> pending.get()?.resize(cols, rows) },
+      ))
+      try {
+        val handle = connection.openShell(
+          command, cols, rows, term, startTimeoutMs,
+          onOutput = { registry.deliver(shellId, it) },
+          onClose = { end ->
+            registry.unregister(shellId)
+            shells.remove(shellId)
+            sendEvent(
+              "onShellClosed",
+              listOfNotNull(
+                "shellId" to shellId,
+                "reason" to end.reason,
+                end.exitCode?.let { "exitCode" to it },
+                end.message?.let { "message" to it },
+              ).toMap(),
+            )
+          },
+        )
+        pending.set(handle)
+        shells[shellId] = handle
+        mapOf("ok" to true, "shellId" to shellId)
+      } catch (failure: SshFailure) {
+        registry.unregister(shellId)
+        failureMap(failure.code, failure.message)
+      } catch (error: Exception) {
+        registry.unregister(shellId)
+        failureMap("transport_failed", error.message ?: "The terminal couldn't open.")
+      }
+    }
+
+    AsyncFunction("writeShell") { shellId: String, base64: String ->
+      val data = try {
+        Base64.decode(base64, Base64.DEFAULT)
+      } catch (error: IllegalArgumentException) {
+        return@AsyncFunction failureMap("bad_input", "The input was not base64.")
+      }
+      if (ShellRegistry.shared.send(shellId, data)) ok else shellClosed
+    }
+
+    AsyncFunction("resizeShell") { shellId: String, cols: Int, rows: Int ->
+      if (ShellRegistry.shared.resize(shellId, cols, rows)) ok else shellClosed
+    }
+
+    AsyncFunction("closeShell") { shellId: String ->
+      ShellRegistry.shared.forget(shellId)
+      shells.remove(shellId)?.close()
+    }
+
     OnDestroy {
+      shells.values.forEach { it.close() }
+      shells.clear()
       streams.values.forEach { it.stop() }
       streams.clear()
       // Closed, not just forgotten: clearing the map left every socket open
@@ -148,7 +223,17 @@ class HerdrSshModule : Module() {
   private companion object {
     /** The whole connect: socket, handshake and authentication. */
     const val CONNECT_DEADLINE_MS = 30_000
+    /** The Demo host's connection id: `openShell` on it opens an echo shell with no SSH under it. */
+    const val DEMO_CONNECTION = "demo"
   }
+
+  private val ok = mapOf("ok" to true)
+
+  private val shellClosed = mapOf(
+    "ok" to false,
+    "code" to "shell_closed",
+    "message" to "This terminal is no longer connected.",
+  )
 
   private fun failureMap(code: String, message: String) =
     mapOf("ok" to false, "code" to code, "message" to message)

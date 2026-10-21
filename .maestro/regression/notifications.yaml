@@ -1,0 +1,23 @@
+# Settings has the notifications switch on both platforms (Android once had
+# none: there was no push path). On the Demo host it explains instead of
+# registering, which is the part a flow can check without a real host.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- runFlow: _open-settings.yaml
+- scrollUntilVisible:
+    element:
+      id: toggle-notifications
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: toggle-notifications
+- extendedWaitUntil:
+    visible: '.*Demo host cannot send notifications.*'
+    timeout: 5000
+- takeScreenshot: notifications-${APPEARANCE}
+- runFlow: _close-settings.yaml
+- extendedWaitUntil:
+    visible:
+      id: chats-settings
+    timeout: 5000

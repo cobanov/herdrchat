@@ -31,10 +31,12 @@ src/lib/                pure logic, no React — this is what tests cover
 src/state/              zustand stores, SQLite, keychain
 src/theme/              tokens, provider
 modules/herdr-ssh/      the SSH TurboModule (see its README)
-modules/herdr-keys/     iOS only: Command-Return on the composer, Esc on the
-                        iPad's layout card (UIKeyCommand views), and pointer
-                        hover (Pressable's onHoverIn never fires on iOS here)
-modules/herdr-terminal/ iOS only: a pane's terminal, SwiftTerm in a native view (see its README)
+modules/herdr-keys/     hardware keys on the composer: Command-Return on iOS,
+                        Ctrl-Enter on Android; iOS only: Esc on the iPad's
+                        layout card (UIKeyCommand views), and pointer hover
+                        (Pressable's onHoverIn never fires on iOS here)
+modules/herdr-terminal/ a pane's terminal: SwiftTerm on iOS, Termux's emulator on
+                        Android, in a native view (see its README)
 modules/herdr-shell-registry/  the open terminal shells, shared by herdr-ssh and herdr-terminal
 relay/                  the push relay, a Cloudflare Worker (see RELEASING.md)
                         (the SwiftUI and Compose apps this replaced are not in
@@ -129,7 +131,8 @@ store — `router.setParams` after `router.back()` applies to the route being le
 npx tsc --noEmit      # zero errors
 npx expo lint         # zero errors
 npx jest              # src/lib and hooks
-npm run e2e           # UI regression suite on a simulator, Demo host, dark + light
+npm run e2e           # UI regression suite on two simulators, Demo host (~15 min)
+npm run e2e -- changed  # only the flows the uncommitted changes can break
 ```
 
 Then actually look at the app in both light and dark mode, starting with the
@@ -173,7 +176,12 @@ watcher (`scripts/herdr-apns-notifier.py`, embedded via
 `scripts/embed-watcher.mjs`) as a service. The watcher sends through the relay
 (`relay/`, deployed at push.herdrchat.cobanov.dev), which needs the team's APNs
 key as a Worker secret before anything reaches a phone. Delivery has not been
-confirmed on a real device; the Simulator cannot register at all.
+confirmed on a real device; the Simulator cannot register at all. Android
+registers an FCM token (`"service": "fcm"` in its token file) and the relay
+sends it as a data message, shown by expo-notifications on the `agents`
+channel; it needs `google-services.json` (`android.googleServicesFile` in
+`app.json`) and the Firebase service account as the `FCM_SERVICE_ACCOUNT`
+Worker secret, neither of which exists yet.
 
 **The relay is the one server of ours.** It stores nothing, logs nothing,
 shapes the payload itself and sends only to this app. Any change to what it
@@ -181,5 +189,4 @@ receives changes the privacy policy (`site/privacy/`) in the same commit.
 
 Android ships through `scripts/android-release.sh` (signed AAB and APK, Play
 upload with a service-account key; see RELEASING.md), which still needs the
-Play Console app and that key. iOS ships via `scripts/testflight.sh`. Android
-has no notifications: APNs is iOS-only and there is no FCM path.
+Play Console app and that key. iOS ships via `scripts/testflight.sh`.

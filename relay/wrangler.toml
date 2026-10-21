@@ -3,6 +3,7 @@
 # Deploy:  wrangler deploy
 # Key:     wrangler secret put APNS_KEY      (the AuthKey_XXXX.p8 contents)
 #          wrangler secret put APNS_KEY_ID   (its 10-character key id)
+#          wrangler secret put FCM_SERVICE_ACCOUNT  (the Firebase service account's JSON key, for Android)
 name = "herdrchat-relay"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
