@@ -23,7 +23,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-: "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
+# CI builds with 17; 21 builds the same app where 17 is not installed.
+: "${JAVA_HOME:=$(ls -d /opt/homebrew/opt/openjdk@17 /opt/homebrew/opt/openjdk@21 2>/dev/null | head -n 1)}"
 : "${ANDROID_HOME:=/opt/homebrew/share/android-commandlinetools}"
 : "${LANG:=en_US.UTF-8}"
 export JAVA_HOME ANDROID_HOME LANG
