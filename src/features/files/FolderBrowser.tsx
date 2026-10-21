@@ -59,6 +59,8 @@ export function FolderBrowser({ device, onClose }: { device: Device; onClose: ()
       const copy = new File(downloads, entry.name);
       if (copy.exists) copy.delete();
       copy.write(result.value, { encoding: 'base64' });
+      // The file is here; the share sheet stays open as long as the user likes.
+      setBusy(null);
       // React Native's Share takes a file only on iOS; Android's share sheet needs a content URI, which expo-sharing makes.
       if (Platform.OS === 'ios') await Share.share({ url: copy.uri });
       else await Sharing.shareAsync(copy.uri);

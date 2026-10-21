@@ -31,6 +31,8 @@ appId: dev.herdr.HerdrChat
 - takeScreenshot: files-share-${APPEARANCE}
 - assertNotVisible:
     id: error-banner
+# Maestro sees nothing under the share sheet, so the screenshot is also the
+# check that "Downloading" is gone by the time the sheet is up.
 - runFlow:
     when:
       platform: Android
