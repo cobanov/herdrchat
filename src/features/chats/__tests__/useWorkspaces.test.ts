@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { HerdrClient } from '@/lib/herdr/client';
+import type { HostEvent } from '@/lib/herdr/events';
 import { useHostVersion } from '@/state/hostVersion';
 import { decodeSnapshot } from '@/lib/herdr/models';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -11,12 +12,13 @@ import type { ChatMessage } from '@/lib/transcript/message';
 
 let mockPolling = true;
 let mockLive = true;
-let mockEvent: () => void = () => undefined;
+let mockEvent: (event?: HostEvent) => void = () => undefined;
 let mockPreview = 'Before';
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({
-  useHostEvents: (_client: unknown, _panes: unknown, _enabled: unknown, event: () => void) => {
-    mockEvent = event;
+  useHostEvents: (_client: unknown, _panes: unknown, _enabled: unknown, event: (event: HostEvent) => void) => {
+    // A status change on the first agent unless a test names another event.
+    mockEvent = (fired = { event: 'pane.agent_status_changed', paneId: 'pane', workspaceId: 'chat', data: {} }) => event(fired);
     return mockLive;
   },
 }));
@@ -215,6 +217,20 @@ it('refreshes an idle chat preview on the event that finished its turn', async (
   await unmount();
 });
 
+// Every poll built new rows, so the list and every row in it rendered again
+// every three seconds with nothing to show for it.
+it('keeps the same rows when a poll sees nothing new', async () => {
+  mockLive = false;
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  const rows = result.current.summaries;
+  const polls = fetch.mock.calls.length;
+  await act(async () => { await jest.advanceTimersByTimeAsync(7_000); });
+  expect(fetch.mock.calls.length).toBeGreaterThan(polls);
+  expect(result.current.summaries).toBe(rows);
+  await unmount();
+});
+
 it('keeps one poll when the stream connects', async () => {
   mockLive = false;
   const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
@@ -329,6 +345,19 @@ it('fetches one preview per agent in a single batch, and files each by its pane'
   expect(previews.get('w6:p2')).toMatchObject({ sessionSig: 'sess-2', preview: { text: 'from sess-2' } });
 });
 
+// One host event used to force a full sweep: every chat's transcript read
+// for one pane's news.
+it('reads the preview of the pane an event named, and only that one', async () => {
+  const { store, latestMessages } = storeAnswering();
+  const previews = new Map<string, CachedPreview>();
+  const tick = { current: 0 };
+  await refreshPreviews(store, twoAgents().agents, previews, tick);
+  await refreshPreviews(store, twoAgents().agents, previews, tick, new Set(['w6:p1']));
+  expect(latestMessages.mock.calls[1]?.[0].map((request) => request.key)).toEqual(['w6:p1']);
+  await refreshPreviews(store, twoAgents().agents, previews, tick, true);
+  expect(latestMessages.mock.calls[2]?.[0].map((request) => request.key)).toEqual(['w6:p1', 'w6:p2']);
+});
+
 it('between sweeps refreshes only the agent that is busy or moved', async () => {
   const { store, latestMessages } = storeAnswering();
   const previews = new Map<string, CachedPreview>();
@@ -423,6 +452,27 @@ describe('the host theme check, riding on the list poll', () => {
     await act(async () => { onChange('active'); });
     await act(async () => { await jest.advanceTimersByTimeAsync(3_100); });
     expect(mockCheckTheme).toHaveBeenCalledTimes(3);
+    await unmount();
+  });
+
+  // A suspended app keeps no keepalive: back after a minute or more, a short
+  // probe drops a dead connection before the first poll waits 15 s on it.
+  it('wakes the connection when the app comes back after a long time away', async () => {
+    let onChange: (state: AppStateStatus) => void = () => undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      onChange = listener as (state: AppStateStatus) => void;
+      return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const wake = jest.spyOn(client, 'wake').mockResolvedValue(undefined);
+    const { unmount } = await renderHook(() => useWorkspaces(client, 'host'));
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    await act(async () => { onChange('active'); });
+    expect(wake).not.toHaveBeenCalled();
+    await act(async () => { onChange('background'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    await act(async () => { onChange('active'); });
+    expect(wake).toHaveBeenCalledTimes(1);
     await unmount();
   });
 

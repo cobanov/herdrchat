@@ -30,8 +30,9 @@ import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcr
 import { titleAgent } from '@/lib/chatTitle';
 import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
 import type { BatchAnswer } from '@/lib/herdr/socket';
+import { keepUnchanged } from '@/lib/sameShape';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
-import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
+import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS, WAKE_AFTER_MS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -197,11 +198,18 @@ export function useWorkspaces(
   const [paneIds, setPaneIds] = useState<string[]>([]);
   /** Asks the running loop for a refresh soon. Set by the effect that owns the loop. */
   const kick = useRef<() => void>(() => undefined);
-  const forcePreviews = useRef(true);
-  const live = useHostEvents(client, paneIds, polling, () => {
+  /**
+   * Previews to read on the next refresh whatever the counters say: the panes
+   * events named, or `true` for every one (the first refresh, a resync).
+   */
+  const forcePreviews = useRef<true | Set<string>>(true);
+  const live = useHostEvents(client, paneIds, polling, (event) => {
     // The event may report the final idle state after a fast turn. Its preview
-    // is still new, even though this agent is no longer working.
-    forcePreviews.current = true;
+    // is still new, even though this agent is no longer working. Only that
+    // pane's, though: one event forced every chat's transcript to be read.
+    const forced = forcePreviews.current;
+    if (event.paneId === null) forcePreviews.current = true;
+    else if (forced !== true) forced.add(event.paneId);
     kick.current();
   });
   const liveRef = useRef(live);
@@ -231,13 +239,20 @@ export function useWorkspaces(
   const lastSlashScan = useRef<number | null>(null);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
+  // After a long time away the connection may be dead under a suspended app;
+  // `wake` drops it in seconds rather than letting the first poll wait it out.
+  const awaySince = useRef<number | null>(null);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') awaySince.current ??= Date.now();
       if (state !== 'active') return;
+      const away = awaySince.current;
+      awaySince.current = null;
+      if (away !== null && Date.now() - away >= WAKE_AFTER_MS) void client?.wake();
       lastThemeCheck.current = null;
     });
     return () => subscription.remove();
-  }, []);
+  }, [client]);
 
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
@@ -285,7 +300,7 @@ export function useWorkspaces(
       const store = new TranscriptStore(client.transport);
       dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
-      forcePreviews.current = false;
+      forcePreviews.current = new Set();
       processTick.current += 1;
       // Not awaited, and one round at a time: a round is one SSH exec for all
       // the panes, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you)
@@ -310,7 +325,7 @@ export function useWorkspaces(
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(
+      const built = buildSummaries(
         workspaces,
         snapshot.agents,
         previews.current,
@@ -318,8 +333,12 @@ export function useWorkspaces(
         snapshot.panes,
         processNameMap(processNames.current),
         { tabs: snapshot.tabs, layouts: snapshot.layouts }
-      ));
-      setPaneIds(snapshot.agents.map((agent) => agent.paneId));
+      );
+      // A poll that saw nothing new keeps the rows it had, so neither the
+      // list nor its rows render again; one that changed a row changes that row.
+      setSummaries((previous) => keepUnchanged(previous, built, (summary) => summary.workspaceId));
+      const ids = snapshot.agents.map((agent) => agent.paneId);
+      setPaneIds((previous) => (previous.join('\n') === ids.join('\n') ? previous : ids));
       setError(null);
       setErrorCode(null);
       lastCode.current = null;
@@ -586,11 +605,12 @@ export async function refreshPreviews(
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
   tick: { current: number },
-  force = false,
+  force: boolean | ReadonlySet<string> = false,
   seqs: Map<string, number> = new Map()
 ): Promise<void> {
   tick.current += 1;
-  const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
+  const fullSweep = force === true || tick.current % 5 === 1; // includes the very first poll
+  const named = (paneId: string) => typeof force !== 'boolean' && force.has(paneId);
 
   const requests: PreviewRequest[] = [];
   /** The session each request was made for; the answer is filed under it. */
@@ -609,7 +629,7 @@ export async function refreshPreviews(
     const active = agent.agentStatus !== 'idle' && agent.agentStatus !== 'unknown';
     const last = seqs.get(agent.paneId);
     const moved = agent.stateChangeSeq !== null && last !== undefined && last !== agent.stateChangeSeq;
-    if (!fullSweep && !active && !moved && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
+    if (!fullSweep && !active && !moved && !named(agent.paneId) && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
 
     requests.push({
       workspaceId: agent.workspaceId,

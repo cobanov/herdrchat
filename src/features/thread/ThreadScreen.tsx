@@ -75,7 +75,21 @@ import { glass, minTouchTarget, radius, screenPadding, size, spacing, threadLayo
  * One conversation: a workspace's, or with `paneId` the one agent in that pane
  * of a workspace that holds several.
  */
-export default function ThreadScreen({ connectionId, workspaceId, paneId, title, onBack }: {
+/**
+ * Pictures for the composer, from the library or the clipboard, or why not.
+ * Out here because the React Compiler skips a component holding a try/catch
+ * with a conditional in it, and this screen renders the whole thread.
+ */
+async function gatherAttachments(source: 'library' | 'paste', room: number): Promise<{ ready: Attachment[] } | { error: string }> {
+  try {
+    const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
+    return { ready: added.filter((item): item is Attachment => item !== null) };
+  } catch (thrown) {
+    return { error: `Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}` };
+  }
+}
+
+export default function ThreadScreen({ connectionId, workspaceId, paneId, listedSig, title, onBack }: {
   /**
    * The host the chat is on. Absent (a notification, an older link): the
    * selected host.
@@ -84,6 +98,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   workspaceId: string;
   /** Absent: the workspace chat, every agent in it. */
   paneId?: string;
+  /** The session the chat list saw for this chat, which lets it open from its cache at once. */
+  listedSig?: string;
   title?: string;
   onBack?: () => void;
 }) {
@@ -121,15 +137,15 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const [controlsHeight, setControlsHeight] = useState<number>(threadLayout.initialControlsHeight);
   const [headerHeight, setHeaderHeight] = useState<number>(insets.top + threadLayout.initialHeaderHeight);
 
-  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId);
+  const thread = useThread(db, client, connection?.id ?? '', workspaceId, [], paneId, listedSig);
   /** Where this chat's read marker and draft are kept; the bare workspace id for the workspace chat. */
   const chat = chatKey({ workspaceId, paneId });
   const scroll = useThreadScroll(listRef, thread.historyVersion);
 
-  // The agents array is rebuilt by every status poll, so it cannot go in the
-  // dependency list below, the effect would re-run every couple of seconds and
-  // write to SQLite each time. A ref gives the callback the current value while
-  // staying stable itself.
+  // The agents change with every status change, so they cannot go in the
+  // dependency list below: the read marker belongs to focus and blur, not to
+  // an agent starting or stopping. A ref gives the callback the current value
+  // while staying stable itself.
   const agentsRef = useRef(thread.agents);
   useEffect(() => {
     agentsRef.current = thread.agents;
@@ -239,15 +255,10 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
     if (room <= 0) return;
     setPreparing(true);
     setAttachError(null);
-    try {
-      const added = source === 'library' ? await pickAttachments(room) : [await pasteAttachment()];
-      const ready = added.filter((item): item is Attachment => item !== null);
-      if (ready.length > 0) setAttachments((previous) => [...previous, ...ready].slice(0, MAX_ATTACHMENTS));
-    } catch (thrown) {
-      setAttachError(`Couldn't add the picture: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
-    } finally {
-      setPreparing(false);
-    }
+    const gathered = await gatherAttachments(source, room);
+    if ('error' in gathered) setAttachError(gathered.error);
+    else if (gathered.ready.length > 0) setAttachments((previous) => [...previous, ...gathered.ready].slice(0, MAX_ATTACHMENTS));
+    setPreparing(false);
   };
   // Straight to the library, unless the clipboard holds a picture to paste.
   const offerAttachment = async () => {

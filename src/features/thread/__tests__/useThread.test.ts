@@ -10,7 +10,7 @@ import type { FileProbe } from '@/lib/transcript/store';
 import type { ChatMessage } from '@/lib/transcript/message';
 import type { SessionMeta } from '@/lib/transcript/sessionMeta';
 import { HerdrError } from '@/lib/herdr/protocol';
-import { seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
+import { appendMessages, seedIfSession, seedMessages, rebind, replaceMessages, tailCursor, setTailCursor } from '@/state/threadCache';
 import { useThread } from '../useThread';
 
 let mockPolling = true;
@@ -35,6 +35,8 @@ let mockLiveReceipt = false;
 /** How many of the next tails fail right after opening, as a dropped stream does. */
 let mockTailFailures = 0;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
+/** Lines the live tail yields at once, a burst, each with its own end byte. */
+let mockLiveBurst: ChatMessage[] = [];
 async function* mockTail(path: string, _label: string | null, from: number, signal?: AbortSignal) {
   mockTailStarts.push({ path, from });
   mockTailSignals.push(signal);
@@ -43,6 +45,7 @@ async function* mockTail(path: string, _label: string | null, from: number, sign
     throw new Error('stream closed');
   }
   for (const meta of mockLiveMeta) yield { message: null, meta, consumedBytes: from };
+  for (const [index, message] of mockLiveBurst.entries()) yield { message, meta: null, consumedBytes: from + 100 * (index + 1) };
   if (mockLiveReceipt) {
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
     yield { message, meta: null, consumedBytes: 100 };
@@ -59,6 +62,7 @@ jest.mock('@/state/threadCache', () => ({
   rebind: jest.fn(async () => false),
   replaceMessages: jest.fn(async () => undefined),
   seedMessages: jest.fn(async () => []),
+  seedIfSession: jest.fn(async () => []),
   setTailCursor: jest.fn(async () => undefined),
   tailCursor: jest.fn(async () => null),
 }));
@@ -147,6 +151,7 @@ beforeEach(() => {
   mockTailSignals.length = 0;
   mockSessionMeta.mockReset().mockResolvedValue(null);
   mockLiveMeta = [];
+  mockLiveBurst = [];
   mockLiveReceipt = false;
   mockEmitReceipt = null;
 });
@@ -341,6 +346,59 @@ it('explains a Codex file lookup failure instead of leaving the spinner running'
   const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
   expect(result.current.loading).toBe(false);
   expect(result.current.error).toContain('Codex session is identified');
+  await unmount();
+});
+
+// A fresh agents array every poll gave every visible row new props, through
+// `primaryPane` and the callbacks built on it.
+it('keeps the same agents, and the same callbacks, when a poll sees nothing new', async () => {
+  mockLive = false; // no event stream: a poll every two seconds
+  const polls = jest.spyOn(client, 'snapshot').mockImplementation(async () => snapshot([{ ...agent }]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  const before = { agents: result.current.agents, send: result.current.send, retry: result.current.retry };
+  const seen = polls.mock.calls.length;
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
+  expect(polls.mock.calls.length).toBeGreaterThan(seen);
+  expect(result.current.agents).toBe(before.agents);
+  expect(result.current.send).toBe(before.send);
+  expect(result.current.retry).toBe(before.retry);
+  jest.spyOn(client, 'snapshot').mockImplementation(async () => snapshot([{ ...agent, agentStatus: 'working' }]));
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
+  expect(result.current.agents).not.toBe(before.agents);
+  await unmount();
+});
+
+// While an agent works, every poll reads its screen for the live preview; the
+// next poll asks for that screen with its snapshot, on one channel.
+it('asks for the screen the last poll read together with the next snapshot', async () => {
+  mockLive = false;
+  const working = snapshot([{ ...agent, agentStatus: 'working' }]);
+  const polls = jest.spyOn(client, 'pollSnapshot').mockImplementation(async (screen) => ({
+    snapshot: working, screen: screen === null ? null : 'Writing the summary\n⠋ Working (3s · esc to interrupt)',
+  }));
+  const reads = jest.spyOn(client, 'paneVisible').mockResolvedValue('Writing the summary\n⠋ Working (3s · esc to interrupt)');
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(polls.mock.calls[0]?.[0]).toBeNull();
+  expect(reads).toHaveBeenCalledTimes(1);
+  await act(async () => { await jest.advanceTimersByTimeAsync(2_500); });
+  expect(polls.mock.calls.at(-1)?.[0]).toEqual({ paneId: 'pane', lines: 30 });
+  expect(reads).toHaveBeenCalledTimes(1);
+  await unmount();
+});
+
+// A turn writes lines in bursts (a call, its result, the reply); each line
+// was a transaction, a cursor write and a rebuild.
+it('writes a burst of tail lines as one transaction and one cursor', async () => {
+  mockLiveBurst = ['call', 'result', 'reply'].map((id, index) => ({
+    id, role: 'assistant' as const, segments: [{ kind: 'text' as const, text: id }], timestamp: index, agentLabel: null, isSidechain: false,
+  }));
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(200); });
+  expect(jest.mocked(appendMessages)).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(appendMessages).mock.calls[0]?.[4].map((message) => message.id)).toEqual(['call', 'result', 'reply']);
+  expect(jest.mocked(setTailCursor).mock.calls.at(-1)?.[4]).toBe(300);
+  expect(result.current.messages.map((message) => message.id)).toEqual(['call', 'result', 'reply']);
   await unmount();
 });
 
@@ -820,6 +878,23 @@ it('uses the cache without a bulk read when the host file has not changed', asyn
   await unmount();
 });
 
+// A reply or two since the chat was last open re-read 300 lines and replaced
+// the cache; the tail streams just those lines from the cursor now. A big gap
+// is still one bounded window (#66).
+it.each([
+  ['a few lines past the cursor through the tail', 50_000 + 4_000, false],
+  ['a backlog past the catch-up limit as one window', 50_000 + 200_000, true],
+])('catches up %s', async (_case, size, window) => {
+  mockProbe = { kind: 'size', bytes: size };
+  jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
+  jest.mocked(tailCursor).mockResolvedValue(50_000);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(mockRecent.mock.calls.length > 0).toBe(window);
+  if (!window) expect(mockTailStarts).toEqual([{ path: '/test/session.jsonl', from: 50_000 - 321 }]);
+  await unmount();
+});
+
 it('keeps readable cache on a failed bulk read and never falls back to byte zero', async () => {
   mockProbe = { kind: 'size', bytes: 8_000_000 };
   jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
@@ -941,9 +1016,10 @@ it('continues the window on a tail restart, keeping older history and the list',
   await act(async () => { await result.current.loadOlder(); });
   expect(result.current.messages.map((message) => message.id)).toEqual(['z', 'a', 'b', 'c']);
 
-  // The stream ended; the next poll restarts it and re-reads a later window.
-  mockRecent.mockResolvedValue({ messages: [turn('b', 2), turn('c', 3), turn('d', 4)], consumedBytes: 60_000, startByte: 45_000 });
-  mockProbe = { kind: 'size', bytes: 60_000 };
+  // The stream ended; the next poll restarts it and re-reads a later window
+  // (a gap past the cursor too big to catch up through the tail).
+  mockRecent.mockResolvedValue({ messages: [turn('b', 2), turn('c', 3), turn('d', 4)], consumedBytes: 300_000, startByte: 285_000 });
+  mockProbe = { kind: 'size', bytes: 300_000 };
   const starts = mockTailStarts.length;
   await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
   expect(mockTailStarts.length).toBeGreaterThan(starts);
@@ -1258,6 +1334,34 @@ describe('one agent of a workspace', () => {
     expect(result.current.canSend).toBe(false);
     await act(async () => { await result.current.send('meant for the closed pane'); });
     expect(prompt).not.toHaveBeenCalled();
+    await unmount();
+  });
+});
+
+// A reopened chat waited for the host before it showed the messages the phone
+// already had. Opened from the list, it shows them at once when they are the
+// session the list saw, and leaves a cache of another session alone.
+describe('opening from the chat list', () => {
+  const cached = [{ id: 'kept', role: 'assistant' as const, segments: [{ kind: 'text' as const, text: 'kept' }], timestamp: 1, agentLabel: null, isSidechain: false }];
+  const slowHost = () => jest.spyOn(client, 'snapshot').mockImplementation(() => new Promise(() => undefined));
+
+  it('shows the cached messages before the first poll when they are the listed session', async () => {
+    slowHost();
+    jest.mocked(seedIfSession).mockResolvedValue(cached);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], undefined, 'session'));
+    expect(jest.mocked(seedIfSession)).toHaveBeenCalledWith(db, 'host', 'chat', 'session');
+    expect(result.current.messages.map((message) => message.id)).toEqual(['kept']);
+    expect(result.current.loading).toBe(false);
+    expect(rebind).not.toHaveBeenCalled();
+    await unmount();
+  });
+
+  it('waits for the host when the cache is another session', async () => {
+    slowHost();
+    jest.mocked(seedIfSession).mockResolvedValue([]);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', [], undefined, 'session'));
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.loading).toBe(true);
     await unmount();
   });
 });

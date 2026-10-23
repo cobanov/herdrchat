@@ -9,6 +9,7 @@ import {
   isConversationalAgent,
   agentName,
   needsAttention,
+  sameAgents,
   sendTarget,
   sessionSignature,
   toAgentStatus,
@@ -280,6 +281,13 @@ describe('session signature', () => {
     expect(['claude', 'codex', 'omp'].map((name) => isConversationalAgent(agent({ agent: name })))).toEqual([true, true, true]);
     expect(isConversationalAgent(agent({ agent: null }))).toBe(false);
     expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
+  });
+
+  it('tells a poll that saw nothing new from one that did', () => {
+    const a = agent({});
+    expect(sameAgents([a], [{ ...a }])).toBe(true);
+    expect(sameAgents([a], [agent({ agentStatus: 'working' })])).toBe(false);
+    expect(sameAgents([a], [a, a])).toBe(false);
   });
 
   // A focused agent the app cannot read used to take a Claude chat's message.
