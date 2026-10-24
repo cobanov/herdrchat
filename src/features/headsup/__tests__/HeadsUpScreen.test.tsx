@@ -145,5 +145,8 @@ it('shows done items only when asked, and nothing needs you when all are done', 
   await fireEvent.press(screen.getByTestId('headsup-show-done'));
   expect(screen.getAllByTestId(/^headsup-item-/)).toHaveLength(5);
   expect(screen.getByText('✓ Check the March numbers with finance')).toBeTruthy();
+  // As the mod's pane: a closed failure is struck through, never ticked.
+  const failure = screen.getByTestId('headsup-item-demohu4x');
+  expect(failure).not.toHaveTextContent(/✓/);
   expect(screen.queryByTestId('headsup-done-demohu5n')).toBeNull();
 });

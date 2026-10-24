@@ -97,18 +97,25 @@ export function isStorePath(path: string): boolean {
  * `$2` (the version held, or `-`). Bounded like the theme's: `head -c` never
  * reads more than one byte past the cap, and a file past it is reported, not
  * sent.
+ *
+ * The file is read once, into a private copy that the version and the
+ * contents both come from, so a session writing it between the two can never
+ * pair one version with another version's contents.
  */
 export const HEADSUP_READ_SCRIPT = [
   'f=$1',
   `if [ ! -e "$f" ]; then echo ${HEADSUP_MISSING}; exit 0; fi`,
   `if [ ! -f "$f" ]; then echo ${HEADSUP_NOT_FILE}; exit 0; fi`,
   `if [ ! -r "$f" ]; then echo ${HEADSUP_UNREADABLE}; exit 0; fi`,
-  `v=$(head -c ${HEADSUP_MAX_BYTES + 1} "$f" | cksum)`,
+  'c=$(mktemp) || exit 1',
+  'trap "rm -f \\"$c\\"" EXIT',
+  `head -c ${HEADSUP_MAX_BYTES + 1} "$f" > "$c" || exit 1`,
+  'v=$(cksum < "$c")',
   'echo "$v"',
   'if [ "$v" = "$2" ]; then exit 0; fi',
   `if [ "\${v##* }" -gt ${HEADSUP_MAX_BYTES} ]; then echo ${HEADSUP_TOO_LARGE}; exit 0; fi`,
   `echo ${HEADSUP_BEGIN}`,
-  `head -c ${HEADSUP_MAX_BYTES} "$f"`,
+  'cat "$c"',
 ].join('\n');
 
 export function headsUpReadCommand(path: string, lastVersion: string | null): string {
@@ -162,7 +169,7 @@ export const HEADSUP_PART_NEXT_SCRIPT = 'printf %s "$2" >> "$1"';
  * file into place only while the store still has that version, and prints the
  * new one; otherwise removes it, prints the stale sentinel and changes nothing.
  * A `mv` within one folder replaces the file in one step, so no session ever
- * reads half of it.
+ * reads half of it. The version printed is that of the bytes moved.
  */
 export const HEADSUP_SWAP_SCRIPT = [
   'f=$1; t=$2',
@@ -170,10 +177,17 @@ export const HEADSUP_SWAP_SCRIPT = [
   `if [ ! -f "$f" ]; then rm -f "$t"; echo ${HEADSUP_STALE}; exit 0; fi`,
   `v=$(head -c ${HEADSUP_MAX_BYTES + 1} "$f" | cksum)`,
   `if [ "$v" != "$3" ]; then rm -f "$t"; echo ${HEADSUP_STALE}; exit 0; fi`,
+  // The version of the bytes moved into place, taken before the move: one
+  // taken after could be another writer's, which the app would then hold
+  // beside its own contents and later write over.
+  `n=$(head -c ${HEADSUP_MAX_BYTES + 1} "$t" | cksum)`,
   'mv -f "$t" "$f" || { rm -f "$t"; exit 1; }',
   `echo ${HEADSUP_WRITTEN}`,
-  `head -c ${HEADSUP_MAX_BYTES + 1} "$f" | cksum`,
+  'echo "$n"',
 ].join('\n');
+
+/** Removes a write's temp file (`$1`) after a piece failed to go. */
+export const HEADSUP_CLEANUP_SCRIPT = 'rm -f "$1"';
 
 /** UTF-8 bytes of one code point. */
 function codePointBytes(codePoint: number): number {
@@ -230,6 +244,13 @@ export function headsUpWriteCommands(path: string, version: string, json: string
     ...pieces.map((piece, index) => sh(index === 0 ? HEADSUP_PART_FIRST_SCRIPT : HEADSUP_PART_NEXT_SCRIPT, [temp, piece])),
     sh(HEADSUP_SWAP_SCRIPT, [path, temp, version]),
   ];
+}
+
+/** The command that removes a write's temp file, for a write whose pieces did not all go. */
+export function headsUpCleanupCommand(path: string, token: string): string {
+  if (!isStorePath(path)) throw new Error(`Not a Heads Up store: ${path}`);
+  if (!TOKEN.test(token)) throw new Error(`Not a token: ${token}`);
+  return sh(HEADSUP_CLEANUP_SCRIPT, [tempPath(path, token)]);
 }
 
 /** What the swap said: written with the new version, or stale. Null: anything else, a failed write. */

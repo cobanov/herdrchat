@@ -6,7 +6,7 @@ import { DEMO_SESSION_IDS, DEMO_WORKSPACES } from '../demo/fixtures';
 import { DEMO_HEADSUP_PATH, DEMO_HEADSUP_REPLY, DEMO_PHRASES } from '../demo/scenarios';
 import { displayText } from '../transcript/message';
 import { TranscriptStore } from '../transcript/store';
-import { HEADSUP_MAX_BYTES, HEADSUP_SWAP_SCRIPT } from '../headsup/command';
+import { HEADSUP_CLEANUP_SCRIPT, HEADSUP_MAX_BYTES, HEADSUP_PART_NEXT_SCRIPT, HEADSUP_SWAP_SCRIPT } from '../headsup/command';
 import {
   changeHeadsUp,
   detectHeadsUp,
@@ -90,7 +90,7 @@ describe('changeHeadsUp', () => {
     host.setUpHeadsUp('w2:p1');
     const store = await held(host);
     const result = await changeHeadsUp(host, store, resolveItem('demohu5n', 99), token);
-    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, changed: true });
     const after = JSON.parse(host.headsUpText()!) as { items: Record<string, unknown>[]; lastPrunedAt: number };
     expect(after.items.find((item) => item.id === 'demohu5n')).toMatchObject({ status: 'done', doneAt: 99 });
     expect(after.items.find((item) => item.id === 'demohu6r')).toMatchObject({ kind: 'reminder', status: 'open' });
@@ -133,7 +133,7 @@ describe('changeHeadsUp', () => {
     host.setUpHeadsUp('w2:p1');
     const store = await held(host);
     const exec = jest.spyOn(host, 'exec');
-    await expect(changeHeadsUp(host, store, resolveItem('gone', 1), token)).resolves.toEqual({ ok: true, held: store });
+    await expect(changeHeadsUp(host, store, resolveItem('gone', 1), token)).resolves.toEqual({ ok: true, changed: false, held: store });
     expect(exec).not.toHaveBeenCalled();
   });
 
@@ -149,6 +149,50 @@ describe('changeHeadsUp', () => {
     const throwing: HerdrTransport = { ...down, exec: async () => { throw new Error('boom'); } };
     await expect(detectHeadsUp(throwing)).resolves.toBeNull();
     await expect(readHeadsUp(throwing, DEMO_HEADSUP_PATH, null)).resolves.toBeNull();
+  });
+
+  it('says nothing changed when a fresh read finds the item already as asked', async () => {
+    const { host } = demo();
+    host.setUpHeadsUp('w2:p1');
+    const store = await held(host);
+    // The terminal replies first: the app's copy is now old.
+    const other = await changeHeadsUp(host, store, markReplied('demohu1q', 1), token);
+    expect(other).toMatchObject({ ok: true, changed: true });
+    const result = await changeHeadsUp(host, store, markReplied('demohu1q', 2), token);
+    expect(result).toMatchObject({ ok: true, changed: false });
+    expect(result.held?.file.items.find((item) => item.id === 'demohu1q')?.repliedAt).toBe(1);
+  });
+
+  it('fails, never throws, when given a path, version or token no host could take', async () => {
+    const { host } = demo();
+    host.setUpHeadsUp('w2:p1');
+    const store = await held(host);
+    await expect(readHeadsUp(host, '/etc/passwd', null)).resolves.toBeNull();
+    await expect(writeHeadsUp(host, store.path, 'not a version', { items: [] }, 'tok')).resolves.toBeNull();
+    await expect(writeHeadsUp(host, store.path, store.version, { items: [] }, 'bad token')).resolves.toBeNull();
+    await expect(changeHeadsUp(host, store, resolveItem('demohu5n', 1), () => 'bad token')).resolves.toMatchObject({ ok: false });
+  });
+
+  it('removes the temp file when a piece of a large write does not go', async () => {
+    const { host } = demo();
+    host.setUpHeadsUp('w2:p1');
+    const store = await held(host);
+    const sent: string[] = [];
+    let pieces = 0;
+    const flaky: HerdrTransport = {
+      exec: async (command, timeoutMs) => {
+        sent.push(command);
+        if (command.includes(HEADSUP_PART_NEXT_SCRIPT) && ++pieces === 1) return { ok: false, code: 'timeout', message: 'no' };
+        return host.exec(command, timeoutMs);
+      },
+      streamLines: (command, timeoutMs) => host.streamLines(command, timeoutMs),
+    };
+    const big = { items: Array.from({ length: 700 }, (_, index) => ({ id: `i${index}`, text: 'x'.repeat(200) })) };
+    await expect(writeHeadsUp(flaky, store.path, store.version, big, 'tok')).resolves.toBeNull();
+    await Promise.resolve();
+    expect(sent.at(-1)).toContain(HEADSUP_CLEANUP_SCRIPT);
+    expect(sent.at(-1)).toContain(`${store.path}.herdrchat-tok.tmp`);
+    expect(sent.some((command) => command.includes(HEADSUP_SWAP_SCRIPT.split('\n')[0]!))).toBe(false);
   });
 
   it('refuses to write a file past the cap', async () => {

@@ -88,8 +88,14 @@ export function HeadsUpRow({ entry, now, from, showHost, actions }: {
 
   const run = async (work: () => Promise<string | null>) => {
     setBusy(true);
-    const error = await work();
-    setBusy(false);
+    let error: string | null;
+    try {
+      error = await work();
+    } catch {
+      error = 'Something went wrong. Try again.';
+    } finally {
+      setBusy(false);
+    }
     if (error !== null) actions.onError(error);
     return error === null;
   };
@@ -108,7 +114,8 @@ export function HeadsUpRow({ entry, now, from, showHost, actions }: {
         weight={isOpen ? '600' : undefined}
         color={!isOpen ? 'secondary' : item.blocking ? 'attention' : 'label'}
         style={isOpen ? undefined : { textDecorationLine: 'line-through' }}>
-        {isOpen ? item.text : `✓ ${item.text}`}
+        {/* As the mod's pane: a done failure is struck through, never ticked. */}
+        {isOpen || item.kind === 'failure' ? item.text : `✓ ${item.text}`}
       </Text>
       <Text variant="caption" color="secondary">{meta}</Text>
       {isOpen && item.detail !== null && (

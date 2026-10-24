@@ -18,6 +18,7 @@ import {
   HEADSUP_UNREADABLE,
   HEADSUP_WRITE_CHUNK_BYTES,
   HEADSUP_WRITTEN,
+  headsUpCleanupCommand,
   headsUpDetectCommand,
   headsUpReadCommand,
   headsUpWriteCommands,
@@ -46,7 +47,7 @@ describe('the commands as strings', () => {
   it('read with the path and the held version as arguments, never in the script', () => {
     const command = headsUpReadCommand(STORE, '123 456');
     expect(command.endsWith(` sh '${STORE}' '123 456'`)).toBe(true);
-    expect(command).toContain(`head -c ${HEADSUP_MAX_BYTES + 1} "$f" | cksum`);
+    expect(command).toContain(`head -c ${HEADSUP_MAX_BYTES + 1} "$f" > "$c"`);
     // No version, or one that is not a cksum, is sent as one no host prints.
     expect(headsUpReadCommand(STORE, null).endsWith(` '${STORE}' '-'`)).toBe(true);
     expect(headsUpReadCommand(STORE, "1 2'; rm -rf ~").endsWith(` '${STORE}' '-'`)).toBe(true);
@@ -194,6 +195,52 @@ describe('the commands on a real shell', () => {
     expect(write(path, version, big, 'big')?.kind).toBe('written');
     expect(readFileSync(path, 'utf8')).toBe(big);
     expect(existsSync(`${path}.herdrchat-big.tmp`)).toBe(false);
+  });
+
+  /** A command on the host's PATH ahead of the real one (`withPath` puts ~/.local/bin first). */
+  const shim = (name: string, body: string) => {
+    const bin = join(home, '.local', 'bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const cksumOf = (text: string) => execFileSync('cksum', { input: text, encoding: 'utf8' }).trim();
+
+  it('prints the version of what it moved into place, even when a session writes right after the move', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'headsup_m-ffffffffffff.json');
+    writeFileSync(path, '{}');
+    const version = (read(path, null) as { version: string }).version;
+    // The real mv, then another writer straight after it.
+    shim('mv', `/bin/mv "$@" && printf %s '{"items":[{"id":"theirs"}]}' > "${path}"`);
+    const mine = '{"items":[{"id":"mine"}]}';
+    const written = write(path, version, mine);
+    expect(written).toEqual({ kind: 'written', version: cksumOf(mine) });
+    // So the next read sees the other writer's file as changed, and sends it.
+    expect(read(path, (written as { version: string }).version)).toMatchObject({ kind: 'present', text: '{"items":[{"id":"theirs"}]}' });
+  });
+
+  it('reads the file once: the version and the contents always match, and no copy is left', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'headsup_m-111111111111.json');
+    writeFileSync(path, '{"items":[]}');
+    const tmp = join(home, 'tmp');
+    mkdirSync(tmp);
+    // A session writes the store between the version and the contents.
+    shim('cksum', `/usr/bin/env -i PATH=/usr/bin:/bin cksum "$@"; printf %s '{"items":[{"id":"later"}]}' > "${path}"`);
+    const stdout = execFileSync('sh', ['-c', headsUpReadCommand(path, null)], { env: { ...env(), TMPDIR: tmp }, encoding: 'utf8' });
+    const result = parseHeadsUpRead(stdout, null);
+    expect(result).toEqual({ kind: 'present', version: cksumOf('{"items":[]}'), text: '{"items":[]}' });
+    expect(readdirSync(tmp)).toEqual([]);
+  });
+
+  it('removes a write’s temp file when its pieces did not all go', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'headsup_m-222222222222.json');
+    writeFileSync(path, '{}');
+    writeFileSync(`${path}.herdrchat-tok.tmp`, '{"part');
+    run(headsUpCleanupCommand(path, 'tok'));
+    expect(readdirSync(store())).toEqual(['headsup_m-222222222222.json']);
+    expect(() => headsUpCleanupCommand(path, 'a b')).toThrow();
   });
 
   it('reports a store that is gone, or past the cap, without sending it', () => {

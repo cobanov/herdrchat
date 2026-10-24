@@ -10,6 +10,7 @@ import { POLL_TIMEOUT_MS, SEND_TIMEOUT_MS } from '../herdr/timeouts';
 import type { HerdrTransport } from '../herdr/transport';
 import {
   HEADSUP_MAX_BYTES,
+  headsUpCleanupCommand,
   headsUpDetectCommand,
   headsUpReadCommand,
   headsUpWriteCommands,
@@ -46,7 +47,17 @@ export function headsUpReadDue(lastRead: number | null, now: number): boolean {
   return lastRead === null || now - lastRead >= HEADSUP_READ_INTERVAL_MS;
 }
 
-async function run(transport: HerdrTransport, command: string, timeoutMs: number): Promise<string | null> {
+/** A command, or null when its builder refused what it was given (a bad path, version or token). */
+function built<T>(build: () => T): T | null {
+  try {
+    return build();
+  } catch {
+    return null;
+  }
+}
+
+async function run(transport: HerdrTransport, command: string | null, timeoutMs: number): Promise<string | null> {
+  if (command === null) return null;
   try {
     const result = await transport.exec(command, timeoutMs);
     return result.ok && result.exitCode === 0 ? result.stdout : null;
@@ -63,7 +74,7 @@ export async function detectHeadsUp(transport: HerdrTransport): Promise<HeadsUpD
 
 /** The store, read against the version held. Null for a failed read. */
 export async function readHeadsUp(transport: HerdrTransport, path: string, lastVersion: string | null): Promise<HeadsUpRead | null> {
-  const stdout = await run(transport, headsUpReadCommand(path, lastVersion), POLL_TIMEOUT_MS);
+  const stdout = await run(transport, built(() => headsUpReadCommand(path, lastVersion)), POLL_TIMEOUT_MS);
   return stdout === null ? null : parseHeadsUpRead(stdout, lastVersion);
 }
 
@@ -77,10 +88,18 @@ export async function writeHeadsUp(
 ): Promise<HeadsUpWrite | null> {
   const json = serializeHeadsUp(raw);
   if (utf8Bytes(json) > HEADSUP_MAX_BYTES) return null;
+  const commands = built(() => headsUpWriteCommands(path, version, json, token));
+  if (commands === null) return null;
   let stdout: string | null = null;
-  for (const command of headsUpWriteCommands(path, version, json, token)) {
+  for (const command of commands) {
     stdout = await run(transport, command, SEND_TIMEOUT_MS);
-    if (stdout === null) return null;
+    if (stdout === null) {
+      // A piece that did not go leaves the temp file beside the store (the
+      // mod's glob never matches it). Removed on a best effort, not awaited:
+      // the host may be the reason the piece failed.
+      if (commands.length > 1) void run(transport, built(() => headsUpCleanupCommand(path, token)), POLL_TIMEOUT_MS);
+      return null;
+    }
   }
   return stdout === null ? null : parseHeadsUpWrite(stdout);
 }
@@ -93,15 +112,24 @@ export interface HeldStore {
 }
 
 export type ChangeResult =
-  /** Written, or nothing to write; `held` is the store as it now is. */
-  | { ok: true; held: HeldStore }
+  /**
+   * Written (`changed`), or nothing to write: the change found the item
+   * already as asked, or gone. `held` is the store as it now is.
+   */
+  | { ok: true; changed: boolean; held: HeldStore }
   /** Not written: the host could not be reached, or the file kept changing under it. */
   | { ok: false; held: HeldStore | null };
 
+/** How many tokens a write's temp file can have: ten base-36 characters. */
+export const HEADSUP_TOKEN_SPACE = 36 ** 10;
+
 /** A fresh temp-file token for one write. */
 export function writeToken(random: () => number = Math.random): string {
-  return Math.floor(random() * 36 ** 10).toString(36).padStart(10, '0');
+  return Math.floor(random() * HEADSUP_TOKEN_SPACE).toString(36).padStart(10, '0');
 }
+
+/** Writes a change tries: the first, and one more against a fresh read when a session wrote in between. */
+export const HEADSUP_WRITE_ATTEMPTS = 2;
 
 /**
  * Apply a change to the store, compare-and-swap: written against the version
@@ -117,16 +145,16 @@ export async function changeHeadsUp(
   token: () => string = writeToken
 ): Promise<ChangeResult> {
   let current = held;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < HEADSUP_WRITE_ATTEMPTS; attempt += 1) {
     const next = change(current.file.raw);
-    if (next === null) return { ok: true, held: current };
+    if (next === null) return { ok: true, changed: false, held: current };
     const written = await writeHeadsUp(transport, current.path, current.version, next, token());
     if (written === null) return { ok: false, held: current };
     if (written.kind === 'written') {
       const file = parseHeadsUpFile(serializeHeadsUp(next));
-      return file === null ? { ok: false, held: current } : { ok: true, held: { path: current.path, version: written.version, file } };
+      return file === null ? { ok: false, held: current } : { ok: true, changed: true, held: { path: current.path, version: written.version, file } };
     }
-    if (attempt === 1) break;
+    if (attempt === HEADSUP_WRITE_ATTEMPTS - 1) break;
     const fresh = await readHeadsUp(transport, current.path, null);
     if (fresh === null || fresh.kind !== 'present') return { ok: false, held: null };
     const file = parseHeadsUpFile(fresh.text);

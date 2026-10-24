@@ -1,5 +1,7 @@
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
+import { changeHeadsUp, readHeadsUp } from '@/lib/headsup/client';
+import { parseHeadsUpFile, markReplied, resolveItem } from '@/lib/headsup/items';
 import { checkHeadsUp, headsUpOf, resetHeadsUpSession } from '@/state/headsUp';
 import { goToHeadsUpChat, replyToHeadsUpItem, resolveHeadsUpItem } from '../actions';
 
@@ -38,6 +40,35 @@ it('takes the mark back off and says so when the reply does not go', async () =>
   jest.spyOn(mockClient, 'sendPrompt').mockRejectedValue(new Error('pane gone'));
   await expect(replyToHeadsUpItem('demo', item('demohu1q'), NOTES_CHAT, 'Yes')).resolves.toMatch(/didn't reach the notes session/);
   expect(item('demohu1q').repliedAt).toBeNull();
+});
+
+/** Someone else changes the item on the host (the terminal, Claude, another phone); the app still holds the old list. */
+async function elsewhere(host: DemoHost, change: Parameters<typeof changeHeadsUp>[2]) {
+  const read = await readHeadsUp(host, headsUpOf('demo').path!, null);
+  if (read?.kind !== 'present') throw new Error('no list');
+  const result = await changeHeadsUp(host, { path: headsUpOf('demo').path!, version: read.version, file: parseHeadsUpFile(read.text)! }, change);
+  expect(result).toMatchObject({ ok: true, changed: true });
+}
+
+it('sends nothing more when the item was replied to elsewhere since the list was read, and keeps that mark', async () => {
+  const { host, item } = await setUp();
+  const asked = item('demohu1q');
+  await elsewhere(host, markReplied('demohu1q', 42));
+  const send = jest.spyOn(mockClient, 'sendPrompt');
+  await expect(replyToHeadsUpItem('demo', asked, NOTES_CHAT, 'Yes')).resolves.toMatch(/Already answered/);
+  expect(send).not.toHaveBeenCalled();
+  // The row now shows it as replied, with the other side's time.
+  expect(item('demohu1q').repliedAt).toBe(42);
+});
+
+it('sends nothing when Claude resolved the item since the list was read', async () => {
+  const { host, item } = await setUp();
+  const asked = item('demohu1q');
+  await elsewhere(host, resolveItem('demohu1q', 42));
+  const send = jest.spyOn(mockClient, 'sendPrompt');
+  await expect(replyToHeadsUpItem('demo', asked, NOTES_CHAT, 'Yes')).resolves.toMatch(/Already answered/);
+  expect(send).not.toHaveBeenCalled();
+  expect(item('demohu1q').status).toBe('done');
 });
 
 it('sends nothing for an empty reply', async () => {

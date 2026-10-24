@@ -22,6 +22,7 @@ import { THEME_FILE } from '../theme/schema';
 import {
   HEADSUP_AT,
   HEADSUP_BEGIN,
+  HEADSUP_CLEANUP_SCRIPT,
   HEADSUP_DETECT_SCRIPT,
   HEADSUP_MISSING,
   HEADSUP_NONE,
@@ -642,6 +643,10 @@ export class DemoHost implements HerdrTransport {
     if (script === HEADSUP_PART_FIRST_SCRIPT || script === HEADSUP_PART_NEXT_SCRIPT) {
       const [temp = '', piece = ''] = args;
       this.headsUpTemps.set(temp, (script === HEADSUP_PART_NEXT_SCRIPT ? this.headsUpTemps.get(temp) ?? '' : '') + piece);
+      return silent();
+    }
+    if (script === HEADSUP_CLEANUP_SCRIPT) {
+      this.headsUpTemps.delete(args[0] ?? '');
       return silent();
     }
     if (script === HEADSUP_SWAP_SCRIPT) {

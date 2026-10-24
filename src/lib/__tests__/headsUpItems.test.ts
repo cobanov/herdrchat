@@ -186,6 +186,11 @@ describe('which chat raised an item', () => {
     expect(chatItems(items, [])).toEqual([]);
   });
 
+  it('leaves out a question already replied to: it waits for Claude, and Answer would send it twice', () => {
+    const items = [item({ id: 'q' }), item({ id: 'replied', repliedAt: 9 })];
+    expect(chatItems(items, [SESSION]).map((one) => one.id)).toEqual(['q']);
+  });
+
   it('takes Claude agents that reported a session, and says whether each is alone in its workspace', () => {
     const agent = (paneId: string, overrides: Partial<AgentInfo>): AgentInfo => ({
       agent: 'claude', agentStatus: 'idle', cwd: '/x', foregroundCwd: null, focused: false, paneId, tabId: 't',
@@ -237,5 +242,15 @@ describe('changes', () => {
     expect(markReplied('a1', 1)({ items: [raw({ repliedAt: 3 })] })).toBeNull();
     expect(clearReplied('a1')(file())).toBeNull();
     expect(resolveItem('a1', 1)({ items: 'not a list' })).toBeNull();
+  });
+
+  it('marks an item whose repliedAt the mod left as null', () => {
+    expect((markReplied('a1', 4)({ items: [raw({ repliedAt: null })] })?.items as Record<string, unknown>[])[0]).toMatchObject({ repliedAt: 4 });
+  });
+
+  it('takes back only its own mark when asked to, never one made elsewhere', () => {
+    const replied = markReplied('a1', 50)(file())!;
+    expect(clearReplied('a1', 49)(replied)).toBeNull();
+    expect(clearReplied('a1', 50)(replied)).toEqual(file());
   });
 });

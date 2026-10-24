@@ -62,6 +62,45 @@ describe('checkHeadsUp', () => {
     expect(useHeadsUp.getState().byConnection.demo).toBeUndefined();
   });
 
+  it('looks for the store when a pull asks during a check that does not look', async () => {
+    const { host } = demo();
+    await checkHeadsUp('demo', host, { now: T0 });
+    host.setUpHeadsUp('w2:p1');
+    // The poll's check is out; a pull lands before it answers.
+    const poll = checkHeadsUp('demo', host, { now: T0 + 10_000 });
+    const pull = checkHeadsUp('demo', host, { now: T0 + 10_000, detect: true });
+    await Promise.all([poll, pull]);
+    expect(headsUpOf('demo').path).toBe(DEMO_HEADSUP_PATH);
+  });
+
+  it('drops a read that a write overtook, so a closed item never comes back', async () => {
+    const { host } = demo();
+    host.setUpHeadsUp('w2:p1');
+    await checkHeadsUp('demo', host, { now: T0 });
+    // A session writes; the poll's read sees that, but its answer is slow.
+    host.touchHeadsUp();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let holding = true;
+    const slow = {
+      exec: async (command: string, timeoutMs: number) => {
+        const result = await host.exec(command, timeoutMs);
+        if (holding && command.includes('c=$(mktemp)')) {
+          holding = false;
+          await gate;
+        }
+        return result;
+      },
+      streamLines: host.streamLines.bind(host),
+    };
+    const check = checkHeadsUp('demo', slow, { now: T0 + 10_000 });
+    // Meanwhile the person closes the note: stale, read again, written.
+    await expect(changeHostHeadsUp('demo', host, resolveItem('demohu5n', 3))).resolves.toBe('changed');
+    release();
+    await check;
+    expect(headsUpOf('demo').file?.items.find((item) => item.id === 'demohu5n')?.status).toBe('done');
+  });
+
   it('never rejects, and keeps what it has, when the host is down', async () => {
     const { host } = demo();
     host.setUpHeadsUp('w2:p1');
@@ -79,12 +118,14 @@ describe('changeHostHeadsUp', () => {
     host.setUpHeadsUp('w2:p1');
     await checkHeadsUp('demo', host, { now: T0 });
 
-    await expect(changeHostHeadsUp('demo', host, resolveItem('demohu5n', T0))).resolves.toBe(true);
+    await expect(changeHostHeadsUp('demo', host, resolveItem('demohu5n', T0))).resolves.toBe('changed');
     expect(headsUpOf('demo').file?.items.find((item) => item.id === 'demohu5n')).toMatchObject({ status: 'done', doneAt: T0 });
 
-    await expect(changeHostHeadsUp('demo', host, markReplied('demohu1q', T0 + 1))).resolves.toBe(true);
+    await expect(changeHostHeadsUp('demo', host, markReplied('demohu1q', T0 + 1))).resolves.toBe('changed');
+    // A second mark finds it already replied: nothing written, and it says so.
+    await expect(changeHostHeadsUp('demo', host, markReplied('demohu1q', T0 + 2))).resolves.toBe('unchanged');
     expect(headsUpOf('demo').file?.items.find((item) => item.id === 'demohu1q')?.repliedAt).toBe(T0 + 1);
-    await expect(changeHostHeadsUp('demo', host, clearReplied('demohu1q'))).resolves.toBe(true);
+    await expect(changeHostHeadsUp('demo', host, clearReplied('demohu1q'))).resolves.toBe('changed');
     expect(headsUpOf('demo').file?.items.find((item) => item.id === 'demohu1q')?.repliedAt).toBeNull();
 
     const raw = headsUpOf('demo').file!.raw;
@@ -102,14 +143,14 @@ describe('changeHostHeadsUp', () => {
       changeHostHeadsUp('demo', host, resolveItem('demohu5n', 1)),
       changeHostHeadsUp('demo', host, resolveItem('demohu4x', 2)),
     ]);
-    expect(results).toEqual([true, true]);
+    expect(results).toEqual(['changed', 'changed']);
     const items = JSON.parse(host.headsUpText()!).items as { id: string; status: string }[];
     expect(items.filter((item) => item.status === 'done').map((item) => item.id).sort()).toEqual(['demohu4x', 'demohu5n']);
   });
 
   it('says it could not, on a host with no list', async () => {
     const { host } = demo();
-    await expect(changeHostHeadsUp('demo', host, resolveItem('x', 1))).resolves.toBe(false);
+    await expect(changeHostHeadsUp('demo', host, resolveItem('x', 1))).resolves.toBe('failed');
   });
 });
 

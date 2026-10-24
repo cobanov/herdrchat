@@ -240,10 +240,14 @@ export function chatFor<T extends HeadsUpChat>(item: Pick<HeadsUpItem, 'session'
   return chats.find((chat) => raisedBy(item, chat.sessionId)) ?? null;
 }
 
-/** The open questions and follow-ups a chat's own sessions raised, the most urgent first. */
+/**
+ * The open questions and follow-ups a chat's own sessions raised and nobody
+ * has replied to yet, the most urgent first. One already replied to waits
+ * for Claude, and the mod offers it no Answer either.
+ */
 export function chatItems(items: readonly HeadsUpItem[], sessionIds: readonly string[]): HeadsUpItem[] {
   return openItems(items)
-    .filter((item) => isAnswerable(item) && sessionIds.some((sessionId) => raisedBy(item, sessionId)))
+    .filter((item) => isAnswerable(item) && item.repliedAt === null && sessionIds.some((sessionId) => raisedBy(item, sessionId)))
     .sort(byUrgency);
 }
 
@@ -287,13 +291,20 @@ export function resolveItem(id: string, now: number): HeadsUpChange {
 
 /** A reply went to the session: the item stays open, waiting for Claude. */
 export function markReplied(id: string, now: number): HeadsUpChange {
-  return changeItem(id, (item) => (item.status === 'open' && item.repliedAt === undefined ? { ...item, repliedAt: now } : null));
+  return changeItem(id, (item) =>
+    item.status === 'open' && (item.repliedAt === undefined || item.repliedAt === null) ? { ...item, repliedAt: now } : null
+  );
 }
 
-/** "Reply again", or a reply that did not go: the item takes a reply once more. */
-export function clearReplied(id: string): HeadsUpChange {
+/**
+ * "Reply again", or a reply that did not go: the item takes a reply once
+ * more. With `onlyAt`, only a mark made at that time comes off, so undoing a
+ * reply that did not go never clears one the terminal or another phone made.
+ */
+export function clearReplied(id: string, onlyAt?: number): HeadsUpChange {
   return changeItem(id, (item) => {
     if (!('repliedAt' in item)) return null;
+    if (onlyAt !== undefined && item.repliedAt !== onlyAt) return null;
     const { repliedAt: _cleared, ...rest } = item;
     return rest;
   });

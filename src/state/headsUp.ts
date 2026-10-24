@@ -81,13 +81,17 @@ export function heldStore(entry: HostHeadsUp): HeldStore | null {
 
 // MARK: - Checking the host
 
-/** The check in flight per host, so two callers share one round-trip. */
-const inFlight = new Map<string, Promise<void>>();
+/** The check in flight per host, so two callers share one round-trip, and whether it looks for the store. */
+const inFlight = new Map<string, { check: Promise<void>; detects: boolean }>();
 
 /**
  * Look for the store when that is due (or `detect` asks), then read it when
  * there is one. Never rejects, and a failed step changes nothing: the next
  * poll tries again.
+ *
+ * A caller joins the check in flight, except one asking to look (a pull to
+ * refresh) while that check does not: it gets a check that looks, after the
+ * running one, so the ask is never dropped.
  */
 export function checkHeadsUp(
   connectionId: string,
@@ -95,14 +99,17 @@ export function checkHeadsUp(
   { detect = false, now = Date.now() }: { detect?: boolean; now?: number } = {}
 ): Promise<void> {
   const running = inFlight.get(connectionId);
-  if (running !== undefined) return running;
+  if (running !== undefined) {
+    if (!detect || running.detects) return running.check;
+    return running.check.then(() => checkHeadsUp(connectionId, transport, { detect: true, now }));
+  }
   const generation = generationOf(connectionId);
-  const check = runCheck(connectionId, transport, detect, now, generation)
+  const check: Promise<void> = runCheck(connectionId, transport, detect, now, generation)
     .catch(() => undefined)
     .finally(() => {
-      if (inFlight.get(connectionId) === check) inFlight.delete(connectionId);
+      if (inFlight.get(connectionId)?.check === check) inFlight.delete(connectionId);
     });
-  inFlight.set(connectionId, check);
+  inFlight.set(connectionId, { check, detects: detect });
   return check;
 }
 
@@ -126,8 +133,12 @@ async function runCheck(connectionId: string, transport: HerdrTransport, detect:
     entry = headsUpOf(connectionId);
   }
   const path = entry.path;
+  const startVersion = entry.version;
   if (path === null || !live()) return;
-  const read = await readHeadsUp(transport, path, entry.version);
+  const read = await readHeadsUp(transport, path, startVersion);
+  // A write that landed while the read was out holds a newer version than the
+  // file the read saw: what the read says is already old, and dropped.
+  const current = (held: HostHeadsUp) => held.path === path && held.version === startVersion;
   if (read === null || read.kind === 'unchanged') return;
   if (read.kind === 'missing') {
     // Gone (the mod removed, or its store moved): looked for again on the next poll.
@@ -135,31 +146,37 @@ async function runCheck(connectionId: string, transport: HerdrTransport, detect:
     return;
   }
   if (read.kind === 'unreadable') {
-    update((held) => (held.path === path ? { ...held, version: read.version, file: null } : held));
+    update((held) => (current(held) ? { ...held, version: read.version, file: null } : held));
     return;
   }
   const file = parseHeadsUpFile(read.text);
   // Not JSON (a write caught halfway): keep what was held and read it again next time.
   if (file === null) return;
-  update((held) => (held.path === path ? { ...held, version: read.version, file } : held));
+  update((held) => (current(held) ? { ...held, version: read.version, file } : held));
 }
 
 // MARK: - Changing it
 
+/**
+ * What a change to a host's store came to: `changed`, written by this call;
+ * `unchanged`, nothing to write (the item was already as asked, or gone);
+ * `failed`, not written, which the caller says.
+ */
+export type HostChange = 'changed' | 'unchanged' | 'failed';
+
 /** One change at a time per host, so two taps never write against the same version. */
-const writing = new Map<string, Promise<boolean>>();
+const writing = new Map<string, Promise<HostChange>>();
 
 /**
  * Apply a change to a host's store (`changeHeadsUp`: compare-and-swap, one
- * retry). True when it is done, or there was nothing to do; false when it
- * could not be written, which the caller says.
+ * retry), and hold the store as it then is.
  */
-export function changeHostHeadsUp(connectionId: string, transport: HerdrTransport, change: HeadsUpChange): Promise<boolean> {
-  const before = writing.get(connectionId) ?? Promise.resolve(true);
-  const next = before.catch(() => true).then(async () => {
+export function changeHostHeadsUp(connectionId: string, transport: HerdrTransport, change: HeadsUpChange): Promise<HostChange> {
+  const before = writing.get(connectionId) ?? Promise.resolve<HostChange>('unchanged');
+  const next = before.catch(() => 'failed' as const).then(async (): Promise<HostChange> => {
     const generation = generationOf(connectionId);
     const held = heldStore(headsUpOf(connectionId));
-    if (held === null) return false;
+    if (held === null) return 'failed';
     const result = await changeHeadsUp(transport, held, change);
     const after = result.held;
     if (after !== null && generationOf(connectionId) === generation) {
@@ -167,7 +184,7 @@ export function changeHostHeadsUp(connectionId: string, transport: HerdrTranspor
         entry.path === after.path ? { ...entry, version: after.version, file: after.file } : entry
       );
     }
-    return result.ok;
+    return !result.ok ? 'failed' : result.changed ? 'changed' : 'unchanged';
   });
   const tracked = next.finally(() => {
     if (writing.get(connectionId) === tracked) writing.delete(connectionId);
