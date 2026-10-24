@@ -10,6 +10,9 @@ import { scanSlashCatalogue } from '@/state/slashCommands';
 import { projectFoldersToScan, slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
+import { headsUpReadDue } from '@/lib/headsup/client';
+import { headsUpChats } from '@/lib/headsup/items';
+import { checkHeadsUp, setHeadsUpChats } from '@/state/headsUp';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { HerdrError } from '@/lib/herdr/protocol';
@@ -229,12 +232,20 @@ export function useWorkspaces(
    * or a pull, and the scan is the heaviest of these side tasks.
    */
   const lastSlashScan = useRef<number | null>(null);
+  /**
+   * When Heads Up was last read, the theme's way again (`headsUpReadDue`,
+   * every 10 s); the store itself keeps when it last looked for the mod
+   * (every ten minutes). A pull asks for both at once.
+   */
+  const lastHeadsUpRead = useRef<number | null>(null);
+  const detectHeadsUpNext = useRef(false);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       lastThemeCheck.current = null;
+      lastHeadsUpRead.current = null;
     });
     return () => subscription.remove();
   }, []);
@@ -346,6 +357,19 @@ export function useWorkspaces(
         // again on the cadence, not only on a thread's first open.
         void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: projectFoldersToScan(snapshot.agents) });
       }
+      // Heads Up, every host's (their lists add up): which chats can take a
+      // reply, and the list itself on its cadence. `checkHeadsUp` never
+      // rejects, and on a host without the mod it is one look every ten
+      // minutes and nothing else.
+      if (connectionId !== null) {
+        setHeadsUpChats(connectionId, headsUpChats(snapshot.agents));
+        if (headsUpReadDue(lastHeadsUpRead.current, now)) {
+          lastHeadsUpRead.current = now;
+          const detect = detectHeadsUpNext.current;
+          detectHeadsUpNext.current = false;
+          void checkHeadsUp(connectionId, client.transport, { detect, now });
+        }
+      }
       return false;
     } catch (thrown) {
       if (!alive.current) return true;
@@ -431,6 +455,8 @@ export function useWorkspaces(
       forcePreviews.current = true;
       lastThemeCheck.current = null;
       lastSlashScan.current = null;
+      lastHeadsUpRead.current = null;
+      detectHeadsUpNext.current = true;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),
