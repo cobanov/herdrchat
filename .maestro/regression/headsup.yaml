@@ -1,0 +1,188 @@
+# The Heads Up mod's list (~/.claude/plugins/store/headsup_*.json) on a host
+# that runs it. The Demo has no Heads Up at first, so the chats show no bar;
+# its agent sets it up when asked ("set up heads up", src/lib/demo/scenarios.ts),
+# and a pull to refresh looks for it at once. The bar counts the open items,
+# the screen groups them, ✓ and Close take an item off, a question from a
+# session that is not running here offers no Reply, a reply waits for Claude
+# until Reply again, Go opens the chat that asked, and that chat's own bar
+# (its own questions only) fills the composer with the reply's tag.
+# Open the screenshots: the blocking count and question in the attention colour.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+# A host without the mod: nothing at all.
+- assertNotVisible:
+    id: headsup-bar
+
+# The agent sets Heads Up up on the host.
+- runFlow:
+    file: _open-chat.yaml
+    env:
+      QUERY: notes
+      ROW: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- assertNotVisible:
+    id: headsup-chat-bar
+- tapOn:
+    id: composer-input
+- inputText: set up heads up
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: .*Heads Up is set up on this computer.*
+    timeout: 15000
+- tapOn:
+    id: thread-back
+
+# A pull looks for the mod at once (the poll looks every ten minutes).
+- scrollUntilVisible:
+    element:
+      id: chat-search
+    direction: UP
+- swipe:
+    start: 50%, 30%
+    end: 50%, 80%
+- extendedWaitUntil:
+    visible:
+      id: headsup-bar
+      text: '⚑ 1 blocking · 5 need you · 2 questions · 1 follow-up · 1 failure · 1 note'
+    timeout: 15000
+- takeScreenshot: headsup-bar-${APPEARANCE}
+
+# The list, grouped as the mod groups it.
+- tapOn:
+    id: headsup-bar
+- extendedWaitUntil:
+    visible:
+      id: headsup-group-question
+    timeout: 10000
+- assertVisible:
+    id: headsup-summary
+    text: '2 questions · 1 follow-up · 1 failure · 1 note'
+- assertVisible:
+    id: headsup-group-followup
+- assertVisible:
+    id: headsup-group-failure
+- assertVisible:
+    id: headsup-group-note
+# The notes chat's own question: Reply and Go. Billing's session is not
+# running here: no Reply and no Go, only ✓.
+- assertVisible:
+    id: headsup-reply-demohu1q
+- assertVisible:
+    id: headsup-go-demohu1q
+- assertNotVisible:
+    id: headsup-reply-demohu2q
+- assertNotVisible:
+    id: headsup-go-demohu2q
+- assertVisible:
+    id: headsup-unreachable-demohu2q
+- takeScreenshot: headsup-list-${APPEARANCE}
+
+# Reply from the list: the tagged reply goes to the notes chat, the item
+# waits for Claude, and Reply again takes the mark back off.
+- tapOn:
+    id: headsup-reply-demohu1q
+- tapOn:
+    id: headsup-reply-field-demohu1q
+- inputText: Keep it as a draft
+- tapOn:
+    id: headsup-send-demohu1q
+- extendedWaitUntil:
+    visible:
+      id: headsup-replied-demohu1q
+    timeout: 10000
+- assertNotVisible:
+    id: headsup-reply-demohu1q
+- tapOn:
+    id: headsup-reply-again-demohu1q
+- extendedWaitUntil:
+    visible:
+      id: headsup-reply-demohu1q
+    timeout: 10000
+- assertNotVisible:
+    id: headsup-replied-demohu1q
+
+# Go opens the chat that asked, while the list still holds billing's
+# question, a failure and a note: its bar shows only this chat's own
+# question and follow-up, the blocking question first, and Answer puts the
+# reply's tag, and nothing else, in the composer.
+- tapOn:
+    id: headsup-go-demohu1q
+- extendedWaitUntil:
+    visible:
+      id: headsup-chat-bar
+    timeout: 15000
+- assertVisible:
+    id: headsup-chat-item-demohu1q
+- assertVisible:
+    id: headsup-chat-item-demohu3f
+    below:
+      id: headsup-chat-item-demohu1q
+- assertNotVisible:
+    id: headsup-chat-item-demohu2q
+- assertNotVisible:
+    id: headsup-chat-item-demohu4x
+- assertNotVisible:
+    id: headsup-chat-item-demohu5n
+- tapOn:
+    id: headsup-answer-demohu1q
+- assertVisible:
+    id: composer-input
+    text: 'Re: "Publish the release notes, or keep them as a draft\?" \[demohu1q\]\s*'
+- takeScreenshot: headsup-chat-${APPEARANCE}
+# Leave the chat as it was.
+- tapOn:
+    id: composer-input
+- eraseText: 120
+- tapOn:
+    id: composer-hide-keyboard
+- tapOn:
+    id: thread-back
+
+# Back to the list from the chats' bar.
+- extendedWaitUntil:
+    visible:
+      id: headsup-bar
+    timeout: 10000
+- tapOn:
+    id: headsup-bar
+- extendedWaitUntil:
+    visible:
+      id: headsup-group-question
+    timeout: 10000
+
+# ✓ a note: it leaves the list and the counts drop.
+- scrollUntilVisible:
+    element:
+      id: headsup-done-demohu5n
+    direction: DOWN
+- tapOn:
+    id: headsup-done-demohu5n
+- extendedWaitUntil:
+    notVisible:
+      id: headsup-item-demohu5n
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: headsup-summary
+      text: '2 questions · 1 follow-up · 1 failure'
+    direction: UP
+# Close the failure.
+- scrollUntilVisible:
+    element:
+      id: headsup-close-demohu4x
+    direction: DOWN
+- tapOn:
+    id: headsup-close-demohu4x
+- extendedWaitUntil:
+    notVisible:
+      id: headsup-item-demohu4x
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: headsup-summary
+      text: '2 questions · 1 follow-up'
+    direction: UP

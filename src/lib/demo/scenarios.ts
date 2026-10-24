@@ -4,7 +4,8 @@
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
- * table, an agent restyling the app through the host's theme file, a
+ * table, an agent restyling the app through the host's theme file, the
+ * Heads Up mod's list appearing on the host, a
  * subagent handed the review (its files in
  * subagents.ts), a `!` line run in the agent's shell. The UI tests drive the
  * Demo with the phrases below, and anyone
@@ -20,6 +21,7 @@ export const DEMO_PHRASES = {
   trust: 'open a new folder',
   table: 'compare the options',
   theme: 'restyle the app',
+  headsUp: 'set up heads up',
   delegate: 'delegate the review',
 } as const;
 
@@ -233,6 +235,68 @@ export const DEMO_THEME_REPLY = [
   `Done. I wrote ~/.herdrchat/theme.json with a warm dusk accent and named it "${DEMO_THEME.name}".`,
   '',
   'The app picks it up the next time its chat list is on screen (it checks about every 10 seconds there), or right away from Settings > Appearance > Reload theme.',
+].join('\n');
+
+// MARK: - Heads Up
+
+/**
+ * Where the demo's Heads Up store is: Claude Code's plugin store, under the
+ * name the mod's plugin and marketplace give it.
+ */
+export const DEMO_HEADSUP_PATH = '/home/demo/.claude/plugins/store/headsup_heads-up-claude-mod-5d41402abc4b.json';
+
+/** The session the "billing" items come from: a Claude Code session no demo chat runs. */
+export const DEMO_HEADSUP_ELSEWHERE = '9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b';
+
+/**
+ * The list the demo's Heads Up holds once it is set up (`DEMO_PHRASES.headsUp`):
+ * one of each thing the mod logs, from the chat that set it up and from a
+ * "billing" session that is not running here. A blocking question and a
+ * follow-up from the chat itself, so its own bar shows them; a question with
+ * a detail from billing, which can be cleared but not answered from the phone;
+ * a failed tool call; a note. And one item of a kind this app does not know,
+ * plus a key it does not know, which it must leave as they are.
+ */
+export function demoHeadsUpStore(chat: { sessionId: string; folder: string }, now: number): Record<string, unknown> {
+  const minutes = 60_000;
+  const here = { session: chat.sessionId.slice(0, 8), sessionId: chat.sessionId, folder: chat.folder };
+  return {
+    items: [
+      {
+        id: 'demohu1q', kind: 'question', blocking: true, status: 'open', createdAt: now - 4 * minutes, ...here,
+        text: 'Publish the release notes, or keep them as a draft?',
+        detail: 'The summary is written and checked. Publishing pushes it to the site; a draft stays in notes/ for you to read first.',
+      },
+      {
+        id: 'demohu2q', kind: 'question', status: 'open', createdAt: now - 52 * minutes,
+        session: DEMO_HEADSUP_ELSEWHERE.slice(0, 8), sessionId: DEMO_HEADSUP_ELSEWHERE, folder: 'billing',
+        text: 'Round invoice totals to the cent or to the dollar?',
+        detail: 'The export rounds per line today, so a 40-line invoice can be off by up to 20 cents from the PDF.',
+      },
+      {
+        id: 'demohu3f', kind: 'followup', status: 'open', createdAt: now - 18 * minutes, ...here,
+        text: 'Tag the release on GitHub',
+        detail: "I can't push tags from this machine.",
+      },
+      {
+        id: 'demohu4x', kind: 'failure', status: 'open', createdAt: now - 31 * minutes, ...here,
+        fingerprint: 'Bash:npm test',
+        text: 'npm test failed: 2 tests in parser.test.ts',
+      },
+      {
+        id: 'demohu5n', kind: 'note', status: 'open', createdAt: now - 3 * 60 * minutes, ...here,
+        text: 'Check the March numbers with finance',
+      },
+      { id: 'demohu6r', kind: 'reminder', status: 'open', createdAt: now - 5 * minutes, ...here, text: 'A kind from a newer mod' },
+    ],
+    lastPrunedAt: now - 60 * minutes,
+  };
+}
+
+export const DEMO_HEADSUP_REPLY = [
+  'Done. Heads Up is set up on this computer: its list has a question I need answered before I go on, a follow-up for you, a failed test run and your note, plus a question from the billing session.',
+  '',
+  'Pull down on the chat list to have the app look for it now; it otherwise looks every ten minutes.',
 ].join('\n');
 
 // MARK: - Shell mode

@@ -7,6 +7,7 @@ import { deserializeThemeFile, serializeThemeFile } from '@/lib/theme/hostTheme'
 import { resolveHostTheme, type HostThemeFile, type ResolvedHostTheme } from '@/lib/theme/resolve';
 import { darkPalette, lightPalette } from '@/theme/tokens';
 import { useSlashCatalogues } from './slashCommands';
+import { useHeadsUp } from './headsUp';
 import { HOST_THEME_KEY_PREFIX, clearConnectionSettings, deleteSetting, hostThemeKey, loadHostThemeRows, setSetting } from './db';
 
 /**
@@ -126,8 +127,9 @@ export function mirrorHostThemes(db: SQLite.SQLiteDatabase): () => void {
 export async function clearHostSettings(db: SQLite.SQLiteDatabase, connectionId: string): Promise<void> {
   await clearConnectionSettings(db, connectionId);
   useHostTheme.getState().clear(connectionId);
-  // And its slash commands.
+  // And its slash commands, and its Heads Up list.
   useSlashCatalogues.getState().clear(connectionId);
+  useHeadsUp.getState().clear(connectionId);
 }
 
 // MARK: - Checking the host
