@@ -1,7 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { Platform } from 'react-native';
 
+import { isSplitDevice } from '@/components/AdaptiveColumns';
 import { openTerminal, terminalIdParam, type TerminalRouteParams } from '@/features/terminal/navigation';
 import TerminalScreen from '@/features/terminal/TerminalScreen';
 import { useConnections } from '@/state/connections';
@@ -11,7 +11,7 @@ import { useConnections } from '@/state/connections';
  * terminal row) or a chat (its header's Terminal). Keyed by the pane, so
  * another pane is another shell, never this one re-pointed.
  *
- * On iPad the terminal is the detail beside the chats (`openTerminal`), so a
+ * On iPad and an iPhone Duo the terminal is the detail beside the chats (`openTerminal`), so a
  * link here hands over to that, as `chat/[workspaceId]` does, rather than
  * opening a second shell above the root.
  */
@@ -19,7 +19,7 @@ export default function TerminalRoute() {
   const params = useLocalSearchParams<Partial<Record<keyof TerminalRouteParams, string>>>();
   const router = useRouter();
   const hydrated = useConnections((state) => state.hydrated);
-  const tablet = Platform.OS === 'ios' && Platform.isPad;
+  const tablet = isSplitDevice();
   const connectionId = params.connectionId ?? '';
   const paneId = params.paneId ?? '';
   const terminalId = terminalIdParam(params.terminalId);

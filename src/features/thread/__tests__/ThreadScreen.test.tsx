@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { View as MockView, type ViewProps } from 'react-native';
 
 import type { AgentsPane } from '@/lib/transcript/agentsPane';
+import { screenPadding } from '@/theme/tokens';
 import ThreadScreen from '../ThreadScreen';
 
 const mockReload = jest.fn(() => Promise.resolve());
@@ -19,9 +20,10 @@ jest.mock('react-native-reanimated', () => jest.requireActual('react-native-rean
 jest.mock('react-native-keyboard-controller', () => jest.requireActual('react-native-keyboard-controller/jest'));
 jest.mock('expo-router', () => ({ useRouter: () => ({}), useFocusEffect: jest.fn() }));
 jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => ({}) }));
+let mockInsets = { top: 59, bottom: 34, left: 0, right: 0 };
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: (props: ViewProps) => <MockView {...props} />,
-  useSafeAreaInsets: () => ({ top: 59, bottom: 34, left: 0, right: 0 }),
+  useSafeAreaInsets: () => mockInsets,
 }));
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: jest.requireActual('@/theme/tokens').darkPalette, reduceMotion: true }),
@@ -201,6 +203,21 @@ it('lets the conversation pull the keyboard down, and keeps clearance for the co
   jest.mocked(keyboard.useKeyboardState).mockImplementation(((select: (state: { height: number }) => unknown) => select({ height: 55 })) as never);
   await screen.rerender(<ThreadScreen workspaceId="w1" title="Chat" />);
   expect(lastList().ListFooterComponent.props.style.paddingBottom).toBe(100 - 22 + 16);
+});
+
+// On an iPhone Duo built against iOS 27.1 the status bar and the tab bar stand
+// in a strip on the right edge. The header cleared it, but the messages and
+// the composer ran under it and the composer met the tab bar.
+it('keeps the messages and the composer out of a side strip, as the header does', async () => {
+  mockLoading = false;
+  mockInsets = { top: 24, bottom: 21, left: 0, right: 100 };
+  const screen = await render(<ThreadScreen workspaceId="w1" title="Chat" />);
+  const style = (mockList.mock.lastCall?.[0] as unknown as { contentContainerStyle: Record<string, number> }).contentContainerStyle;
+  expect(style).toEqual(expect.objectContaining({ paddingLeft: screenPadding, paddingRight: screenPadding + 100 }));
+  expect(screen.getByTestId('thread-controls')).toHaveStyle({ paddingLeft: screenPadding, paddingRight: screenPadding + 100 });
+  // The jump-to-latest arrow sat in the strip, half under the Chats button.
+  expect(screen.getByTestId('jump-to-bottom-strip')).toHaveStyle({ left: 0, right: 100 });
+  mockInsets = { top: 59, bottom: 34, left: 0, right: 0 };
 });
 
 // A chat is titled by its session, as its row is. What the host says now wins

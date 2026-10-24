@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Platform } from 'react-native';
+
+import { isSplitDevice } from '@/components/AdaptiveColumns';
 import { useChatSelection } from '@/state/chatSelection';
 
 /**
@@ -19,8 +20,9 @@ export function returnToChats() {
 
 /**
  * Opens a chat: the workspace's, or with `paneId` the one agent in that pane.
- * iPad selects a detail inside Chats, even in a narrow multitasking window,
- * in place of whatever detail was there (another chat, or a pane's terminal).
+ * iPad and an iPhone Duo select a detail inside Chats, even in a narrow
+ * multitasking window or on the folded Duo, in place of whatever detail was
+ * there (another chat, or a pane's terminal).
  *
  * Either way the chats come to the top first. A phone pushing the chat while a
  * sheet was open put it UNDER the sheet (react-native-screens places a push
@@ -36,7 +38,7 @@ export function openChat(connectionId: string, workspaceId: string, title?: stri
   const params = {
     connectionId, workspaceId, title: title ?? '', ...(paneId ? { paneId } : {}), ...(sig ? { sig } : {}),
   };
-  if (Platform.OS === 'ios' && Platform.isPad) {
+  if (isSplitDevice()) {
     // Replacing a sheet or legacy deep-link screen with another root would
     // leave two in history, so the selection changes under the root instead.
     useChatSelection.getState().select(params);

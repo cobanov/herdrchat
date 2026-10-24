@@ -30,6 +30,8 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: { systemBackground: '#000', separator: '#333' } }),
 }));
+// Each column is a safe-area provider; the real one waits for native insets.
+jest.mock('react-native-safe-area-context', () => jest.requireActual<{ default: object }>('react-native-safe-area-context/jest/mock').default);
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
   // Two saved hosts: every one's chats and terminals are in the one list.

@@ -1,21 +1,19 @@
-import { Platform } from 'react-native';
-
-import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
+import { AdaptiveColumns, useSplitLayout } from '@/components/AdaptiveColumns';
 import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import ChatsList from '@/features/chats/ChatsList';
+import { useShownDetail } from '@/features/chats/useShownDetail';
 import { usePendingPaneOpen } from '@/features/spaces/usePendingPaneOpen';
 import { terminalBackControl } from '@/features/terminal/backControl';
 import TerminalScreen from '@/features/terminal/TerminalScreen';
 import ThreadScreen from '@/features/thread/ThreadScreen';
 import { useWelcomeGate } from '@/features/welcome/useWelcomeGate';
-import { useSelectedConnection } from '@/state/connections';
 import { chatOf, terminalOf, useChatSelection } from '@/state/chatSelection';
-import { useOtherHosts } from '@/features/chats/useHostChats';
 
 /**
- * The app's root: the chats, and on iPad the open detail beside them, a
- * conversation or a pane's terminal.
+ * The app's root: the chats, and on iPad or an iPhone Duo the open detail
+ * beside them, a conversation or a pane's terminal; in their place when the
+ * window is narrow or the Duo is folded.
  *
  * The first tab, beside Computers. Hosts and Settings are presented
  * above it from its header, and it is the screen the app opens on, which is
@@ -25,16 +23,9 @@ export default function ChatsScreen() {
   useWelcomeGate();
   // A pane picked in the phone's layout sheet, opened on this screen's next focus.
   usePendingPaneOpen();
-  const wide = useTabletLayout();
-  const connection = useSelectedConnection();
-  const detail = useChatSelection((state) => state.detail);
+  const wide = useSplitLayout();
   const select = useChatSelection((state) => state.select);
-  // Workspace ids are only unique on their host. Never carry a selection onto
-  // a list that does not hold its host: one on any listed host stays.
-  const others = useOtherHosts(connection?.id ?? null);
-  const listed = connection !== null && detail !== null &&
-    (detail.connectionId === connection.id || others.some((other) => other.id === detail.connectionId));
-  const shown = Platform.OS === 'ios' && Platform.isPad && listed ? detail : null;
+  const shown = useShownDetail();
   const chat = chatOf(shown);
   const terminal = terminalOf(shown);
   const selected = chat?.workspaceId;

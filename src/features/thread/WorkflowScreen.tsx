@@ -101,7 +101,9 @@ export default function WorkflowScreen({
             alignSelf: 'center',
             paddingTop: headerHeight + spacing.sm,
             paddingBottom: insets.bottom + spacing.xl,
-            paddingHorizontal: screenPadding,
+            // Edge-to-edge: the sides are this list's to clear (an iPhone Duo's side strip).
+            paddingLeft: screenPadding + insets.left,
+            paddingRight: screenPadding + insets.right,
             gap: spacing.xl,
           }}>
           {run.summary !== null && (

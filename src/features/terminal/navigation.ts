@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { Platform } from 'react-native';
 
+import { isSplitDevice } from '@/components/AdaptiveColumns';
 import type { TerminalPaneKind } from '@/lib/terminal/command';
 import { chatSelectionOf, terminalOf, useChatSelection } from '@/state/chatSelection';
 
@@ -18,7 +18,8 @@ export interface TerminalRouteParams {
 
 /**
  * Opens a pane's terminal. On a phone it is pushed over what opened it: a
- * chat, or the chats. On iPad it is the detail beside the chats, as a chat is
+ * chat, or the chats. On iPad and an iPhone Duo (`isSplitDevice`) it is the
+ * detail beside the chats, as a chat is
  * (`openChat`), even in a narrow window: it replaces whatever detail was open,
  * and remembers the chat it replaced so its Back brings that chat back. A
  * terminal that replaces a terminal (its own row tapped again, or another
@@ -27,7 +28,7 @@ export interface TerminalRouteParams {
  * from the store here, so a caller (a row, a chat's header) need not know.
  */
 export function openTerminal(params: TerminalRouteParams) {
-  if (Platform.OS === 'ios' && Platform.isPad) {
+  if (isSplitDevice()) {
     const selection = useChatSelection.getState();
     selection.showTerminal({
       connectionId: params.connectionId,

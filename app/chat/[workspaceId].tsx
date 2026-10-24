@@ -1,8 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { Platform } from 'react-native';
 
-import { AdaptiveColumns } from '@/components/AdaptiveColumns';
+import { AdaptiveColumns, isSplitDevice } from '@/components/AdaptiveColumns';
 import ThreadScreen from '@/features/thread/ThreadScreen';
 import { openChat } from '@/features/chats/navigation';
 import { useConnections, useSelectedConnection } from '@/state/connections';
@@ -17,7 +16,7 @@ export default function ThreadRoute() {
   const selected = useSelectedConnection();
   const connectionId = linked !== undefined && linked !== '' ? linked : selected?.id ?? '';
   const hydrated = useConnections((state) => state.hydrated);
-  const tablet = Platform.OS === 'ios' && Platform.isPad;
+  const tablet = isSplitDevice();
   // Keep existing notification/deep-link URLs valid without opening a second
   // tablet navigation shell above the root chats.
   useFocusEffect(useCallback(() => {
