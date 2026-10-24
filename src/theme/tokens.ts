@@ -469,6 +469,28 @@ export const connecting = {
 } as const;
 
 /**
+ * The chat list's Claude usage footer. `staleAfterMs`: how old a capture may
+ * be before the footer says when it was taken ("as of 2:14 PM"); Claude saves
+ * one only while a session's status line redraws, so older means no session
+ * has run since. `clockTickMs`: how often the reset labels are redrawn
+ * against the clock, so a window that has reset leaves without a new read.
+ * `lowPercent`: at or below this much left, the bar turns to the attention
+ * colour. `barHeight`: the bar's thickness.
+ */
+export const usageFooter = {
+  /**
+   * How often the footer reads the usage file while it is on screen. Claude
+   * rewrites the file at every status line redraw, so the list's own poll (30 s
+   * while the host's events are live) left the footer half a minute behind.
+   */
+  liveReadMs: 5_000,
+  staleAfterMs: 10 * 60_000,
+  clockTickMs: 30_000,
+  lowPercent: 10,
+  barHeight: 4,
+} as const;
+
+/**
  * The prompt a `!` command's block leads with, as a terminal draws one: it
  * says "this ran in a shell" before the command is read.
  */

@@ -19,6 +19,7 @@ import { projectDirName } from '../transcript/parser';
 import { HEREDOC_END } from '../theme/bootstrap';
 import { THEME_BEGIN, THEME_MISSING } from '../theme/hostTheme';
 import { THEME_FILE } from '../theme/schema';
+import { USAGE_BEGIN } from '../usage/usageClient';
 import {
   DEMO_PHRASES,
   DEMO_THEME_REPLY,
@@ -29,6 +30,7 @@ import {
   DEMO_WORKING_SCREEN,
   DEMO_GROK_WORKING_SCREEN,
   demoShellOutput,
+  demoUsageFile,
   TRUST_OPTIONS,
   trustScreen,
   effortPanelScreen,
@@ -522,6 +524,9 @@ export class DemoHost implements HerdrTransport {
       const unquoted = script[1]!.replaceAll(`'\\''`, `'`);
       const theme = this.themeFiles(unquoted);
       if (theme !== null) return theme;
+      // Claude usage (src/lib/usage/usageClient.ts). Only the read: the
+      // Demo shows usage without being set up, so it never installs.
+      if (unquoted.includes(`echo ${USAGE_BEGIN}`)) return out(`${USAGE_BEGIN}\n${demoUsageFile(this.now())}`);
       // The slash-command catalogue (src/lib/slashCommands/discover.ts).
       const commands = demoSlashScan(unquoted);
       if (commands !== null) return out(commands);

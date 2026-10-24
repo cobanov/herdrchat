@@ -273,6 +273,33 @@ export const DEMO_THEME_REPLY = [
   'The app picks it up the next time its chat list is on screen (it checks about every 10 seconds there), or right away from Settings > Appearance > Reload theme.',
 ].join('\n');
 
+// MARK: - Claude usage
+
+/**
+ * The demo's Claude plan usage, as the status line wrapper saves it
+ * (`src/lib/usage`): 62% of the week left and 80% of the five hours, each
+ * resetting a fixed time after `now` so the footer never shows a window past
+ * its reset, and captured just now so it carries no "as of".
+ */
+export const DEMO_USAGE = {
+  sevenDay: { usedPercentage: 38, resetsInSeconds: 3 * 24 * 60 * 60 + 5 * 60 * 60 },
+  fiveHour: { usedPercentage: 20, resetsInSeconds: 2 * 60 * 60 + 20 * 60 },
+} as const;
+
+export function demoUsageFile(nowMs: number): string {
+  const now = Math.floor(nowMs / 1000);
+  return `${JSON.stringify({
+    captured_at: now,
+    status: {
+      session_id: 'demo',
+      rate_limits: {
+        five_hour: { used_percentage: DEMO_USAGE.fiveHour.usedPercentage, resets_at: now + DEMO_USAGE.fiveHour.resetsInSeconds },
+        seven_day: { used_percentage: DEMO_USAGE.sevenDay.usedPercentage, resets_at: now + DEMO_USAGE.sevenDay.resetsInSeconds },
+      },
+    },
+  })}\n`;
+}
+
 // MARK: - Shell mode
 
 /**
