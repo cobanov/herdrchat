@@ -27,6 +27,9 @@ import {
   type Attachment,
 } from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
+import { HeadsUpChatBar } from '@/features/headsup/HeadsUpChatBar';
+import { useChatHeadsUp } from '@/features/headsup/useChatHeadsUp';
+import { answerDraft } from '@/lib/headsup/items';
 import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
 import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
@@ -205,6 +208,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+  /** The Heads Up mod's open questions and follow-ups from this chat's session, on a host that runs it. */
+  const headsUp = useChatHeadsUp(connection?.id ?? null, client?.transport ?? null, thread.agents);
   /**
    * The `/` palette: what the agent's own terminal offers for the same `/`,
    * for the agent the thread sends to (Claude's catalogue as read off this
@@ -715,6 +720,11 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   onKeys={(keys) => void thread.sendKeys(keys)}
                 />
               )}
+              <HeadsUpChatBar
+                items={headsUp.items}
+                onAnswer={(item) => setDraft(answerDraft(item))}
+                onMore={() => router.push({ pathname: '/headsup', params: { from: headsUp.sessionIds[0] ?? '' } })}
+              />
               <Composer
                 draft={draft}
                 onDraftChange={setDraft}

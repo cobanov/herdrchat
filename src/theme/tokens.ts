@@ -150,6 +150,11 @@ export const size = {
    */
   blockedBodyLines: 8,
   /**
+   * Heads Up items a chat's own bar lists above the composer before it says
+   * how many more there are: it shares the screen with the thread.
+   */
+  headsUpChatItems: 2,
+  /**
    * How many lines of a `!` command's output show before "Show all": more
    * than a tool's, since the person asked to see this, but `seq 1 200` still
    * folds rather than taking several screens.
