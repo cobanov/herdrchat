@@ -208,8 +208,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
-  /** The Heads Up mod's open questions and follow-ups from this chat's session, on a host that runs it. */
-  const headsUp = useChatHeadsUp(connection?.id ?? null, client?.transport ?? null, thread.agents);
+  /** The Heads Up mod's open questions and follow-ups from the session this chat sends to, on a host that runs it. */
+  const headsUp = useChatHeadsUp(connection?.id ?? null, client?.transport ?? null, thread.agents, thread.polling);
   /**
    * The `/` palette: what the agent's own terminal offers for the same `/`,
    * for the agent the thread sends to (Claude's catalogue as read off this
