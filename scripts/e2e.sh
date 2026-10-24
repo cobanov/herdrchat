@@ -36,7 +36,7 @@ flows_for() {
     .maestro/regression/*.yaml) echo "regression/$(basename "$1" .yaml)" ;;
     .maestro/*.yaml) basename "$1" .yaml ;;
     *__tests__/*|*.test.ts|*.test.tsx|*.md|relay/*|site/*|modules/*/android/*) ;;
-    src/features/thread/*|src/lib/thread*|src/lib/composer*|app/chat/*) echo "$THREAD_FLOWS" ;;
+    src/features/thread/*|src/lib/thread*|src/lib/composer*|app/chat/*) echo "$THREAD_FLOWS regression/headsup" ;;
     src/features/chats/*|"app/(tabs)/index.tsx") echo "regression/chat-list regression/list-modes regression/menu regression/multi-agent regression/headsup" ;;
     src/features/headsup/*|app/headsup.tsx) echo "regression/headsup" ;;
     src/features/newChat/*|app/new-chat.tsx|app/folder-picker.tsx) echo "regression/new-chat regression/folder-trust new-chat" ;;
