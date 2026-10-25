@@ -1,6 +1,6 @@
-import { agentKindLabel, agentsSummary, liveElapsed, matchingDelegation } from '../subagents/agentsBar';
+import { agentKindLabel, agentsMark, agentsSummary, liveElapsed, matchingDelegation } from '../subagents/agentsBar';
 import type { PlacedItem, ToolCall } from '../threadItems';
-import type { AgentsPane } from '../transcript/agentsPane';
+import type { AgentRow, AgentsPane } from '../transcript/agentsPane';
 
 const row = (kind: string, task: string, elapsedMs: number, tokens: number) => ({ state: 'running' as const, kind, task, elapsedMs, tokens });
 
@@ -29,8 +29,29 @@ describe('the agents bar', () => {
   it('counts the working rows only, and says done when none works', () => {
     const mixed = { rows: [{ ...pane.rows[1]!, state: 'done' as const }, pane.rows[4]!], hidden: 2 };
     expect(agentsSummary(mixed, readAt, readAt)).toBe('1 agent working · 45s');
-    const done = { rows: pane.rows.map((row) => ({ ...row, state: 'done' as const })), hidden: 3 };
+    const done = { rows: pane.rows.map((row) => ({ ...row, state: 'done' as const })), hidden: 0 };
     expect(agentsSummary(done, readAt, readAt)).toBe('5 agents done');
+    expect(agentsMark(done)).toBe('done');
+    expect(agentsMark(mixed)).toBe('running');
+  });
+
+  it('never calls a failed agent done', () => {
+    const failed = (row: AgentRow) => ({ ...row, state: 'failed' as const });
+    const done = (row: AgentRow) => ({ ...row, state: 'done' as const });
+    const one = { rows: [done(pane.rows[0]!), failed(pane.rows[1]!)], hidden: 0 };
+    expect(agentsSummary(one, readAt, readAt)).toBe('1 agent done · 1 failed');
+    expect(agentsMark(one)).toBe('failed');
+    const all = { rows: [failed(pane.rows[0]!), failed(pane.rows[1]!)], hidden: 0 };
+    expect(agentsSummary(all, readAt, readAt)).toBe('2 agents failed');
+    expect(agentsMark(all)).toBe('failed');
+    expect(agentsSummary({ ...one, hidden: 2 }, readAt, readAt)).toBe('1 agent done · 1 failed · 2 more in the terminal');
+    expect(agentsMark({ ...one, hidden: 2 })).toBe('failed');
+  });
+
+  it('claims nothing done while rows below the fold may still run', () => {
+    const done = { rows: pane.rows.map((row) => ({ ...row, state: 'done' as const })), hidden: 3 };
+    expect(agentsSummary(done, readAt, readAt)).toBe('5 agents · 3 more in the terminal');
+    expect(agentsMark(done)).toBe('unknown');
   });
 
   it('ticks a running row on from the read, and not a finished one', () => {

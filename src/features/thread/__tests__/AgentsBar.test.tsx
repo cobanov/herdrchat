@@ -56,10 +56,18 @@ describe('folded', () => {
     expect(screen.queryByTestId('agents-bar-rows')).toBeNull();
   });
 
-  it('says done when no agent works', async () => {
-    const done = { ...PANE, rows: PANE.rows.map((row) => ({ ...row, state: 'done' as const })) };
+  it('says done when every agent is, and none is below the fold', async () => {
+    const done = { hidden: 0, rows: PANE.rows.map((row) => ({ ...row, state: 'done' as const })) };
     const screen = await bar(done);
     expect(screen.getByTestId('agents-bar-summary')).toHaveTextContent('2 agents done');
+    expect(screen.getByTestId('agents-bar-mark-done')).toBeTruthy();
+  });
+
+  it('claims nothing done while agents below the fold may still run', async () => {
+    const done = { hidden: 1, rows: PANE.rows.map((row) => ({ ...row, state: 'done' as const })) };
+    const screen = await bar(done);
+    expect(screen.getByTestId('agents-bar-summary')).toHaveTextContent('2 agents · 1 more in the terminal');
+    expect(screen.getByTestId('agents-bar-mark-unknown')).toBeTruthy();
   });
 
   it('ticks on between reads', async () => {
@@ -123,7 +131,8 @@ describe('open', () => {
   it('marks a done row and a failed one', async () => {
     const mixed = { rows: [{ ...PANE.rows[0]!, state: 'done' as const }, { ...PANE.rows[1]!, state: 'failed' as const }], hidden: 0 };
     const screen = await bar(mixed);
-    expect(screen.getByTestId('agents-bar-summary')).toHaveTextContent('2 agents done');
+    expect(screen.getByTestId('agents-bar-summary')).toHaveTextContent('1 agent done · 1 failed');
+    expect(screen.getByTestId('agents-bar-mark-failed')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('agents-bar-toggle'));
     expect(screen.getByTestId('agents-row-0').props.accessibilityLabel).toContain(', done, 12s,');
     expect(screen.getByTestId('agents-row-1').props.accessibilityLabel).toContain(', failed, 2m 15s,');

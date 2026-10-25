@@ -7,7 +7,7 @@ import { subagentOpener } from '@/features/thread/SubagentCard';
 import { useClock } from '@/features/thread/useClock';
 import type { DelegationScope } from '@/features/thread/delegation';
 import { haptics } from '@/lib/haptics';
-import { agentKindLabel, agentsSummary, liveElapsed, matchingDelegation } from '@/lib/subagents/agentsBar';
+import { agentKindLabel, agentsMark, agentsSummary, liveElapsed, matchingDelegation } from '@/lib/subagents/agentsBar';
 import { formatDuration, formatTokens } from '@/lib/subagents/format';
 import type { PlacedItem } from '@/lib/threadItems';
 import type { AgentRow, AgentRowState, AgentsPane } from '@/lib/transcript/agentsPane';
@@ -50,7 +50,7 @@ export function AgentsBar({
   const toggle = useAgentsBar((store) => store.toggle);
   const now = useClock(agentsBar.tick);
   const summary = agentsSummary(pane, readAt, now);
-  const working = pane.rows.some((row) => row.state === 'running');
+  const mark = agentsMark(pane);
 
   return (
     <Glass testID="agents-bar" style={{ borderRadius: radius.lg, overflow: 'hidden', paddingHorizontal: spacing.md }}>
@@ -65,11 +65,13 @@ export function AgentsBar({
         accessibilityHint={open ? 'Hides the agents' : 'Shows each agent'}
         accessibilityState={{ expanded: open }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: minTouchTarget }}>
-        <View style={{ width: size.delegationGlyph, alignItems: 'center' }}>
-          {working ? (
+        <View testID={`agents-bar-mark-${mark}`} style={{ width: size.delegationGlyph, alignItems: 'center' }}>
+          {mark === 'running' ? (
             reduceMotion ? <RunningDot /> : <ActivityIndicator size="small" color={colors.tint} />
+          ) : mark === 'unknown' ? (
+            <RunningDot color={colors.tertiaryLabel} />
           ) : (
-            <StateMark state="done" />
+            <StateMark state={mark} />
           )}
         </View>
         <Text testID="agents-bar-summary" variant="footnote" weight="600" style={{ flex: 1 }} numberOfLines={1}>
@@ -188,7 +190,8 @@ function StateMark({ state }: { state: AgentRowState }) {
   );
 }
 
-function RunningDot() {
+/** A dot in the tint; dimmed, the folded bar's mark when it cannot tell whether agents still run. */
+function RunningDot({ color }: { color?: string }) {
   const { colors } = useTheme();
-  return <View style={{ width: agentsBar.dot, height: agentsBar.dot, borderRadius: radius.full, backgroundColor: colors.tint }} />;
+  return <View style={{ width: agentsBar.dot, height: agentsBar.dot, borderRadius: radius.full, backgroundColor: color ?? colors.tint }} />;
 }
