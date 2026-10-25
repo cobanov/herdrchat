@@ -230,7 +230,7 @@ describe('on the clock', () => {
     expect(useDelegationStates.getState().states[call.id]).toBeUndefined();
 
     // The result lands in the main transcript; nothing reports it to the store.
-    for (let step = 0; step < 4; step += 1) await advance(2_000);
+    for (let step = 0; step < 10; step += 1) await advance(2_000);
     expect(header().getByLabelText('done')).toBeOnTheScreen();
     expect(streams[0]?.aborted).toBe(true);
     expect(within(screen.getByTestId('subagent-messages')).getByText(/pinned on first contact/)).toBeOnTheScreen();

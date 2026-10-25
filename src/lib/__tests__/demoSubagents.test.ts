@@ -2,13 +2,15 @@ import { HerdrClient } from '../herdr/client';
 import { DemoHost } from '../demo/host';
 import { DEMO_SESSION_IDS, DEMO_WORKSPACES } from '../demo/fixtures';
 import { DEMO_PHRASES } from '../demo/scenarios';
-import { DELEGATE_DESCRIPTION, DELEGATE_RESULT, DEMO_LINKS, DEMO_REVIEW } from '../demo/subagents';
+import { delegateScreen, DELEGATE_DESCRIPTION, DELEGATE_RESULT, DELEGATE_WAITING, DEMO_FORK_TASK, DEMO_LINKS, DEMO_REVIEW } from '../demo/subagents';
 import { delegationFromLines } from '../subagents/delegationEnd';
 import { agentTranscriptPath, sessionDir, workflowJournalPath, workflowRunPath } from '../subagents/paths';
 import { SubagentReader } from '../subagents/reader';
 import { parseWorkflowJournal } from '../subagents/workflowRun';
 import { threadItems, type ThreadItem } from '../threadItems';
 import { TranscriptStore } from '../transcript/store';
+import { parseAgentsPane } from '../transcript/agentsPane';
+import { extractLivePreview } from '../transcript/livePreview';
 
 /** The notes chat (w2), where the Demo's subagent and workflow live. */
 async function notes(host: DemoHost) {
@@ -109,7 +111,7 @@ describe(`"${DEMO_PHRASES.delegate}"`, () => {
     await expect(reader.linesNaming(path, [started.call.id!], naming.signature)).resolves.toMatchObject({ kind: 'unchanged' });
 
     // Then its result lands, and the agent closes.
-    now += 2_500;
+    now += 15_000;
     expect(await length()).toBe(4);
     const { cards: done, placed } = await cards(store, path);
     expect(done.at(-1)!.delegation).toMatchObject({ state: 'done', result: DELEGATE_RESULT });
@@ -118,4 +120,35 @@ describe(`"${DEMO_PHRASES.delegate}"`, () => {
     expect(placed.at(-1)!.item.kind).toBe('agent');
     expect((await client.workspaces())[1]?.agentStatus).toBe('idle');
   });
+
+  // The agents bar's Demo: Claude Code's agents pane under the composer from
+  // the call until the result, with the agent reported working throughout.
+  it('draws the agents pane while its subagent runs, and none after', async () => {
+    let now = 1_000;
+    const host = new DemoHost(() => now);
+    const client = new HerdrClient(host);
+    const status = async () => (await client.workspaces())[1]?.agentStatus;
+
+    await client.sendPrompt('w2:p1', 'delegate the review');
+    expect(parseAgentsPane(await client.paneVisible('w2:p1', 40))).toBeNull();
+
+    now += 1_500 + 12_000;
+    const screen = await client.paneVisible('w2:p1', 40);
+    expect(await status()).toBe('working');
+    expect(parseAgentsPane(screen)).toMatchObject({
+      hidden: 1,
+      rows: [
+        { kind: 'general-purpose', task: DELEGATE_DESCRIPTION, elapsedMs: 12_000, state: 'running' },
+        { kind: 'fork', task: DEMO_FORK_TASK, elapsedMs: 135_000 },
+      ],
+    });
+    expect(extractLivePreview(screen)).toBe(DELEGATE_WAITING);
+    // Past an hour it writes all three units, as Claude Code does.
+    expect(parseAgentsPane(delegateScreen(4_381_000))?.rows[0]?.elapsedMs).toBe(4_381_000);
+
+    now += 5_500;
+    expect(await status()).toBe('idle');
+    expect(await client.paneVisible('w2:p1', 40)).toBe('');
+  });
 });
+

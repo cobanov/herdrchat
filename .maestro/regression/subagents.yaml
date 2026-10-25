@@ -9,8 +9,9 @@
 # could not tell it.
 #
 # "delegate the review" (src/lib/demo/scenarios.ts) starts a foreground
-# subagent that works for about five seconds: its call and meta at +1.5 s,
-# its transcript growing at +4 s, its result at +6.5 s.
+# subagent that works for about eighteen seconds: its call and meta at
+# +1.5 s, its transcript growing at +4 s, its result at +19 s
+# (DELEGATE_STEP_AT_MS in src/lib/demo/subagents.ts).
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -54,7 +55,7 @@ appId: dev.herdr.HerdrChat
 - extendedWaitUntil:
     visible:
       id: state-done
-    timeout: 20000
+    timeout: 30000
 - extendedWaitUntil:
     visible: .*pinned on first contact.*
     timeout: 15000

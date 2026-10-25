@@ -62,7 +62,7 @@ import {
   userLine,
   type DemoFixtures,
 } from './fixtures';
-import { delegateSteps, demoSubagentFiles } from './subagents';
+import { DELEGATE_STEP_AT_MS, delegateScreen, delegateSteps, demoSubagentFiles } from './subagents';
 import { DEMO_PROMPT_COMMANDS, demoSlashScan } from './slashCommands';
 
 /** The version the demo claims, so the client picks the agent-aware verbs. */
@@ -84,11 +84,6 @@ const SHELL_DELAY_MS = 1_000;
 /** How often the fake tail looks for newly appended lines. */
 const TAIL_POLL_MS = 200;
 
-/**
- * The beat between the delegate scenario's steps: the call, the subagent's
- * work, its result. Long enough that a UI test sees the card running.
- */
-const DELEGATE_STEP_MS = 2_500;
 
 function ok(result: unknown): ExecResult {
   return { ok: true, stdout: JSON.stringify({ id: 'demo', result }), stderr: '', exitCode: 0 };
@@ -305,6 +300,12 @@ export class DemoHost implements HerdrTransport {
    * delegate scenario's subagent writes to its own.
    */
   private readonly files = new Map<string, string>();
+
+  /**
+   * Panes drawing Claude Code's agents pane, from the delegate scenario's
+   * call until its result: epoch ms, the call's moment and the result's.
+   */
+  private readonly agentsPanes = new Map<string, { from: number; to: number }>();
 
   constructor(
     private readonly now: () => number = () => Date.now(),
@@ -777,6 +778,12 @@ export class DemoHost implements HerdrTransport {
       if (questions !== undefined) return out(questionScreen(questions.step, questions.answers));
       const cursor = this.trusting.get(paneId);
       if (cursor !== undefined) return out(trustScreen(cursor));
+      const agents = this.agentsPanes.get(paneId);
+      if (agents !== undefined) {
+        const now = this.now();
+        if (now >= agents.to) this.agentsPanes.delete(paneId);
+        else if (now >= agents.from) return out(delegateScreen(now - agents.from));
+      }
       return out(this.statusOf(paneId) === 'blocked' ? DEMO_BLOCKED_SCREEN : '');
     }
 
@@ -789,6 +796,7 @@ export class DemoHost implements HerdrTransport {
       if (this.trusting.has(paneId)) return this.trustKeys(paneId, argv.slice(4));
       if (['Escape', 'escape', 'Esc', 'ctrl+c', 'C-c'].includes(choice)) {
         this.pending = this.pending.filter(reply => reply.paneId !== paneId);
+        this.agentsPanes.delete(paneId);
         this.statuses.set(paneId, 'idle');
         return silent();
       }
@@ -1007,8 +1015,10 @@ export class DemoHost implements HerdrTransport {
 
   /**
    * The agent hands the review to a subagent: its call and meta land, its own
-   * transcript grows a beat later, and a beat after that its result lands and
+   * transcript grows a beat later, and a while after that its result lands and
    * the agent closes. A foreground agent, so its card runs until the result.
+   * Until then the pane's screen shows Claude Code's agents pane under the
+   * composer (`delegateScreen`), with this agent and a second one.
    */
   private delegate(paneId: string): ExecResult {
     const dir = demoSessionDir(paneId);
@@ -1018,11 +1028,14 @@ export class DemoHost implements HerdrTransport {
     const transcript = agentTranscriptPath(dir, agentId);
     const meta = agentMetaPath(dir, agentId);
     this.statuses.set(paneId, 'working');
+    const calledAt = this.now() + REPLY_DELAY_MS;
+    // Its agents pane is drawn from the call until the result, the steps between.
+    this.agentsPanes.set(paneId, { from: calledAt, to: calledAt + (DELEGATE_STEP_AT_MS.at(-1) ?? 0) });
     delegateSteps(toolUseId, agentId).forEach((step, index) => {
       this.pending.push({
         paneId,
         prompt: '',
-        dueAt: this.now() + REPLY_DELAY_MS + index * DELEGATE_STEP_MS,
+        dueAt: calledAt + (DELEGATE_STEP_AT_MS[index] ?? 0),
         lines: (next, timestamp) => {
           const written = step(next, timestamp);
           if (written.meta !== null) this.files.set(meta, written.meta);
