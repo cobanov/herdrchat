@@ -167,6 +167,8 @@ function RootStack() {
             second sheet over it, and picking a host dismisses both. */}
         <Stack.Screen name="hosts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+        {/* "You should know", from the chats' bar: a sheet over them, like Settings. */}
+        <Stack.Screen name="you-should-know" options={{ presentation: 'modal' }} />
         <Stack.Screen name="server/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
         <Stack.Screen name="folder-picker" options={{ presentation: 'modal' }} />

@@ -27,6 +27,8 @@ import {
   type Attachment,
 } from '@/features/thread/attachments';
 import { BlockedBar } from '@/features/thread/BlockedBar';
+import { ChatNoteBar } from '@/features/youShouldKnow/ChatNoteBar';
+import { useChatNote } from '@/features/youShouldKnow/useChatNote';
 import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
 import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
 import { Composer } from '@/features/thread/Composer';
@@ -205,6 +207,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+  /** The note "You should know" is showing for the session this chat sends to, on a host whose Claude Code has it on. */
+  const note = useChatNote(connection?.id ?? null, client?.transport ?? null, thread.agents, thread.polling);
   /**
    * The `/` palette: what the agent's own terminal offers for the same `/`,
    * for the agent the thread sends to (Claude's catalogue as read off this
@@ -714,6 +718,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   pending={thread.blockedPending}
                   onKeys={(keys) => void thread.sendKeys(keys)}
                 />
+              )}
+              {connection !== null && note !== null && (
+                <ChatNoteBar connectionId={connection.id} note={note} onDraft={setDraft} />
               )}
               <Composer
                 draft={draft}
