@@ -26,6 +26,7 @@ import {
   pickAttachments,
   type Attachment,
 } from '@/features/thread/attachments';
+import { AgentsBar } from '@/features/thread/AgentsBar';
 import { BlockedBar } from '@/features/thread/BlockedBar';
 import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
 import { CommandSuggestions } from '@/features/thread/CommandSuggestions';
@@ -713,6 +714,16 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                   prompt={thread.blockedPrompt}
                   pending={thread.blockedPending}
                   onKeys={(keys) => void thread.sendKeys(keys)}
+                />
+              )}
+              {thread.agentsPane !== null && thread.agentsPaneAt !== null && (
+                <AgentsBar
+                  pane={thread.agentsPane}
+                  readAt={thread.agentsPaneAt}
+                  items={rows}
+                  scope={delegationScope}
+                  connectionId={connection?.id ?? ''}
+                  chat={chat}
                 />
               )}
               <Composer

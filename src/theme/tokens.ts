@@ -438,6 +438,18 @@ export const activity = {
 } as const;
 
 /**
+ * The agents bar above the composer, Claude Code's background agents: how
+ * often its elapsed times tick, the width the kind label takes so the tasks
+ * start in one column, and the dot that marks a running agent under Reduce
+ * Motion.
+ */
+export const agentsBar = {
+  tick: 1000,
+  kindWidth: 64,
+  dot: 6,
+} as const;
+
+/**
  * The chat list's skeleton while a host is reached: each row breathes between
  * full and `skeletonDim` over `skeletonCycle` ms, the next one `skeletonStagger`
  * ms later, so the list reads as waiting rather than frozen.

@@ -1261,3 +1261,64 @@ describe('one agent of a workspace', () => {
     await unmount();
   });
 });
+
+// Claude Code's agents pane under the composer outlives the turn that started
+// its agents: the thread reads it from the live preview's screen while the
+// agent works, and on while the pane is there with the agent idle.
+describe('the agents pane', () => {
+  const PANE = [
+    '✻ Waiting for 1 background agent to finish',
+    '❯ ',
+    '  ⏵⏵ auto mode on · ← for agents · ↓ to manage',
+    '',
+    '  ⏺ main',
+    '  ◯ general-purpose  Reviewing the notes                 12s · ↓ 12.4k tokens',
+    '  ↓ 2 more',
+  ].join('\n');
+
+  it('is read from the preview screen, kept while idle, and dropped with the pane', async () => {
+    mockLive = false;
+    const status = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([{ ...agent, agentStatus: 'working' }]));
+    const read = jest.spyOn(client, 'paneVisible').mockResolvedValue(PANE);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(read).toHaveBeenCalledWith('pane', 40);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(result.current.agentsPane).toMatchObject({ hidden: 2, rows: [{ kind: 'general-purpose', elapsedMs: 12_000 }] });
+    expect(result.current.agentsPaneAt).not.toBeNull();
+    expect(result.current.livePreview).toBeNull();
+
+    // Idle, the pane still drawn: read on.
+    status.mockResolvedValue(snapshot([agent]));
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(result.current.agentsPane?.rows).toHaveLength(1);
+
+    // The pane gone: dropped, and no more reads while idle.
+    read.mockResolvedValue('❯ ');
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(result.current.agentsPane).toBeNull();
+    expect(result.current.agentsPaneAt).toBeNull();
+    const reads = read.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(6_500); });
+    expect(read).toHaveBeenCalledTimes(reads);
+    await unmount();
+  });
+
+  it('is read off the first look at an idle chat, and only while it is there', async () => {
+    mockLive = false;
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    const read = jest.spyOn(client, 'paneVisible').mockResolvedValue(PANE);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    // One read: the look for a slash command's panel, which the pane is read off.
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(result.current.agentsPane?.hidden).toBe(2);
+    read.mockResolvedValue('❯ ');
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(result.current.agentsPane).toBeNull();
+    await act(async () => { await jest.advanceTimersByTimeAsync(6_500); });
+    expect(read).toHaveBeenCalledTimes(2);
+    await unmount();
+  });
+});

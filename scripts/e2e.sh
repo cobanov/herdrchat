@@ -23,9 +23,9 @@
 set -u
 cd "$(dirname "$0")/.."
 
-ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/grok regression/agy regression/history regression/multi-agent regression/welcome regression/subagents regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/notifications smoke new-chat tool-activity thread-header"
-BOTH_THEMES="smoke regression/chat-list regression/thread regression/tabs regression/terminal"
-THREAD_FLOWS="regression/thread regression/keyboard regression/composer-keys regression/history regression/subagents regression/slash-commands regression/shell-commands regression/omp regression/grok regression/agy tool-activity thread-header"
+ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/grok regression/agy regression/history regression/multi-agent regression/welcome regression/subagents regression/agents-pane regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/notifications smoke new-chat tool-activity thread-header"
+BOTH_THEMES="smoke regression/chat-list regression/thread regression/agents-pane regression/tabs regression/terminal"
+THREAD_FLOWS="regression/thread regression/keyboard regression/composer-keys regression/history regression/subagents regression/agents-pane regression/slash-commands regression/shell-commands regression/omp regression/grok regression/agy tool-activity thread-header"
 
 # The flows a changed file can break. Shared code (components, theme, state,
 # the Demo, src/lib, native iOS code, dependencies) can break any screen, so it
@@ -37,6 +37,7 @@ flows_for() {
     .maestro/*.yaml) basename "$1" .yaml ;;
     *__tests__/*|*.test.ts|*.test.tsx|*.md|relay/*|site/*|modules/*/android/*) ;;
     src/features/thread/*|src/lib/thread*|src/lib/composer*|app/chat/*) echo "$THREAD_FLOWS" ;;
+    src/state/agentsBar.ts) echo "regression/agents-pane" ;;
     src/features/chats/*|"app/(tabs)/index.tsx") echo "regression/chat-list regression/list-modes regression/menu regression/multi-agent" ;;
     src/features/newChat/*|app/new-chat.tsx|app/folder-picker.tsx) echo "regression/new-chat regression/folder-trust new-chat" ;;
     src/features/terminal/*|src/lib/terminal/*|modules/herdr-terminal/*|modules/herdr-shell-registry/*) echo "regression/terminal regression/tabs" ;;

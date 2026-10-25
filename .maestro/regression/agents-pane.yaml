@@ -1,0 +1,103 @@
+# Claude Code's agents pane, the background agents its terminal lists under
+# the prompt, drawn above the composer as a bar instead of being scraped into
+# the live preview as text (it read "◯ general-purpose  Removing …  1h 13m 1s ·
+# ↓ 286.9k tokens" under the reply, wrapped).
+#
+# "delegate the review" (src/lib/demo/scenarios.ts) runs a subagent for about
+# eighteen seconds (DELEGATE_STEP_AT_MS in src/lib/demo/subagents.ts), and
+# while it runs the Demo's screen (`delegateScreen`) carries the pane: the
+# subagent, a fork the scenario does not otherwise model, and one more.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+
+- tapOn:
+    id: composer-input
+- inputText: delegate the review
+- runFlow: _send.yaml
+
+# Folded: one line, by its label (the summary).
+- extendedWaitUntil:
+    visible:
+      id: agents-bar-toggle
+      text: '2 agents working · .*'
+    timeout: 15000
+- assertNotVisible:
+    id: agents-bar-rows
+
+# The live preview shows the reply above the spinner, never the pane's rows.
+- extendedWaitUntil:
+    visible:
+      id: live-preview
+      text: "I've handed the wording review to a subagent.*"
+    timeout: 10000
+- assertNotVisible:
+    id: live-preview
+    text: '(?s).*(general-purpose|tokens|more).*'
+
+# Open: a row each, the subagent's with its description, the fork's, and the
+# one the terminal folded away.
+- tapOn:
+    id: agents-bar-toggle
+- extendedWaitUntil:
+    visible:
+      id: agents-row-0
+      text: 'General: Review the release notes wording, running, .*12.4k tokens'
+    timeout: 5000
+- assertVisible:
+    id: agents-row-1
+    text: 'Fork: Checking the links in the notes, running, 2m .*48.1k tokens'
+- assertVisible:
+    id: agents-bar-more
+    text: 1 more in the terminal
+- takeScreenshot: agents-bar-${APPEARANCE}
+
+# Its time ticks between polls: read the row, then wait for it to differ.
+- copyTextFrom:
+    id: agents-row-0
+- evalScript: ${output.firstRead = maestro.copiedText}
+- assertTrue: ${output.firstRead.indexOf('General: Review the release notes wording, running, ') === 0}
+- extendedWaitUntil:
+    notVisible:
+      id: agents-row-0
+      text: ${output.firstRead}
+    timeout: 5000
+- copyTextFrom:
+    id: agents-row-0
+- assertTrue: ${maestro.copiedText !== output.firstRead && maestro.copiedText.indexOf('General: ') === 0}
+
+# The subagent's row opens its transcript, the screen its card's chevron opens.
+- tapOn:
+    id: agents-row-0
+- extendedWaitUntil:
+    visible:
+      id: subagent-title
+      text: Review the release notes wording
+    timeout: 10000
+- tapOn:
+    id: subagent-back
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 10000
+
+# When the delegation ends, so does the pane, and the bar goes with it.
+- extendedWaitUntil:
+    visible: 'Agent: Review the release notes wording, done.*'
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: agents-bar
+    timeout: 10000
