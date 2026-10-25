@@ -20,9 +20,26 @@ import { HEREDOC_END } from '../theme/bootstrap';
 import { THEME_BEGIN, THEME_MISSING } from '../theme/hostTheme';
 import { THEME_FILE } from '../theme/schema';
 import {
+  YSK_AT,
+  YSK_BEGIN,
+  YSK_CLEANUP_SCRIPT,
+  YSK_DETECT_SCRIPT,
+  YSK_MISSING,
+  YSK_NONE,
+  YSK_PART_FIRST_SCRIPT,
+  YSK_PART_NEXT_SCRIPT,
+  YSK_READ_SCRIPT,
+  YSK_STALE,
+  YSK_SWAP_SCRIPT,
+  YSK_WRITTEN,
+} from '../youShouldKnow/command';
+import {
   DEMO_PHRASES,
   DEMO_THEME_REPLY,
   DEMO_THEME_TEXT,
+  DEMO_YSK_PATH,
+  DEMO_YSK_REPLY,
+  demoYskStore,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
   demoShellOutput,
@@ -298,6 +315,16 @@ export class DemoHost implements HerdrTransport {
    * the theme scenario fill it, in memory only.
    */
   private readonly herdrchatDir = new Map<string, HostFile>();
+  /**
+   * The "You should know" store, once the scenario has a note to offer (null:
+   * the host's Claude Code has no "You should know", as every other flow
+   * expects), and the temp files the app's writes go through on their way to
+   * it.
+   */
+  private ysk: HostFile | null = null;
+  private readonly yskTemps = new Map<string, string>();
+  /** A test asked for the next write to find the file changed under it. */
+  private yskStaleNext = false;
 
   /**
    * Files that are no pane's transcript, by absolute path: subagent
@@ -332,7 +359,7 @@ export class DemoHost implements HerdrTransport {
   async exec(command: string, timeoutMs: number): Promise<ExecResult> {
     this.materialise();
     const body = withoutPath(command);
-    return this.filesystem(body) ?? this.herdr(parseArgv(body));
+    return this.yskCommand(body) ?? this.filesystem(body) ?? this.herdr(parseArgv(body));
   }
 
   /** Write any reply whose moment has arrived. Called before every read. */
@@ -601,6 +628,78 @@ export class DemoHost implements HerdrTransport {
     return null;
   }
 
+  // MARK: - You should know (src/lib/youShouldKnow)
+
+  /** The "You should know" commands: detect, read, a write's pieces and its swap. Null for any other. */
+  private yskCommand(body: string): ExecResult | null {
+    if (!body.startsWith("sh -c '")) return null;
+    const [, , script, , ...args] = parseArgv(body);
+    if (script === YSK_DETECT_SCRIPT) {
+      return out(this.ysk === null ? `${YSK_NONE}\n` : `${YSK_AT} ${DEMO_YSK_PATH}\n`);
+    }
+    if (script === YSK_READ_SCRIPT) {
+      const [path, last] = args;
+      if (this.ysk === null || path !== DEMO_YSK_PATH) return out(`${YSK_MISSING}\n`);
+      const { version, text } = this.ysk;
+      return out(last === version ? `${version}\n` : `${version}\n${YSK_BEGIN}\n${text}`);
+    }
+    if (script === YSK_PART_FIRST_SCRIPT || script === YSK_PART_NEXT_SCRIPT) {
+      const [temp = '', piece = ''] = args;
+      this.yskTemps.set(temp, (script === YSK_PART_NEXT_SCRIPT ? this.yskTemps.get(temp) ?? '' : '') + piece);
+      return silent();
+    }
+    if (script === YSK_CLEANUP_SCRIPT) {
+      this.yskTemps.delete(args[0] ?? '');
+      return silent();
+    }
+    if (script === YSK_SWAP_SCRIPT) {
+      const [path, temp = '', version, contents] = args;
+      if (contents !== undefined) this.yskTemps.set(temp, contents);
+      const text = this.yskTemps.get(temp);
+      this.yskTemps.delete(temp);
+      if (text === undefined) return exit(1);
+      if (this.yskStaleNext) {
+        this.yskStaleNext = false;
+        this.touchNotes();
+      }
+      if (this.ysk === null || path !== DEMO_YSK_PATH || version !== this.ysk.version) return out(`${YSK_STALE}\n`);
+      this.ysk = { text, version: demoVersion(text) };
+      return out(`${YSK_WRITTEN}\n${this.ysk.version}\n`);
+    }
+    return null;
+  }
+
+  /** Give the host the demo's notes, the first for `paneId`'s session. False for a pane with none. */
+  setUpNotes(paneId: string): boolean {
+    const sessionId = this.fixtures.sessionIds[paneId];
+    if (sessionId === undefined) return false;
+    const text = `${JSON.stringify(demoYskStore(sessionId, this.now()), null, 2)}\n`;
+    this.ysk = { text, version: demoVersion(text) };
+    return true;
+  }
+
+  /**
+   * The terminal writes the store, as it does at every render that changes
+   * anything: the same notes, written again, so its version moves under a
+   * write the app has prepared. For tests of the compare-and-swap.
+   */
+  touchNotes(): void {
+    if (this.ysk === null) return;
+    const text = `${JSON.stringify(JSON.parse(this.ysk.text))}\n`;
+    const changed = text === this.ysk.text ? `${text}\n` : text;
+    this.ysk = { text: changed, version: demoVersion(changed) };
+  }
+
+  /** The next write finds the file changed under it, once: the app must read again and retry. */
+  rejectNextNoteWrite(): void {
+    this.yskStaleNext = true;
+  }
+
+  /** The store's text, for tests: what the app's writes left there. Null without "You should know". */
+  yskText(): string | null {
+    return this.ysk?.text ?? null;
+  }
+
   private writeHostFile(name: string, text: string): void {
     this.herdrchatDir.set(name, { text, version: demoVersion(text) });
   }
@@ -821,6 +920,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
       if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
+      if (asked.includes(DEMO_PHRASES.note) && this.isClaude(paneId)) return this.offerNote(paneId);
       if (asked.includes(DEMO_PHRASES.delegate) && this.isClaude(paneId)) return this.delegate(paneId);
       this.statuses.set(paneId, 'working');
       this.pending.push({ paneId, prompt: text, dueAt: this.now() + REPLY_DELAY_MS });
@@ -1001,6 +1101,19 @@ export class DemoHost implements HerdrTransport {
           replyLine(DEMO_THEME_REPLY, next(), timestamp),
         ];
       },
+    });
+    return silent();
+  }
+
+  /** The agent's side agent has a note: the store appears on the host when its reply lands. */
+  private offerNote(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      effect: () => void this.setUpNotes(paneId),
+      lines: (next, timestamp) => [replyLine(DEMO_YSK_REPLY, next(), timestamp)],
     });
     return silent();
   }

@@ -5,6 +5,7 @@
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
  * table, an agent restyling the app through the host's theme file, a
+ * "You should know" note offered on the host, a
  * subagent handed the review (its files in
  * subagents.ts), a `!` line run in the agent's shell. The UI tests drive the
  * Demo with the phrases below, and anyone
@@ -20,6 +21,7 @@ export const DEMO_PHRASES = {
   trust: 'open a new folder',
   table: 'compare the options',
   theme: 'restyle the app',
+  note: 'show me a note',
   delegate: 'delegate the review',
 } as const;
 
@@ -233,6 +235,78 @@ export const DEMO_THEME_REPLY = [
   `Done. I wrote ~/.herdrchat/theme.json with a warm dusk accent and named it "${DEMO_THEME.name}".`,
   '',
   'The app picks it up the next time its chat list is on screen (it checks about every 10 seconds there), or right away from Settings > Appearance > Reload theme.',
+].join('\n');
+
+// MARK: - You should know
+
+/**
+ * Where the demo's "You should know" store is: Claude Code's plugin store,
+ * under the name the built-in plugin and its marketplace give it.
+ */
+export const DEMO_YSK_PATH = '/home/demo/.claude/plugins/store/cc-plugin-you-should-know_builtin-19776595df2c.json';
+
+/** The Claude session the second note is for: one no demo chat runs, as another session on the computer. */
+export const DEMO_YSK_ELSEWHERE = '9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b';
+
+/** The demo chat's note: a Heads up offered with its explanation. */
+export const DEMO_YSK_LINE = 'The release notes were written from the merged pull requests only, so fixes pushed straight to main are missing.';
+export const DEMO_YSK_EXPLANATION = [
+  '**Some fixes are not in the notes**',
+  '- The summary lists what was merged through pull requests since the last tag.',
+  '- Two fixes went straight to main without one, so they are in the release but not in the notes.',
+].join('\n');
+
+/** The other session's note, already explained. */
+export const DEMO_YSK_OTHER_LINE = 'Invoice totals are rounded per line, so a long invoice can be a few cents off its PDF.';
+export const DEMO_YSK_OTHER_TEXT = [
+  '**Rounding per line adds up**',
+  'Each line is rounded to the cent before the lines are added, while the PDF rounds the total once.',
+  '',
+  'A 40-line invoice can differ by up to 20 cents.',
+].join('\n');
+
+/** A key the plugin may add that this app does not know: every write must keep it. */
+export const DEMO_YSK_UNKNOWN_KEY = 'futureSetting';
+
+/**
+ * The store once the demo's agent has a note to offer (`DEMO_PHRASES.note`):
+ * a Heads up for the chat that asked, with its explanation, so Learn more and
+ * Discuss in chat have something to show; a "You should know" already
+ * explained for a session no chat runs; and a row showing nothing. Plus the
+ * plugin's other keys, the back-off counters a write resets, and a key this
+ * app does not know, which a write must leave as it is.
+ */
+export function demoYskStore(chatSessionId: string, now: number): Record<string, unknown> {
+  const minutes = 60_000;
+  return {
+    sessions: [
+      {
+        id: chatSessionId,
+        tag: 'Heads up',
+        askedTurn: 6,
+        offeredTurn: 6,
+        view: { kind: 'offer', line: DEMO_YSK_LINE, explanation: DEMO_YSK_EXPLANATION, shownAt: now - 2 * minutes, promptsSurvived: 0 },
+      },
+      {
+        id: DEMO_YSK_ELSEWHERE,
+        tag: 'You should know',
+        checks: 3,
+        view: { kind: 'explained', line: DEMO_YSK_OTHER_LINE, text: DEMO_YSK_OTHER_TEXT, iteration: 1, shownAt: now - 40 * minutes },
+      },
+      { id: '0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a', checked: 12 },
+    ],
+    seen: [DEMO_YSK_OTHER_LINE, DEMO_YSK_LINE],
+    known: [],
+    typedPastInARow: 3,
+    looksToSkip: 2,
+    [DEMO_YSK_UNKNOWN_KEY]: { kept: true },
+  };
+}
+
+export const DEMO_YSK_REPLY = [
+  'Done. "You should know" has a note for you about these release notes, and another session on this computer has one too.',
+  '',
+  'Pull down on the chat list to have the app look for it now; it otherwise looks every ten minutes.',
 ].join('\n');
 
 // MARK: - Shell mode
