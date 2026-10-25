@@ -23,8 +23,8 @@
 set -u
 cd "$(dirname "$0")/.."
 
-ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/grok regression/agy regression/history regression/multi-agent regression/welcome regression/subagents regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/notifications smoke new-chat tool-activity thread-header"
-BOTH_THEMES="smoke regression/chat-list regression/thread regression/tabs regression/terminal"
+ALL_FLOWS="regression/chat-list regression/new-chat regression/thread regression/keyboard regression/composer-keys regression/folder-trust regression/omp regression/grok regression/agy regression/history regression/multi-agent regression/welcome regression/subagents regression/slash-commands regression/shell-commands regression/terminal regression/space-layout regression/menu regression/tabs regression/list-modes regression/host-editor-keyboard regression/host-theme regression/you-should-know regression/notifications smoke new-chat tool-activity thread-header"
+BOTH_THEMES="smoke regression/chat-list regression/thread regression/tabs regression/terminal regression/you-should-know"
 THREAD_FLOWS="regression/thread regression/keyboard regression/composer-keys regression/history regression/subagents regression/slash-commands regression/shell-commands regression/omp regression/grok regression/agy tool-activity thread-header"
 
 # The flows a changed file can break. Shared code (components, theme, state,
@@ -36,8 +36,9 @@ flows_for() {
     .maestro/regression/*.yaml) echo "regression/$(basename "$1" .yaml)" ;;
     .maestro/*.yaml) basename "$1" .yaml ;;
     *__tests__/*|*.test.ts|*.test.tsx|*.md|relay/*|site/*|modules/*/android/*) ;;
-    src/features/thread/*|src/lib/thread*|src/lib/composer*|app/chat/*) echo "$THREAD_FLOWS" ;;
-    src/features/chats/*|"app/(tabs)/index.tsx") echo "regression/chat-list regression/list-modes regression/menu regression/multi-agent" ;;
+    src/features/thread/*|src/lib/thread*|src/lib/composer*|app/chat/*) echo "$THREAD_FLOWS regression/you-should-know" ;;
+    src/features/chats/*|"app/(tabs)/index.tsx") echo "regression/chat-list regression/list-modes regression/menu regression/multi-agent regression/you-should-know" ;;
+    src/features/youShouldKnow/*|src/lib/youShouldKnow/*|src/state/youShouldKnow.ts|app/you-should-know.tsx) echo "regression/you-should-know" ;;
     src/features/newChat/*|app/new-chat.tsx|app/folder-picker.tsx) echo "regression/new-chat regression/folder-trust new-chat" ;;
     src/features/terminal/*|src/lib/terminal/*|modules/herdr-terminal/*|modules/herdr-shell-registry/*) echo "regression/terminal regression/tabs" ;;
     src/features/files/*|src/features/devices/*|src/lib/files/*|"app/(tabs)/"*) echo "regression/tabs" ;;
