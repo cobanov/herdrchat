@@ -118,6 +118,17 @@ describe('the agents pane', () => {
     expect(parseTokenCount('lots')).toBeNull();
   });
 
+  it("reads a plugin's namespaced agent and a count with a comma", () => {
+    const pane = parseAgentsPane([
+      '  ⏺ main',
+      '  ◯ fork                   Verifying x           9m 49s · ↓ 980 tokens',
+      '  ◯ code-review:reviewer   Reviewing the diff    9m 49s · ↓ 1,234 tokens',
+      '  ↓ 1 more',
+    ].join('\n'));
+    expect(pane?.rows.map((row) => [row.kind, row.tokens])).toEqual([['fork', 980], ['code-review:reviewer', 1_234]]);
+    expect(pane?.hidden).toBe(1);
+  });
+
   it('matches a row by its columns, the task lazily', () => {
     expect(AGENT_ROW.test('◯ fork  a  b  12s · ↓ 1k tokens')).toBe(true);
     expect(parseAgentRow('◯ fork  a  b  12s · ↓ 1k tokens')?.task).toBe('a  b');
@@ -147,6 +158,33 @@ describe('the live preview over the agents pane', () => {
     expect(extractLivePreview(working)).toBe(
       'The caption writer still defaults to the old model. Sending it back to\nthe agent that did the rest of the removal.'
     );
+  });
+
+  it('never anchors on a pane row the parser cannot read', () => {
+    const working = [
+      '⏺ The caption writer still defaults to the old model. Sending it back to',
+      '  the agent that did the rest of the removal.',
+      '',
+      '✽ Whisking… (37s · ↓ 1.8k tokens · thinking)',
+      '',
+      ...ABOVE.slice(4).map((line) => line.replace('9 shells', '5 shells · esc to interrupt')),
+      '  ⏺ main',
+      '  ◯ fork                   Verifying x                            9m 49s · ↓ 980 tokens',
+      // A row cut short by a narrow terminal, and a count with a comma.
+      '  ◯ general-purpose        Reading the host guard fix',
+      '  ◯ general-purpose        Reading the host guard fixtures        9m 49s · ↓ 1,234,567.8 tokens',
+      '  ↓ 1 more',
+    ].join('\n');
+    expect(extractLivePreview(working)).toBe(
+      'The caption writer still defaults to the old model. Sending it back to\nthe agent that did the rest of the removal.'
+    );
+    // Without the footer, a row shaped like one is still pane, not the spinner.
+    expect(extractLivePreview([
+      'Some real prose the agent is writing right now.',
+      '✽ Whisking… (37s · ↓ 1.8k tokens · thinking)',
+      // One space after the kind: not a row to the parser.
+      '  ◯ general-purpose Reading the notes  9m 49s · ↓ 980 tokens',
+    ].join('\n'))).toBe('Some real prose the agent is writing right now.');
   });
 
   it('is null when the pane is all there is', () => {

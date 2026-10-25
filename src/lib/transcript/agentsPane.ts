@@ -49,10 +49,11 @@ export interface AgentsPane {
  * or more spaces, the task, two or more spaces, the elapsed time, then
  * ` · ↓ <tokens> tokens`. The columns are padded to align, which is what the
  * two-space gaps rely on; the task may hold anything, a `·` included, and is
- * matched lazily so the anchored tail decides where it ends.
+ * matched lazily so the anchored tail decides where it ends. A plugin's
+ * agent is namespaced (`plugin:reviewer`), and a count may carry a comma.
  */
 export const AGENT_ROW =
-  /^([◯○◉⏺●✓✔✗✘×])️?\s+([A-Za-z0-9_.-]+)\s{2,}(\S.*?)\s{2,}(\d+[hms](?:\s+\d+[hms]){0,2})\s+·\s+↓\s+(\d+(?:\.\d+)?[kKmM]?)\s+tokens?$/u;
+  /^([◯○◉⏺●✓✔✗✘×])️?\s+([A-Za-z0-9_.:-]+)\s{2,}(\S.*?)\s{2,}(\d+[hms](?:\s+\d+[hms]){0,2})\s+·\s+↓\s+(\d[\d,]*(?:\.\d+)?[kKmM]?)\s+tokens?$/u;
 
 /** The pane's header: the main agent, under a filled record mark (`●` off macOS). */
 const HEADER = /^[⏺●]️?\s*main$/u;
@@ -98,9 +99,20 @@ export function parseAgentRow(line: string): AgentRow | null {
   return { state: rowState(glyph), kind, task: task.trim(), elapsedMs, tokens: parseTokenCount(tokens) };
 }
 
-/** Whether a cleaned line is part of the pane: its header, a row, or its `↓ N more`. */
+/**
+ * A line shaped like a row without being one `AGENT_ROW` reads: a state mark
+ * first, the row's ` · ↓ <count> tokens` last. A row cut short by a narrow terminal, an agent
+ * kind or a figure the row pattern does not know. Never a spinner, whose
+ * glyphs are not these and whose count ends in `tokens)` or `thinking)`.
+ */
+const LOOSE_ROW = /^[◯○◉⏺●✓✔✗✘×]️?\s+\S.*\s·\s+↓\s+\d[\d.,]*\s*[kKmM]?\s+tokens?$/u;
+
+/**
+ * Whether a cleaned line is part of the pane: its header, a row, or its
+ * `↓ N more`. Errs towards yes: a row the parser cannot read is still pane.
+ */
 export function isAgentsPaneLine(line: string): boolean {
-  return HEADER.test(line) || MORE.test(line) || parseAgentRow(line) !== null;
+  return HEADER.test(line) || MORE.test(line) || LOOSE_ROW.test(line) || parseAgentRow(line) !== null;
 }
 
 export function rowState(glyph: string): AgentRowState {
@@ -120,9 +132,9 @@ export function parseElapsed(text: string): number | null {
   return ((Number(hours) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1_000;
 }
 
-/** `980`, `156.7k`, `1.2M` as a number of tokens; null when it is not one. */
+/** `980`, `1,234`, `156.7k`, `1.2M` as a number of tokens; null when it is not one. */
 export function parseTokenCount(text: string): number | null {
-  const match = /^(\d+(?:\.\d+)?)([kKmM]?)$/.exec(text.trim());
+  const match = /^(\d+(?:\.\d+)?)([kKmM]?)$/.exec(text.trim().replaceAll(',', ''));
   if (match === null) return null;
   const [, value = '0', unit = ''] = match;
   const scale = unit === '' ? 1 : unit.toLowerCase() === 'k' ? 1_000 : 1_000_000;
