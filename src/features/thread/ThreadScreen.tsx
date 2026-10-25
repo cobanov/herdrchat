@@ -35,7 +35,6 @@ import { LivePreviewBubble } from '@/features/thread/LivePreviewBubble';
 import { ShellHint } from '@/features/thread/ShellHint';
 import { OlderHistory } from '@/features/thread/OlderHistory';
 import { StopButton } from '@/features/thread/StopButton';
-import { ToolActivityToggle } from '@/features/thread/ToolActivityToggle';
 import { DelegationScopeProvider, type DelegationScope } from '@/features/thread/delegation';
 import { openTerminal } from '@/features/terminal/navigation';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
@@ -810,7 +809,6 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, title,
                     </Pressable>
                   </Glass>
                 )}
-                <ToolActivityToggle />
                 <Glass interactive style={{ borderRadius: radius.full, overflow: 'hidden' }}>
                   {thread.status === 'working' ? (
                     <StopButton onStop={(hard) => void thread.interrupt(hard)} />

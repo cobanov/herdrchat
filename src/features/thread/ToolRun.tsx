@@ -17,7 +17,7 @@ import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens
  * paragraphs rather than as content. Opened, each call hangs off a rail with
  * what it did in a line; a call opens in turn to show what it returned.
  *
- * Closed by default; the header's tool switch opens every run at once.
+ * Closed by default; the Settings switch opens every run at once.
  */
 export function ToolRun({ runKey, calls, thoughts }: { runKey: string; calls: readonly ToolCall[]; thoughts: number }) {
   const { colors } = useTheme();

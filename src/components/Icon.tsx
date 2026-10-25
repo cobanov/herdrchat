@@ -104,8 +104,6 @@ const MATERIAL = {
   'terminal': ['terminal', 0xeb8e],
   'trash': ['delete', 0xe872],
   'tray': ['inbox', 0xe156],
-  'wrench.and.screwdriver': ['build', 0xe869],
-  'wrench.and.screwdriver.fill': ['build', 0xe869],
   'xmark': ['close', 0xe5cd],
   'xmark.circle.fill': ['cancel', 0xe5c9],
 } as const satisfies Partial<Record<SFSymbolName, readonly [AndroidSymbol, number]>>;

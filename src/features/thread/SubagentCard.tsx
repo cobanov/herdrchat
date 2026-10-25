@@ -112,7 +112,7 @@ export function DelegationCard({
   const { colors } = useTheme();
   // In the store, not in the row: FlashList recycles rows, and state held in
   // one would open whichever card next scrolled into it.
-  // Closed by default, as a tool run; the header's tool switch opens every one.
+  // Closed by default, as a tool run; the Settings switch opens every one.
   const expandAll = useSettings((store) => store.showToolActivity);
   const stored = useToolRuns((store) => store.open[foldKey]);
   const toggle = useToolRuns((store) => store.toggle);
