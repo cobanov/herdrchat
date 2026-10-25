@@ -872,6 +872,9 @@ export function useThread(
     // A panel may already be open: opened from the desk, or left open when
     // the app went to the background. Look once each time polling starts.
     let lookForPanel = true;
+    // Whether the last poll saw the agent working: the first idle screen after
+    // a turn is read for the agents pane, see `readAgents`.
+    let wasWorking = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
@@ -1073,7 +1076,12 @@ export function useThread(
         // while the last read had one, until a read has none. While the
         // agent works it is the live preview's read, and while it idles a
         // look for a slash command's panel serves too, never a second read.
-        const readAgents = (agentsPaneShown.current || idleScreen !== null) && blocked === undefined;
+        // A turn can start a background agent and end between two polls, so
+        // no working read saw the pane; the first idle poll after a working
+        // one reads the screen once to catch it.
+        const justIdled = wasWorking && !working;
+        wasWorking = working;
+        const readAgents = (agentsPaneShown.current || idleScreen !== null || justIdled) && blocked === undefined;
         if ((working || readAgents) && primary !== undefined) {
           const raw = idleScreen ?? await client.paneVisible(primary.paneId, LIVE_SCREEN_LINES);
           if (stopped) return;

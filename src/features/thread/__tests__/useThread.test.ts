@@ -1305,6 +1305,30 @@ describe('the agents pane', () => {
     await unmount();
   });
 
+  it('is read off the first idle screen after a turn whose working reads never saw it', async () => {
+    mockLive = false;
+    // Opened idle: the one look for a panel is spent on a bare prompt.
+    const status = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    const read = jest.spyOn(client, 'paneVisible').mockResolvedValue('❯ ');
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    // A turn runs; no working read sees a pane.
+    status.mockResolvedValue(snapshot([{ ...agent, agentStatus: 'working' }]));
+    read.mockResolvedValue('✻ Whisking… (3s · ↓ 10 tokens)\n❯ ');
+    await act(async () => { await jest.advanceTimersByTimeAsync(6_500); });
+    expect(read.mock.calls.length).toBeGreaterThan(1);
+    expect(result.current.agentsPane).toBeNull();
+
+    // The turn started a background agent and ended before the next poll.
+    status.mockResolvedValue(snapshot([agent]));
+    read.mockResolvedValue(PANE);
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(result.current.agentsPane?.rows).toHaveLength(1);
+    await unmount();
+  });
+
   it('is read off the first look at an idle chat, and only while it is there', async () => {
     mockLive = false;
     jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
