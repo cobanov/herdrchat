@@ -68,7 +68,7 @@ appId: dev.herdr.HerdrChat
 - copyTextFrom:
     id: agents-row-0
 - evalScript: ${output.firstRead = maestro.copiedText}
-- assertTrue: ${output.firstRead.indexOf('General: Review the release notes wording, running, ') === 0}
+- assertTrue: "${output.firstRead.indexOf('General: Review the release notes wording, running, ') === 0}"
 - extendedWaitUntil:
     notVisible:
       id: agents-row-0
@@ -76,7 +76,7 @@ appId: dev.herdr.HerdrChat
     timeout: 5000
 - copyTextFrom:
     id: agents-row-0
-- assertTrue: ${maestro.copiedText !== output.firstRead && maestro.copiedText.indexOf('General: ') === 0}
+- assertTrue: "${maestro.copiedText !== output.firstRead && maestro.copiedText.indexOf('General: ') === 0}"
 
 # The subagent's row opens its transcript, the screen its card's chevron opens.
 - tapOn:
