@@ -26,7 +26,7 @@ jest.mock('expo-secure-store', () => ({
     mockItems.delete(key);
   },
 }));
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {}, MissingCredentialsError: class extends Error {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {}, MissingCredentialsError: class extends Error {} }));
 
 beforeEach(() => {
   mockItems.clear();

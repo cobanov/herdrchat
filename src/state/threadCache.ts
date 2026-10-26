@@ -114,6 +114,19 @@ async function insertMessages(
  * in-memory copy too. A no-op while the session is still unknown — binding to
  * nothing would throw away a perfectly good cache on every cold open.
  */
+/** A chat's cached messages and tail cursors, gone: what a reload starts from. */
+export async function clearThreadCache(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string
+): Promise<void> {
+  await inTransaction(db, async () => {
+    for (const table of ['messages', 'tail_cursors']) {
+      await db.runAsync(`DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`, connectionId, workspaceId);
+    }
+  });
+}
+
 /**
  * The cached messages of a chat, but only when they are `sessionSig`'s: what
  * a chat shows the moment it opens, before its first poll. Read only: a cache

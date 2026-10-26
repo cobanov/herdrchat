@@ -1,7 +1,9 @@
+import type { HerdrErrorCode } from './herdr/protocol';
+
 export type RecoveryAction = 'credentials' | 'address' | 'path' | 'install' | 'start' | 'retry';
 
 /** The editor retains the host's error code so each failure has a useful next step. */
-export function connectionRecovery(code: string): {
+export function connectionRecovery(code: HerdrErrorCode | null): {
   title: string;
   label: string;
   action: RecoveryAction;

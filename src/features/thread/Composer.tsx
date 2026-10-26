@@ -6,7 +6,7 @@ import { Glass } from '@/components/Glass';
 import { SubmitShortcutView } from '../../../modules/herdr-keys/src';
 import { followCaret, insertNewline, pasteAction, returnAction } from '@/lib/composerKeys';
 import { MAX_ATTACHMENTS } from './attachments';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useSettings } from '@/state/settings';

@@ -4,7 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import type { PromptDetails as Details } from '@/lib/transcript/blockedPrompt';
 import { useTheme } from '@/theme/ThemeProvider';
 import { motion, radius, size, spacing } from '@/theme/tokens';

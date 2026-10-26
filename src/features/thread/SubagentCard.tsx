@@ -10,7 +10,7 @@ import {
   type AgentTarget,
   type DelegationScope,
 } from '@/features/thread/delegation';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { formatDuration, formatTokens, formatToolCalls } from '@/lib/subagents/format';
 import { subagentInput, type Delegation, type DelegationState, type ToolCall } from '@/lib/threadItems';
 import { modelDisplayName } from '@/lib/transcript/sessionMeta';

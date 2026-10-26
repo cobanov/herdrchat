@@ -8,7 +8,7 @@ import { Icon } from '@/components/Icon';
 import { ActionRow, Divider, ROW_INSET, Section } from '@/components/SettingsList';
 import { Text } from '@/components/Text';
 import { Toggle } from '@/components/Toggle';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { AGENT_PROMPT } from '@/lib/theme/bootstrap';
 import { THEME_PATH_DISPLAY } from '@/lib/theme/schema';
 import { useSelectedConnection } from '@/state/connections';

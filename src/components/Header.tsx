@@ -2,7 +2,7 @@ import { Platform, Pressable, View } from 'react-native';
 
 import { Text } from './Text';
 import { attentionBadge } from '@/lib/attentionBadge';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from '@/theme/ThemeProvider';
 import { headerTitleLine, minTouchTarget, radius, screenPadding, size, spacing, useScaledLine } from '@/theme/tokens';

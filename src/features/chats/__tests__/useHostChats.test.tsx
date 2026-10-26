@@ -7,7 +7,7 @@ import { HostFeeds } from '../HostFeeds';
 import { useHostChats, useHostFeeds, type HostChatsState } from '../useHostChats';
 import type { ChatSummary } from '../useWorkspaces';
 
-jest.mock('@/lib/herdr/sshTransport', () => ({ SshHerdrTransport: class {} }));
+jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {} }));
 
 /** What each connection's poll answers, by connection id. */
 const mockPolls = new Map<string, { summaries?: ChatSummary[]; error?: string; errorCode?: string }>();

@@ -7,13 +7,14 @@ import {
   type ConnectResult,
   type ExecResult,
   type SshConfig,
-} from '../../../modules/herdr-ssh/src';
-import { checkDoneMark, withDoneMark } from './doneMark';
-import { friendlyFailure } from './nativeFailure';
-import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
-import { untilChannelCloses } from './shell';
-import type { HerdrTransport } from './transport';
-import { withJsDeadline } from './timeouts';
+} from '../../modules/herdr-ssh/src';
+import { checkDoneMark, withDoneMark } from '@/lib/herdr/doneMark';
+import { friendlyFailure } from '@/lib/herdr/nativeFailure';
+import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from '@/lib/herdr/socket';
+import { untilChannelCloses } from '@/lib/herdr/shell';
+import type { HerdrTransport } from '@/lib/herdr/transport';
+import { withJsDeadline } from '@/lib/herdr/timeouts';
+import { errorText } from '@/lib/herdr/protocol';
 
 /**
  * A `HerdrTransport` backed by the native SSH module.
@@ -90,7 +91,7 @@ export class SshHerdrTransport implements HerdrTransport {
           return {
             ok: false,
             code: thrown instanceof MissingCredentialsError ? 'credentials_missing' : 'connect_failed',
-            message: thrown instanceof Error ? thrown.message : String(thrown),
+            message: errorText(thrown),
           };
         });
     }

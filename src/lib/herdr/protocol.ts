@@ -1,3 +1,5 @@
+import type { SshFailureCode } from '../../../modules/herdr-ssh/src';
+
 /**
  * The herdr socket API is newline-delimited JSON. Every response is either a
  * `{id, result}` success or a `{id, error}` failure. The CLI (`herdr api …`,
@@ -8,6 +10,62 @@
  * on herdr 0.8.0. The envelope has not changed since protocol 16; what the
  * version gates is which verbs exist, and that lives in `version.ts`.
  */
+
+/**
+ * The codes herdr reports that this app reads. herdr can report others: those
+ * keep herdr's own words and are never compared (see `herdrErrorFrom`).
+ */
+type HerdrServerCode =
+  | 'agent_blocked'
+  | 'agent_input_pending'
+  | 'agent_not_found'
+  | 'agent_pane_busy'
+  | 'agent_prompt_stalled'
+  | 'herdr_not_found'
+  | 'invalid_request'
+  | 'pane_not_found'
+  | 'server_not_running'
+  | 'unknown_method';
+
+/** The codes this app raises itself, about the host or its files. */
+type AppErrorCode =
+  | 'agent_prompt_unverifiable'
+  | 'codex_launcher_conflict'
+  | 'codex_launcher_install_failed'
+  | 'codex_session_ambiguous'
+  | 'codex_session_compressed'
+  | 'codex_session_invalid'
+  | 'codex_session_mismatch'
+  | 'dir_unreadable'
+  | 'empty_response'
+  | 'grok_session_ambiguous'
+  | 'grok_session_invalid'
+  | 'herdr_not_executable'
+  | 'herdr_not_on_path'
+  | 'home_unknown'
+  | 'omp_session_ambiguous'
+  | 'omp_session_invalid'
+  | 'omp_session_mismatch'
+  | 'push_registration_failed'
+  | 'send_keys_failed'
+  | 'server_start_failed'
+  | 'session_invalid'
+  | 'snapshot_missing'
+  | 'socket_unavailable'
+  | 'ssh_command_failed'
+  | 'subscription_ended'
+  | 'transcript_absent'
+  | 'transcript_changed'
+  | 'transcript_tools_missing'
+  | 'transcript_unreadable'
+  | 'unknown'
+  | 'unparseable_response';
+
+/**
+ * Every code a `HerdrError` can carry. A union, so a misspelt code in a
+ * comparison or a `new HerdrError` fails the typecheck.
+ */
+export type HerdrErrorCode = SshFailureCode | HerdrServerCode | AppErrorCode;
 
 /**
  * An error from a herdr request. Usually one herdr itself reported; with
@@ -21,14 +79,14 @@
  * anything that maps codes to messages still reads the same.
  */
 export class HerdrError extends Error {
-  readonly code: string;
+  readonly code: HerdrErrorCode;
   /** True when the SSH transport failed, not herdr. */
   readonly transport: boolean;
   /** On `host_key_changed`: the fingerprint the host presented instead of the pin. */
   readonly presentedFingerprint: string | null;
 
   constructor(
-    code: string,
+    code: HerdrErrorCode,
     message: string,
     options: { transport?: boolean; presentedFingerprint?: string | null } = {}
   ) {
@@ -42,6 +100,11 @@ export class HerdrError extends Error {
   override toString(): string {
     return `herdr error [${this.code}]: ${this.message}`;
   }
+}
+
+/** A thrown value, as something a person can read. */
+export function errorText(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
 /**
@@ -73,7 +136,7 @@ export function decodeEnvelope(output: string): unknown {
   if (envelope.error !== undefined && envelope.error !== null) {
     const error = envelope.error as { code?: unknown; message?: unknown };
     throw new HerdrError(
-      typeof error.code === 'string' ? error.code : 'unknown',
+      typeof error.code === 'string' ? wireCode(error.code) : 'unknown',
       typeof error.message === 'string' ? error.message : 'herdr reported an error.'
     );
   }
@@ -133,6 +196,15 @@ export function exitCodeError(exitCode: number, stderr = ''): HerdrError {
 }
 
 /**
+ * A code as herdr sent it. Typed as one of ours although herdr may send a
+ * code no list here has: such a code matches no comparison, so it only ever
+ * reaches a person as herdr's own words.
+ */
+function wireCode(code: string): HerdrErrorCode {
+  return code as HerdrErrorCode;
+}
+
+/**
  * A herdr error envelope found in command output, interpreted.
  *
  * Null when the output is not an envelope — a shell warning, an SSH banner,
@@ -162,11 +234,11 @@ export function herdrErrorFrom(output: string): HerdrError | null {
     return null;
   }
 
-  return herdrError(code, message);
+  return herdrError(wireCode(code), message);
 }
 
 /** An error with herdr's code, worded for a phone where that differs. */
-export function herdrError(code: string, message: string): HerdrError {
+export function herdrError(code: HerdrErrorCode, message: string): HerdrError {
   return new HerdrError(code, humanise(code, message));
 }
 
@@ -176,7 +248,7 @@ export function herdrError(code: string, message: string): HerdrError {
  * else entirely, which a message ending in "run `herdr`" does not convey when
  * there is no terminal in front of you.
  */
-function humanise(code: string, message: string): string {
+function humanise(code: HerdrErrorCode, message: string): string {
   switch (code) {
     case 'server_not_running':
       // herdr says "run `herdr` to start or attach it", which is correct and
@@ -197,7 +269,7 @@ function humanise(code: string, message: string): string {
 }
 
 /** A failed transport result as an error, keeping what the native side knew. */
-export function transportError(failure: { code: string; message: string; presentedFingerprint?: string }): HerdrError {
+export function transportError(failure: { code: SshFailureCode; message: string; presentedFingerprint?: string }): HerdrError {
   return new HerdrError(failure.code, failure.message, {
     transport: true,
     presentedFingerprint: failure.presentedFingerprint ?? null,

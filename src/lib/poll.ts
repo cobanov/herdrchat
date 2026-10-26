@@ -1,3 +1,5 @@
+import type { HerdrErrorCode } from './herdr/protocol';
+
 /**
  * When a poll loop should be running, and how fast.
  *
@@ -69,7 +71,7 @@ export function shouldPoll({
  * acceptance pass. A loop that hits one pauses until the user pulls to refresh
  * or edits the host, which replaces the client and so restarts the loop.
  */
-export function needsTheUser(code: string | null | undefined): boolean {
+export function needsTheUser(code: HerdrErrorCode | null | undefined): boolean {
   return (
     code === 'auth_failed' || code === 'host_key_changed' || code === 'credentials_missing' || code === 'bad_key'
   );

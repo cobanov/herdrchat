@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
-import { MissingCredentialsError, SshHerdrTransport } from '@/lib/herdr/sshTransport';
+import { MissingCredentialsError, SshHerdrTransport } from '@/state/sshTransport';
 import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 

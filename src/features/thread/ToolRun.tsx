@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { toolCallLine, toolRunSummary, type ToolCall, type ToolKind } from '@/lib/threadItems';
 import { useSettings } from '@/state/settings';
 import { useToolRuns } from '@/state/toolRuns';
