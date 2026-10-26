@@ -30,7 +30,13 @@ export function extractLivePreview(raw: string): string | null {
 
   // Anchor: Claude's spinner, the line it is working on. Below it sit only a
   // tip, its notices and the composer. Otherwise a status hint, as Codex's.
-  const anchor = lastIndexWhere(lines, isSpinnerLine) ?? lastIndexWhere(lines, isStatusLine);
+  // Last, Claude's line without an ellipsis ("✻ Waiting for 6 background
+  // agents to finish"): without it the composer is the anchor, and a draft in
+  // it stops the walk as if it were the prompt this turn answers.
+  const anchor =
+    lastIndexWhere(lines, isSpinnerLine) ??
+    lastIndexWhere(lines, isStatusLine) ??
+    lastIndexWhere(lines, isSpinnerLike);
   // Otherwise stop at the composer input line near the bottom.
   const composer = lastIndexWhere(lines, (line) => /^[❯›]/.test(line));
   const end = anchor ?? composer ?? lines.length;
