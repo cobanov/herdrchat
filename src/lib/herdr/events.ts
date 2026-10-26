@@ -206,6 +206,16 @@ export function interpret(raw: SocketEvent): HostEvent | null {
   return { event: raw.event, paneId, workspaceId, data: raw.data };
 }
 
+/**
+ * True for an event an open chat in `workspaceId` should poll for: one about
+ * its own workspace, or one that names none (a resync). Every host-wide event
+ * (another workspace created, renamed or closed, an agent found anywhere) woke
+ * every open chat's poll.
+ */
+export function concernsWorkspace(event: HostEvent, workspaceId: string): boolean {
+  return event.workspaceId === null || event.workspaceId === workspaceId;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }

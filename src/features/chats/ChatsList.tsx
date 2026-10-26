@@ -108,6 +108,20 @@ interface OpenTerminal {
   paneId: string;
 }
 
+/**
+ * Run `work`, letting a failure go: the poll's own banner already carries it,
+ * and a second one here would stack two messages about one problem. Out here
+ * because the React Compiler skips a component holding a try/catch with a
+ * conditional in it, and that one renders every chat row.
+ */
+async function quietly(work: () => Promise<void>): Promise<void> {
+  try {
+    await work();
+  } catch {
+    /* reported by the poll */
+  }
+}
+
 function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTerminal }: {
   selectedWorkspaceId?: string;
   selectedConnectionId?: string;
@@ -325,15 +339,11 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const fixHost = async (action: 'install' | 'start') => {
     if (client === null) return;
     setFixing(true);
-    try {
+    await quietly(async () => {
       await (action === 'install' ? client.installHerdr() : client.startServer());
       await refresh();
-    } catch {
-      // The poll's own banner already carries the failure; a second one here
-      // would stack two messages about one problem.
-    } finally {
-      setFixing(false);
-    }
+    });
+    setFixing(false);
   };
 
   /**
@@ -625,7 +635,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                   unread={isPaneUnread(item, pane, rowReads, openHere)}
                   onPress={() => {
                     Keyboard.dismiss();
-                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId);
+                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId,
+                      target.paneId === undefined ? item.sessionSig : pane.sessionSig);
                   }}
                   onLongPress={() => actions.manageChat(item, ownPersonal ? [
                     { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
@@ -650,7 +661,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 unread={agent === null ? isChatUnread(item, rowReads, openHere) : isAgentUnread(agent, rowReads, openHere)}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId);
+                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId,
+                    agent?.pane != null ? agent.pane.sessionSig : item.sessionSig);
                 }}
                 onLongPress={manage}
                 onSwiped={markHintSeen}
