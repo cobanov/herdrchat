@@ -46,6 +46,8 @@ export class HerdrSocket {
   private live: LiveBridge | null = null;
   /** Bridges in a row that ended without answering anything; at `MAX_SILENT_BRIDGES` this host execs. */
   private silentBridges = 0;
+  /** Until when this host execs after `MAX_SILENT_BRIDGES`; then it tries a bridge again. */
+  private execUntil = 0;
 
   constructor(
     private readonly transport: HerdrTransport,
@@ -88,7 +90,7 @@ export class HerdrSocket {
     const request = this.encode(method, params);
     // Built either way: a request too long for the exec path is refused on both.
     const command = commandFor(route, request, this.herdr);
-    const live = await this.liveBridge(route);
+    const live = await this.liveBridge(route, timeoutMs);
     if (live !== null) return decodeEnvelope(await live.ask(request, timeoutMs));
     const result = await this.transport.exec(command, timeoutMs);
     if (!result.ok) {
@@ -151,7 +153,7 @@ export class HerdrSocket {
     }
     const encoded = requests.map(({ method, params }) => this.encode(method, params));
     const commands = encoded.map((request) => commandFor(route, request, this.herdr));
-    const live = await this.liveBridge(route);
+    const live = await this.liveBridge(route, timeoutMs);
     if (live === null) return this.runBatches(commands, timeoutMs);
     // All at once: the bridge answers each on its own thread, in any order.
     return Promise.all(encoded.map((request) => live.ask(request, timeoutMs).then(
@@ -166,27 +168,49 @@ export class HerdrSocket {
    * The kept-open bridge (`LiveBridge`), started on first use and again after
    * one ends; null where there is none to have, and the caller execs instead:
    * another route, a transport that cannot write to a command (the
-   * Demo), a start that failed, or a host whose bridge ended
-   * without ever answering.
+   * Demo), a start that failed, or a host whose bridges kept ending
+   * without answering, for `SILENT_BRIDGE_BACKOFF_MS`.
+   *
+   * Waiting for a start counts against the call's own deadline. The start is
+   * not abandoned when it runs out: on a half-open connection the transport's
+   * start deadline is what drops the SSH client, as an exec's did.
    */
-  private async liveBridge(route: SocketRoute): Promise<LiveBridge | null> {
+  private async liveBridge(route: SocketRoute, timeoutMs: number): Promise<LiveBridge | null> {
     if (route.bridge !== 'python3' || this.transport.duplex === undefined) return null;
     if (this.live === null || this.live.ended) {
       if (this.live !== null) this.silentBridges = this.live.answered ? 0 : this.silentBridges + 1;
-      if (this.silentBridges >= MAX_SILENT_BRIDGES) return null;
-      this.live = new LiveBridge(this.transport.duplex(
-        withPath(`python3 -S -u -c ${shellQuote(LIVE_BRIDGE)} ${shellQuote(route.socketPath)}`),
-        STREAM_START_TIMEOUT_MS
-      ));
+      if (this.silentBridges >= MAX_SILENT_BRIDGES) {
+        // Not for good: one bad stretch of network ends bridges unanswered too.
+        this.silentBridges = 0;
+        this.execUntil = Date.now() + SILENT_BRIDGE_BACKOFF_MS;
+        this.live = null;
+      }
+      if (Date.now() < this.execUntil) return null;
+      const stop = new AbortController();
+      this.live = new LiveBridge(
+        this.transport.duplex(
+          withPath(`python3 -S -u -c ${shellQuote(LIVE_BRIDGE)} ${shellQuote(route.socketPath)}`),
+          STREAM_START_TIMEOUT_MS,
+          stop.signal
+        ),
+        () => stop.abort()
+      );
     }
     const live = this.live;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), timeoutMs); });
     try {
-      await live.started;
+      if ((await Promise.race([live.started, late])) === 'late') {
+        throw transportError({ code: 'timeout', message: `herdr did not answer within ${Math.round(timeoutMs / 1000)} s.` });
+      }
       return live;
-    } catch {
+    } catch (thrown) {
+      if (thrown instanceof HerdrError) throw thrown;
       // Nothing was sent; the next call tries again.
       if (this.live === live) this.live = null;
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -298,7 +322,11 @@ export class LiveBridge {
   private tags = 0;
   private readonly waiting = new Map<string, { resolve: (line: string) => void; reject: (error: HerdrError) => void }>();
 
-  constructor(private readonly duplex: Duplex) {
+  constructor(
+    private readonly duplex: Duplex,
+    /** Closes the bridge's channel. */
+    private readonly stop: () => void = () => {}
+  ) {
     this.started = duplex.started;
     void this.read();
   }
@@ -312,6 +340,11 @@ export class LiveBridge {
       const timer = setTimeout(() => {
         this.waiting.delete(tag);
         reject(transportError({ code: 'timeout', message: `herdr did not answer within ${Math.round(timeoutMs / 1000)} s.` }));
+        // Dead from here, as an exec past its deadline dropped the client: on a
+        // half-open connection every later request would wait out its own
+        // deadline until TCP gave up, minutes later. The next call starts a
+        // bridge, whose start deadline drops the SSH client if the link is gone.
+        this.end();
       }, timeoutMs);
       const settle = <T,>(done: (value: T) => void) => (value: T) => {
         clearTimeout(timer);
@@ -339,7 +372,15 @@ export class LiveBridge {
     } catch {
       // Ended either way; what is still waiting is told below.
     }
-    this.ended = true;
+    this.end();
+  }
+
+  /** Ends the bridge: closes its channel and fails what is still waiting. */
+  end(): void {
+    if (!this.ended) {
+      this.ended = true;
+      this.stop();
+    }
     for (const waiter of [...this.waiting.values()]) waiter.reject(bridgeEnded());
   }
 }
@@ -504,6 +545,9 @@ export type SocketEvent =
  * cannot run the bridge, where each call would otherwise start one and fail.
  */
 const MAX_SILENT_BRIDGES = 3;
+
+/** How long a host execs after `MAX_SILENT_BRIDGES` before it tries a bridge again. */
+const SILENT_BRIDGE_BACKOFF_MS = 5 * 60_000;
 
 /**
  * Long enough for `herdr status server` on a cold host, short enough that a

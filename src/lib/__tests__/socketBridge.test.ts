@@ -8,9 +8,9 @@ import { HerdrSocket, isSocketProbe } from '../herdr/socket';
 import type { Duplex, HerdrTransport } from '../herdr/transport';
 
 /** A host whose bridge is a stdin/stdout pair the test drives by hand. */
-function fakeHost(options: { startFails?: boolean } = {}) {
+function fakeHost(options: { startFails?: boolean; startHangs?: boolean } = {}) {
   const execs: string[] = [];
-  const bridges: { written: string[]; answer: (line: string) => void; end: () => void }[] = [];
+  const bridges: { written: string[]; answer: (line: string) => void; end: () => void; signal?: AbortSignal }[] = [];
   const transport: HerdrTransport = {
     exec: async (command) => {
       execs.push(command);
@@ -18,7 +18,7 @@ function fakeHost(options: { startFails?: boolean } = {}) {
       return { ok: true, exitCode: 0, stdout, stderr: '' } as never;
     },
     streamLines: async function* () {},
-    duplex: () => {
+    duplex: (_command, _startTimeoutMs, signal) => {
       const queue: string[] = [];
       let done = false;
       let wake: (() => void) | null = null;
@@ -26,6 +26,7 @@ function fakeHost(options: { startFails?: boolean } = {}) {
         written: [] as string[],
         answer: (line: string) => { queue.push(line); wake?.(); },
         end: () => { done = true; wake?.(); },
+        signal,
       };
       bridges.push(bridge);
       const lines = (async function* () {
@@ -37,7 +38,9 @@ function fakeHost(options: { startFails?: boolean } = {}) {
       })();
       return {
         lines,
-        started: options.startFails ? Promise.reject(new Error('no channel')) : Promise.resolve(),
+        started: options.startHangs
+          ? new Promise<void>(() => {})
+          : options.startFails ? Promise.reject(new Error('no channel')) : Promise.resolve(),
         write: async (text: string) => {
           if (done) return false;
           bridge.written.push(text);
@@ -113,6 +116,52 @@ describe('the kept-open bridge', () => {
     await expect(socket.call('pane.read', {}, 1000)).resolves.toEqual({ via: 'exec' });
     expect(bridges).toHaveLength(3);
     expect(execs()).toHaveLength(1);
+  });
+
+  // A half-open connection: the exec path dropped the SSH client when an exec
+  // ran past its deadline. A bridge that kept going would make every later
+  // request wait out its own deadline until TCP gave up.
+  it('ends a bridge whose request timed out, closing its channel, and starts another for the next', async () => {
+    const { socket, bridges } = fakeHost();
+    const other = socket.call('pane.read', { pane_id: 'p2' }, 1000);
+    await expect(socket.call('agent.prompt', {}, 20)).rejects.toMatchObject({ code: 'timeout' });
+    expect(bridges[0]!.signal?.aborted).toBe(true);
+    await expect(other).rejects.toMatchObject({ code: 'transport_failed' });
+    const next = socket.call('pane.read', {}, 1000);
+    await tick();
+    expect(bridges).toHaveLength(2);
+    bridges[1]!.answer(`${tagOf(bridges[1]!.written[0]!)}\t{"id":"1","result":{"ok":1}}`);
+    await expect(next).resolves.toEqual({ ok: 1 });
+  });
+
+  it("waits for a bridge's start no longer than the call's own deadline", async () => {
+    const { socket, execs } = fakeHost({ startHangs: true });
+    const thrown = await socket.call('pane.read', {}, 30).catch((error: unknown) => error);
+    expect(thrown).toMatchObject({ code: 'timeout', transport: true });
+    expect(execs()).toEqual([]);
+  });
+
+  it('tries a bridge again five minutes after three ended without one answer', async () => {
+    const now = jest.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000_000);
+      const { socket, bridges } = fakeHost();
+      for (let round = 0; round < 3; round += 1) {
+        const waiting = socket.call('pane.read', {}, 1000).catch(() => null);
+        await tick();
+        bridges[round]!.end();
+        await waiting;
+      }
+      await expect(socket.call('pane.read', {}, 1000)).resolves.toEqual({ via: 'exec' });
+      now.mockReturnValue(1_000_000 + 5 * 60_000);
+      const next = socket.call('pane.read', {}, 1000);
+      await tick();
+      expect(bridges).toHaveLength(4);
+      bridges[3]!.answer(`${tagOf(bridges[3]!.written[0]!)}\t{"id":"1","result":{"ok":1}}`);
+      await expect(next).resolves.toEqual({ ok: 1 });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('execs a request whose bridge could not start, so nothing is lost', async () => {
