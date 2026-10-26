@@ -89,8 +89,8 @@ describe('a subagent card', () => {
   });
 
   // The only chevron was the one that opens the transcript, so nothing said
-  // the card itself opens; and the header's tool switch left cards closed.
-  it('shows that it folds with a turning mark, and opens with the tool switch', async () => {
+  // the card itself opens; and the tool activity switch left cards closed.
+  it('shows that it folds with a turning mark, and opens with the tool activity switch', async () => {
     const done = delegation({ state: 'done', result: 'All good.' });
     const screen = await render(<SubagentCard call={call({ description: 'Check links' })} delegation={done} />);
     const fold = screen.getByTestId('subagent-toolu_x-fold');
