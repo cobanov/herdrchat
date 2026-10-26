@@ -1,5 +1,6 @@
 # A Grok chat on the Demo: its ACP update log found by its session id, its
-# model in the header, a folded tool run, a message sent and answered.
+# model in the header, a folded tool run, a message sent and answered, and
+# one working line while it works.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -26,5 +27,27 @@ appId: dev.herdr.HerdrChat
     timeout: 15000
 - assertNotVisible: .*Failed to send.*
 - takeScreenshot: grok-thread-${APPEARANCE}
+# Grok's own working screen: a braille spinner, its timer and the composer
+# box, the reply scrolled away. One working line shows, the app's own, and
+# none of Grok's status as if it were the answer.
+- tapOn:
+    id: composer-input
+- inputText: think it over
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible:
+      id: working-indicator
+    timeout: 10000
+- extendedWaitUntil:
+    visible: '[3-7]s'
+    timeout: 10000
+- assertNotVisible:
+    id: live-preview
+- assertNotVisible: .*Responding.*
+- assertNotVisible: .*\[stop\].*
+- takeScreenshot: grok-working-${APPEARANCE}
+- extendedWaitUntil:
+    visible: .*The plan holds.*
+    timeout: 15000
 - tapOn:
     id: thread-back
