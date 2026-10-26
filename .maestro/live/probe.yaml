@@ -37,6 +37,11 @@ env:
     optional: true
 - eraseText: 300
 - inputText: ${CWD}
+# Cleanup only removes what is in the scratch folder: a probe must never start
+# in a real folder the field kept.
+- assertVisible:
+    id: field-cwd
+    text: ${CWD}
 - tapOn:
     id: field-label
 - eraseText: 60
@@ -78,8 +83,9 @@ env:
 - inputText: What is 6 times 7? Answer with the number only.
 - runFlow: ../regression/_send.yaml
 # The question does not hold the answer, so only the agent's reply can match.
+# Not after a colon: a row's time such as 09:42 would match too.
 - extendedWaitUntil:
-    visible: ".*\\b42\\b.*"
+    visible: ".*(?<!:)\\b42\\b(?!:).*"
     timeout: 180000
 - takeScreenshot: ${LABEL}-reply
 - runFlow:

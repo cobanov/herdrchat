@@ -17,7 +17,8 @@
 # stops the sshd and deletes the folder. It sends prompts only to the chats it
 # started. Left behind: Claude's trust of each scratch folder in ~/.claude.json,
 # which every running Claude rewrites, and agy's summary database, which agy
-# holds open; both name folders that no longer exist.
+# holds open; both name folders that no longer exist. Codex, Pi and OMP keep
+# their own sessions of the probe chats, and those stay too.
 #
 # Needs the app on a booted simulator, built signed ad hoc: an unsigned build
 # has no keychain, and saving the host fails.
@@ -80,7 +81,11 @@ run() {
 
 cleanup() {
   status=$?
-  trap - EXIT INT TERM
+  # Ignored, not restored: a second Ctrl-C during a 20-60 s Maestro flow below
+  # stopped cleanup halfway, with the host saved in the app, the key in $WORK
+  # and maybe the sshd still listening.
+  trap '' INT TERM
+  trap - EXIT
   # The probe chats' workspaces, each one with a pane in the scratch folder,
   # and the conversation ids agy reported in them, read before they close.
   probes=$("$HERDR" api snapshot 2>/dev/null | python3 -I -c '
@@ -135,8 +140,9 @@ if os.path.exists(settings):
         print("removed", len(trusted) - len(kept), "agy trusted folders")
 PY
   # The agents' own records of the probe chats, filed by the scratch folder's
-  # path: Claude's with / and . as -, Grok's URL-encoded.
-  claude_dir=$(printf '%s' "$SCRATCH" | sed 's|[/.]|-|g')
+  # path: Claude's with every character but a letter or digit as - (macOS's
+  # TMPDIR has _ in it), Grok's URL-encoded.
+  claude_dir=$(printf '%s' "$SCRATCH" | sed 's|[^A-Za-z0-9]|-|g')
   grok_dir=$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SCRATCH")
   for dir in "$HOME/.claude/projects/$claude_dir"-* "${GROK_HOME:-$HOME/.grok}/sessions/$grok_dir"%2F*; do
     [ -d "$dir" ] && rm -rf "$dir" && echo "removed $dir"
@@ -186,7 +192,9 @@ PICTURE=${LIVE_PICTURE:-0}
 
 failed=""
 for kind in $LIVE_AGENTS; do
-  label=$(agent_info "$kind" | cut -d' ' -f2-) || { echo "Unknown agent: $kind" >&2; failed="$failed $kind"; continue; }
+  # Not in one pipeline: its status would be cut's, and a typo would pass.
+  info=$(agent_info "$kind") || { echo "Unknown agent: $kind" >&2; failed="$failed $kind"; continue; }
+  label=$(echo "$info" | cut -d' ' -f2-)
   mkdir -p "$SCRATCH/$kind"
   run "probe-$kind" -e CWD="$SCRATCH/$kind" -e LABEL="probe-$kind" -e AGENT="$label" -e PICTURE="$PICTURE" \
     .maestro/live/probe.yaml || failed="$failed $kind"
