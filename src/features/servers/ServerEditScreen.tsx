@@ -35,7 +35,8 @@ import { SELECTED_KEY } from '@/state/Hydrate';
 type TestState =
   | { kind: 'idle' }
   | { kind: 'testing' }
-  | { kind: 'ok'; version: string | null }
+  /** `live` is false on a host with no socket bridge: chats work on the CLI path, polled, with no live events (#158). */
+  | { kind: 'ok'; version: string | null; live: boolean }
   | { kind: 'failed'; message: string; code: string }
   /**
    * The host answered with a key that differs from the stored pin. Its own
@@ -153,7 +154,9 @@ export default function ServerEditScreen() {
     try {
       await client.ping();
       const snapshot = await client.snapshot();
-      if (attempt === testAttempt.current) setTest({ kind: 'ok', version: snapshot.version });
+      // Memoised by the client, so after the snapshot this costs nothing more.
+      const live = (await client.socket.detect()) !== null;
+      if (attempt === testAttempt.current) setTest({ kind: 'ok', version: snapshot.version, live });
     } catch (thrown) {
       if (attempt !== testAttempt.current) return;
       const failure = thrown instanceof HerdrError ? thrown : null;
@@ -528,6 +531,11 @@ export default function ServerEditScreen() {
         {test.kind === 'ok' && (
           <Text variant="subhead" color="tint" weight="600" style={{ textAlign: 'center' }} testID="test-ok">
             Connected. herdr {test.version ?? 'is answering'}.
+          </Text>
+        )}
+        {test.kind === 'ok' && !test.live && (
+          <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }} testID="test-no-bridge">
+            No live events on this host: the app polls it instead, so updates arrive a few seconds late.
           </Text>
         )}
         <FieldRow>
