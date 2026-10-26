@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -480,6 +480,31 @@ describe('TranscriptStore.tail', () => {
     );
     expect(displayText(chunks[0]!.message!)).toBe('🎉 ünïcödé');
     expect(displayText(chunks[1]!.message!)).toBe('what is this?');
+  });
+
+  // The real script with `-f`, as the host runs it. The test above drops `-f`
+  // to end at the file's end, so it passed while mawk (Debian and Ubuntu's
+  // awk) held every followed line in its read buffer and the tail was silent.
+  it('follows the file: a line appended after it starts arrives while it runs', async () => {
+    const host = new ShellHost('{"type":"user","uuid":"u1","message":{"content":"first"}}\n');
+    const tail = spawn('/bin/sh', ['-c', tailScript(host.path, 0)], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    tail.stdout.on('data', (chunk: Buffer) => { out += chunk.toString('utf8'); });
+    const until = async (want: number): Promise<number> => {
+      for (let waited = 0; waited < 5_000 && out.split('\n').length - 1 < want; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return out.split('\n').length - 1;
+    };
+    try {
+      expect(await until(1)).toBe(1);
+      host.append('{"type":"user","uuid":"u2","message":{"content":"second"}}\n');
+      expect(await until(2)).toBe(2);
+      expect(out.split('\n')[1]).toMatch(/^\d+\t.*"second"/);
+    } finally {
+      // The group: `sh`, `tail` and `awk`.
+      process.kill(-tail.pid!, 'SIGTERM');
+    }
   });
 
   it('carries header metadata alongside the bubbles', async () => {

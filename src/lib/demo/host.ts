@@ -381,7 +381,8 @@ export class DemoHost implements HerdrTransport {
    */
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
     // `tailScript` frames each line with its size; a bare `tail -f` does not.
-    const follow = /^tail -c \+(\d+) -f '(.+?)'( \| LC_ALL=C awk '[^']*')?$/.exec(withoutPath(command));
+    // After `tailScript`'s mawk check, when there is one.
+    const follow = /^(?:hc_aw=; [^;]*; )?tail -c \+(\d+) -f '(.+?)'( \| LC_ALL=C awk (?:\$hc_aw )?'[^']*')?$/.exec(withoutPath(command));
     if (follow === null) return;
     const framed = follow[3] !== undefined;
 

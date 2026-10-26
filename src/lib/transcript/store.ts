@@ -985,6 +985,12 @@ const STRIP_WINDOW_BYTES = 1024 * 1024;
  * the size comes from the host: `length` counts bytes in the C locale. The
  * picture pattern is `STRIP_PICTURES`, spelt out rather than with `{128}`,
  * which older mawk cannot read, and `fflush` sends each line as it lands.
+ *
+ * `fflush` flushes only what awk writes. mawk, the default awk on Debian and
+ * Ubuntu, also buffers what it reads from a pipe, so a followed transcript
+ * printed nothing, not even its first line, until the buffer filled. Its
+ * `-Winteractive` reads a line at a time; macOS awk refuses the flag and gawk
+ * reads a pipe as it comes, so the host picks it.
  */
 export function tailScript(path: string, startByte: number, follow = true): string {
   const awk = [
@@ -992,7 +998,8 @@ export function tailScript(path: string, startByte: number, follow = true): stri
     '  d = "\\"data:[A-Za-z0-9.+/-]*;base64," c "*\\"" }',
     '{ n = length($0); gsub(p, "\\"\\""); gsub(d, "\\"\\""); print n "\\t" $0; fflush() }',
   ].join('\n');
-  return `tail -c +${startByte + 1}${follow ? ' -f' : ''} ${shellQuote(path)} | LC_ALL=C awk ${shellQuote(awk)}`;
+  const mawk = 'hc_aw=; awk -W version </dev/null 2>/dev/null | grep -q mawk && hc_aw=-Winteractive; ';
+  return `${mawk}tail -c +${startByte + 1}${follow ? ' -f' : ''} ${shellQuote(path)} | LC_ALL=C awk $hc_aw ${shellQuote(awk)}`;
 }
 
 /**
