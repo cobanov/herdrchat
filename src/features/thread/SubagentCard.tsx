@@ -3,7 +3,13 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { openSubagent, useDelegationScope, useDelegationStates } from '@/features/thread/delegation';
+import {
+  openSubagent,
+  useDelegationScope,
+  useDelegationStates,
+  type AgentTarget,
+  type DelegationScope,
+} from '@/features/thread/delegation';
 import { haptics } from '@/lib/haptics';
 import { formatDuration, formatTokens, formatToolCalls } from '@/lib/subagents/format';
 import { subagentInput, type Delegation, type DelegationState, type ToolCall } from '@/lib/threadItems';
@@ -24,21 +30,12 @@ import { minTouchTarget, radius, size, spacing } from '@/theme/tokens';
  */
 export function SubagentCard({ call, delegation }: { call: ToolCall; delegation: Delegation }) {
   const scope = useDelegationScope();
-  const input = subagentInput(call);
-  const title = input.description ?? 'Agent';
-  const subtitle = [input.agentType, modelDisplayName(input.model)].filter((part): part is string => part !== null).join(' · ');
+  const { title, subtitle } = subagentTitles(call);
   const id = call.id ?? call.key;
 
   useReportState(call.id, delegation.state);
 
-  // A background agent's launch named it; a foreground one is found by the
-  // meta that names this call. Without a call id there is nothing to match.
-  const target = delegation.agentId !== null
-    ? { kind: 'agent' as const, agentId: delegation.agentId, runId: null }
-    : call.id !== null ? { kind: 'call' as const, toolUseId: call.id } : null;
-  const onOpen = scope === null || scope.sessionDirs.length === 0 || target === null || call.id === null
-    ? null
-    : () => openSubagent(scope, target, { title, subtitle, followKey: call.id!, state: delegation.state, callId: call.id });
+  const onOpen = subagentOpener(scope, call, delegation);
 
   return (
     <DelegationCard
@@ -55,6 +52,32 @@ export function SubagentCard({ call, delegation }: { call: ToolCall; delegation:
       openLabel="Open this agent's transcript"
     />
   );
+}
+
+/** What a subagent is called on its card and its screen: its description, then its type and model. */
+function subagentTitles(call: ToolCall): { title: string; subtitle: string } {
+  const input = subagentInput(call);
+  return {
+    title: input.description ?? 'Agent',
+    subtitle: [input.agentType, modelDisplayName(input.model)].filter((part): part is string => part !== null).join(' · '),
+  };
+}
+
+/**
+ * What opens a subagent's transcript, or null when nothing can: the card's
+ * chevron, and an agents bar row matched to the card.
+ *
+ * A background agent's launch named it; a foreground one is found by the
+ * meta that names this call. Without a call id there is nothing to match.
+ */
+export function subagentOpener(scope: DelegationScope | null, call: ToolCall, delegation: Delegation): (() => void) | null {
+  const callId = call.id;
+  const target: AgentTarget | null = delegation.agentId !== null
+    ? { kind: 'agent', agentId: delegation.agentId, runId: null }
+    : callId !== null ? { kind: 'call', toolUseId: callId } : null;
+  if (scope === null || scope.sessionDirs.length === 0 || target === null || callId === null) return null;
+  const { title, subtitle } = subagentTitles(call);
+  return () => openSubagent(scope, target, { title, subtitle, followKey: callId, state: delegation.state, callId });
 }
 
 /** Tell an open agent screen where this card's work stands, so it stops following when it ends. */

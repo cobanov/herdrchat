@@ -133,7 +133,7 @@ it('follows a running subagent as its transcript grows, and stops when it ends',
 
   // Its result lands and the card says done: the stream closes, and what it
   // had not delivered yet is read once.
-  tick(2_500);
+  tick(15_000);
   await rerender({ follow: false });
   await act(async () => {
     await jest.advanceTimersByTimeAsync(10);

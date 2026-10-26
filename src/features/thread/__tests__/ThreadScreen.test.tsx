@@ -2,6 +2,7 @@ import { fireEvent, render, within } from '@testing-library/react-native';
 import type { ReactElement } from 'react';
 import { View as MockView, type ViewProps } from 'react-native';
 
+import type { AgentsPane } from '@/lib/transcript/agentsPane';
 import ThreadScreen from '../ThreadScreen';
 
 const mockReload = jest.fn(() => Promise.resolve());
@@ -61,6 +62,7 @@ let mockPaused = false;
 let mockWorkingDirName = 'project-with-a-long-folder-name';
 let mockAgents: { agent: string | null; paneId: string; agentSession: null; focused?: boolean; cwd?: string; terminalId?: string }[] = [];
 const mockSend = jest.fn(async (_text: string) => true);
+let mockAgentsPane: AgentsPane | null = null;
 jest.mock('@/features/thread/useThread', () => ({
   useThread: () => ({
     agents: mockAgents,
@@ -74,7 +76,7 @@ jest.mock('@/features/thread/useThread', () => ({
     sessionMeta: mockSessionMeta,
     workingDirName: mockWorkingDirName, status: 'idle',
     isBlocked: false, overlay: null, overlayBusy: false, sendOverlayKeys: jest.fn(), isSending: false, canSend: true, loading: mockLoading,
-    reachedStart: true, failedIds: new Set(),
+    reachedStart: true, failedIds: new Set(), agentsPane: mockAgentsPane, agentsPaneAt: mockAgentsPane === null ? null : Date.now(),
     sessionState: 'ok', error: 'Conversation updates paused. Reconnecting.',
     reload: mockReload, clearError: mockClearError, send: mockSend,
   }),
@@ -443,4 +445,25 @@ describe('the / palette', () => {
     expect(omp.queryByTestId('command-suggestions')).toBeNull();
     await omp.unmount();
   });
+});
+
+// Claude Code's background agents sit above the composer, in the controls,
+// never in the thread list, and only while the pane is on the agent's screen.
+it('shows the agents bar in the controls while the pane is there, and none without', async () => {
+  mockLoading = false;
+  const none = await render(<ThreadScreen workspaceId="w1" onBack={jest.fn()} />);
+  expect(none.queryByTestId('agents-bar')).toBeNull();
+  await none.unmount();
+  mockAgentsPane = {
+    rows: [{ state: 'running', kind: 'general-purpose', task: 'Reviewing the notes', elapsedMs: 12_000, tokens: 12_400 }],
+    hidden: 0,
+  };
+  try {
+    const screen = await render(<ThreadScreen workspaceId="w1" onBack={jest.fn()} />);
+    expect(within(screen.getByTestId('thread-controls')).getByTestId('agents-bar')).toBeTruthy();
+    expect(screen.getByTestId('agents-bar-summary')).toHaveTextContent(/^1 agent working · /);
+    await screen.unmount();
+  } finally {
+    mockAgentsPane = null;
+  }
 });

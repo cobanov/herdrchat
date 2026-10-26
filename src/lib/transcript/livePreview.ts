@@ -12,6 +12,7 @@
  * history before the Expo rewrite).
  */
 
+import { isAgentsPaneLine } from './agentsPane';
 import { clean } from './ansi';
 
 export function extractLivePreview(raw: string): string | null {
@@ -20,6 +21,12 @@ export function extractLivePreview(raw: string): string | null {
   // Cut the whole footer before looking for a spinner, including its dot grid.
   const queued = lines.findIndex(line => /^(?:[•●]\s*)?Queued follow-up inputs$/i.test(line));
   if (queued >= 0) lines.splice(queued);
+  // Everything under the composer's footer (`… · ← for agents · ↓ to
+  // manage`) is chrome: Claude's agents pane, its update notice. A pane row
+  // the parser cannot read still carries `↓ … tokens`, and as the last such
+  // line it was taken for the spinner, so the cut comes before the search.
+  const footer = lastIndexWhere(lines, isComposerFooter);
+  if (footer !== null) lines.splice(footer + 1);
 
   // Anchor: the last status/spinner line (Claude prints one while working).
   const anchor = lastIndexWhere(lines, isStatusLine);
@@ -78,12 +85,21 @@ function scrub(line: string): string {
   return clean(line).replaceAll('\u2502', '|').replaceAll('\u2503', '|');
 }
 
+/** The footer under the composer that announces the agents pane, Claude's or Codex's. */
+function isComposerFooter(line: string): boolean {
+  return /(?:^|·\s*)←\s*for agents\b/u.test(line);
+}
+
 /**
  * Claude's working status line: a spinner glyph, a token counter, or an
  * "esc to interrupt" hint.
  */
 function isStatusLine(line: string): boolean {
   if (line.length === 0) return false;
+  // A row of Claude's agents pane carries `· ↓ 156.7k tokens` too, and as the
+  // last such line on screen it was taken for the spinner: the pane itself
+  // became "the prose above it". The bar above the composer shows the pane.
+  if (isAgentsPaneLine(line)) return false;
   // The Codex footer contains middle dots but is not the working spinner.
   if (line.toLowerCase().includes('for agents')) return false;
   for (const glyph of SPINNER_GLYPHS) {
@@ -100,10 +116,12 @@ function isStatusLine(line: string): boolean {
 
 /**
  * TUI chrome that isn't the agent's answer: the composer, rules, the shell
- * prompt or herdr footer, mode hints.
+ * prompt or herdr footer, mode hints, the agents pane.
  */
 function isChrome(line: string): boolean {
   if (/^[❯›>]/.test(line)) return true;
+  // Claude's agents pane under the composer: `⏺ main`, its rows, `↓ N more`.
+  if (isAgentsPaneLine(line)) return true;
   if (/^[-─=]+$/.test(line)) return true;
   // Codex animates a braille-dot field even without the queued-input panel.
   if (/^[\s\u2800-\u28ff]+$/u.test(line)) return true;

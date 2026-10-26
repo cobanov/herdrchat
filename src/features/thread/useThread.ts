@@ -37,6 +37,7 @@ import {
   type BlockedPrompt,
 } from '@/lib/transcript/blockedPrompt';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
+import { parseAgentsPane, type AgentsPane } from '@/lib/transcript/agentsPane';
 import { parsePaneOverlay, type PaneOverlay } from '@/lib/transcript/paneOverlay';
 import { isCatalogueAgent, isSlashCommand } from '@/lib/slashCommands';
 import { continueWindow } from '@/lib/transcript/window';
@@ -112,6 +113,13 @@ const EVENT_DEBOUNCE_MS = 250;
  * needlessly torn down and re-established over SSH.
  */
 const TAIL_SILENCE_MS = 90_000;
+/**
+ * How much of a working pane's screen the poll reads. Enough for the prose
+ * above Claude's spinner line and, under its composer and footer, the agents
+ * pane: a header, five rows and `↓ N more`, with Claude's update notice and
+ * compaction hint between them.
+ */
+const LIVE_SCREEN_LINES = 40;
 /**
  * How long an agent may go without reporting a session id before the thread
  * stops waiting and says the integration is probably missing.
@@ -205,6 +213,15 @@ export interface ThreadState {
   sendOverlayKeys: (keys: readonly string[]) => Promise<void>;
   sessionMeta: SessionMeta | null;
   livePreview: string | null;
+  /**
+   * Claude Code's agents pane (its background agents, drawn under the
+   * composer), from the same screen read as the live preview; null when the
+   * pane is not drawn. Read on while it has rows even with the agent idle,
+   * since the pane outlives the turn that started them.
+   */
+  agentsPane: AgentsPane | null;
+  /** When `agentsPane` was read, epoch ms, so its elapsed times can tick on. */
+  agentsPaneAt: number | null;
   workingDirName: string | null;
   error: string | null;
   isSending: boolean;
@@ -311,6 +328,9 @@ export function useThread(
   const blockedPendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Record<string, SessionMeta>>({});
   const [livePreview, setLivePreview] = useState<string | null>(null);
+  const [agentsRead, setAgentsRead] = useState<{ pane: AgentsPane; at: number } | null>(null);
+  /** The last screen read had an agents pane. Read by the poll, which must not re-run on it. */
+  const agentsPaneShown = useRef(false);
   const [overlay, setOverlay] = useState<PaneOverlay | null>(null);
   const [overlayBusy, setOverlayBusy] = useState(false);
   /** The pane the open panel is on, or null. Read by the poll, which must not re-run on it. */
@@ -804,13 +824,16 @@ export function useThread(
    * read on every poll of every thread is what sank the first attempt at
    * slash commands (it queued behind itself and timed out unrelated calls).
    */
-  const readOverlay = useCallback(async (paneId: string) => {
-    if (client === null) return;
-    const found = parsePaneOverlay(await client.paneVisible(paneId, OVERLAY_LINES));
-    if (!alive.current) return;
+  const readOverlay = useCallback(async (paneId: string): Promise<string | null> => {
+    if (client === null) return null;
+    const screen = await client.paneVisible(paneId, OVERLAY_LINES);
+    const found = parsePaneOverlay(screen);
+    if (!alive.current) return null;
     if (found !== null) overlaySeenAt.current = Date.now();
     overlayPane.current = found === null ? null : paneId;
     setOverlay(found);
+    // The poll reads the agents pane off the same screen rather than again.
+    return screen;
   }, [client]);
 
   const watchOverlay = useCallback((paneId: string) => {
@@ -849,6 +872,9 @@ export function useThread(
     // A panel may already be open: opened from the desk, or left open when
     // the app went to the background. Look once each time polling starts.
     let lookForPanel = true;
+    // Whether the last poll saw the agent working: the first idle screen after
+    // a turn is read for the agents pane, see `readAgents`.
+    let wasWorking = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let again = false;
@@ -1036,19 +1062,40 @@ export function useThread(
         // A panel only sits over an idle Claude, and never beside a question.
         const watching = overlayWatchUntil.current > Date.now() || overlayPane.current !== null;
         const panelAgent = primary?.agent === 'claude' || primary?.agent === 'codex';
+        let idleScreen: string | null = null;
         if ((watching || lookForPanel) && blocked === undefined && !working && primary !== undefined && panelAgent) {
           lookForPanel = false;
           if (watching) keepFast = true;
-          await readOverlay(primary.paneId);
+          idleScreen = await readOverlay(primary.paneId);
         } else if (overlayPane.current !== null) {
           overlayPane.current = null;
           setOverlay(null);
         }
-        if (working && primary !== undefined) {
-          const raw = await client.paneVisible(primary.paneId, 30);
-          setLivePreview(extractLivePreview(raw));
+        // The agents pane stays on screen after the turn that started its
+        // agents ends: Claude idles while they run. So the screen is read on
+        // while the last read had one, until a read has none. While the
+        // agent works it is the live preview's read, and while it idles a
+        // look for a slash command's panel serves too, never a second read.
+        // A turn can start a background agent and end between two polls, so
+        // no working read saw the pane; the first idle poll after a working
+        // one reads the screen once to catch it.
+        const justIdled = wasWorking && !working;
+        wasWorking = working;
+        const readAgents = (agentsPaneShown.current || idleScreen !== null || justIdled) && blocked === undefined;
+        if ((working || readAgents) && primary !== undefined) {
+          const raw = idleScreen ?? await client.paneVisible(primary.paneId, LIVE_SCREEN_LINES);
+          if (stopped) return;
+          setLivePreview(working ? extractLivePreview(raw) : null);
+          const pane = parseAgentsPane(raw);
+          agentsPaneShown.current = pane !== null;
+          setAgentsRead(pane === null ? null : { pane, at: Date.now() });
         } else {
           setLivePreview(null);
+          // Under a question the pane is out of sight; the last read stands.
+          if (blocked === undefined) {
+            agentsPaneShown.current = false;
+            setAgentsRead(null);
+          }
         }
 
         /*
@@ -1573,6 +1620,8 @@ export function useThread(
     sendOverlayKeys,
     sessionMeta,
     livePreview,
+    agentsPane: agentsRead?.pane ?? null,
+    agentsPaneAt: agentsRead?.at ?? null,
     workingDirName: primaryPane?.cwd.split('/').filter(Boolean).pop() ?? null,
     error: actionError ?? pollError ?? tailError,
     isSending,
