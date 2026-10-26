@@ -251,7 +251,7 @@ export async function forgetWorkspace(
   workspaceId: string
 ): Promise<void> {
   await inTransaction(db, async () => {
-    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs']) {
+    for (const table of ['messages', 'tail_cursors', 'thread_reads', 'chat_prefs']) {
       // The workspace's own rows, and those of each agent in it, which are
       // filed under `w6/<pane>` (see chatKey). By prefix rather than by the
       // panes it has now: one that closed earlier left rows too. `substr`,

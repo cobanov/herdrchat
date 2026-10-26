@@ -129,8 +129,8 @@ export function formatListTime(timestamp: number): string {
   const now = new Date();
   const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-  if (days === 0) return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (days === 0) return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   if (days === 1) return 'Yesterday';
-  if (days < 7) return date.toLocaleDateString('en-US', { weekday: 'short' });
-  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+  if (days < 7) return date.toLocaleDateString(undefined, { weekday: 'short' });
+  return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 }

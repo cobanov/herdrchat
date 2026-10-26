@@ -23,8 +23,10 @@ import {
   clearSecrets,
   invalidateClient,
   loadHostKeyPin,
+  loadPassphrase,
   loadSecret,
   saveHostKeyPin,
+  savePassphrase,
   saveSecret,
   testClient,
   useConnections,
@@ -71,6 +73,7 @@ export default function ServerEditScreen() {
   // credentials to, never whoever answers the next connect.
   const [observedFingerprint, setObservedFingerprint] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // The pin this host is already bound to, for the reader to compare against
   // `ssh-keygen -lf` on the machine itself. Read once: it only changes through
   // the flows on this screen, which set `observedFingerprint` anyway.
@@ -83,7 +86,7 @@ export default function ServerEditScreen() {
     setTest({ kind: 'idle' });
   });
   const { draft } = fields;
-  const { secret } = fields.values;
+  const { secret, passphrase } = fields.values;
   useEffect(() => {
     let alive = true;
     void loadHostKeyPin(params.id).then((pin) => {
@@ -97,6 +100,15 @@ export default function ServerEditScreen() {
   // and the interesting one is the key on the wire now.
   const fingerprint = observedFingerprint ?? storedPin;
 
+
+  /**
+   * A new key brings its own passphrase, blank for none. A kept key keeps its
+   * stored one unless another is typed.
+   */
+  const resolvePassphrase = async (): Promise<string | null> => {
+    if (passphrase.length > 0 || secret.length > 0) return passphrase;
+    return loadPassphrase(params.id);
+  };
 
   const resolveSecret = async (): Promise<string> => {
     if (secret.length > 0) return secret;
@@ -118,6 +130,7 @@ export default function ServerEditScreen() {
         // but the pinned one, because it authenticates with real credentials.
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
@@ -199,6 +212,7 @@ export default function ServerEditScreen() {
       {
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
@@ -236,6 +250,7 @@ export default function ServerEditScreen() {
       {
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
@@ -253,9 +268,24 @@ export default function ServerEditScreen() {
     }
   };
 
+  // A keychain or database write that failed left Save doing nothing at all.
   const save = async () => {
+    setSaveError(null);
+    try {
+      await saveHost();
+    } catch (thrown) {
+      setSaveError(`Could not save this host. ${errorText(thrown)}`);
+    }
+  };
+
+  const saveHost = async () => {
     const connection = draft();
     if (secret.length > 0) await saveSecret(connection.id, secret);
+    if (connection.authKind === 'privateKey' && (secret.length > 0 || passphrase.length > 0)) {
+      await savePassphrase(connection.id, passphrase);
+    } else if (connection.authKind === 'password') {
+      await savePassphrase(connection.id, '');
+    }
     // The pin survives a cosmetic edit (name, herdr path, session). Only a
     // changed endpoint replaces it, and then with the key the passing test
     // actually saw, never a blank slate the next connect fills in blindly.
@@ -384,6 +414,11 @@ export default function ServerEditScreen() {
         {test.kind === 'ok' && !test.live && (
           <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }} testID="test-no-bridge">
             No live events on this host: the app polls it instead, so updates arrive a few seconds late.
+          </Text>
+        )}
+        {saveError !== null && (
+          <Text variant="footnote" color="destructive" style={{ textAlign: 'center' }} testID="save-error">
+            {saveError}
           </Text>
         )}
         <FieldRow>

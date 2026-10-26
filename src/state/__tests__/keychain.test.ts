@@ -1,4 +1,4 @@
-import { loadSecret } from '../connections';
+import { clearSecrets, loadHostKeyPin, loadPassphrase, loadSecret, saveHostKeyPin, savePassphrase } from '../connections';
 
 /**
  * A keychain that behaves like expo-secure-store on iOS: adding an item sets
@@ -31,6 +31,25 @@ jest.mock('@/state/sshTransport', () => ({ SshHerdrTransport: class {}, MissingC
 beforeEach(() => {
   mockItems.clear();
   mockFailAdd = null;
+});
+
+// HC-7: a passphrase is kept like the key, device-only, and goes with it.
+it('keeps a passphrase on this device only, forgets a blank one, and clears it with the key', async () => {
+  await savePassphrase('host-1', 'open sesame');
+  expect(mockItems.get('herdrchat.passphrase.host-1')).toEqual({ value: 'open sesame', accessible: 'whenUnlockedThisDeviceOnly' });
+  await expect(loadPassphrase('host-1')).resolves.toBe('open sesame');
+  await savePassphrase('host-1', '');
+  await expect(loadPassphrase('host-1')).resolves.toBeNull();
+  await savePassphrase('host-1', 'again');
+  await clearSecrets('host-1');
+  await expect(loadPassphrase('host-1')).resolves.toBeNull();
+});
+
+// HC-5: an empty pin would read back as "no pin", trust-on-first-use again.
+it('never stores an empty host key pin', async () => {
+  await saveHostKeyPin('host-1', '');
+  expect(mockItems.size).toBe(0);
+  await expect(loadHostKeyPin('host-1')).resolves.toBeNull();
 });
 
 // #102: the old migration re-saved the value, which never changes accessibility.

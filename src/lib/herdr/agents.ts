@@ -90,6 +90,10 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     integration: 'antigravity-cli',
     // Its title, idle or not: it never names its terminal after a conversation.
     defaultTitles: ['agy'],
+    // The digit alone answers a permission or a question (measured, agy
+    // 1.3.6); an Enter after it lands in the composer. Its trust menu has no
+    // numbers and takes the arrows.
+    digitAnswers: true,
     missing: 'The Antigravity conversation is identified, but its transcript is not in ~/.gemini/antigravity-cli/brain on this host. Resume that exact conversation on the host, then reload.',
   },
   letta: { name: 'Letta', reader: null, integration: null, defaultTitles: [], missing: MISSING },

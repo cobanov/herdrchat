@@ -172,7 +172,7 @@ export function WorkingIndicator({ writing }: { writing: boolean }) {
       <Text variant="footnote" weight="500" color="secondary">
         {writing ? 'Writing…' : 'Working…'}
       </Text>
-      <Text variant="footnote" color="tertiary" style={{ fontVariant: ['tabular-nums'] }}>
+      <Text variant="footnote" color="secondary" style={{ fontVariant: ['tabular-nums'] }}>
         {elapsed(now - since)}
       </Text>
     </View>

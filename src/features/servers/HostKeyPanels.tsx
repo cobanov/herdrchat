@@ -77,7 +77,7 @@ export function KeyChangedPanel({
           <Text variant="caption" color="secondary">
             Key you saved
           </Text>
-          <Text variant="caption" color="tertiary" mono selectable testID="saved-fingerprint">
+          <Text variant="caption" color="secondary" mono selectable testID="saved-fingerprint">
             {formatFingerprint(saved)}
           </Text>
         </View>
@@ -99,7 +99,7 @@ export function HostFingerprint({ fingerprint }: { fingerprint: string }) {
       <Text variant="caption" color="secondary">
         Host key fingerprint
       </Text>
-      <Text variant="caption" color="tertiary" mono selectable testID="host-fingerprint">
+      <Text variant="caption" color="secondary" mono selectable testID="host-fingerprint">
         {formatFingerprint(fingerprint)}
       </Text>
     </View>

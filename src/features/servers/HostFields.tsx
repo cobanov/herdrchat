@@ -57,13 +57,24 @@ export function HostFields({ form, isNew, onSectionLayout, onKeyFocus }: {
           }}
         />
         {values.authKind === 'privateKey' ? (
-          <KeyField
-            value={values.secret}
-            onChangeText={set.secret}
-            // The key is several lines tall, so the inset alone can leave its
-            // top under the keyboard; bring the whole credentials block up.
-            onFocus={onKeyFocus}
-          />
+          <>
+            <KeyField
+              value={values.secret}
+              onChangeText={set.secret}
+              // The key is several lines tall, so the inset alone can leave its
+              // top under the keyboard; bring the whole credentials block up.
+              onFocus={onKeyFocus}
+            />
+            <Field
+              label="Passphrase"
+              placeholder={isNew ? 'None' : 'Unchanged'}
+              value={values.passphrase}
+              onChangeText={set.passphrase}
+              secureTextEntry
+              autoCapitalize="none"
+              testID="field-passphrase"
+            />
+          </>
         ) : (
           <Field
             label="Password"

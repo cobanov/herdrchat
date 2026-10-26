@@ -12,6 +12,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Android ships a cut-down BouncyCastle under the provider name "BC", and sshj
@@ -206,6 +208,19 @@ class HerdrSshModule : Module() {
     AsyncFunction("closeShell") { shellId: String ->
       ShellRegistry.shared.forget(shellId)
       shells.remove(shellId)?.close()
+    }
+
+    // A line to a running stream's stdin: the host's socket bridge, which
+    // stays up for the connection and takes one request a line.
+    AsyncFunction("writeStream") Coroutine { streamId: String, text: String ->
+      val handle = streams[streamId]
+        ?: return@Coroutine failureMap("transport_failed", "That stream is no longer open.")
+      try {
+        withContext(Dispatchers.IO) { handle.write(text) }
+        mapOf("ok" to true)
+      } catch (error: Exception) {
+        failureMap("transport_failed", error.message ?: "The host stopped reading.")
+      }
     }
 
     OnDestroy {

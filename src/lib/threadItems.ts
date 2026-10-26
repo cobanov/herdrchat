@@ -395,7 +395,7 @@ export function toolKind(name: string): ToolKind {
   if (SEARCH_TOOLS.has(key)) return 'search';
   if (FETCH_TOOLS.has(key)) return 'fetch';
   if (TODO_TOOLS.has(key)) return 'todo';
-  if (key === 'askuserquestion') return 'question';
+  if (key === 'askuserquestion' || key === 'ask_question') return 'question';
   if (key === 'agent' || key === 'task') return 'agent';
   return 'tool';
 }

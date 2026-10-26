@@ -282,9 +282,10 @@ class PreviewTests(unittest.TestCase):
         root = Path(self.dir.name)
         self.claude, self.codex = root / "claude", root / "codex"
         self.archived, self.grok, self.pi = root / "archived", root / "grok", root / "pi"
+        self.agy = root / "agy"
         (self.claude / "-Users-me-work").mkdir(parents=True)
         (self.codex / "2026" / "09" / "25").mkdir(parents=True)
-        for folder in (self.archived, self.grok, self.pi):
+        for folder in (self.archived, self.grok, self.pi, self.agy):
             folder.mkdir()
 
     def tearDown(self):
@@ -294,6 +295,7 @@ class PreviewTests(unittest.TestCase):
         notifier = load_notifier(env)
         notifier.CLAUDE_PROJECTS, notifier.CODEX_SESSIONS = str(self.claude), str(self.codex)
         notifier.CODEX_ARCHIVED, notifier.GROK_SESSIONS = str(self.archived), str(self.grok)
+        notifier.AGY_BRAIN = str(self.agy)
         return notifier
 
     def claude_transcript(self, session, *entries):
@@ -377,6 +379,26 @@ class PreviewTests(unittest.TestCase):
                 "rawInput": {"command": "npm run deploy"}, "_meta": {"x.ai/tool": {"name": "run_terminal_command"}}})) + "\n")
         self.assertEqual(notifier.notification_text("grok", "blocked", "infra", "grok", session),
                          ("infra", "Waiting for you: Run: npm run deploy"))
+
+    def test_agy_quotes_its_reply_and_names_the_command_it_waits_on(self):
+        notifier = self.notifier()
+        session = "6e990404-0000-4000-8000-00000000000a"
+        logs = self.agy / session / ".system_generated" / "logs"
+        logs.mkdir(parents=True)
+        log = logs / "transcript.jsonl"
+        log.write_text("".join(json.dumps(e) + "\n" for e in (
+            {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "<USER_REQUEST>\nicons?\n</USER_REQUEST>"},
+            {"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "Two sizes are missing."},
+        )))
+        self.assertEqual(notifier.notification_text("agy", "done", "assets", "agy", session),
+                         ("assets", "Two sizes are missing."))
+        with log.open("a") as handle:
+            handle.write(json.dumps({"step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
+                "tool_calls": [{"name": "run_command", "args": {"CommandLine": '"npm run icons"'}}]}) + "\n")
+        self.assertEqual(notifier.notification_text("agy", "blocked", "assets", "agy", session),
+                         ("assets", "Waiting for you: Run: npm run icons"))
+        # Only the folder the id names: never another conversation's.
+        self.assertIsNone(notifier.transcript_path("agy", "../" + session))
 
     def test_pi_quotes_its_journal_by_the_path_it_reports(self):
         notifier = self.notifier()

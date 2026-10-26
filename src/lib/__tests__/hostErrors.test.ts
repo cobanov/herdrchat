@@ -61,6 +61,19 @@ describe('exitCodeError', () => {
     expect(error.message).toMatch(/on this host/i);
   });
 
+  // A Windows host, reached with its OpenSSH default
+  // shell: the list showed cmd's own words, which say nothing of the fix.
+  it.each([
+    "'export' is not recognized as an internal or external command,\r\noperable program or batch file.",
+    "export : The term 'export' is not recognized as the name of a cmdlet, function, script file, or operable program.",
+    "export: The term 'export' is not recognized as a name of a cmdlet, function, script file, or executable program.",
+  ])('names the Windows shell and its fix: %s', (stderr) => {
+    const error = exitCodeError(1, stderr);
+    expect(error.code).toBe('windows_shell');
+    expect(error.message).toContain('DefaultShell');
+    expect(error.message).not.toContain('recognized');
+  });
+
   it('still diagnoses a missing binary from the exit code alone', () => {
     // 127 arrives with no envelope, because herdr never ran.
     expect(exitCodeError(127, '').code).toBe('herdr_not_found');

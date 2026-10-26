@@ -12,7 +12,7 @@ import { haptics } from '@/components/haptics';
 import { runtimeReport } from '@/lib/runtimeReport';
 import { REPO_URL } from '@/lib/welcome';
 import { clientFor, useConnections, useSelectedConnection } from '@/state/connections';
-import { useHostVersion } from '@/state/hostVersion';
+import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 import { saveSetting } from '@/state/saveSetting';
 import { explainTarget, formatDiagnostics, summarizeAgentExplain } from './diagnostics';
 
@@ -96,12 +96,7 @@ export function SupportSection() {
       hostCount,
       newArchitecture: report.fabric && report.bridgeless,
       glassAvailable,
-      // Null until something owns "the last thing that went wrong". Errors are
-      // currently held per-screen and cleared when their banner is dismissed, so
-      // reading one here would report whatever screen happened to fail last —
-      // and a stale error in a bug report is worse than no error at all.
-      lastError: null,
-      herdrVersion: useHostVersion.getState().version,
+      herdrVersion: hostVersionOf(useHostVersion.getState().versions, selected?.id),
       agentExplain,
     });
     void Clipboard.setStringAsync(text);

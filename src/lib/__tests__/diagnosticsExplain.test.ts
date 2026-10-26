@@ -32,7 +32,6 @@ const facts = (agentExplain: string | null | undefined) => ({
   hostCount: 1,
   newArchitecture: true,
   glassAvailable: true,
-  lastError: null,
   herdrVersion: '0.8.0',
   agentExplain,
 });

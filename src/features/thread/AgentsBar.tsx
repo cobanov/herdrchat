@@ -97,7 +97,7 @@ export function AgentsBar({
             />
           ))}
           {pane.hidden > 0 && (
-            <Text testID="agents-bar-more" variant="caption" color="tertiary" style={{ paddingTop: spacing.xs }}>
+            <Text testID="agents-bar-more" variant="caption" color="secondary" style={{ paddingTop: spacing.xs }}>
               {pane.hidden} more in the terminal
             </Text>
           )}
@@ -143,7 +143,7 @@ function AgentsBarRow({
       <Text variant="footnote" numberOfLines={1} style={{ flex: 1 }}>
         {row.task}
       </Text>
-      <Text variant="caption" color="tertiary" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>
+      <Text variant="caption" color="secondary" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>
         {figures.join(' · ')}
       </Text>
       {onOpen !== null && (
