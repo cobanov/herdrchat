@@ -14,7 +14,7 @@ function sources(dir: string): string[] {
 // `tertiaryLabel` is 3.78:1 in light mode, under the 4.5:1 text needs, so it
 // is held to glyphs: an icon's fallback character and the shell's prompt
 // (HC-32). Words in it went unread by anyone with low vision.
-const GLYPHS = new Set(['{shellPrompt}', "{open ? '⌄' : '›'}"]);
+const GLYPHS = new Set(['{shellPrompt}', "{open ? '⌄' : '›'}", "{open ? '⌄' : '⌃'}"]);
 
 it('keeps words out of the tertiary label colour', () => {
   const words: string[] = [];

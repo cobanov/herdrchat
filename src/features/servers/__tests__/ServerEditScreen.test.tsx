@@ -44,7 +44,11 @@ jest.mock('@/state/connections', () => {
     savePassphrase: jest.fn(),
     saveSecret: jest.fn(),
     testClient: () => ({
-      client: { ping: async () => undefined, snapshot: async () => ({ version: '0.9.5' }) },
+      client: {
+        ping: async () => undefined,
+        snapshot: async () => ({ version: '0.9.5' }),
+        socket: { detect: async () => null },
+      },
       dispose: async () => undefined,
     }),
   };
