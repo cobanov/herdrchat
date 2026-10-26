@@ -1,0 +1,5 @@
+{
+  "herdr": "0.9.5",
+  "manifests": ["agy", "amp", "claude", "cline", "codex", "copilot", "cursor", "devin", "droid", "gemini", "grok", "hermes", "kilo", "kimi", "kiro", "letta", "maki", "muse", "opencode", "pi", "qodercli", "qwen"],
+  "integrations": ["pi", "omp", "claude", "codex", "copilot", "devin", "droid", "kimi", "opencode", "kilo", "hermes", "qodercli", "qwen", "cursor", "mastracode", "antigravity-cli", "grok", "letta"]
+}

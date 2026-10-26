@@ -358,8 +358,9 @@ describe('session signature', () => {
 
 describe('agent name', () => {
   it('names the agents it knows, keeps herdr\'s id for the rest, and calls a shell a terminal', () => {
-    expect(['claude', 'codex', 'omp', 'letta'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta']);
-    expect(agentName('gemini')).toBe('gemini');
+    expect(['claude', 'codex', 'omp', 'letta', 'gemini'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta', 'Gemini']);
+    // One a newer herdr detects before the table names it.
+    expect(agentName('newagent')).toBe('newagent');
     expect(agentName(null)).toBe('Terminal');
   });
 });
