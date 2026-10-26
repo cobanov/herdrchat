@@ -97,6 +97,22 @@ describe('inline parsing', () => {
       { kind: 'text', text: '_literal_suffix' },
     ]);
   });
+  // From a real Grok reply (HC-117): the backticks showed inside the bold.
+  it('reads code inside bold or italic as code, the rest keeping its emphasis', () => {
+    expect(parseInline('it calls **`grok-imagine-image-quality`**.')).toEqual([
+      { kind: 'text', text: 'it calls ' },
+      { kind: 'code', text: 'grok-imagine-image-quality' },
+      { kind: 'text', text: '.' },
+    ]);
+    expect(parseInline('**run `npm test` first** and _see `out.log`_')).toEqual([
+      { kind: 'bold', text: 'run ' },
+      { kind: 'code', text: 'npm test' },
+      { kind: 'bold', text: ' first' },
+      { kind: 'text', text: ' and ' },
+      { kind: 'italic', text: 'see ' },
+      { kind: 'code', text: 'out.log' },
+    ]);
+  });
   it('reads bold, italic, code and links', () => {
     expect(parseInline('a **b** c `d` [e](https://x.dev) *f*')).toEqual([
       { kind: 'text', text: 'a ' },

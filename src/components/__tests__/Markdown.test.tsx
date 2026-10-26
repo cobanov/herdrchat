@@ -17,6 +17,13 @@ function layout(height: number) {
   return { nativeEvent: { layout: { x: 0, y: 0, width: 100, height } } };
 }
 
+// HC-111: a fill on inline code ran from where it wrapped to the line's end.
+it('sets inline code in the monospace face, with no fill, and the text as it is', async () => {
+  await render(<Markdown text="Waiting for `/ready` before probing fixes it." />);
+  const code = screen.getByText('/ready');
+  expect(code).not.toHaveStyle({ backgroundColor: '#000000' });
+});
+
 // Built row by row, each cell was as wide as its own text and every row put its
 // column boundaries somewhere else. Built as columns, a column is as wide as
 // its widest cell, which only works if each column holds that column's cells.

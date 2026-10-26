@@ -31,9 +31,18 @@ appId: dev.herdr.HerdrChat
 # The permission mode is a deliberate choice rather than a hidden default: the
 # app once launched plain `claude`, and because the host default is `manual`
 # every tool call then stopped for approval. Assert the non-default is settable.
+# Below the agent rows (seven agents stack as rows), so scrolled to.
+- scrollUntilVisible:
+    element:
+      id: "permission-plan"
+    direction: DOWN
 - tapOn:
     id: "permission-plan"
 
+- scrollUntilVisible:
+    element:
+      id: "field-label"
+    direction: UP
 - tapOn:
     id: "field-label"
 - inputText: "Maestro"

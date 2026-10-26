@@ -28,8 +28,15 @@ export function extractLivePreview(raw: string): string | null {
   const footer = lastIndexWhere(lines, isComposerFooter);
   if (footer !== null) lines.splice(footer + 1);
 
-  // Anchor: the last status/spinner line (Claude prints one while working).
-  const anchor = lastIndexWhere(lines, isStatusLine);
+  // Anchor: Claude's spinner, the line it is working on. Below it sit only a
+  // tip, its notices and the composer. Otherwise a status hint, as Codex's.
+  // Last, Claude's line without an ellipsis ("✻ Waiting for 6 background
+  // agents to finish"): without it the composer is the anchor, and a draft in
+  // it stops the walk as if it were the prompt this turn answers.
+  const anchor =
+    lastIndexWhere(lines, isSpinnerLine) ??
+    lastIndexWhere(lines, isStatusLine) ??
+    lastIndexWhere(lines, isSpinnerLike);
   // Otherwise stop at the composer input line near the bottom.
   const composer = lastIndexWhere(lines, (line) => /^[❯›]/.test(line));
   const end = anchor ?? composer ?? lines.length;
@@ -49,6 +56,10 @@ export function extractLivePreview(raw: string): string | null {
       }
       break;
     }
+    // The prompt this turn answers: what is above it is an earlier turn's.
+    if (/^[❯›]\s*\S/.test(line)) break;
+    // A tool's output, so the block is a tool call, not the answer.
+    if (line.startsWith('⎿')) return null;
     if (isChrome(line)) {
       index -= 1;
       continue;
@@ -91,20 +102,29 @@ function isComposerFooter(line: string): boolean {
 }
 
 /**
- * Claude's working status line: a spinner glyph, a token counter, or an
- * "esc to interrupt" hint.
+ * Claude's spinner or the line after a turn: a glyph, then a word. Starting
+ * with one, not containing one: `·` is among the glyphs, and Claude's update
+ * notice ("✔ Update installed · Restart to update") anchored the preview below
+ * the spinner, which was then shown as the answer.
  */
+function isSpinnerLike(line: string): boolean {
+  return SPINNER_GLYPHS.includes(line.charAt(0)) && /^.\s+\p{L}/u.test(line);
+}
+
+/** The spinner while Claude works ("✶ Propagating…"), not a finished turn's "✻ Worked for 1m". */
+function isSpinnerLine(line: string): boolean {
+  return isSpinnerLike(line) && line.includes('…');
+}
+
+/** A working agent's status hint where there is no spinner, as Codex's. */
 function isStatusLine(line: string): boolean {
   if (line.length === 0) return false;
   // A row of Claude's agents pane carries `· ↓ 156.7k tokens` too, and as the
   // last such line on screen it was taken for the spinner: the pane itself
   // became "the prose above it". The bar above the composer shows the pane.
   if (isAgentsPaneLine(line)) return false;
-  // The Codex footer contains middle dots but is not the working spinner.
+  // The Codex footer is not the working status.
   if (line.toLowerCase().includes('for agents')) return false;
-  for (const glyph of SPINNER_GLYPHS) {
-    if (line.includes(glyph)) return true;
-  }
   const lower = line.toLowerCase();
   return (
     lower.includes('esc to interrupt') ||
@@ -122,6 +142,7 @@ function isChrome(line: string): boolean {
   if (/^[❯›>]/.test(line)) return true;
   // Claude's agents pane under the composer: `⏺ main`, its rows, `↓ N more`.
   if (isAgentsPaneLine(line)) return true;
+  if (isSpinnerLike(line)) return true;
   if (/^[-─=]+$/.test(line)) return true;
   // Codex animates a braille-dot field even without the queued-input panel.
   if (/^[\s\u2800-\u28ff]+$/u.test(line)) return true;
@@ -136,6 +157,9 @@ function isChrome(line: string): boolean {
     lower.includes('⏸') ||
     lower.includes('resume this session') ||
     lower.includes('? for shortcuts') ||
+    // Claude's own notices under the spinner.
+    lower.includes('restart to update') ||
+    lower.includes('auto-update') ||
     // A status bar with pipe-separated fields, e.g. herdr's own footer
     // ("dev@mac-mini | herdrchat | main | Opus 5 | ctx:47%") or a
     // shell prompt ("user@host | ~/projects"). Two bars plus an @ is a field

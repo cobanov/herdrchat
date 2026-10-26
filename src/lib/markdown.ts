@@ -209,11 +209,11 @@ export function parseInline(text: string): InlineSpan[] {
     } else if (match[5] !== undefined) {
       spans.push({ kind: 'code', text: match[5] });
     } else if (match[7] !== undefined) {
-      spans.push({ kind: 'bold', text: match[7] });
+      spans.push(...emphasis(match[7], 'bold'));
     } else if (match[9] !== undefined) {
-      spans.push({ kind: 'italic', text: match[9] });
+      spans.push(...emphasis(match[9], 'italic'));
     } else if (match[11] !== undefined) {
-      spans.push({ kind: 'italic', text: match[11] });
+      spans.push(...emphasis(match[11], 'italic'));
     }
 
     cursor = match.index + match[0].length;
@@ -226,6 +226,15 @@ export function parseInline(text: string): InlineSpan[] {
 }
 
 // MARK: - Internals
+
+/**
+ * Emphasis around other spans: Grok and Claude set a name in bold code
+ * (`**\`name\`**`), which showed its backticks. The spans inside keep their
+ * kind and the plain text takes the emphasis; spans do not nest.
+ */
+function emphasis(inner: string, kind: 'bold' | 'italic'): InlineSpan[] {
+  return parseInline(inner).map((span) => (span.kind === 'text' ? { kind, text: span.text } : span));
+}
 
 /** Agent output is untrusted. Never dispatch app/file/script schemes. */
 function safeLink(href: string): boolean {

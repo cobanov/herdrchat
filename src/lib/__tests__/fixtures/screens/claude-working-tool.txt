@@ -1,0 +1,12 @@
+⏺ Reading the screen this pane shows while the agent works.
+
+⏺ Capturing the visible screen
+  ⎿  $ herdr pane read w9:p1 --source visible --lines 30
+
+✽ Ruminating… (56s · ↓ 4.9k tokens)
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+                                                                                                                           ✔ Update installed · Restart to update
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · PR #175 · esc to interrupt · ← for agents
