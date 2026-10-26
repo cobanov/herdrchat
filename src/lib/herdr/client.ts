@@ -150,9 +150,11 @@ export class HerdrClient {
    * The host's whole state. A call while one is already on its way shares its
    * answer: on iPad the chat list and the open chat poll side by side, and a
    * send re-reads the snapshot that a poll may be reading at that moment.
+   * `fresh` skips that: a send deciding whether a second Enter is safe (#76)
+   * needs a read that started after its keys went out.
    */
-  snapshot(): Promise<Snapshot> {
-    if (this.snapshotInFlight !== null) return this.snapshotInFlight;
+  snapshot({ fresh = false }: { fresh?: boolean } = {}): Promise<Snapshot> {
+    if (!fresh && this.snapshotInFlight !== null) return this.snapshotInFlight;
     const pending = this.readSnapshot();
     this.snapshotInFlight = pending;
     const clear = () => {

@@ -760,8 +760,10 @@ export function useThread(
       // cache. An unchanged file uses the cache as it is.
       const smallGap = (source: { cached: number | null; size: number }) =>
         source.cached !== null && source.cached < source.size && source.size - source.cached <= CATCH_UP_BYTES;
-      const changed = arrivals.current.length === 0 ||
-        sources.some(source => source.cached !== source.size && !smallGap(source));
+      // Each tail files its backlog in arrival order and only the window sorts
+      // by time, so the catch-up is for one source with news, never two.
+      const behind = sources.filter(source => source.cached !== source.size);
+      const changed = arrivals.current.length === 0 || behind.length > 1 || behind.some(source => !smallGap(source));
       const windows = await Promise.all(sources.map(async source => ({
         ...source,
         recent: changed ? await loadRecent(store, source.path, source.label, source.size) : null,
@@ -821,6 +823,10 @@ export function useThread(
           // one was a transaction, a cursor write and a rebuild of the whole
           // list. A burst is one of each now, messages before the cursor.
           const written = batcher<{ message: ChatMessage | null; consumed: number }>(async (chunks) => {
+            // An aborted tail's drain can run while the poll awaits `rebind`, when
+            // `ingest` still sees the old session bound. The cursor stays, so a
+            // restarted tail reads these lines again.
+            if (!current()) return;
             const messages = chunks.flatMap((chunk) => (chunk.message === null ? [] : [chunk.message]));
             if (messages.length > 0) await ingest(messages, sig);
             const last = chunks[chunks.length - 1];
@@ -1315,7 +1321,7 @@ export function useThread(
     async (fallback: AgentInfo): Promise<AgentInfo> => {
       if (client === null) return fallback;
       try {
-        const snapshot = await client.snapshot();
+        const snapshot = await client.snapshot({ fresh: true });
         const live = chatAgents(snapshot.agents, workspaceId, pane);
         return sendTarget(live) ?? live[0] ?? fallback;
       } catch {
@@ -1361,7 +1367,7 @@ export function useThread(
       // says so; a failed read or a vanished pane is `unknown`, never `idle`.
       const paneState = async (paneId: string): Promise<'idle' | 'reacted' | 'unknown'> => {
         try {
-          const snapshot = await client.snapshot();
+          const snapshot = await client.snapshot({ fresh: true });
           const status = snapshot.agents.find((agent) => agent.paneId === paneId)?.agentStatus;
           if (status === 'idle' || status === 'done') return 'idle';
           if (status === 'working' || status === 'blocked') return 'reacted';

@@ -50,6 +50,18 @@ describe('HerdrClient over the socket', () => {
     expect(reads()).toBe(2);
   });
 
+  // A send decides on a second Enter from the snapshot (#76); one that started
+  // before the keys went out can say idle when the agent is already blocked.
+  it('reads a fresh snapshot even with one on its way', async () => {
+    const { client, commands } = socketHost({
+      'session.snapshot':
+        '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}',
+    });
+    const reads = () => commands.filter((command) => !isSocketProbe(command)).length;
+    await Promise.all([client.snapshot(), client.snapshot({ fresh: true })]);
+    expect(reads()).toBe(2);
+  });
+
   it('reads the snapshot with session.snapshot and remembers the version', async () => {
     const { client, commands } = socketHost({
       'session.snapshot':

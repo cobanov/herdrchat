@@ -37,6 +37,8 @@ let mockTailFailures = 0;
 let mockEmitReceipt: ((message: ChatMessage) => void) | null = null;
 /** Lines the live tail yields at once, a burst, each with its own end byte. */
 let mockLiveBurst: ChatMessage[] = [];
+/** The tail stays open after its lines until it is aborted, as a live one does. */
+let mockHoldOpen = false;
 async function* mockTail(path: string, _label: string | null, from: number, signal?: AbortSignal) {
   mockTailStarts.push({ path, from });
   mockTailSignals.push(signal);
@@ -50,6 +52,7 @@ async function* mockTail(path: string, _label: string | null, from: number, sign
     const message = await new Promise<ChatMessage>(resolve => { mockEmitReceipt = resolve; });
     yield { message, meta: null, consumedBytes: 100 };
   }
+  if (mockHoldOpen) await new Promise(resolve => signal?.addEventListener('abort', resolve));
 }
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
 jest.mock('../../useHostEvents', () => ({ useHostEvents: () => mockLive }));
@@ -153,6 +156,7 @@ beforeEach(() => {
   mockLiveMeta = [];
   mockLiveBurst = [];
   mockLiveReceipt = false;
+  mockHoldOpen = false;
   mockEmitReceipt = null;
 });
 afterEach(() => {
@@ -521,6 +525,23 @@ it('never presses Enter into an agent that went blocked after an unverified send
   expect(wait).toHaveBeenCalledWith(agent.paneId, ['working', 'blocked'], expect.any(Number));
   expect(keys).not.toHaveBeenCalled();
   expect(result.current.failedIds.size).toBe(0);
+  await unmount();
+});
+
+// A poll's snapshot already on its way can predate the keys: it says idle when
+// the agent has just gone blocked. The send paths read one of their own.
+it('reads a fresh snapshot, not a poll already on its way, before a second Enter', async () => {
+  const shared = snapshot([agent]);
+  const fresh = snapshot([{ ...agent, agentStatus: 'blocked' }]);
+  jest.spyOn(client, 'snapshot').mockImplementation(async (options) => (options?.fresh === true ? fresh : shared));
+  jest.spyOn(client, 'sendPrompt').mockResolvedValue('unverified');
+  jest.spyOn(client, 'waitAgentStatus').mockResolvedValue(false);
+  const keys = jest.spyOn(client, 'sendKeys').mockResolvedValue(undefined);
+  const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  let sent: Promise<unknown> | undefined;
+  await act(async () => { sent = result.current.send('Refactor the parser'); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(5_100); await sent; });
+  expect(keys).not.toHaveBeenCalled();
   await unmount();
 });
 
@@ -963,6 +984,51 @@ it('discards a snapshot that finishes after its session has rotated', async () =
   expect(result.current.messages.map(message => message.id)).toEqual(['new-session-message']);
   expect(replaceMessages).toHaveBeenCalledTimes(1);
   expect(mockTailStarts.every(source => source.path === '/test/new-session.jsonl')).toBe(true);
+  await unmount();
+});
+
+// The poll aborts the old tail and awaits `rebind` before it binds the new
+// session, and the aborted tail's drain flushed its last line in that gap:
+// `ingest` still saw the old session bound, so it landed in the new cache.
+it("never writes an aborted tail's lines into the session that replaces it", async () => {
+  mockLive = false;
+  mockLiveReceipt = true;
+  mockHoldOpen = true;
+  jest.mocked(rebind)
+    .mockImplementationOnce(async () => false)
+    .mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve(false), 1_000)));
+  const rotated = snapshot([{ ...agent, agentSession: { ...agent.agentSession!, value: 'new-session' } }]);
+  let polls = 0;
+  jest.spyOn(client, 'snapshot').mockImplementation(async () => {
+    polls += 1;
+    if (polls === 1) return snapshot([agent]);
+    if (polls === 2) {
+      // The old tail reads one more line just as the host names a new session.
+      mockEmitReceipt?.(turn('old-late'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return rotated;
+  });
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  await act(async () => { await jest.advanceTimersByTimeAsync(4_000); });
+  expect(rebind).toHaveBeenCalledWith(db, 'host', 'chat', 'new-session');
+  const written = jest.mocked(appendMessages).mock.calls.flatMap(call => call[4].map(message => message.id));
+  expect(written).not.toContain('old-late');
+  await unmount();
+});
+
+// Each tail files its own backlog in arrival order; only the window read sorts
+// by time. Two agents that both answered while the phone was away are a window.
+it.each([
+  ['one of two agents has news, through the tail', 50_000, false],
+  ['both have news, as one window', 54_000, true],
+])('catches up when %s', async (_case, codexSize, window) => {
+  mockProbeFor = path => ({ kind: 'size', bytes: path === '/test/codex.jsonl' ? codexSize : 54_000 });
+  jest.mocked(seedMessages).mockResolvedValue([turn('cached')]);
+  jest.mocked(tailCursor).mockResolvedValue(50_000);
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent, { ...agent, agent: 'codex', paneId: 'second-pane' }]));
+  const { unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+  expect(mockRecent.mock.calls.length > 0).toBe(window);
   await unmount();
 });
 
