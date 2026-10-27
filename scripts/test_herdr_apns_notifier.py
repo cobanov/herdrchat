@@ -3,8 +3,12 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
 import tempfile
+import threading
+import time
 import unittest
+import unittest.mock
 import urllib.error
 from unittest.mock import patch
 
@@ -84,6 +88,7 @@ class RoutingPayloadTests(unittest.TestCase):
                 patch.object(notifier, "device_tokens", return_value=token_files), \
                 patch.object(notifier, "send_push",
                              side_effect=lambda tok, t, b, extra=None, env="production", service="apns": seen.append((tok, extra, env)) or (200, None)), \
+                patch.object(notifier, "subscribe", return_value=None), \
                 patch.object(notifier.time, "sleep"):
             with self.assertRaises(KeyboardInterrupt):
                 notifier.main()
@@ -122,6 +127,7 @@ class RoutingPayloadTests(unittest.TestCase):
                                                                        ("tok-b", "c", "production", frozenset(), "apns")]), \
                 patch.object(notifier, "send_push",
                              side_effect=lambda tok, t, b, extra=None, env="production", service="apns": seen.append((tok, extra)) or (200, None)), \
+                patch.object(notifier, "subscribe", return_value=None), \
                 patch.object(notifier.time, "sleep"):
             with self.assertRaises(KeyboardInterrupt):
                 notifier.main()
@@ -227,6 +233,106 @@ class RelayTests(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(folder)), ["b.json"])
             self.assertEqual(notifier.device_tokens(), [("alive", None, "production", frozenset(), "apns")])
 
+
+
+class EventStreamTests(unittest.TestCase):
+    """The watcher reads a snapshot when herdr says something changed, not every 3 s."""
+
+    def fake_herdr(self, folder, reply):
+        """A Unix socket that records one request and answers `reply`, then an event."""
+        path = os.path.join(folder, "herdr.sock")
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(path)
+        server.listen(1)
+        seen = []
+
+        def serve():
+            conn, _ = server.accept()
+            seen.append(json.loads(conn.makefile().readline()))
+            conn.sendall(reply + b'{"event":"pane_agent_status_changed","data":{}}\n')
+            time.sleep(0.5)
+            conn.close()
+            server.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        return path, seen
+
+    def test_subscribes_to_each_agent_and_wakes_on_its_event(self):
+        notifier = load_notifier()
+        with tempfile.TemporaryDirectory() as folder:
+            path, seen = self.fake_herdr(folder, b'{"id":"herdrchat-watcher","result":{"type":"subscription_started"}}\n')
+            with patch.object(notifier, "socket_path", return_value=path):
+                conn = notifier.subscribe(["w1:p1", "w2:p1"])
+            self.assertIsNotNone(conn)
+            started = time.monotonic()
+            # The event that came with the acknowledgement wakes it at once.
+            self.assertIs(notifier.wait_for_change(conn, 30), conn)
+            self.assertLess(time.monotonic() - started, 5)
+            # herdr closing the stream hands the loop back to polling.
+            self.assertIsNone(notifier.wait_for_change(conn, 30))
+        subs = seen[0]["params"]["subscriptions"]
+        self.assertIn({"type": "pane.agent_status_changed", "pane_id": "w2:p1"}, subs)
+        self.assertIn({"type": "pane.agent_detected"}, subs)
+
+    def test_a_refused_subscription_means_polling(self):
+        notifier = load_notifier()
+        with tempfile.TemporaryDirectory() as folder:
+            path, _ = self.fake_herdr(folder, b'{"id":"herdrchat-watcher","error":{"code":"pane_not_found","message":"gone"}}\n')
+            with patch.object(notifier, "socket_path", return_value=path):
+                self.assertIsNone(notifier.subscribe(["w9:p1"]))
+        with patch.object(notifier, "socket_path", return_value=None):
+            self.assertIsNone(notifier.subscribe([]))
+
+    def test_resubscribes_only_when_the_agents_change(self):
+        notifier = load_notifier()
+        one = [{"pane_id": "w1:p1", "agent_status": "idle"}]
+        two = one + [{"pane_id": "w2:p1", "agent_status": "idle"}]
+        snapshots = [one, one, two]
+        subscribed, waits = [], []
+
+        def snapshot():
+            if not snapshots:
+                raise KeyboardInterrupt
+            return snapshots.pop(0)
+
+        stream = unittest.mock.Mock()
+        with patch.object(notifier.os, "makedirs"), \
+                patch.object(notifier, "snapshot_agents", side_effect=snapshot), \
+                patch.object(notifier, "workspace_labels", return_value={}), \
+                patch.object(notifier, "device_tokens", return_value=[]), \
+                patch.object(notifier, "subscribe", side_effect=lambda panes: subscribed.append(panes) or stream), \
+                patch.object(notifier, "wait_for_change", side_effect=lambda conn, timeout: waits.append(timeout) or conn):
+            with self.assertRaises(KeyboardInterrupt):
+                notifier.main()
+        stream.close.assert_called_once()
+        self.assertEqual(subscribed, [["w1:p1"], ["w1:p1", "w2:p1"]])
+        # Each new stream is followed by a read, not a sleep: a change between
+        # the read and the subscription reached no stream.
+        self.assertEqual(waits, [notifier.LIVE_POLL_SECONDS])
+
+    def test_a_failed_read_keeps_the_stream_and_polls(self):
+        notifier = load_notifier()
+        one = [{"pane_id": "w1:p1", "agent_status": "idle"}]
+        snapshots = [one, one, None, one]
+        subscribed, waits = [], []
+
+        def snapshot():
+            if not snapshots:
+                raise KeyboardInterrupt
+            return snapshots.pop(0)
+
+        stream = unittest.mock.Mock()
+        with patch.object(notifier.os, "makedirs"), \
+                patch.object(notifier, "snapshot_agents", side_effect=snapshot), \
+                patch.object(notifier, "workspace_labels", return_value={}), \
+                patch.object(notifier, "device_tokens", return_value=[]), \
+                patch.object(notifier, "subscribe", side_effect=lambda panes: subscribed.append(panes) or stream), \
+                patch.object(notifier, "wait_for_change", side_effect=lambda conn, timeout: waits.append(timeout) or conn):
+            with self.assertRaises(KeyboardInterrupt):
+                notifier.main()
+        stream.close.assert_not_called()
+        self.assertEqual(subscribed, [["w1:p1"]])
+        self.assertEqual(waits, [notifier.LIVE_POLL_SECONDS, notifier.POLL_SECONDS, notifier.LIVE_POLL_SECONDS])
 
 
 class TransitionTests(unittest.TestCase):
