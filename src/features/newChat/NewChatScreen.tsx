@@ -9,6 +9,7 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
+import { Toggle } from '@/components/Toggle';
 import { openChat } from '@/features/chats/navigation';
 import {
   DEFAULT_PERMISSION_MODE,
@@ -51,6 +52,7 @@ export default function NewChatScreen() {
   const [label, setLabel] = useState('');
   const [editedMode, setEditedMode] = useState<PermissionMode | null>(null);
   const [editedAgent, setEditedAgent] = useState<NewChatAgent | null>(null);
+  const [editedWorktree, setEditedWorktree] = useState<boolean | null>(null);
 
   // Precedence: what you just picked in the folder browser, then what you typed,
   // then what this host used last. Picking clears the typed value so the
@@ -62,6 +64,7 @@ export default function NewChatScreen() {
   };
   const mode = editedMode ?? remembered?.mode ?? DEFAULT_PERMISSION_MODE;
   const agent = editedAgent ?? remembered?.agent ?? 'claude';
+  const worktree = editedWorktree ?? remembered?.worktree ?? false;
   const { start, creating, error } = useStartChat(connection?.id ?? null);
 
   const onStart = async () => {
@@ -73,6 +76,7 @@ export default function NewChatScreen() {
       label: label.trim(),
       agent,
       mode,
+      worktree,
     });
     if (creation === null) return;
     clearPicked();
@@ -119,6 +123,17 @@ export default function NewChatScreen() {
             onPress={() => router.push({ pathname: '/folder-picker', params: { start: cwd } })}
             testID="choose-folder"
           />
+          {/* Its own folder and branch: two chats on one repository then never
+              edit each other's files. */}
+          <View style={{ borderRadius: radius.sm, backgroundColor: colors.secondarySystemBackground }}>
+            <Toggle
+              label="New worktree"
+              detail="A git worktree on a new branch, so this chat never shares files with another one on the same repository. herdr opens the repository beside it."
+              value={worktree}
+              onChange={setEditedWorktree}
+              testID="new-chat-worktree"
+            />
+          </View>
         </View>
 
         <Field

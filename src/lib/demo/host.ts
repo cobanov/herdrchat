@@ -68,8 +68,15 @@ import {
 import { DELEGATE_STEP_AT_MS, delegateScreen, delegateSteps, demoSubagentFiles } from './subagents';
 import { DEMO_PROMPT_COMMANDS, demoSlashScan } from './slashCommands';
 
-/** The version the demo claims, so the client picks the agent-aware verbs. */
+/**
+ * The version the demo claims until Update herdr is pressed: new enough for
+ * the agent-aware verbs, old enough that Settings offers the update, which is
+ * how the Demo shows it.
+ */
 const DEMO_HERDR_VERSION = '0.8.0';
+
+/** What Update herdr leaves the demo on, with the protocol it speaks. */
+const DEMO_UPDATED_HERDR = { version: '0.9.5', protocol: 22 } as const;
 
 /**
  * How long the demo agent "thinks" before its answer lands.
@@ -294,6 +301,8 @@ export class DemoHost implements HerdrTransport {
   /** Panes at the folder-trust question, with the row under its cursor. */
   private readonly trusting = new Map<string, number>();
   private counter = 0;
+  /** The herdr the demo reports; Update herdr moves it on. */
+  private herdrVersion: { version: string; protocol: number } = { version: DEMO_HERDR_VERSION, protocol: 19 };
   /**
    * ~/.herdrchat, by file name. Empty at first, so the theme is the app's own
    * and every other flow looks as it always has; the app's bootstrap writes and
@@ -765,6 +774,16 @@ export class DemoHost implements HerdrTransport {
         message: 'Select your own host to create, rename or close chats. Demo contains sample conversations only.',
       } }));
     }
+    if (verb === 'worktree create' || verb.startsWith('worktree create ') || verb.startsWith('tab create ') || verb.startsWith('pane split ')) {
+      return out(JSON.stringify({ error: {
+        code: 'demo_action_unavailable',
+        message: 'Select your own host to open worktrees, tabs or terminals. Demo contains sample conversations only.',
+      } }));
+    }
+    if (verb === 'update --handoff') {
+      this.herdrVersion = DEMO_UPDATED_HERDR;
+      return out(`installed herdr ${DEMO_UPDATED_HERDR.version}\n`);
+    }
 
     if (verb === 'api snapshot') {
       return ok({
@@ -777,8 +796,7 @@ export class DemoHost implements HerdrTransport {
           focused_pane_id: this.fixtures.focusedPaneId,
           focused_tab_id: `${this.focusedWorkspaceId()}:t1`,
           focused_workspace_id: this.focusedWorkspaceId(),
-          version: DEMO_HERDR_VERSION,
-          protocol: 19,
+          ...this.herdrVersion,
         },
       });
     }

@@ -21,6 +21,13 @@ appId: dev.herdr.HerdrChat
     id: field-label
 - waitForAnimationToEnd
 - takeScreenshot: new-chat-keyboard-${APPEARANCE}
+# A worktree of its own: the Demo refuses it the way it refuses any new chat.
+- hideKeyboard
+- tapOn:
+    id: new-chat-worktree
+- takeScreenshot: new-chat-worktree-${APPEARANCE}
+- tapOn:
+    id: field-label
 - tapOn:
     id: start-chat
 - extendedWaitUntil:

@@ -1,10 +1,13 @@
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
+import { useState } from 'react';
 import { Platform } from 'react-native';
 
+import { confirmDestructive } from '@/components/ActionSheet';
 import { ActionRow, Divider, Row, Section } from '@/components/SettingsList';
+import { errorText } from '@/lib/herdr/protocol';
 import { versionAdvice, versionVerdict } from '@/lib/herdr/version';
-import { useSelectedConnection } from '@/state/connections';
+import { clientFor, useSelectedConnection } from '@/state/connections';
 import { hostVersionOf, useHostVersion } from '@/state/hostVersion';
 
 const PRIVACY_URL = 'https://herdrchat.cobanov.dev/privacy';
@@ -53,9 +56,43 @@ export function AboutSection() {
    */
   const advice =
     connection === null || hostVersion === null ? null : versionAdvice(verdict);
+  const [updating, setUpdating] = useState(false);
+  /** What the last Update herdr came to, when that is worth saying: a failure, or a server left behind. */
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const updatable =
+    connection !== null && (verdict.kind === 'outdated' || verdict.kind === 'legacy' || verdict.kind === 'unsupported');
+
+  /**
+   * Updates herdr where the agents run, asked first: it downloads and runs a
+   * new herdr there, and hands the running server over to it, which herdr
+   * still calls experimental. The version read after it lands in the store the
+   * chat list fills, which is what turns the warning off.
+   */
+  const update = () => {
+    if (connection === null) return;
+    confirmDestructive({
+      title: 'Update herdr on this host?',
+      message: `This runs herdr update --handoff on ${connection.host}: it installs the latest herdr and hands the running server over to it, so agents keep running. herdr calls the handoff experimental.`,
+      confirmLabel: 'Update now',
+      onConfirm: () => {
+        setUpdating(true);
+        setUpdateNote(null);
+        void clientFor(connection)
+          .updateHerdr()
+          .then((version) => {
+            useHostVersion.getState().setVersion(connection.id, version);
+            if (version === hostVersion) {
+              setUpdateNote(`herdr’s server still runs ${version ?? 'the old version'}: it could not be handed over to a newer herdr. Restart herdr on the host to finish.`);
+            }
+          })
+          .catch((thrown: unknown) => setUpdateNote(errorText(thrown)))
+          .finally(() => setUpdating(false));
+      },
+    });
+  };
 
   return (
-    <Section title="About" footer={advice ?? undefined}>
+    <Section title="About" footer={updateNote ?? advice ?? undefined}>
       <Row label="Version" value={version} />
       <Divider />
       <Row label="Build" value={build} />
@@ -73,6 +110,19 @@ export function AboutSection() {
         }
       />
       <Divider />
+      {updatable && (
+        <>
+          <ActionRow
+            label={updating ? 'Updating herdr…' : 'Update herdr'}
+            tone="tint"
+            accessory="none"
+            disabled={updating}
+            onPress={update}
+            testID="update-herdr"
+          />
+          <Divider />
+        </>
+      )}
       <ActionRow
         label="Privacy Policy"
         accessory="external"

@@ -56,10 +56,24 @@ appId: dev.herdr.HerdrChat
     centerElement: true
 - longPressOn:
     id: chat-row-w2
+- assertVisible: New terminal tab
+- assertVisible: Split terminal
 - assertVisible: Rename workspace…
 - assertVisible: Close chat
 - tapOn: Cancel
 - assertNotVisible: Close chat
+
+# A shell in the workspace, from the same menu. The Demo has no host to open
+# one on and says so, in the list's own error banner.
+- longPressOn:
+    id: chat-row-w2
+- tapOn: New terminal tab
+- extendedWaitUntil:
+    visible: .*your own host to open worktrees, tabs or terminals.*
+    timeout: 10000
+- takeScreenshot: chat-list-new-terminal-${APPEARANCE}
+- tapOn: Dismiss
+- assertNotVisible: .*your own host to open worktrees, tabs or terminals.*
 - scrollUntilVisible:
     element:
       id: chat-row-w2

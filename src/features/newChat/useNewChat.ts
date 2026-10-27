@@ -24,6 +24,8 @@ export interface Remembered {
   cwd: string;
   mode: PermissionMode;
   agent: NewChatAgent;
+  /** Whether the last chat started in a worktree of its own. */
+  worktree: boolean;
 }
 
 /**
@@ -37,10 +39,11 @@ export function useRemembered(connectionId: string | null): Remembered | null {
     let cancelled = false;
     const key = (name: string) => `${name}.${connectionId ?? 'none'}`;
     void (async () => {
-      const [cwd, mode, agent] = await Promise.all([
+      const [cwd, mode, agent, worktree] = await Promise.all([
         getSetting(db, key('lastCwd')),
         getSetting(db, key('permissionMode')),
         getSetting(db, key('agent')),
+        getSetting(db, key('worktree')),
       ]);
       if (cancelled) return;
       // One update, so the form never flickers through a half-loaded state.
@@ -48,6 +51,7 @@ export function useRemembered(connectionId: string | null): Remembered | null {
         cwd: cwd ?? '',
         mode: isPermissionMode(mode) ? mode : DEFAULT_PERMISSION_MODE,
         agent: isAgent(agent) ? agent : 'claude',
+        worktree: worktree === '1',
       });
     })();
     return () => {
@@ -64,33 +68,36 @@ export function useRemembered(connectionId: string | null): Remembered | null {
  * Pressing Start again used to create a second workspace next to the first
  * (#101). The workspace that was created is kept, and a retry for the same
  * folder starts the agent in it. A retry for a different folder closes it
- * first, best effort, rather than leaving an empty workspace behind.
+ * first, best effort, rather than leaving an empty workspace behind. So does
+ * a retry that changed whether the chat gets a worktree; a worktree it made
+ * stays on disk, as closing any worktree's workspace leaves it.
  */
 export function useStartChat(connectionId: string | null) {
   const db = useSQLiteContext();
-  const pending = useRef<{ directory: string; creation: WorkspaceCreation } | null>(null);
+  const pending = useRef<{ directory: string; worktree: boolean; creation: WorkspaceCreation } | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const start = async (
     client: HerdrClient,
-    choice: { directory: string; label: string; agent: NewChatAgent; mode: PermissionMode }
+    choice: { directory: string; label: string; agent: NewChatAgent; mode: PermissionMode; worktree: boolean }
   ): Promise<WorkspaceCreation | null> => {
     setCreating(true);
     setError(null);
     try {
-      let creation = pending.current?.directory === choice.directory ? pending.current.creation : null;
+      const same = pending.current?.directory === choice.directory && pending.current.worktree === choice.worktree;
+      let creation = same && pending.current !== null ? pending.current.creation : null;
       if (creation === null) {
         if (pending.current !== null) {
           const orphan = pending.current.creation.workspace.workspaceId;
           pending.current = null;
           await client.closeWorkspace(orphan).catch(() => undefined);
         }
-        creation = await client.createWorkspace(
-          choice.directory,
-          choice.label.length === 0 ? null : choice.label
-        );
-        pending.current = { directory: choice.directory, creation };
+        const label = choice.label.length === 0 ? null : choice.label;
+        creation = choice.worktree
+          ? await client.createWorktree(choice.directory, label)
+          : await client.createWorkspace(choice.directory, label);
+        pending.current = { directory: choice.directory, worktree: choice.worktree, creation };
       }
       // Named after the workspace, so `herdr agent list` on the desktop shows
       // the same thing this app calls the chat. On a host without `agent start`
@@ -107,6 +114,7 @@ export function useStartChat(connectionId: string | null) {
       await setSetting(db, key('lastCwd'), choice.directory);
       await setSetting(db, key('agent'), choice.agent);
       if (choice.agent === 'claude') await setSetting(db, key('permissionMode'), choice.mode);
+      await setSetting(db, key('worktree'), choice.worktree ? '1' : '0');
       return creation;
     } catch (thrown) {
       setError(errorText(thrown));

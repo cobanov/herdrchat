@@ -40,6 +40,13 @@ describe('herdrErrorFrom', () => {
     expect(herdrErrorFrom(envelope)?.message).toBe('the flux capacitor fell off');
   });
 
+  // Measured on 0.9.5: closing a repository's workspace while a chat in one
+  // of its worktrees is open. herdr's words name a CLI flag.
+  it('says what to close first instead of naming a flag', () => {
+    const envelope = '{"error":{"code":"workspace_group_close_required","message":"workspace has linked worktree workspaces; use --group (close_group=true in the API) to close the group"}}';
+    expect(herdrErrorFrom(envelope)?.message).toBe('Chats in worktrees of this repository are still open. Close those first, then this one.');
+  });
+
   it('falls back to the code when even the message is missing', () => {
     expect(herdrErrorFrom('{"error":{"code":"bare"}}')?.message).toContain('bare');
   });

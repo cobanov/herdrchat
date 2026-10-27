@@ -24,9 +24,11 @@ type HerdrServerCode =
   | 'agent_prompt_stalled'
   | 'herdr_not_found'
   | 'invalid_request'
+  | 'not_git_worktree'
   | 'pane_not_found'
   | 'server_not_running'
-  | 'unknown_method';
+  | 'unknown_method'
+  | 'workspace_group_close_required';
 
 /** The codes this app raises itself, about the host or its files. */
 type AppErrorCode =
@@ -139,7 +141,10 @@ export function decodeEnvelope(output: string): unknown {
   const envelope = parsed as { result?: unknown; error?: unknown };
   if (envelope.error !== undefined && envelope.error !== null) {
     const error = envelope.error as { code?: unknown; message?: unknown };
-    throw new HerdrError(
+    // Worded for a phone, as `herdrErrorFrom` words a failed command's: a
+    // socket answer is the same error, and it reached the screen in herdr's
+    // terminal wording.
+    throw herdrError(
       typeof error.code === 'string' ? wireCode(error.code) : 'unknown',
       typeof error.message === 'string' ? error.message : 'herdr reported an error.'
     );
@@ -275,6 +280,11 @@ function humanise(code: HerdrErrorCode, message: string): string {
       return 'That pane is gone. The agent may have been closed on the host.';
     case 'agent_not_found':
       return 'No agent is running in that pane any more.';
+    case 'workspace_group_close_required':
+      // herdr says "use --group": a flag, for a terminal.
+      return 'Chats in worktrees of this repository are still open. Close those first, then this one.';
+    case 'not_git_worktree':
+      return 'That folder isn’t in a git repository, so it can’t have a worktree. Turn off New worktree, or pick a folder inside a repository.';
     default:
       // Unknown codes keep herdr's own words rather than being flattened into a
       // generic apology — its message is usually the most specific thing anyone

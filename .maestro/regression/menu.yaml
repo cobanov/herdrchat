@@ -26,6 +26,40 @@ appId: dev.herdr.HerdrChat
       id: toggle-tool-activity
     direction: DOWN
 - takeScreenshot: menu-settings-${APPEARANCE}
+
+# Update herdr. The Demo reports 0.8.0, older than the herdr the app asks for,
+# so About offers the update; the Demo then reports 0.9.5 and the offer goes.
+# A plain `herdr update` left the running server, the version shown, where it
+# was, so the warning outlived the update it asked for.
+- runFlow:
+    when:
+      visible:
+        id: settings-section-about
+    commands:
+      - tapOn:
+          id: settings-section-about
+- scrollUntilVisible:
+    element:
+      id: update-herdr
+    direction: DOWN
+    centerElement: true
+- assertVisible: .*0\.8\.0 ⚠︎.*
+- takeScreenshot: menu-update-herdr-${APPEARANCE}
+- tapOn:
+    id: update-herdr
+- tapOn: Update now
+- extendedWaitUntil:
+    notVisible:
+      id: update-herdr
+    timeout: 10000
+- assertVisible: "0.9.5"
+- runFlow:
+    when:
+      visible:
+        id: settings-section-conversations
+    commands:
+      - tapOn:
+          id: settings-section-conversations
 # The Demo's w1 is blocked on a question, so the chats under this sheet count
 # one chat that wants you, and Done carries that count: with the menu button
 # covered by the sheet, it is the only sign of it while Settings is open.
