@@ -9,6 +9,12 @@ appId: dev.herdr.HerdrChat
     id: header-action
 - assertVisible: New chat
 - assertVisible: Cancel
+# A worktree of its own, turned on before any keyboard covers it: the Demo
+# refuses it in its own words, which is how this flow knows Start asked for
+# a worktree.
+- tapOn:
+    id: new-chat-worktree
+- takeScreenshot: new-chat-worktree-${APPEARANCE}
 - tapOn:
     id: field-cwd
 - inputText: /home/demo/notes
@@ -21,20 +27,13 @@ appId: dev.herdr.HerdrChat
     id: field-label
 - waitForAnimationToEnd
 - takeScreenshot: new-chat-keyboard-${APPEARANCE}
-# A worktree of its own: the Demo refuses it the way it refuses any new chat.
-- hideKeyboard
-- tapOn:
-    id: new-chat-worktree
-- takeScreenshot: new-chat-worktree-${APPEARANCE}
-- tapOn:
-    id: field-label
 - tapOn:
     id: start-chat
 - extendedWaitUntil:
     visible:
       id: new-chat-error
     timeout: 10000
-- assertVisible: .*your own host.*
+- assertVisible: .*your own host to open worktrees.*
 - tapOn: Cancel
 - assertVisible:
     id: chats-view
