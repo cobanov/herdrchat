@@ -31,7 +31,9 @@ export class EventFeed {
     private readonly socket: HerdrSocket,
     private readonly onEvent: (event: HostEvent) => void,
     /** True while a subscription is open, false between attempts. */
-    private readonly onLive: (live: boolean) => void
+    private readonly onLive: (live: boolean) => void,
+    /** The host-wide events to watch, `HOST_EVENTS` unless the consumer needs more. */
+    private readonly hostEvents: readonly string[] = HOST_EVENTS
   ) {}
 
   /**
@@ -75,7 +77,7 @@ export class EventFeed {
   }
 
   private async run(generation: number): Promise<void> {
-    const subscriptions = subscriptionsFor(this.panes);
+    const subscriptions = subscriptionsFor(this.panes, this.hostEvents);
     const controller = new AbortController();
     this.controller = controller;
     try {
@@ -167,6 +169,36 @@ export const HOST_EVENTS = [
 ] as const;
 
 /**
+ * What changes a Spaces list beyond its agents: tabs and shells opened,
+ * closed or moved on the desktop, and the order of its workspaces. Without
+ * them the list caught these at its 30 s safety poll. Every one is in
+ * herdr's schema from 0.8.0 on (measured: 0.8.0 accepts the lot, though it
+ * sends nothing for a split, which 0.9.5 reports as `pane_created`), and an
+ * older host refuses a whole subscription over one type it does not know
+ * (#75), so a caller adds them only on a host that new.
+ */
+export const LAYOUT_EVENTS = [
+  'tab.created',
+  'tab.closed',
+  'tab.renamed',
+  'tab.moved',
+  'pane.created',
+  'pane.closed',
+  'layout.updated',
+  'workspace.moved',
+  'workspace.reordered',
+] as const;
+
+/**
+ * True for one of `LAYOUT_EVENTS` as it arrives (`tab_created`, the wire's
+ * spelling of `tab.created`): a change to the list's shape that no transcript
+ * moved with.
+ */
+export function isLayoutEvent(name: string): boolean {
+  return (LAYOUT_EVENTS as readonly string[]).includes(name.replace('_', '.'));
+}
+
+/**
  * Bound getting the command running, not the stream: SSH channel open plus the
  * bridge's own start. Generous because a failure here is retried anyway.
  */
@@ -176,8 +208,11 @@ const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_CEILING_MS = 30_000;
 
 /** The subscription list for a set of panes. Exported for tests. */
-export function subscriptionsFor(paneIds: readonly string[]): Subscription[] {
-  const entries: Subscription[] = HOST_EVENTS.map((type) => ({ type }));
+export function subscriptionsFor(
+  paneIds: readonly string[],
+  hostEvents: readonly string[] = HOST_EVENTS
+): Subscription[] {
+  const entries: Subscription[] = hostEvents.map((type) => ({ type }));
   for (const paneId of paneIds) {
     for (const type of PANE_EVENTS) entries.push({ type, pane_id: paneId });
   }

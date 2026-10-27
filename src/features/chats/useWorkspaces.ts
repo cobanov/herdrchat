@@ -32,6 +32,8 @@ import { titleAgent } from '@/lib/chatTitle';
 import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
 import type { BatchAnswer } from '@/lib/herdr/socket';
 import { keepUnchanged } from '@/lib/sameShape';
+import { HOST_EVENTS, isLayoutEvent, LAYOUT_EVENTS } from '@/lib/herdr/events';
+import { AGENT_VERBS_VERSION, atLeast } from '@/lib/herdr/version';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
 import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS, WAKE_AFTER_MS } from '@/lib/herdr/timeouts';
 
@@ -143,6 +145,8 @@ export interface WorkspacesState {
 }
 
 const POLL_INTERVAL_MS = 3000;
+/** The list's host-wide events in Spaces, which draws tabs and shells too. */
+const SPACES_EVENTS = [...HOST_EVENTS, ...LAYOUT_EVENTS];
 /**
  * The poll's rate while the host's event stream is delivering. Events carry
  * every change the list cares about; this is the safety net for the ones a
@@ -204,15 +208,26 @@ export function useWorkspaces(
    * events named, or `true` for every one (the first refresh, a resync).
    */
   const forcePreviews = useRef<true | Set<string>>(true);
+  // Spaces draws tabs and shells too, so it hears when those change, on a
+  // herdr that knows the events. Read after a poll set the panes, so the
+  // version is the one that poll reported.
+  const listMode = useSettings((state) => state.listMode);
+  const hostEvents = listMode === 'spaces' && atLeast(client?.reportedVersion, AGENT_VERBS_VERSION)
+    ? SPACES_EVENTS
+    : HOST_EVENTS;
   const live = useHostEvents(client, paneIds, polling, (event) => {
     // The event may report the final idle state after a fast turn. Its preview
     // is still new, even though this agent is no longer working. Only that
     // pane's, though: one event forced every chat's transcript to be read.
-    const forced = forcePreviews.current;
-    if (event.paneId === null) forcePreviews.current = true;
-    else if (forced !== true) forced.add(event.paneId);
+    // A tab or shell opened, closed or moved changes the list and no
+    // transcript, and the desktop sends one per step of a resize.
+    if (!isLayoutEvent(event.event)) {
+      const forced = forcePreviews.current;
+      if (event.paneId === null) forcePreviews.current = true;
+      else if (forced !== true) forced.add(event.paneId);
+    }
     kick.current();
-  });
+  }, hostEvents);
   const liveRef = useRef(live);
   useEffect(() => {
     liveRef.current = live;
@@ -267,7 +282,6 @@ export function useWorkspaces(
    * Which view the list shows. Names are asked only for Spaces, the one view
    * with terminal rows, and only where a terminal can open (`processNamesWanted`).
    */
-  const listMode = useSettings((state) => state.listMode);
   const listModeRef = useRef(listMode);
   useEffect(() => {
     listModeRef.current = listMode;

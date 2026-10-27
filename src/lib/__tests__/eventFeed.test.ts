@@ -1,4 +1,4 @@
-import { concernsWorkspace, EventFeed, interpret, RESYNC_EVENT, subscriptionsFor, type HostEvent } from '../herdr/events';
+import { concernsWorkspace, EventFeed, HOST_EVENTS, interpret, isLayoutEvent, LAYOUT_EVENTS, RESYNC_EVENT, subscriptionsFor, type HostEvent } from '../herdr/events';
 import { HerdrError } from '../herdr/protocol';
 import type { HerdrSocket, SocketEvent, Subscription } from '../herdr/socket';
 
@@ -75,7 +75,12 @@ const UPSTREAM_SUBSCRIPTION_TYPES = new Set([
 const UPSTREAM_PANE_SCOPED = new Set(['pane.output_matched', 'pane.agent_status_changed', 'pane.scroll_changed']);
 
 describe('subscriptionsFor', () => {
-  const entries = subscriptionsFor(['w1:p1', 'w2:p1']);
+  // Spaces' list watches the layout events too; every check below holds for both.
+  const entries = subscriptionsFor(['w1:p1', 'w2:p1'], [...HOST_EVENTS, ...LAYOUT_EVENTS]);
+
+  it('watches only the agent events unless asked for more', () => {
+    expect(subscriptionsFor(['w1:p1']).map((e) => e.type)).toEqual([...HOST_EVENTS, 'pane.agent_status_changed']);
+  });
 
   it('asks only for event types upstream herdr knows', () => {
     expect(entries.filter((e) => !UPSTREAM_SUBSCRIPTION_TYPES.has(e.type))).toEqual([]);
@@ -95,6 +100,16 @@ describe('subscriptionsFor', () => {
       'w2:p1',
     ]);
   });
+});
+
+// The wire spells `tab.created` as `tab_created`; a layout event read as an
+// agent's made the list read every transcript on each step of a resize.
+it('knows a layout event by its wire spelling', () => {
+  expect(isLayoutEvent('tab_created')).toBe(true);
+  expect(isLayoutEvent('layout.updated')).toBe(true);
+  expect(isLayoutEvent('pane_closed')).toBe(true);
+  expect(isLayoutEvent('pane_agent_status_changed')).toBe(false);
+  expect(isLayoutEvent('workspace_created')).toBe(false);
 });
 
 describe('interpret', () => {
