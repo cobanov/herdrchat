@@ -27,6 +27,8 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: { systemBackground: '#000', separator: '#333' } }),
 }));
+// Each column is a safe-area provider; the real one waits for native insets.
+jest.mock('react-native-safe-area-context', () => jest.requireActual<{ default: object }>('react-native-safe-area-context/jest/mock').default);
 jest.mock('@/state/connections', () => ({
   useSelectedConnection: () => ({ id: mockConnectionId }),
   useConnections: (selector: (state: { hydrated: boolean; connections: never[] }) => unknown) =>
@@ -51,11 +53,18 @@ function MockThread({ workspaceId, onBack }: { workspaceId: string; onBack?: () 
   </Native.View>;
 }
 
+let mockModelId: string | null = null;
+jest.mock('../../../../modules/herdr-device/src', () => ({ deviceModelId: () => mockModelId }));
+
 const originalPad = Object.getOwnPropertyDescriptor(Native.Platform, 'isPad');
-function windowAt(width: number, isPad = true) {
+function windowAt(width: number, isPad = true, modelId: string | null = null) {
   Object.defineProperty(Native.Platform, 'isPad', { configurable: true, get: () => isPad });
+  mockModelId = modelId;
   jest.mocked(Native.useWindowDimensions).mockReturnValue({ width, height: 1024, scale: 2, fontScale: 1 });
 }
+/** The iPhone Duo: the phone idiom, 466 pt folded, 669 pt open. */
+const folded = () => windowAt(466, false, 'iPhone19,4');
+const open = () => windowAt(669, false, 'iPhone19,4');
 beforeEach(() => {
   windowAt(1032);
   useChatSelection.getState().select({ connectionId: 'host-a', workspaceId: 'w2', title: 'Notes' });
@@ -131,6 +140,51 @@ it('keeps the selected detail and draft mounted across width changes, with back 
   await fireEvent.press(screen.getByText('Back'));
   expect(useChatSelection.getState().detail).toBeNull();
   expect(mockPush).not.toHaveBeenCalled();
+});
+
+// The Duo is an iPhone, so before it pushed a chat as any phone does, and the
+// open screen showed one stretched column. A chat opens in place, at either
+// fold, so folding and unfolding under it only changes the width.
+it('opens a chat in place on an iPhone Duo, folded or open, and never pushes it', () => {
+  folded();
+  openChat('host-a', 'w3', 'Scratch');
+  expect(useChatSelection.getState().detail).toEqual({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w3', title: 'Scratch' });
+  open();
+  openChat('host-a', 'w4', 'Build');
+  expect(useChatSelection.getState().detail).toEqual({ kind: 'chat', connectionId: 'host-a', workspaceId: 'w4', title: 'Build' });
+  expect(mockPush).not.toHaveBeenCalled();
+});
+
+it('keeps the open chat and its draft as an iPhone Duo folds and unfolds, with back only when folded', async () => {
+  open();
+  const screen = await render(<ChatsScreen />);
+  expect(screen.getByTestId('tablet-sidebar')).toBeOnTheScreen();
+  expect(screen.queryByText('Back')).toBeNull();
+  await fireEvent.changeText(screen.getByTestId('draft'), 'Typed open');
+  folded();
+  await screen.rerender(<ChatsScreen />);
+  expect(screen.queryByTestId('tablet-sidebar')).toBeNull();
+  expect(screen.getByTestId('thread')).toHaveProp('accessibilityLabel', 'w2');
+  expect(screen.getByTestId('draft')).toHaveProp('value', 'Typed open');
+  expect(screen.getByText('Back')).toBeOnTheScreen();
+  open();
+  await screen.rerender(<ChatsScreen />);
+  expect(screen.getByTestId('draft')).toHaveProp('value', 'Typed open');
+  expect(screen.getByTestId('tablet-sidebar')).toBeOnTheScreen();
+  folded();
+  await screen.rerender(<ChatsScreen />);
+  await fireEvent.press(screen.getByText('Back'));
+  expect(useChatSelection.getState().detail).toBeNull();
+  expect(mockPush).not.toHaveBeenCalled();
+});
+
+it('hands a link to a chat over to the selection on an iPhone Duo', async () => {
+  folded();
+  useChatSelection.getState().select(null);
+  const screen = await render(<ThreadRoute />);
+  expect(mockDismissTo).toHaveBeenCalledWith('/');
+  expect(useChatSelection.getState().detail).toEqual(expect.objectContaining({ workspaceId: 'w2' }));
+  expect(screen.queryByTestId('thread')).toBeNull();
 });
 
 it('does not open a same-id workspace on a different host', async () => {

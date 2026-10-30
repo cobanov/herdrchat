@@ -124,7 +124,8 @@ export default function SubagentScreen({
               data={rows}
               keyExtractor={(row) => row.item.key}
               getItemType={(row) => row.item.kind}
-              contentContainerStyle={{ paddingHorizontal: screenPadding, paddingTop: spacing.sm }}
+              // Edge-to-edge: the sides are this list's to clear (an iPhone Duo's side strip).
+              contentContainerStyle={{ paddingLeft: screenPadding + insets.left, paddingRight: screenPadding + insets.right, paddingTop: spacing.sm }}
               scrollIndicatorInsets={{ top: headerHeight }}
               // As the thread's: the first frame at the end, and following it
               // after that is `useThreadScroll`'s alone.
@@ -152,7 +153,7 @@ export default function SubagentScreen({
             />
           </DelegationScopeProvider>
         )}
-        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + spacing.md }}>
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: insets.left, right: insets.right, bottom: insets.bottom + spacing.md }}>
           <JumpToBottom
             visible={scroll.awayFromEnd && rows.length > 0}
             unreadBelow={scroll.awayFromEnd && state === 'running'}

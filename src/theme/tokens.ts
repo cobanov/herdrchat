@@ -48,8 +48,16 @@ export const size = {
   quoteBar: 3,
   /** Readable tablet column; narrow windows and phones still use their full width. */
   contentMaxWidth: 840,
-  tabletBreakpoint: 768,
-  tabletSidebarWidth: 320,
+  /**
+   * The chats beside the open chat (`src/lib/splitView.ts`), from the
+   * narrowest window with room for both: the open iPhone Duo (669 pt), and
+   * not its cover screen (466 pt). Below an iPad's width the sidebar
+   * narrows so the open Duo's chat stays as wide as a phone's (389 pt).
+   */
+  splitBreakpoint: 640,
+  splitSidebarWidth: 320,
+  splitSidebarCompactWidth: 280,
+  splitSidebarFullFrom: 768,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
   /** Compact provider badge in the grouped chat cards, and the glyph in it. */

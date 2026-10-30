@@ -304,14 +304,16 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
             />
           )}
 
-          {/* Sits just above the composer, so it never covers the newest bubble. */}
+          {/* Sits just above the composer, so it never covers the newest bubble,
+              and clear of a side strip as the composer is. */}
           <Animated.View
+            testID="jump-to-bottom-strip"
             pointerEvents="box-none"
             style={[
               {
                 position: 'absolute',
-                left: 0,
-                right: 0,
+                left: insets.left,
+                right: insets.right,
                 bottom: controlsHeight,
               },
               followKeyboard,

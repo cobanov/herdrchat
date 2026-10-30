@@ -1,0 +1,75 @@
+# Run on the iPhone Duo simulator, open, with -e APPEARANCE=Dark (then Light).
+# The Duo is the phone idiom, so only its model (herdr-device) says it gets
+# the chats beside the chat. Maestro cannot fold the simulator: folding under
+# an open chat is pinned in jest (features/chats/__tests__/navigation.test.tsx).
+# Select the built-in Demo before sending: never use a real host as a fixture.
+appId: dev.herdr.HerdrChat
+---
+- stopApp
+- launchApp
+- runFlow: regression/_skip-welcome.yaml
+- tapOn:
+    id: server-switcher
+- tapOn:
+    id: server-demo
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
+- tapOn:
+    id: settings-section-appearance
+- tapOn: '${APPEARANCE}'
+- tapOn:
+    id: header-close
+# Open, nothing selected: the chats beside an empty detail, not one wide list.
+- assertVisible:
+    id: tablet-sidebar
+- assertVisible: Select a conversation
+- takeScreenshot: duo-chats
+- scrollUntilVisible:
+    element:
+      id: chat-row-w2
+    direction: DOWN
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn:
+    id: chat-row-w2
+- assertVisible:
+    id: thread-messages
+- assertVisible:
+    id: tablet-sidebar
+- assertNotVisible:
+    id: thread-back
+- tapOn:
+    id: composer-input
+- inputText: Unsent duo draft
+# A sheet over the split leaves the thread, and its draft, where they were.
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Hosts
+- tapOn:
+    id: header-close
+- assertVisible: Unsent duo draft
+- takeScreenshot: duo-thread
+- tapOn:
+    id: composer-input
+- eraseText
+- tapOn:
+    id: chat-row-w3
+- assertVisible:
+    id: bubble-d3-1
+- assertVisible:
+    id: tablet-sidebar
+# A link to a chat selects inside the split rather than pushing over it.
+- openLink: herdrchat://chat/w2?title=Notes
+- tapOn:
+    text: '^(Open|Aç)$'
+    optional: true
+- assertVisible:
+    id: composer-input
+- assertVisible:
+    id: chats-settings
+- assertNotVisible:
+    id: thread-back
+- takeScreenshot: duo-linked-chat

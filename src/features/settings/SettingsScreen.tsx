@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AdaptiveColumns, useTabletLayout } from '@/components/AdaptiveColumns';
+import { AdaptiveColumns, useSplitLayout } from '@/components/AdaptiveColumns';
 import { SegmentedField } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
@@ -46,7 +46,7 @@ const SECTION_TITLES: Record<SettingsSection, string> = {
  * take back.
  */
 export default function SettingsScreen() {
-  const wide = useTabletLayout();
+  const wide = useSplitLayout();
   const router = useRouter();
   const { section } = useLocalSearchParams<{ section?: string }>();
   const selected = isSettingsSection(section) ? section : 'connection';

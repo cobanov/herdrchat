@@ -14,6 +14,12 @@ import { useTheme } from '@/theme/ThemeProvider';
  * tabs: they are visited a few times a week, and stay sheets opened from the
  * Chats header (b67d860 took the bar away while those were its tabs).
  *
+ * On an iPhone Duo the system moves this bar into the strip on the right
+ * edge (its cover screen, and the open screen in landscape), because it is a
+ * real `UITabBarController`; a JS bar never would. That needs a build
+ * against the iOS 27.1 SDK. The bar is never hidden here: on the Duo it
+ * stands beside an open chat, not on its composer.
+ *
  * The API is still `unstable_` and may change; the blast radius is one file.
  */
 export default function TabsLayout() {
