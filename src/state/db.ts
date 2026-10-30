@@ -411,6 +411,24 @@ export async function loadHostThemeRows(
   return loadSettingsWithPrefix(db, HOST_THEME_KEY_PREFIX);
 }
 
+// MARK: - Claude usage
+
+/**
+ * A host where the person agreed to show Claude usage, as
+ * `claudeUsage.<connection id>` = '1', so `clearConnectionSettings` forgets
+ * the agreement with the host.
+ */
+export const USAGE_CONSENT_KEY_PREFIX = 'claudeUsage.';
+
+export const usageConsentKey = (connectionId: string) => `${USAGE_CONSENT_KEY_PREFIX}${connectionId}`;
+
+/** Every host's agreement, for the launch. */
+export async function loadUsageConsentRows(
+  db: SQLite.SQLiteDatabase
+): Promise<{ key: string; value: string }[]> {
+  return loadSettingsWithPrefix(db, USAGE_CONSENT_KEY_PREFIX);
+}
+
 // MARK: - Slash commands
 
 /**

@@ -33,6 +33,7 @@ import { useChatActions } from '@/features/chats/useChatActions';
 import { useHostChats } from '@/features/chats/useHostChats';
 import { HostNotices } from '@/features/chats/HostNotices';
 import { HostFeeds } from '@/features/chats/HostFeeds';
+import { UsageFooter } from '@/features/chats/UsageFooter';
 import { rowKey, type ListedChat, type OpenChat } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
@@ -365,6 +366,13 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 <HostNotices notices={notices} />
               </View>
             )}
+            {/* Not under a host that could not be reached: its usage would
+                be as stale as its chats. */}
+            {error === null && (
+              <View style={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + size.floatingBarClearance }}>
+                <UsageFooter host={connection} transport={client?.transport ?? null} />
+              </View>
+            )}
           </ScrollView>
         )
       ) : (
@@ -405,6 +413,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 />
               )}
               <HostNotices notices={notices} />
+              {/* As in the empty list: not under a host that could not be
+                  reached, whose poll has stopped, or the footer's own read
+                  would keep asking it every few seconds. */}
+              {error === null && (
+                <UsageFooter host={connection} transport={client?.transport ?? null} style={{ marginTop: spacing.lg }} />
+              )}
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
               {askForStar && (
                 <View style={{ marginTop: spacing.lg }}>
