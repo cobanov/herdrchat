@@ -91,10 +91,11 @@ export function ChatListItem({ row, prefs, actions, open, reads, openTerminalKey
   // another's.
   const openHere = openFor(open, item);
   const rowReads = readsOf(reads, item);
+  // An agent's row splits beside its own pane, not the workspace's first.
   const manage = () => actions.manageChat(item, personal ? [
     { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
     ...(mutable ? [{ label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) }] : []),
-  ] : []);
+  ] : [], agent?.pane?.paneId);
   if (row.kind === 'pane') {
     const { pane } = row;
     const target = paneTarget(item, pane);
@@ -130,7 +131,7 @@ export function ChatListItem({ row, prefs, actions, open, reads, openTerminalKey
         onLongPress={() => actions.manageChat(item, ownPersonal ? [
           { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
           ...(ownMutable ? [{ label: ownMuted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(own) }] : []),
-        ] : [])}
+        ] : [], pane.paneId)}
       />
     );
   }

@@ -33,7 +33,7 @@ import {
   watcherStatusCommand,
   type WatcherState,
 } from '../notifier/watcher';
-import { AGENT_VERBS_VERSION, atLeast } from './version';
+import { AGENT_VERBS_VERSION, atLeast, compareVersions, parseVersion } from './version';
 
 // Kept here for `TranscriptStore` and the tests that grew up importing them from the client.
 export { exitCodeError, herdrErrorFrom } from './protocol';
@@ -322,6 +322,86 @@ export class HerdrClient {
    */
   async installHerdr(): Promise<void> {
     await this.shell('curl -fsSL https://herdr.dev/install.sh | sh', INSTALL_TIMEOUT_MS);
+  }
+
+  /**
+   * Update herdr on the host and hand its running servers over to the new
+   * version, so agents keep running.
+   *
+   * `--handoff` is the point. A plain `herdr update` replaces the binary and
+   * leaves the running server on the old version, which is the one the
+   * snapshot reports, so the app went on calling the host out of date after
+   * the update it had asked for. herdr calls handoff experimental, and it
+   * works only for installs herdr's own installer manages (the one
+   * `installHerdr` runs); on a Homebrew, mise or Nix install herdr refuses,
+   * and that refusal is what the caller shows.
+   *
+   * The people this is for often ran a plain `herdr update` already, as the
+   * app once told them to: their herdr is new and its server is not, and
+   * herdr then says "already up to date" and hands nothing over, `--handoff`
+   * or not. A Homebrew herdr upgraded by brew is the same. So when the server
+   * stayed behind the herdr on the host, it is handed to that herdr here, the
+   * way `update --handoff` does it (`server.live_handoff`, measured from
+   * 0.8.0 to 0.9.5 with every workspace kept).
+   *
+   * Answers the version the server reports afterwards, read until it differs
+   * from the one before (the new server takes a moment to answer), or the
+   * last one read: unchanged means the server could not be moved on.
+   */
+  async updateHerdr(): Promise<string | null> {
+    const before = this.hostVersion;
+    let refused: unknown = null;
+    try {
+      await this.shell(shellCommand([this.herdr, 'update', '--handoff']), INSTALL_TIMEOUT_MS);
+    } catch (thrown) {
+      refused = thrown;
+    }
+    const after = refused === null ? await this.serverVersionAfter(before) : before;
+    if (after !== before) return after;
+    const installed = await this.installedHerdr();
+    const binary = parseVersion(installed?.version);
+    const server = parseVersion(after);
+    if (installed === null || binary === null || server === null || compareVersions(binary, server) <= 0) {
+      if (refused !== null) throw refused;
+      return after;
+    }
+    await this.request(
+      'server.live_handoff',
+      { import_exe: installed.path, expected_version: installed.version },
+      LAUNCH_TIMEOUT_MS,
+      () => this.run(
+        [this.herdr, 'server', 'live-handoff', '--import-exe', installed.path, '--expected-version', installed.version],
+        LAUNCH_TIMEOUT_MS
+      )
+    );
+    return this.serverVersionAfter(before);
+  }
+
+  /** The herdr binary on the host and the version it reports, when both can be read. */
+  private async installedHerdr(): Promise<{ path: string; version: string } | null> {
+    const located = await this.locateHerdr();
+    if (located.kind !== 'found') return null;
+    try {
+      const output = await this.shell(shellCommand([located.path, '--version']), POLL_TIMEOUT_MS);
+      const version = /(\d+\.\d+\.\d+\S*)/.exec(output)?.[1];
+      return version === undefined ? null : { path: located.path, version };
+    } catch {
+      return null;
+    }
+  }
+
+  /** The server's version once it differs from `before`, or the last one read after a few seconds. */
+  private async serverVersionAfter(before: string | null): Promise<string | null> {
+    for (let attempt = 0; attempt < SERVER_START_POLLS; attempt += 1) {
+      try {
+        const { version } = await this.snapshot();
+        if (version !== before) return version;
+      } catch {
+        /* the old server has gone and the new one is not answering yet */
+      }
+      await new Promise((resolve) => setTimeout(resolve, SERVER_START_INTERVAL_MS));
+    }
+    return this.hostVersion;
   }
 
   /**
@@ -891,6 +971,53 @@ export class HerdrClient {
     });
     const folder = output.trim();
     return folder.length > 0 ? folder : path;
+  }
+
+  /**
+   * Create a git worktree of the repository `cwd` is in, on a new branch, and
+   * a workspace rooted in it, without stealing focus on the desktop. The same
+   * answer as `createWorkspace`, so a new chat starts its agent the same way.
+   *
+   * What it buys: two chats on one repository no longer share a folder, so
+   * their agents never edit each other's files, and their transcripts land in
+   * different project directories. `not_git_worktree` when `cwd` is not in one.
+   */
+  async createWorktree(path: string, label: string | null): Promise<WorkspaceCreation> {
+    const cwd = await this.hostFolder(path);
+    const named = label !== null && label.length > 0 ? label : null;
+    const result = await this.request(
+      'worktree.create',
+      { cwd, label: named, focus: false },
+      LAUNCH_TIMEOUT_MS,
+      () => {
+        const argv = [this.herdr, 'worktree', 'create', '--cwd', cwd, '--no-focus'];
+        if (named !== null) argv.push('--label', named);
+        return this.run(argv, LAUNCH_TIMEOUT_MS);
+      }
+    );
+    return decodeWorkspaceCreation(result);
+  }
+
+  /** A new tab in a workspace, its one pane a shell, without moving the desktop's focus. */
+  async createTab(workspaceId: string): Promise<Pane> {
+    const result = await this.request(
+      'tab.create',
+      { workspace_id: workspaceId, focus: false },
+      LAUNCH_TIMEOUT_MS,
+      () => this.run([this.herdr, 'tab', 'create', '--workspace', workspaceId, '--no-focus'], LAUNCH_TIMEOUT_MS)
+    );
+    return decodePane(field(result, 'root_pane'));
+  }
+
+  /** Split a pane, the new half a shell, without moving the desktop's focus. */
+  async splitPane(paneId: string, direction: 'right' | 'down'): Promise<Pane> {
+    const result = await this.request(
+      'pane.split',
+      { target_pane_id: paneId, direction, focus: false },
+      LAUNCH_TIMEOUT_MS,
+      () => this.run([this.herdr, 'pane', 'split', paneId, '--direction', direction, '--no-focus'], LAUNCH_TIMEOUT_MS)
+    );
+    return decodePane(field(result, 'pane'));
   }
 
   /** Give a workspace a new label. The chat list reads it as the chat's title. */

@@ -1,8 +1,12 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, realpathSync, rmdirSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import { HerdrClient } from '../herdr/client';
-import { subscriptionsFor } from '../herdr/events';
+import { HOST_EVENTS, LAYOUT_EVENTS, subscriptionsFor } from '../herdr/events';
 import { HerdrSocket } from '../herdr/socket';
+import { atLeast, RECOMMENDED_HERDR_VERSION } from '../herdr/version';
 import type { HerdrTransport } from '../herdr/transport';
 
 /**
@@ -172,6 +176,91 @@ live('herdr socket, live', () => {
       expect(seen.some(renamed)).toBe(true);
     } finally {
       await socket.call('workspace.close', { workspace_id: workspaceId }, 5000);
+    }
+  }, 30000);
+
+  // Spaces' list adds the tab, pane and layout events, and herdr refuses a
+  // whole subscription over one type it does not know (#75). A split and a tab
+  // opened the way the long-press menu opens them must arrive on it.
+  it('accepts the Spaces subscription and reports a split and a tab opened from the app', async () => {
+    const created = await client.createWorkspace(process.env.HOME ?? '/', 'herdrchat-live-tabs');
+    const workspaceId = created.workspace.workspaceId;
+    const tabCreated = (name: string) => /^tab[._]created$/.test(name);
+    const paneCreated = (name: string) => /^pane[._]created$/.test(name);
+    // 0.8.0 says nothing about a split (measured), so there the list sees it
+    // at its next poll; the herdr the app recommends reports it.
+    const { version } = await client.snapshot();
+    const splitReported = atLeast(version, RECOMMENDED_HERDR_VERSION);
+    try {
+      const seen: string[] = [];
+      const controller = new AbortController();
+      // Acted on once the server has accepted, not after a guessed delay: a
+      // cold bridge took longer than a second, and the split went unheard.
+      let accepted = () => undefined as void;
+      const ready = new Promise<void>((resolve) => (accepted = resolve));
+      const stream = (async () => {
+        for await (const event of socket.subscribe(
+          subscriptionsFor([created.rootPane.paneId], [...HOST_EVENTS, ...LAYOUT_EVENTS]),
+          5000,
+          controller.signal
+        )) {
+          if (event.kind === 'started') accepted();
+          if (event.kind !== 'event') continue;
+          seen.push(event.event);
+          // Both, in either order: herdr can report the split's pane after the
+          // tab made just after it.
+          if (seen.some(tabCreated) && (!splitReported || seen.some(paneCreated))) break;
+        }
+      })();
+      try {
+        await ready;
+        const split = await client.splitPane(created.rootPane.paneId, 'right');
+        expect(split).toMatchObject({ workspaceId, agent: null });
+        const tab = await client.createTab(workspaceId);
+        expect(tab).toMatchObject({ workspaceId, agent: null });
+        expect(tab.tabId).not.toBe(split.tabId);
+        await Promise.race([
+          stream,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('no tab or pane event within 10 s')), 10000)),
+        ]);
+      } finally {
+        controller.abort();
+      }
+      expect(seen.some(tabCreated)).toBe(true);
+      if (splitReported) expect(seen.some(paneCreated)).toBe(true);
+    } finally {
+      await client.closeWorkspace(workspaceId);
+    }
+  }, 30000);
+
+  it('opens a chat in a worktree of a repository, and refuses a folder outside one', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'herdrchat-live-plain-')));
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'herdrchat-live-repo-')));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: repo });
+    try {
+      await expect(client.createWorktree(outside, null)).rejects.toMatchObject({ code: 'not_git_worktree' });
+      const creation = await client.createWorktree(repo, 'herdrchat-live-wt');
+      try {
+        expect(creation.workspace.label).toBe('herdrchat-live-wt');
+      } finally {
+        // Refused for a workspace that is not a worktree, so this passing is
+        // the check that one was made.
+        await socket.call('worktree.remove', { workspace_id: creation.workspace.workspaceId, force: true }, 10000);
+        // herdr opened the repository as a workspace too, the worktree's group.
+        for (const workspace of await client.workspaces()) {
+          if (workspace.label === basename(repo)) await client.closeWorkspace(workspace.workspaceId);
+        }
+        // herdr keeps the repository's folder of worktrees, now empty.
+        try {
+          rmdirSync(join(homedir(), '.herdr', 'worktrees', basename(repo)));
+        } catch {
+          /* elsewhere, or not empty: not this test's to remove */
+        }
+      }
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
     }
   }, 30000);
 

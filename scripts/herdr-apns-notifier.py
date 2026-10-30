@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Send a push to the phone when a herdr agent needs you or finishes.
 
-Runs on the herdr host (the machine the agents run on). Polls herdr with
-`herdr api snapshot`, and when an agent becomes `blocked` (waiting for your
-input) or `done` (finished), it sends a push to every phone registered here,
-so HerdrChat notifies you even when it is closed.
+Runs on the herdr host (the machine the agents run on). Reads
+`herdr api snapshot` whenever herdr's event stream says an agent changed (or
+every POLL_SECONDS where there is no stream), and when an agent becomes
+`blocked` (waiting for your input) or `done` (finished), it sends a push to
+every phone registered here, so HerdrChat notifies you even when it is closed.
 
 The push says which chat it is and what happened, in the agent's own words:
 the opening of its closing message, or the question or command it is waiting
@@ -42,7 +43,7 @@ Config (env, or ~/.config/herdrchat/apns.env as KEY=VALUE lines):
     NOTIFY_ON       States to notify on (default "blocked,done").
     NOTIFY_PREVIEW  "0" to send only the chat's name and state, never what
                     the agent said (default "1").
-    POLL_SECONDS    Poll interval (default 3).
+    POLL_SECONDS    Poll interval when herdr's event stream is not open (default 3).
     HERDR_BIN       herdr binary (default: herdr).
     HERDR_SESSION   The herdr session to watch (default: herdr's default).
 """
@@ -52,6 +53,8 @@ import glob
 import json
 import os
 import re
+import select
+import socket
 import subprocess
 import sys
 import time
@@ -60,7 +63,7 @@ import urllib.request
 
 # Bumped with every change the app should roll out: the app embeds this script,
 # installs it on a host, and offers an update when a host runs an older one.
-WATCHER_VERSION = 9
+WATCHER_VERSION = 10
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".config", "herdrchat")
@@ -97,6 +100,15 @@ RETIRED = {"Unregistered", "BadDeviceToken", "DeviceTokenNotForTopic"}
 NOTIFY_ON = {s.strip() for s in os.environ.get("NOTIFY_ON", "blocked,done").split(",") if s.strip()}
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "3"))
 HERDR_BIN = os.environ.get("HERDR_BIN", "herdr")
+# With the event stream open, a snapshot is read when herdr says something
+# changed; this is only the safety net for what a dropped stream would lose.
+LIVE_POLL_SECONDS = 60
+# A turn's working -> done -> idle arrives as a burst: read once after it.
+EVENT_SETTLE_SECONDS = 0.25
+# Host-wide events, which take no pane id: a new or closed agent changes the
+# panes to watch. Only types upstream herdr knows; one unknown type makes it
+# refuse the whole subscription (src/lib/herdr/events.ts, #75).
+HOST_EVENTS = ("workspace.created", "workspace.closed", "pane.agent_detected", "pane.exited")
 
 STYLES = {
     "blocked": ("{label} is waiting for you", "{name} is waiting for a reply."),
@@ -272,13 +284,79 @@ def _send_direct(device_token, title, body, extra, env):
 
 
 def snapshot_agents():
+    """herdr's agents, or None when it could not be read: a failed read is not
+    a host with no agents, which would drop every agent's subscription."""
     try:
         out = subprocess.run([HERDR_BIN, "api", "snapshot"], capture_output=True, text=True, timeout=15)
         if out.returncode != 0:
-            return []
+            return None
         return json.loads(out.stdout).get("result", {}).get("snapshot", {}).get("agents", [])
     except (subprocess.SubprocessError, ValueError):
-        return []
+        return None
+
+
+def socket_path():
+    """This session's herdr socket, as `herdr status server` reports it (it
+    honours HERDR_SESSION). None when herdr cannot say."""
+    try:
+        out = subprocess.run([HERDR_BIN, "status", "server"], capture_output=True, text=True, timeout=15)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    for line in out.stdout.splitlines():
+        if line.startswith("socket: "):
+            return line[len("socket: "):].strip() or None
+    return None
+
+
+def subscribe(pane_ids):
+    """An open `events.subscribe` connection for these panes' status and the
+    host-wide changes, or None: herdr down, too old for the socket, or refusing
+    a pane that closed since the snapshot. The loop then polls, as it always did."""
+    path = socket_path()
+    if not path:
+        return None
+    request = {"id": "herdrchat-watcher", "method": "events.subscribe", "params": {"subscriptions": [
+        {"type": kind} for kind in HOST_EVENTS
+    ] + [{"type": "pane.agent_status_changed", "pane_id": pane} for pane in pane_ids]}}
+    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        conn.settimeout(10)
+        conn.connect(path)
+        conn.sendall(json.dumps(request).encode() + b"\n")
+        # Byte by byte up to the first newline: whatever follows the
+        # acknowledgement is an event, and select() must still see it.
+        ack = b""
+        while not ack.endswith(b"\n"):
+            byte = conn.recv(1)
+            if not byte:
+                raise OSError("closed before acknowledging")
+            ack += byte
+        if "error" in json.loads(ack):
+            raise OSError(ack.decode(errors="replace").strip())
+    except (OSError, ValueError):
+        conn.close()
+        return None
+    return conn
+
+
+def wait_for_change(conn, timeout):
+    """Sleep until herdr reports a change on `conn` or `timeout` passes, then
+    let a burst settle. Returns `conn` while it stays open, None once herdr
+    closed it (a restart, or `events_lost` for a reader that fell behind)."""
+    if conn is None:
+        time.sleep(timeout)
+        return None
+    settle = timeout
+    while select.select([conn], [], [], settle)[0]:
+        try:
+            data = conn.recv(65536)
+        except OSError:
+            data = b""
+        if not data:
+            conn.close()
+            return None
+        settle = EVENT_SETTLE_SECONDS
+    return conn
 
 
 def workspace_labels():
@@ -579,8 +657,12 @@ def main():
     print(f"[apns] watching herdr{' session ' + SESSION if SESSION else ''}; {where}", file=sys.stderr)
     last = {}
     seeded = False
+    events, watched = None, None
     while True:
         agents = snapshot_agents()
+        if agents is None:
+            events = wait_for_change(events, POLL_SECONDS)
+            continue
         if agents:
             labels = workspace_labels()
             tokens = device_tokens()
@@ -604,17 +686,27 @@ def main():
                     for tok, connection, env, muted, service in tokens:
                         if session_id and session_id in muted:
                             continue
-                        status, reason = send_push(
+                        code, reason = send_push(
                             tok, title, body, dict(extra, connection=connection) if connection else extra,
                             env=env, service=service,
                         )
-                        if status != 200:
-                            print(f"[apns] push failed ({status} {reason or ''}) for token …{tok[-6:]}", file=sys.stderr)
+                        if code != 200:
+                            print(f"[apns] push failed ({code} {reason or ''}) for token …{tok[-6:]}", file=sys.stderr)
                         if reason in RETIRED:
                             forget_token(tok)
                 last[pane] = memo
             seeded = True
-        time.sleep(POLL_SECONDS)
+        # A subscription cannot be amended, so a new set of agents is a new one.
+        panes = sorted({a.get("pane_id") for a in agents if a.get("pane_id")})
+        if events is None or panes != watched:
+            if events is not None:
+                events.close()
+            events, watched = subscribe(panes), panes
+            if events is not None:
+                # Read again before sleeping: what changed between the read
+                # above and the new stream sent no event to it.
+                continue
+        events = wait_for_change(events, LIVE_POLL_SECONDS if events else POLL_SECONDS)
 
 
 if __name__ == "__main__":

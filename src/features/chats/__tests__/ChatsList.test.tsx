@@ -102,8 +102,11 @@ jest.mock('../useChatPrefs', () => ({
 }));
 jest.mock('../useOutdatedIntegrations', () => ({ useOutdatedIntegrations: () => ({ issues: [], updating: false, error: null, update: jest.fn() }) }));
 jest.mock('../useAttentionBadge', () => ({ useAttentionBadge: () => undefined }));
+const mockManage = jest.fn();
 jest.mock('../useChatActions', () => ({
-  useChatActions: () => ({ error: null, clearError: jest.fn(), manageChat: jest.fn(), renameChat: jest.fn(), closeChat: jest.fn() }),
+  useChatActions: () => ({
+    error: null, clearError: jest.fn(), manageChat: (...args: unknown[]) => mockManage(...args), renameChat: jest.fn(), closeChat: jest.fn(),
+  }),
 }));
 jest.mock('../HostFeeds', () => ({ HostFeeds: () => null }));
 // Its own reads are UsageFooter.test's; here only whether the list draws it.
@@ -150,6 +153,13 @@ it("draws w6 as the workspace, its agents and terminals under it", async () => {
   expect(screen.getByTestId('pane-row-w6:p2')).toBeOnTheScreen();
   expect(screen.getByTestId('terminal-row-w6:p3')).toBeOnTheScreen();
   expect(screen.getByTestId('terminal-row-w6:p4')).toBeOnTheScreen();
+});
+
+// Split terminal goes beside the agent pressed: w6's second agent, not its first.
+it("hands an agent row's own pane to its long-press menu", async () => {
+  const screen = await render(<ChatsList />);
+  await fireEvent(screen.getByTestId('pane-row-w6:p2'), 'longPress');
+  expect(mockManage).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'w6' }), expect.any(Array), 'w6:p2');
 });
 
 // Android has no terminal: a shell's row would only open the screen saying

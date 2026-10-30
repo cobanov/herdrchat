@@ -15,10 +15,18 @@ let mockLive = true;
 let mockEvent: (event?: HostEvent) => void = () => undefined;
 let mockPreview = 'Before';
 jest.mock('../../usePollGate', () => ({ usePollGate: () => mockPolling }));
+let mockHostEvents: readonly string[] = [];
 jest.mock('../../useHostEvents', () => ({
-  useHostEvents: (_client: unknown, _panes: unknown, _enabled: unknown, event: (event: HostEvent) => void) => {
+  useHostEvents: (
+    _client: unknown,
+    _panes: unknown,
+    _enabled: unknown,
+    event: (event: HostEvent) => void,
+    events: readonly string[] = []
+  ) => {
     // A status change on the first agent unless a test names another event.
     mockEvent = (fired = { event: 'pane.agent_status_changed', paneId: 'pane', workspaceId: 'chat', data: {} }) => event(fired);
+    mockHostEvents = events;
     return mockLive;
   },
 }));
@@ -243,6 +251,22 @@ it('refreshes an idle chat preview on the event that finished its turn', async (
     jest.advanceTimersByTime(250);
   });
   expect(result.current.summaries[0]?.preview?.text).toBe('After');
+  await unmount();
+});
+
+// A tab opened or a pane resized on the desktop changes the list and no
+// transcript, and a resize sends an event for every step of it.
+it('polls on a layout event without reading any transcript', async () => {
+  const fetch = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const { result, unmount } = await renderHook(() => useWorkspaces(client));
+  mockPreview = 'After';
+  const polls = fetch.mock.calls.length;
+  await act(async () => {
+    mockEvent({ event: 'layout_updated', paneId: null, workspaceId: 'chat', data: {} });
+    jest.advanceTimersByTime(250);
+  });
+  expect(fetch.mock.calls.length).toBeGreaterThan(polls);
+  expect(result.current.summaries[0]?.preview?.text).toBe('Before');
   await unmount();
 });
 
@@ -763,4 +787,27 @@ describe("a shell pane's program name, riding on the list poll", () => {
     expect(ask).not.toHaveBeenCalled();
     await unmount();
   });
+});
+
+// Spaces draws tabs and shells, which no agent event reports: on a herdr that
+// knows them, its list hears when they change instead of at the 30 s poll.
+it('watches tabs and shells in Spaces, on a herdr new enough for them', async () => {
+  jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot);
+  const version = jest.spyOn(client, 'reportedVersion', 'get').mockReturnValue('0.9.5');
+  mockListMode = 'spaces';
+  const { rerender, unmount } = await renderHook(() => useWorkspaces(client));
+  await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+  expect(mockHostEvents).toEqual(expect.arrayContaining(['tab.created', 'pane.closed', 'layout.updated']));
+
+  mockListMode = 'agents';
+  await rerender({});
+  expect(mockHostEvents).not.toContain('tab.created');
+
+  // An older herdr would refuse the whole subscription over one unknown type.
+  mockListMode = 'spaces';
+  version.mockReturnValue('0.7.4');
+  await rerender({});
+  expect(mockHostEvents).not.toContain('tab.created');
+  mockListMode = 'spaces';
+  await unmount();
 });

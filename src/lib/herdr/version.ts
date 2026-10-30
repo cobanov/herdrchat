@@ -29,8 +29,17 @@ export const MIN_HERDR_VERSION = '0.7.0';
 export const AGENT_VERBS_VERSION = '0.8.0';
 
 /**
+ * The release this app is tested against, and the oldest it does not ask a
+ * person to move off. Older ones work, but miss fixes the app leans on:
+ * 0.9.2 stopped the API socket refusing every connection after one transient
+ * error (#4601) and made a lagging event stream say so (`events_lost`), and
+ * 0.9.5 reports Claude's questions as `blocked` in a named session (#5192).
+ */
+export const RECOMMENDED_HERDR_VERSION = '0.9.5';
+
+/**
  * The wire protocol this app was last checked against. 0.7.4 spoke 16, 0.8.0
- * speaks 19, and 0.9.0, 0.9.1 and the 2026-09-21 preview all speak 22.
+ * speaks 19, and 0.9.0 through 0.9.5 all speak 22.
  * Informational: what the app may use is gated by `AGENT_VERBS_VERSION` and
  * by asking the host, not by this number.
  */
@@ -85,6 +94,8 @@ export type VersionVerdict =
   | { kind: 'unsupported'; version: string }
   /** Works, but on the legacy paths — no agent-aware verbs. */
   | { kind: 'legacy'; version: string }
+  /** Everything is available, but it predates fixes the app relies on. */
+  | { kind: 'outdated'; version: string }
   /** Everything is available. */
   | { kind: 'current'; version: string }
   /** The host did not report a version at all. */
@@ -103,6 +114,7 @@ export function versionVerdict(raw: string | null | undefined): VersionVerdict {
   const version = raw.trim();
   if (!atLeast(version, MIN_HERDR_VERSION)) return { kind: 'unsupported', version };
   if (!atLeast(version, AGENT_VERBS_VERSION)) return { kind: 'legacy', version };
+  if (!atLeast(version, RECOMMENDED_HERDR_VERSION)) return { kind: 'outdated', version };
   return { kind: 'current', version };
 }
 
@@ -111,13 +123,19 @@ export function versionVerdict(raw: string | null | undefined): VersionVerdict {
  *
  * `current` returns null on purpose: a host that is fine should produce no
  * message at all. A banner that is always present is furniture.
+ *
+ * The fix is Update herdr, not `herdr update`. A plain `herdr update` leaves
+ * the running server on its old version, and the version here is the
+ * server's, so the line stayed after a person had done what it said.
  */
 export function versionAdvice(verdict: VersionVerdict): string | null {
   switch (verdict.kind) {
     case 'unsupported':
-      return `This host runs herdr ${verdict.version}. HerdrChat has only been tried against ${MIN_HERDR_VERSION} and later — run \`herdr update\` on it.`;
+      return `This host runs herdr ${verdict.version}. HerdrChat has only been tried against ${MIN_HERDR_VERSION} and later. Update herdr updates it and its running server.`;
     case 'legacy':
-      return `herdr ${verdict.version}. Sending is slower here: \`agent prompt\` arrived in ${AGENT_VERBS_VERSION}, so this host uses the older path that has to watch for delivery. \`herdr update\` on the host removes the wait.`;
+      return `herdr ${verdict.version}. Sending is slower here: \`agent prompt\` arrived in ${AGENT_VERBS_VERSION}, so this host uses the older path that has to watch for delivery. Update herdr removes the wait.`;
+    case 'outdated':
+      return `herdr ${verdict.version}. Everything works, but ${RECOMMENDED_HERDR_VERSION} fixes things HerdrChat relies on: Claude's questions in a named session, and live updates after a socket hiccup. Update herdr updates it and its running server.`;
     case 'current':
       return null;
     case 'unknown':

@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
 import { HerdrClient } from '@/lib/herdr/client';
+import { decodePane } from '@/lib/herdr/models';
 import { forgetWorkspace } from '@/state/threadCache';
 import { useChatActions } from '../useChatActions';
 import type { ChatSummary } from '../useWorkspaces';
@@ -12,6 +13,9 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/components/ActionSheet', () => ({ confirmDestructive: jest.fn(), showActionSheet: jest.fn() }));
 jest.mock('@/components/haptics', () => ({ haptics: { medium: jest.fn() } }));
 jest.mock('@/state/threadCache', () => ({ forgetWorkspace: jest.fn().mockResolvedValue(undefined) }));
+const mockOpenTerminal = jest.fn();
+jest.mock('@/features/terminal/navigation', () => ({ openTerminal: (params: unknown) => mockOpenTerminal(params) }));
+jest.mock('../../../../modules/herdr-terminal/src', () => ({ isTerminalAvailable: true }));
 
 const client = new HerdrClient({
   exec: async () => ({ ok: true, exitCode: 0, stdout: '', stderr: '' }),
@@ -107,4 +111,58 @@ it('runs a machine row\'s close and rename on the machine', async () => {
     pathname: '/rename-chat',
     params: { workspaceId: 'w2', title: 'Notes', connectionId: 'demo/demo-nuku' },
   });
+});
+
+// A shell beside the agent, from the phone: split the pane the desktop is
+// looking at, then open the new one's terminal.
+it('opens a shell split beside the focused agent, on a herdr that can', async () => {
+  jest.spyOn(client, 'reportedVersion', 'get').mockReturnValue('0.9.5');
+  const split = jest.spyOn(client, 'splitPane').mockResolvedValue(
+    decodePane({ pane_id: 'w2:p3', workspace_id: 'w2', tab_id: 'w2:t1', terminal_id: 'term_3', cwd: '/srv/app' })
+  );
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  const withAgents = {
+    ...summary,
+    panes: [
+      { paneId: 'w2:p1', agent: { focused: false } },
+      { paneId: 'w2:p2', agent: { focused: true } },
+    ],
+  } as unknown as ChatSummary;
+  const { result } = await renderHook(() => useChatActions({ client, connectionId: 'home', db, refresh }));
+  await act(() => result.current.manageChat(withAgents));
+  const actions = jest.mocked(showActionSheet).mock.calls[0]?.[0].actions ?? [];
+  expect(actions.map((action) => action.label)).toEqual(['New terminal tab', 'Split terminal', 'Rename workspace…', 'Close chat']);
+  await act(async () => { actions[1]?.onPress(); });
+  expect(split).toHaveBeenCalledWith('w2:p2', 'right');
+  expect(mockOpenTerminal).toHaveBeenCalledWith(expect.objectContaining({ connectionId: 'home', paneId: 'w2:p3', kind: 'shell', terminalId: 'term_3' }));
+  expect(refresh).toHaveBeenCalled();
+});
+
+// Long-pressing Codex's row split beside Claude, the workspace's first agent,
+// on whatever tab that was.
+it("splits beside the agent whose row was pressed, not the workspace's first", async () => {
+  jest.spyOn(client, 'reportedVersion', 'get').mockReturnValue('0.9.5');
+  const split = jest.spyOn(client, 'splitPane').mockResolvedValue(
+    decodePane({ pane_id: 'w2:p3', workspace_id: 'w2', tab_id: 'w2:t2', terminal_id: 'term_3', cwd: '/srv/app' })
+  );
+  const withAgents = {
+    ...summary,
+    panes: [
+      { paneId: 'w2:p1', agent: { focused: true } },
+      { paneId: 'w2:p2', agent: { focused: false } },
+    ],
+  } as unknown as ChatSummary;
+  const { result } = await renderHook(() => useChatActions({ client, connectionId: 'home', db, refresh: jest.fn().mockResolvedValue(undefined) }));
+  await act(() => result.current.manageChat(withAgents, [], 'w2:p2'));
+  const actions = jest.mocked(showActionSheet).mock.calls[0]?.[0].actions ?? [];
+  await act(async () => { actions.find((action) => action.label === 'Split terminal')?.onPress(); });
+  expect(split).toHaveBeenCalledWith('w2:p2', 'right');
+});
+
+it('offers no shell on a herdr too old to open one', async () => {
+  jest.spyOn(client, 'reportedVersion', 'get').mockReturnValue('0.7.4');
+  const { result } = await renderHook(() => useChatActions({ client, connectionId: 'home', db, refresh: jest.fn() }));
+  await act(() => result.current.manageChat(summary));
+  const labels = (jest.mocked(showActionSheet).mock.calls[0]?.[0].actions ?? []).map((action) => action.label);
+  expect(labels).not.toContain('New terminal tab');
 });

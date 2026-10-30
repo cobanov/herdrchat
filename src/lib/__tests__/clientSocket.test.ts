@@ -1,4 +1,5 @@
 import { HerdrClient } from '../herdr/client';
+import { HerdrError } from '../herdr/protocol';
 import { isSocketProbe } from '../herdr/socket';
 import type { HerdrTransport } from '../herdr/transport';
 
@@ -367,5 +368,117 @@ describe('an open chat poll on one channel', () => {
     expect(commands).toHaveLength(1);
     expect(methodsIn(commands[0] ?? '')).toEqual(['pane.report_metadata']);
     expect(commands[0]).toContain('"seq":2');
+  });
+});
+
+describe('worktrees, tabs and splits', () => {
+  const created = (key: string, pane: string) =>
+    `{"id":"x","result":{"type":"x","${key}":{"pane_id":"${pane}","workspace_id":"w2","tab_id":"w2:t1","terminal_id":"term_9","agent_status":"unknown","cwd":"/srv/app"},"workspace":{"workspace_id":"w2","label":"fix","number":2,"agent_status":"unknown"}}}`;
+
+  it('creates a worktree without stealing the desktop focus, read like a new workspace', async () => {
+    // The folder check (no socket method) prints the folder, as for a workspace.
+    const { client, commands } = socketHost({ 'worktree.create': created('root_pane', 'w2:p1'), '': () => '/srv/app\n' });
+    const creation = await client.createWorktree('/srv/app', 'fix');
+    expect(requestIn(commands.find((command) => command.includes('worktree.create')) ?? '')).toMatchObject({
+      method: 'worktree.create',
+      params: { cwd: '/srv/app', label: 'fix', focus: false },
+    });
+    expect(creation).toMatchObject({ workspace: { workspaceId: 'w2', label: 'fix' }, rootPane: { paneId: 'w2:p1' } });
+  });
+
+  it('opens a tab or a split as a shell pane, with its terminal', async () => {
+    const { client, commands } = socketHost({
+      'tab.create': created('root_pane', 'w2:p2'),
+      'pane.split': created('pane', 'w2:p3'),
+    });
+    await expect(client.createTab('w2')).resolves.toMatchObject({ paneId: 'w2:p2', terminalId: 'term_9', agent: null });
+    await expect(client.splitPane('w2:p1', 'right')).resolves.toMatchObject({ paneId: 'w2:p3' });
+    expect(commands.map((c) => requestIn(c))).toEqual([
+      { id: expect.any(String), method: 'tab.create', params: { workspace_id: 'w2', focus: false } },
+      { id: expect.any(String), method: 'pane.split', params: { target_pane_id: 'w2:p1', direction: 'right', focus: false } },
+    ]);
+  });
+
+  it('says in plain words why a folder outside a repository has no worktree', async () => {
+    const { client } = socketHost({
+      'worktree.create': '{"id":"x","error":{"code":"not_git_worktree","message":"Herdr worktree actions require a path inside a Git work tree"}}',
+    });
+    await expect(client.createWorktree('/srv/notes', null)).rejects.toMatchObject({
+      code: 'not_git_worktree',
+      message: expect.stringContaining('Turn off New worktree'),
+    });
+  });
+});
+
+describe('updateHerdr', () => {
+  const snap = (version: string) =>
+    `{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"${version}","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}`;
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  // A plain `herdr update` left the running server, and so the version the app
+  // reads, where it was.
+  it('hands the running server over and answers the version it then reports', async () => {
+    const versions = ['0.9.1', '0.9.1', '0.9.5'];
+    const { client, commands } = socketHost({ 'session.snapshot': () => snap(versions.shift() ?? '0.9.5') });
+    await client.snapshot();
+    const updated = client.updateHerdr();
+    await jest.advanceTimersByTimeAsync(5_000);
+    await expect(updated).resolves.toBe('0.9.5');
+    expect(commands.some((c) => c.includes("'herdr' 'update' '--handoff'"))).toBe(true);
+  });
+
+  /**
+   * A host whose herdr binary is already 0.9.5 and whose server runs 0.9.1.
+   * `update` answers as `update --handoff` does there: herdr says "already up
+   * to date", or a Homebrew herdr refuses; either way nothing is handed over.
+   */
+  function staleServerHost(update: { exitCode: number; stdout: string }, binary = '0.9.5') {
+    let handedOff = false;
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        if (isSocketProbe(command)) return { ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never;
+        commands.push(command);
+        const answer = (stdout: string, exitCode = 0) => ({ ok: true, exitCode, stdout, stderr: '' }) as never;
+        if (command.includes('"method":"session.snapshot"')) return answer(snap(handedOff ? '0.9.5' : '0.9.1'));
+        if (command.includes('"method":"server.live_handoff"')) {
+          handedOff = true;
+          return answer('{"id":"x","result":{"type":"ok"}}');
+        }
+        if (command.includes("'update' '--handoff'")) return answer(update.stdout, update.exitCode);
+        if (command.includes('command -v')) return answer('EXEC /home/u/.local/bin/herdr\n');
+        if (command.includes("'--version'")) return answer(`herdr ${binary}\n`);
+        return answer('');
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+
+  // herdr hands nothing over when there is nothing to install, so the people
+  // who had already run a plain `herdr update` were told to update and could not.
+  it.each([
+    ['says it is already up to date', { exitCode: 0, stdout: 'already up to date (0.9.5)\n' }],
+    ['refuses, as on Homebrew', { exitCode: 1, stdout: 'herdr is managed by Homebrew; run brew upgrade herdr\n' }],
+  ])('hands a server behind its binary over to that binary when update %s', async (_, update) => {
+    const { client, commands } = staleServerHost(update);
+    await client.snapshot();
+    const updated = client.updateHerdr();
+    await jest.advanceTimersByTimeAsync(30_000);
+    await expect(updated).resolves.toBe('0.9.5');
+    const handoff = commands.find((c) => c.includes('"method":"server.live_handoff"')) ?? '';
+    expect(requestIn(handoff).params).toEqual({ import_exe: '/home/u/.local/bin/herdr', expected_version: '0.9.5' });
+  });
+
+  it("shows update's refusal when the binary is no newer than the server", async () => {
+    const { client, commands } = staleServerHost({ exitCode: 1, stdout: 'herdr is managed by Homebrew; run brew upgrade herdr\n' }, '0.9.1');
+    await client.snapshot();
+    const updated = client.updateHerdr();
+    const outcome = expect(updated).rejects.toBeInstanceOf(HerdrError);
+    await jest.advanceTimersByTimeAsync(30_000);
+    await outcome;
+    expect(commands.some((c) => c.includes('server.live_handoff'))).toBe(false);
   });
 });

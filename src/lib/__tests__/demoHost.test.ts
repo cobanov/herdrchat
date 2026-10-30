@@ -243,11 +243,22 @@ describe('DemoHost as an agent', () => {
       () => client.createWorkspace('/home/demo/example', 'Example'),
       () => client.renameWorkspace('w2', 'Changed'),
       () => client.closeWorkspace('w2'),
+      () => client.createWorktree('/home/demo/herdrchat', 'Fix'),
+      () => client.createTab('w2'),
+      () => client.splitPane('w2:p1', 'right'),
     ]) {
       await expect(operation()).rejects.toThrow('Select your own host');
     }
     expect((await client.workspaces()).map(workspace => workspace.label))
       .toEqual(['herdrchat', 'notes', 'scratch', 'ledger', 'journal', 'api', 'site', 'infra', 'docs', 'assets']);
+  });
+
+  // How the Demo shows Update herdr: older than the app recommends until it is pressed.
+  it('reports an outdated herdr until Update herdr moves it on', async () => {
+    const client = new HerdrClient(new DemoHost());
+    expect((await client.snapshot()).version).toBe('0.8.0');
+    await expect(client.updateHerdr()).resolves.toBe('0.9.5');
+    expect((await client.snapshot()).version).toBe('0.9.5');
   });
 
   it.each([false, true])('stops only the selected demo agent (hard: %s)', async hard => {

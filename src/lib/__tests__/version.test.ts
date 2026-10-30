@@ -1,6 +1,7 @@
 import {
   AGENT_VERBS_VERSION,
   MIN_HERDR_VERSION,
+  RECOMMENDED_HERDR_VERSION,
   atLeast,
   parseVersion,
   versionAdvice,
@@ -48,8 +49,14 @@ describe('atLeast', () => {
 });
 
 describe('versionVerdict', () => {
-  it('calls 0.8.0 current — measured, it has agent prompt and start --kind', () => {
-    expect(versionVerdict('0.8.0')).toEqual({ kind: 'current', version: '0.8.0' });
+  it('calls 0.9.5 current, and anything newer', () => {
+    expect(versionVerdict('0.9.5')).toEqual({ kind: 'current', version: '0.9.5' });
+    expect(versionVerdict('0.10.0').kind).toBe('current');
+  });
+
+  it('calls 0.8.0 to 0.9.4 outdated — every verb, but not the fixes the app leans on', () => {
+    expect(versionVerdict('0.8.0')).toEqual({ kind: 'outdated', version: '0.8.0' });
+    expect(versionVerdict('0.9.4').kind).toBe('outdated');
   });
 
   it('calls 0.7.4 legacy rather than broken', () => {
@@ -66,19 +73,21 @@ describe('versionVerdict', () => {
     expect(versionVerdict(null)).toEqual({ kind: 'unknown' });
   });
 
-  it('keeps the two thresholds in the right order', () => {
+  it('keeps the thresholds in the right order', () => {
     expect(atLeast(AGENT_VERBS_VERSION, MIN_HERDR_VERSION)).toBe(true);
+    expect(atLeast(RECOMMENDED_HERDR_VERSION, AGENT_VERBS_VERSION)).toBe(true);
   });
 });
 
 describe('versionAdvice', () => {
   it('says nothing at all when the host is fine', () => {
     // A banner that is always there is furniture.
-    expect(versionAdvice({ kind: 'current', version: '0.8.0' })).toBeNull();
+    expect(versionAdvice({ kind: 'current', version: '0.9.5' })).toBeNull();
   });
 
   it('names the version and the fix for every other state', () => {
     for (const verdict of [
+      { kind: 'outdated', version: '0.9.1' },
       { kind: 'legacy', version: '0.7.4' },
       { kind: 'unsupported', version: '0.6.0' },
       { kind: 'unknown' },
@@ -86,6 +95,19 @@ describe('versionAdvice', () => {
       const advice = versionAdvice(verdict);
       expect(advice).not.toBeNull();
       expect(advice).toMatch(/herdr/);
+    }
+  });
+
+  // A plain `herdr update` leaves the running server, the version reported
+  // here, where it was: the advice stayed after a person had followed it.
+  it('never sends a person to a plain `herdr update`', () => {
+    for (const verdict of [
+      { kind: 'outdated', version: '0.9.1' },
+      { kind: 'legacy', version: '0.7.4' },
+      { kind: 'unsupported', version: '0.6.0' },
+    ] as const) {
+      expect(versionAdvice(verdict)).not.toMatch(/`herdr update`/);
+      expect(versionAdvice(verdict)).toContain('Update herdr');
     }
   });
 

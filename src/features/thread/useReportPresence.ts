@@ -32,6 +32,10 @@ export function useReportPresence(
   /**
    * Monotonic, so two reports that cross in flight land in the order they were
    * sent. A ref rather than state: nothing renders from it.
+   *
+   * Seeded from the clock, not 0: herdr remembers the highest `seq` a source
+   * ever sent a pane, past its TTL, and ignores anything lower. Counting from 0
+   * on every open hid the label for as long as the last open had lasted.
    */
   const seq = useRef(0);
 
@@ -41,7 +45,7 @@ export function useReportPresence(
     let cancelled = false;
     const report = () => {
       if (cancelled) return;
-      seq.current += 1;
+      seq.current = Math.max(seq.current + 1, Date.now());
       void client.reportMetadata(paneId, {
         source: SOURCE,
         tokens: {

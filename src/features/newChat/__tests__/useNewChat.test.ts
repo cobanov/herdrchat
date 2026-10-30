@@ -17,12 +17,13 @@ function fakeClient() {
   let workspaces = 0;
   return {
     createWorkspace: jest.fn(async () => creation(`w${(workspaces += 1)}`)),
+    createWorktree: jest.fn(async () => creation(`w${(workspaces += 1)}`)),
     closeWorkspace: jest.fn(async () => undefined),
     startNamedAgent: jest.fn(async () => true),
   };
 }
 
-const choice = { directory: '/srv/app', label: '', agent: 'claude' as const, mode: 'acceptEdits' as const };
+const choice = { directory: '/srv/app', label: '', agent: 'claude' as const, mode: 'acceptEdits' as const, worktree: false };
 
 // #101: an agent start that failed after the workspace was created made a
 // second workspace on retry.
@@ -60,4 +61,29 @@ it.each(['codex', 'pi', 'omp'] as const)('starts %s without Claude permission ar
   });
   expect(client.startNamedAgent).toHaveBeenCalledWith('w1:p1', expect.any(String), agent, [], agent);
   expect(mockDb.runAsync).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO settings'), 'agent.host', agent);
+});
+
+// Two chats on one repository share nothing when each has its own worktree.
+it('starts the agent in a new worktree when asked, and remembers the choice', async () => {
+  const client = fakeClient();
+  const { result } = await renderHook(() => useStartChat('host'));
+  await act(async () => {
+    await result.current.start(client as unknown as HerdrClient, { ...choice, label: 'fix', worktree: true });
+  });
+  expect(client.createWorktree).toHaveBeenCalledWith('/srv/app', 'fix');
+  expect(client.createWorkspace).not.toHaveBeenCalled();
+  expect(client.startNamedAgent).toHaveBeenCalledWith('w1:p1', expect.any(String), 'claude', expect.any(Array), expect.any(String));
+  expect(mockDb.runAsync).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO settings'), 'worktree.host', '1');
+});
+
+it('does not reuse a plain workspace when the retry asks for a worktree', async () => {
+  const client = fakeClient();
+  client.startNamedAgent.mockRejectedValueOnce(new Error('agent_not_ready'));
+  const { result } = await renderHook(() => useStartChat('host'));
+  await act(async () => { await result.current.start(client as unknown as HerdrClient, choice); });
+  await act(async () => {
+    await result.current.start(client as unknown as HerdrClient, { ...choice, worktree: true });
+  });
+  expect(client.closeWorkspace).toHaveBeenCalledWith('w1');
+  expect(client.createWorktree).toHaveBeenCalledTimes(1);
 });
