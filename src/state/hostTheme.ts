@@ -8,6 +8,7 @@ import { resolveHostTheme, type HostThemeFile, type ResolvedHostTheme } from '@/
 import { darkPalette, lightPalette } from '@/theme/tokens';
 import { useSlashCatalogues } from './slashCommands';
 import { useYouShouldKnow } from './youShouldKnow';
+import { usePlanUsage } from './usage';
 import { HOST_THEME_KEY_PREFIX, clearConnectionSettings, deleteSetting, hostThemeKey, loadHostThemeRows, setSetting } from './db';
 
 /**
@@ -119,7 +120,7 @@ export function mirrorHostThemes(db: SQLite.SQLiteDatabase): () => void {
 /**
  * Forget a host's settings: its rows in the table (the cached theme and slash
  * commands among them, as `hostTheme.<id>` and `slashCommands.<id>`) and its
- * theme and slash commands in memory. Removing a host and erasing the app
+ * theme, slash commands and Claude usage in memory. Removing a host and erasing the app
  * both come through here, because clearing only the rows left
  * the host's colours on screen until the next launch, and a host re-added
  * under the same id opened in them.
@@ -130,6 +131,9 @@ export async function clearHostSettings(db: SQLite.SQLiteDatabase, connectionId:
   // And its slash commands, and its "You should know" notes.
   useSlashCatalogues.getState().clear(connectionId);
   useYouShouldKnow.getState().clear(connectionId);
+  // And its Claude usage, with the agreement to read it: a host re-added
+  // under the same id asks again before anything is installed there.
+  usePlanUsage.getState().clear(connectionId);
 }
 
 // MARK: - Checking the host

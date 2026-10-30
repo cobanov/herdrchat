@@ -13,13 +13,17 @@ import { motion } from '@/theme/tokens';
 
 // Every row drawn, in order: the list's own virtualisation is not under test.
 jest.mock('@shopify/flash-list', () => ({
-  FlashList: ({ data, renderItem, keyExtractor }: {
+  FlashList: ({ data, renderItem, keyExtractor, ListFooterComponent }: {
     data: unknown[];
     renderItem: (info: { item: unknown; index: number }) => ReactElement;
     keyExtractor: (item: unknown) => string;
+    ListFooterComponent?: ReactElement;
   }) => {
     const { Fragment: MockFragment } = jest.requireActual<typeof import('react')>('react');
-    return data.map((item, index) => <MockFragment key={keyExtractor(item)}>{renderItem({ item, index })}</MockFragment>);
+    return [
+      ...data.map((item, index) => <MockFragment key={keyExtractor(item)}>{renderItem({ item, index })}</MockFragment>),
+      <MockFragment key="footer">{ListFooterComponent}</MockFragment>,
+    ];
   },
   useRecyclingState: () => [false, jest.fn()],
 }));
@@ -80,9 +84,10 @@ jest.mock('@/state/settings', () => ({
   encodeBool: (value: boolean) => String(value),
 }));
 let mockSummaries: ListedChat[] = [];
+let mockListError: string | null = null;
 jest.mock('../useHostChats', () => ({
   useHostChats: () => ({
-    summaries: mockSummaries, loading: false, error: null, errorCode: null, refresh: async () => undefined,
+    summaries: mockSummaries, loading: false, error: mockListError, errorCode: null, refresh: async () => undefined,
     notices: [], connectionIds: ['demo'], targetOf: () => null,
   }),
 }));
@@ -101,6 +106,8 @@ jest.mock('../useChatActions', () => ({
   useChatActions: () => ({ error: null, clearError: jest.fn(), manageChat: jest.fn(), renameChat: jest.fn(), closeChat: jest.fn() }),
 }));
 jest.mock('../HostFeeds', () => ({ HostFeeds: () => null }));
+// Its own reads are UsageFooter.test's; here only whether the list draws it.
+jest.mock('../UsageFooter', () => ({ UsageFooter: () => <MockView testID="usage-footer" /> }));
 const mockOpenChat = jest.fn();
 jest.mock('../navigation', () => ({ openChat: (...args: unknown[]) => mockOpenChat(...args) }));
 
@@ -116,7 +123,19 @@ beforeEach(() => {
   mockOpenChat.mockClear();
   mockPinned = [];
   mockTerminalAvailable = true;
+  mockListError = null;
   useChatSelection.setState({ detail: null });
+});
+
+// The footer reads its host every few seconds. Under a host whose poll had
+// stopped (a changed key, a failed login) it kept asking, and reconnecting.
+it('draws the Claude usage footer under the rows, but not while the host is failing', async () => {
+  const screen = await render(<ChatsList />);
+  expect(screen.getByTestId('usage-footer')).toBeOnTheScreen();
+  mockListError = 'The host key changed.';
+  await screen.rerender(<ChatsList />);
+  expect(screen.getByTestId('chat-row-w6')).toBeOnTheScreen();
+  expect(screen.queryByTestId('usage-footer')).toBeNull();
 });
 
 // "Each top level card doesn't represent an agent, it should just list the

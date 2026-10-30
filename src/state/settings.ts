@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { DEFAULT_LIST_MODE, type ListMode } from '@/lib/listModes';
+import type { UsageShown } from '@/lib/usage/usageRows';
 import type { ThemePreference } from '@/theme/ThemeProvider';
 
 /**
@@ -71,6 +72,16 @@ export interface Settings {
    * opens on the view last used.
    */
   listMode: ListMode;
+  /**
+   * Whether the chat list's Claude usage footer shows what is left of each
+   * limit or how much of it is used so far, picked from the footer's own
+   * sheet. Left by default: the footer answers "how much can I still do".
+   */
+  usageShown: UsageShown;
+}
+
+export function decodeUsageShown(value: string | null): UsageShown {
+  return value === 'used' ? 'used' : 'left';
 }
 
 /**
@@ -108,6 +119,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   activeDays: '',
   useHostThemes: true,
   listMode: DEFAULT_LIST_MODE,
+  usageShown: 'left',
 };
 
 interface SettingsState extends Settings {
@@ -141,6 +153,7 @@ export function settingsSnapshot(): Settings {
     activeDays: state.activeDays,
     useHostThemes: state.useHostThemes,
     listMode: state.listMode,
+    usageShown: state.usageShown,
   };
 }
 
