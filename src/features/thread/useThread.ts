@@ -67,7 +67,8 @@ export interface ThreadState {
    * Claude Code's agents pane (its background agents, drawn under the
    * composer), from the same screen read as the live preview; null when the
    * pane is not drawn. Read on while it has rows even with the agent idle,
-   * since the pane outlives the turn that started them.
+   * since the pane outlives the turn that started them, at the working rate
+   * while a row runs. Only for Claude, the one agent that draws it.
    */
   agentsPane: AgentsPane | null;
   /** When `agentsPane` was read, epoch ms, so its elapsed times can tick on. */
