@@ -179,7 +179,7 @@ describe('changeYouShouldKnow', () => {
     await expect(changeYouShouldKnow(host, store, dismissNote(noteOf(store, NOTES)), () => 'bad token')).resolves.toMatchObject({ ok: false });
   });
 
-  it('removes the temp file when a piece of a large write does not go', async () => {
+  it('removes the part file when a piece of a large write does not go', async () => {
     const { host } = demo();
     host.setUpNotes('w2:p1');
     const store = await held(host);
@@ -197,7 +197,7 @@ describe('changeYouShouldKnow', () => {
     await expect(writeYouShouldKnow(flaky, store.path, store.version, big, 'tok')).resolves.toBeNull();
     await Promise.resolve();
     expect(sent.at(-1)).toContain(YSK_CLEANUP_SCRIPT);
-    expect(sent.at(-1)).toContain(`${store.path}.herdrchat-tok.tmp`);
+    expect(sent.at(-1)).toContain(`${store.path}.herdrchat-tok.b64`);
     expect(sent.some((command) => command.includes(YSK_SWAP_SCRIPT.split('\n')[0]!))).toBe(false);
   });
 

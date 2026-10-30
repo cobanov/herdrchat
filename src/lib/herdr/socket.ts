@@ -789,3 +789,27 @@ export function base64(text: string): string {
 }
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * The text whose UTF-8 bytes `encoded` is the standard base64 of: `base64`
+ * backwards, for the Demo host, which plays the host's `base64 -d`. Null for
+ * anything that is not base64 of UTF-8.
+ */
+export function textFromBase64(encoded: string): string | null {
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return null;
+  let escaped = '';
+  for (let i = 0; i < encoded.length; i += 4) {
+    const quad = encoded.slice(i, i + 4);
+    // `=` is not in the alphabet: indexOf gives -1, counted as 0 and its byte dropped.
+    const sextet = (at: number) => Math.max(ALPHABET.indexOf(quad.charAt(at)), 0);
+    const triple = (sextet(0) << 18) | (sextet(1) << 12) | (sextet(2) << 6) | sextet(3);
+    const kept = quad.charAt(2) === '=' ? 1 : quad.charAt(3) === '=' ? 2 : 3;
+    const bytes = [(triple >> 16) & 255, (triple >> 8) & 255, triple & 255].slice(0, kept);
+    for (const byte of bytes) escaped += `%${byte.toString(16).padStart(2, '0')}`;
+  }
+  try {
+    return decodeURIComponent(escaped);
+  } catch {
+    return null;
+  }
+}

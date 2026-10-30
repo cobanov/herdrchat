@@ -1,5 +1,5 @@
 import { isNamedSession } from '../herdr/session';
-import { shellCommand, shellQuote, withPath } from '../herdr/shell';
+import { noBackslashes, shellCommand, shellQuote, withPath } from '../herdr/shell';
 
 /**
  * The command a terminal runs on the host to show one herdr pane.
@@ -125,11 +125,5 @@ export function needsNewerHerdr(target: Pick<TerminalTarget, 'kind' | 'terminalI
   return target.kind === 'shell' && (target.terminalId === null || target.terminalId === '');
 }
 
-/**
- * `shellQuote`'s `'\''` rewritten as `'"'"'`: the same quote to every POSIX
- * shell, and to fish, with no backslash. Only valid on text whose every
- * backslash came from `shellQuote`, which `attachCommand` checks first.
- */
-export function noBackslashes(command: string): string {
-  return command.replaceAll(`'\\''`, `'"'"'`);
-}
+/** Lives beside `shellQuote`; `attachCommand` checks first that every backslash came from it. */
+export { noBackslashes };

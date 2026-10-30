@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { UPLOAD_CHUNK_CHARS } from '../attachments/upload';
+import { base64 } from '../herdr/socket';
 import {
-  chunkForShell,
   YSK_AT,
   YSK_BEGIN,
   YSK_DETECT_SCRIPT,
@@ -16,8 +17,10 @@ import {
   YSK_SWAP_SCRIPT,
   YSK_TOO_LARGE,
   YSK_UNREADABLE,
-  YSK_WRITE_CHUNK_BYTES,
+  YSK_PART_FIRST_SCRIPT,
+  YSK_PART_NEXT_SCRIPT,
   YSK_WRITTEN,
+  YSK_CLEANUP_SCRIPT,
   yskCleanupCommand,
   yskDetectCommand,
   yskReadCommand,
@@ -30,10 +33,22 @@ import {
 
 const STORE = '/home/me/.claude/plugins/store/cc-plugin-you-should-know_builtin-19776595df2c.json';
 
+/**
+ * A store with everything a login shell or a quoting slip could alter: escaped
+ * backslashes (a Windows path, a regex), quotes, `$`, a backtick, non-ASCII
+ * and an emoji.
+ */
+const AWKWARD = JSON.stringify({
+  sessions: [{ id: 'a', text: "It's `done` at C:\\tmp, $HOME stays; \\d+\\.\\w naïve ✓ 🙂 \"quoted\"" }],
+  known: ['a\\b'],
+});
+
 describe('the commands as strings', () => {
   // `sh -c` quoting is a plain wrap only while the scripts hold no single quote.
   it('hold no single quote in any script', () => {
-    for (const script of [YSK_DETECT_SCRIPT, YSK_READ_SCRIPT, YSK_SWAP_SCRIPT]) expect(script).not.toContain("'");
+    for (const script of [YSK_DETECT_SCRIPT, YSK_READ_SCRIPT, YSK_SWAP_SCRIPT, YSK_PART_FIRST_SCRIPT, YSK_PART_NEXT_SCRIPT, YSK_CLEANUP_SCRIPT]) {
+      expect(script).not.toContain("'");
+    }
   });
 
   it('detect in the plugin store under the Claude config folder', () => {
@@ -59,38 +74,50 @@ describe('the commands as strings', () => {
     expect(() => yskWriteCommands('/tmp/cc-plugin-you-should-know_x.json\n', '1 2', '{}', 'abc')).toThrow();
   });
 
-  it('write in one command that carries the JSON quoted, the version guard and the swap', () => {
+  it('write in one command that carries the JSON as base64, the version guard and the swap', () => {
     const json = JSON.stringify({ sessions: [{ text: "It's done" }] });
     const commands = yskWriteCommands(STORE, '42 7', json, 'tok1');
     expect(commands).toHaveLength(1);
     const command = commands[0]!;
-    expect(command.endsWith(` sh '${STORE}' '${STORE}.herdrchat-tok1.tmp' '42 7' '{"sessions":[{"text":"It'\\''s done"}]}'`)).toBe(true);
+    expect(command.endsWith(` sh '${STORE}' 'tok1' '42 7' '${base64(json)}'`)).toBe(true);
     expect(command).toContain(`if [ "$v" != "$3" ]; then rm -f "$t"; echo ${YSK_STALE}; exit 0; fi`);
     expect(command).toContain('mv -f "$t" "$f"');
+    expect(command).toContain('{ base64 -d < "$p" 2>/dev/null || base64 -D < "$p"; } > "$t"');
     expect(() => yskWriteCommands(STORE, 'not a version', json, 'tok1')).toThrow();
     expect(() => yskWriteCommands(STORE, '1 2', json, '../x')).toThrow();
+  });
+
+  // sshd hands the command to the login shell first, and fish keeps `\\` and
+  // `\'` special inside single quotes: a backslash in a write command could
+  // reach `sh` altered and the swap move the altered file over the store.
+  it('never put a backslash, or the JSON itself, in a write command', () => {
+    const big = JSON.stringify({ sessions: Array.from({ length: 900 }, (_, index) => ({ id: `i${index}`, text: `${AWKWARD} ${'x'.repeat(120)}` })) });
+    const quoted = STORE.replace('builtin', "it's");
+    for (const json of [AWKWARD, big]) {
+      const commands = [...yskWriteCommands(STORE, '1 2', json, 'tok'), ...yskWriteCommands(quoted, '1 2', json, 'tok'), yskCleanupCommand(quoted, 'tok')];
+      for (const command of commands) {
+        expect(command).not.toContain('\\');
+        expect(command).not.toContain(json);
+        expect(command).not.toContain('C:');
+      }
+    }
+    // A path whose backslash would itself be at fish's mercy is refused.
+    expect(() => yskWriteCommands(STORE.replace('builtin', 'a\\b'), '1 2', AWKWARD, 'tok')).toThrow();
   });
 
   it('send a large file in pieces, each well inside one argument’s cap', () => {
     const json = JSON.stringify({ sessions: Array.from({ length: 900 }, (_, index) => ({ id: `i${index}`, text: `naïve ✓ 🙂 '${'x'.repeat(120)}` })) });
     const commands = yskWriteCommands(STORE, '1 2', json, 'tok2');
     expect(commands.length).toBeGreaterThan(2);
-    for (const command of commands) expect(utf8Bytes(command)).toBeLessThan(128 * 1024);
+    for (const command of commands) expect(Buffer.byteLength(command, 'utf8')).toBeLessThan(128 * 1024);
+    // Base64 is a third larger than the JSON: the pieces are counted in its characters.
+    expect(commands.length).toBe(Math.ceil(base64(json).length / UPLOAD_CHUNK_CHARS) + 1);
+    expect(UPLOAD_CHUNK_CHARS).toBeLessThan(128 * 1024);
   });
-});
 
-describe('chunkForShell', () => {
-  it('never splits a character, and counts a quote as its escape', () => {
-    const text = `${'🙂'.repeat(10)}${"'".repeat(5)}é`;
-    const pieces = chunkForShell(text, 8);
-    expect(pieces.join('')).toBe(text);
-    for (const piece of pieces) {
-      expect(piece).not.toMatch(/[\uD800-\uDBFF]$/);
-      expect(utf8Bytes(piece.replaceAll("'", "'\\''"))).toBeLessThanOrEqual(8);
-    }
-    expect(chunkForShell('')).toEqual(['']);
-    expect(chunkForShell('abc')).toEqual(['abc']);
-    expect(YSK_WRITE_CHUNK_BYTES).toBeLessThan(128 * 1024);
+  it('count UTF-8 bytes, which the cap is in', () => {
+    expect(utf8Bytes('')).toBe(0);
+    expect(utf8Bytes('aé✓🙂')).toBe(Buffer.byteLength('aé✓🙂', 'utf8'));
   });
 });
 
@@ -134,6 +161,14 @@ describe('the commands on a real shell', () => {
     for (const command of yskWriteCommands(path, version, json, token)) stdout = run(command);
     return parseYskWrite(stdout);
   };
+
+  /** A command on the host's PATH ahead of the real one (`withPath` puts ~/.local/bin first). */
+  const shim = (name: string, body: string) => {
+    const bin = join(home, '.local', 'bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const cksumOf = (text: string) => execFileSync('cksum', { input: text, encoding: 'utf8' }).trim();
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'herdrchat-ysk-'));
@@ -194,16 +229,92 @@ describe('the commands on a real shell', () => {
     expect(yskWriteCommands(path, version, big, 'big').length).toBeGreaterThan(2);
     expect(write(path, version, big, 'big')?.kind).toBe('written');
     expect(readFileSync(path, 'utf8')).toBe(big);
-    expect(existsSync(`${path}.herdrchat-big.tmp`)).toBe(false);
+    expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-dddddddddddd.json']);
   });
 
-  /** A command on the host's PATH ahead of the real one (`withPath` puts ~/.local/bin first). */
-  const shim = (name: string, body: string) => {
-    const bin = join(home, '.local', 'bin');
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  };
-  const cksumOf = (text: string) => execFileSync('cksum', { input: text, encoding: 'utf8' }).trim();
+  it('lands the exact bytes of a store with backslashes, quotes, $, a backtick and an emoji, in one command or in pieces', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'cc-plugin-you-should-know_m-abababababab.json');
+    writeFileSync(path, '{}');
+    let version = (read(path, null) as { version: string }).version;
+    const written = write(path, version, AWKWARD);
+    expect(written).toEqual({ kind: 'written', version: cksumOf(AWKWARD) });
+    expect(readFileSync(path)).toEqual(Buffer.from(AWKWARD, 'utf8'));
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+
+    version = (written as { version: string }).version;
+    const big = JSON.stringify({ sessions: Array.from({ length: 700 }, (_, index) => ({ id: `i${index}`, text: `${AWKWARD} ${'x'.repeat(100)}` })) });
+    expect(yskWriteCommands(path, version, big, 'big').length).toBeGreaterThan(2);
+    expect(write(path, version, big, 'big')?.kind).toBe('written');
+    expect(readFileSync(path)).toEqual(Buffer.from(big, 'utf8'));
+    expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-abababababab.json']);
+  });
+
+  it('removes the half-written part file when writing it fails', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'cc-plugin-you-should-know_m-cdcdcdcdcdcd.json');
+    writeFileSync(path, '{}');
+    const version = (read(path, null) as { version: string }).version;
+    const json = JSON.stringify({ sessions: [{ id: 'a', text: 'x'.repeat(4000) }] });
+    const [command] = yskWriteCommands(path, version, json, 'tok');
+    // A file size limit of one 512-byte block, with the signal ignored, makes
+    // `printf` fail partway through: the part file is left half written.
+    expect(() => run(`trap "" XFSZ; ulimit -f 1; ${command!}`)).toThrow();
+    expect(readFileSync(path, 'utf8')).toBe('{}');
+    expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-cdcdcdcdcdcd.json']);
+  });
+
+  it('removes the part file and the temp file when the decode fails', () => {
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), 'cc-plugin-you-should-know_m-efefefefefef.json');
+    writeFileSync(path, '{}');
+    const version = (read(path, null) as { version: string }).version;
+    shim('base64', 'printf %s half; exit 1');
+    expect(() => write(path, version, AWKWARD)).toThrow();
+    expect(readFileSync(path, 'utf8')).toBe('{}');
+    expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-efefefefefef.json']);
+  });
+
+  it('writes through a symlinked store: the link stays a link, and its file gets the bytes', () => {
+    mkdirSync(store(), { recursive: true });
+    const dotfiles = join(home, 'dotfiles', 'claude');
+    mkdirSync(dotfiles, { recursive: true });
+    const target = join(dotfiles, 'ysk.json');
+    writeFileSync(target, '{"sessions":[]}', { mode: 0o644 });
+    // A relative link to a second, absolute one: each resolves against its own folder.
+    const middle = join(home, 'dotfiles', 'current.json');
+    symlinkSync(target, middle);
+    const path = join(store(), 'cc-plugin-you-should-know_m-151515151515.json');
+    symlinkSync('../../../dotfiles/current.json', path);
+
+    const first = read(path, null);
+    expect(first).toMatchObject({ kind: 'present', text: '{"sessions":[]}' });
+    const version = (first as { version: string }).version;
+    const written = write(path, version, AWKWARD);
+    expect(written).toEqual({ kind: 'written', version: cksumOf(AWKWARD) });
+    expect(lstatSync(path).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(path)).toBe('../../../dotfiles/current.json');
+    expect(lstatSync(middle).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target)).toEqual(Buffer.from(AWKWARD, 'utf8'));
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+    expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-151515151515.json']);
+    expect(readdirSync(dotfiles)).toEqual(['ysk.json']);
+    expect(read(path, (written as { version: string }).version)).toEqual({ kind: 'unchanged' });
+  });
+
+  it('treats a link to nothing, or a loop of links, as no store to write', () => {
+    mkdirSync(store(), { recursive: true });
+    const dangling = join(store(), 'cc-plugin-you-should-know_m-161616161616.json');
+    symlinkSync(join(home, 'nowhere.json'), dangling);
+    expect(write(dangling, '1 2', AWKWARD)).toEqual({ kind: 'stale' });
+    expect(existsSync(join(home, 'nowhere.json'))).toBe(false);
+
+    const loop = join(store(), 'cc-plugin-you-should-know_m-171717171717.json');
+    symlinkSync(loop, loop);
+    expect(() => write(loop, '1 2', AWKWARD)).toThrow();
+    expect(readdirSync(store()).sort()).toEqual(['cc-plugin-you-should-know_m-161616161616.json', 'cc-plugin-you-should-know_m-171717171717.json']);
+    expect(readdirSync(home).sort()).toEqual(['.claude']);
+  });
 
   it('prints the version of what it moved into place, even when a session writes right after the move', () => {
     mkdirSync(store(), { recursive: true });
@@ -269,11 +380,11 @@ describe('the commands on a real shell', () => {
     expect(readdirSync(tmp)).toEqual([]);
   });
 
-  it('removes a write’s temp file when its pieces did not all go', () => {
+  it('removes a write’s part file when its pieces did not all go', () => {
     mkdirSync(store(), { recursive: true });
     const path = join(store(), 'cc-plugin-you-should-know_m-222222222222.json');
     writeFileSync(path, '{}');
-    writeFileSync(`${path}.herdrchat-tok.tmp`, '{"part');
+    writeFileSync(`${path}.herdrchat-tok.b64`, 'eyJw');
     run(yskCleanupCommand(path, 'tok'));
     expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-222222222222.json']);
     expect(() => yskCleanupCommand(path, 'a b')).toThrow();

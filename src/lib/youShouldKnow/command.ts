@@ -8,10 +8,13 @@
  * no "You should know" here" and "the check failed" never look alike.
  *
  * The scripts hold no single quote, so quoting each for `sh -c` is a plain
- * wrap, and everything that varies (the path, the version, the JSON) goes in
- * as a positional argument through `shellQuote`, never into the script.
+ * wrap, and everything that varies (the path, the version, the new contents
+ * as base64) goes in as a positional argument through `shellQuote`, never
+ * into the script.
  */
-import { shellQuote, withPath } from '../herdr/shell';
+import { decodeBase64, UPLOAD_CHUNK_CHARS } from '../attachments/upload';
+import { noBackslashes, shellQuote, withPath } from '../herdr/shell';
+import { base64 } from '../herdr/socket';
 
 /**
  * Claude Code's built-in "You should know" plugin keeps its store in
@@ -52,8 +55,9 @@ const STORE_PATH = /^\/[^\n]*\/cc-plugin-you-should-know_[^/\n]*\.json$/;
 /** A temp file's token: letters and digits only. */
 const TOKEN = /^[A-Za-z0-9]{1,32}$/;
 
+/** `noBackslashes`: what `shellQuote` puts in for a quote in an argument reaches `sh` intact through fish too. */
 const sh = (script: string, args: readonly string[]) =>
-  withPath(`sh -c ${shellQuote(script)} sh${args.map((arg) => ` ${shellQuote(arg)}`).join('')}`);
+  noBackslashes(withPath(`sh -c ${shellQuote(script)} sh${args.map((arg) => ` ${shellQuote(arg)}`).join('')}`));
 
 // MARK: - Detect
 
@@ -155,37 +159,63 @@ export function parseYskRead(stdout: string, lastVersion: string | null): YskRea
 // MARK: - Write
 
 /**
- * Most a command may carry of the file, in UTF-8 bytes once quoted. A host
- * shell takes the whole command as one argument, which Linux caps at 128 KB
- * (`MAX_ARG_STRLEN`); this leaves room for the script and the PATH prefix,
- * as the picture upload does. A larger file goes over in pieces.
+ * How the new contents travel: as base64, decoded on the host, never as the
+ * JSON itself. sshd hands every command to the user's login shell first, and
+ * fish keeps `\\` special inside single quotes, so a store with an escaped
+ * backslash in it (`"C:\\tmp"`, a regex in a note) would lose one on the way
+ * and the swap would move the altered file over the store. The picture and
+ * file uploads write the same way (`decodeBase64`); no write command holds a
+ * backslash (`noBackslashes` takes the one `shellQuote` would put in for a
+ * quote in the path).
+ *
+ * The base64 goes into a part file beside the store's path, in pieces of
+ * `UPLOAD_CHUNK_CHARS` when it does not fit one command (a host shell takes
+ * the whole command as one argument, which Linux caps at 128 KB), and the
+ * swap decodes it into a temp file beside the store's TARGET: a store that is
+ * a symlink (dotfiles) keeps its link, and its file gets the new bytes.
  */
-export const YSK_WRITE_CHUNK_BYTES = 96 * 1024;
 
-/** Starts the temp file with the first piece (`$1` the temp file, `$2` the piece). */
+/** Starts the part file with the first piece of base64 (`$1` the part file, `$2` the piece). */
 export const YSK_PART_FIRST_SCRIPT = 'umask 077\nprintf %s "$2" > "$1"';
 /** Adds a later piece. */
 export const YSK_PART_NEXT_SCRIPT = 'printf %s "$2" >> "$1"';
 
+/** How many links the swap follows to the store's file before it gives up (a loop). */
+const MAX_LINKS = 40;
+
 /**
- * The compare-and-swap: `$1` the store, `$2` the temp file beside it, `$3`
- * the version the change was made against, `$4` (when the whole file fits in
- * one command) the contents to put in the temp file first. Moves the temp
- * file into place only while the store still has that version, and prints the
- * new one; otherwise removes it, prints the stale sentinel and changes nothing.
- * A `mv` within one folder replaces the file in one step, so no session ever
- * reads half of it. The version printed is that of the bytes moved.
+ * The compare-and-swap: `$1` the store, `$2` the write's token, `$3` the
+ * version the change was made against, `$4` (when the whole file fits in one
+ * command) the base64 to put in the part file first. Follows `$1` through any
+ * symlinks to the file itself (a relative link resolves against its own
+ * folder; `readlink` without `-f`, which older macOS lacks), decodes the part
+ * file into a temp file beside that file, and moves it into place only while
+ * the store still has that version, printing the new one; otherwise removes
+ * it, prints the stale sentinel and changes nothing. A `mv` within one folder
+ * replaces the file in one step, so no session ever reads half of it. The
+ * version printed is that of the bytes moved. Every way out removes the part
+ * file and the temp file.
  *
  * Not a lock: a known limit. The plugin offers none the terminal honours, so
  * a terminal write landing between the store's `cksum` and the `mv` is still
  * replaced by this one, and the app is none the wiser. Everything that can
- * happen earlier (the temp file, its version) does, so the store's `cksum`,
- * the comparison and the `mv` follow each other directly and that gap is as
- * short as the shell can make it.
+ * happen earlier (the part file, the decode, the temp file's version) does,
+ * so the store's `cksum`, the comparison and the `mv` follow each other
+ * directly and that gap is as short as the shell can make it.
  */
 export const YSK_SWAP_SCRIPT = [
-  'f=$1; t=$2',
-  'if [ $# -ge 4 ]; then umask 077; printf %s "$4" > "$t" || exit 1; fi',
+  'f=$1; p=$1.herdrchat-$2.b64',
+  'umask 077',
+  'if [ $# -ge 4 ]; then printf %s "$4" > "$p" || { rm -f "$p"; exit 1; }; fi',
+  'i=0',
+  'while [ -L "$f" ]; do',
+  '  l=$(readlink "$f") || { rm -f "$p"; exit 1; }',
+  '  case $l in /*) f=$l ;; *) f=${f%/*}/$l ;; esac',
+  `  i=$((i + 1)); if [ "$i" -gt ${MAX_LINKS} ]; then rm -f "$p"; exit 1; fi`,
+  'done',
+  't=$f.herdrchat-$2.tmp',
+  `${decodeBase64('"$p"')} > "$t" || { rm -f "$p" "$t"; exit 1; }`,
+  'rm -f "$p"',
   // The version of the bytes to be moved into place, taken before the move
   // (one taken after could be another writer's, which the app would then hold
   // beside its own contents and later write over) and before the check, so
@@ -200,7 +230,7 @@ export const YSK_SWAP_SCRIPT = [
   'echo "$n"',
 ].join('\n');
 
-/** Removes a write's temp file (`$1`) after a piece failed to go. */
+/** Removes a write's part file (`$1`) after a piece, or the swap, failed to go. */
 export const YSK_CLEANUP_SCRIPT = 'rm -f "$1"';
 
 /** UTF-8 bytes of one code point. */
@@ -215,56 +245,48 @@ export function utf8Bytes(value: string): number {
   return bytes;
 }
 
-/**
- * Split text into pieces whose quoted form fits `maxBytes`, never inside a
- * character: a single quote costs four bytes once `shellQuote` has escaped it.
- */
-export function chunkForShell(value: string, maxBytes: number = YSK_WRITE_CHUNK_BYTES): string[] {
-  const pieces: string[] = [];
-  let piece = '';
-  let bytes = 0;
-  for (const char of value) {
-    const cost = char === "'" ? 4 : codePointBytes(char.codePointAt(0) ?? 0);
-    if (bytes + cost > maxBytes && piece !== '') {
-      pieces.push(piece);
-      piece = '';
-      bytes = 0;
-    }
-    piece += char;
-    bytes += cost;
-  }
-  if (piece !== '' || pieces.length === 0) pieces.push(piece);
-  return pieces;
+/** The part file a write's base64 goes into, beside the store's path, which the plugin's glob does not match. */
+export function partPath(path: string, token: string): string {
+  return `${path}.herdrchat-${token}.b64`;
 }
 
-/** The temp file a write uses, beside the store, which the plugin's glob does not match. */
+/** The temp file the swap decodes into, beside the store's file (its path, when it is no symlink). */
 export function tempPath(path: string, token: string): string {
   return `${path}.herdrchat-${token}.tmp`;
 }
 
+/** A path a write may name: one detection could print, with no backslash for a login shell to rewrite. */
+function writablePath(path: string): void {
+  if (!isStorePath(path) || path.includes('\\')) throw new Error(`Not a "You should know" store: ${path}`);
+}
+
 /**
  * The commands that write `json` over the store at `path`, in order, if and
- * only if it still has `version`: the pieces into a temp file, then the swap.
- * One command when it fits in one, which is nearly always.
+ * only if it still has `version`: the base64 pieces into the part file, then
+ * the swap. One command when it fits in one, which is nearly always.
  */
 export function yskWriteCommands(path: string, version: string, json: string, token: string): string[] {
-  if (!isStorePath(path)) throw new Error(`Not a "You should know" store: ${path}`);
+  writablePath(path);
   if (!VERSION.test(version)) throw new Error(`Not a version: ${version}`);
   if (!TOKEN.test(token)) throw new Error(`Not a token: ${token}`);
-  const temp = tempPath(path, token);
-  const pieces = chunkForShell(json);
-  if (pieces.length === 1) return [sh(YSK_SWAP_SCRIPT, [path, temp, version, pieces[0] ?? ''])];
+  const encoded = base64(json);
+  if (encoded.length <= UPLOAD_CHUNK_CHARS) return [sh(YSK_SWAP_SCRIPT, [path, token, version, encoded])];
+  const part = partPath(path, token);
+  const pieces: string[] = [];
+  for (let start = 0; start < encoded.length; start += UPLOAD_CHUNK_CHARS) {
+    pieces.push(encoded.slice(start, start + UPLOAD_CHUNK_CHARS));
+  }
   return [
-    ...pieces.map((piece, index) => sh(index === 0 ? YSK_PART_FIRST_SCRIPT : YSK_PART_NEXT_SCRIPT, [temp, piece])),
-    sh(YSK_SWAP_SCRIPT, [path, temp, version]),
+    ...pieces.map((piece, index) => sh(index === 0 ? YSK_PART_FIRST_SCRIPT : YSK_PART_NEXT_SCRIPT, [part, piece])),
+    sh(YSK_SWAP_SCRIPT, [path, token, version]),
   ];
 }
 
-/** The command that removes a write's temp file, for a write whose pieces did not all go. */
+/** The command that removes a write's part file, for a write whose commands did not all go. */
 export function yskCleanupCommand(path: string, token: string): string {
-  if (!isStorePath(path)) throw new Error(`Not a "You should know" store: ${path}`);
+  writablePath(path);
   if (!TOKEN.test(token)) throw new Error(`Not a token: ${token}`);
-  return sh(YSK_CLEANUP_SCRIPT, [tempPath(path, token)]);
+  return sh(YSK_CLEANUP_SCRIPT, [partPath(path, token)]);
 }
 
 /** What the swap said: written with the new version, or stale. Null: anything else, a failed write. */

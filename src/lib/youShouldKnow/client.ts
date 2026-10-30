@@ -94,10 +94,11 @@ export async function writeYouShouldKnow(
   for (const command of commands) {
     stdout = await run(transport, command, SEND_TIMEOUT_MS);
     if (stdout === null) {
-      // A piece that did not go leaves the temp file beside the store (the
-      // plugin's glob never matches it). Removed on a best effort, not awaited:
-      // the host may be the reason the piece failed.
-      if (commands.length > 1) void run(transport, built(() => yskCleanupCommand(path, token)), POLL_TIMEOUT_MS);
+      // A command that did not go may leave the part file beside the store
+      // (the plugin's glob never matches it): a piece always, the swap when
+      // the connection dropped under it. Removed on a best effort, not
+      // awaited: the host may be the reason the command failed.
+      void run(transport, built(() => yskCleanupCommand(path, token)), POLL_TIMEOUT_MS);
       return null;
     }
   }

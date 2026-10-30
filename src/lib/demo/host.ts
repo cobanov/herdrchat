@@ -32,7 +32,9 @@ import {
   YSK_STALE,
   YSK_SWAP_SCRIPT,
   YSK_WRITTEN,
+  partPath as yskPartPath,
 } from '../youShouldKnow/command';
+import { textFromBase64 } from '../herdr/socket';
 import {
   DEMO_PHRASES,
   DEMO_THEME_REPLY,
@@ -320,8 +322,8 @@ export class DemoHost implements HerdrTransport {
   /**
    * The "You should know" store, once the scenario has a note to offer (null:
    * the host's Claude Code has no "You should know", as every other flow
-   * expects), and the temp files the app's writes go through on their way to
-   * it.
+   * expects), and the part files (base64) the app's writes go through on
+   * their way to it.
    */
   private ysk: HostFile | null = null;
   private readonly yskTemps = new Map<string, string>();
@@ -658,9 +660,10 @@ export class DemoHost implements HerdrTransport {
       const { version, text } = this.ysk;
       return out(last === version ? `${version}\n` : `${version}\n${YSK_BEGIN}\n${text}`);
     }
+    // A write's base64 goes into a part file, and the swap decodes it, as on a host.
     if (script === YSK_PART_FIRST_SCRIPT || script === YSK_PART_NEXT_SCRIPT) {
-      const [temp = '', piece = ''] = args;
-      this.yskTemps.set(temp, (script === YSK_PART_NEXT_SCRIPT ? this.yskTemps.get(temp) ?? '' : '') + piece);
+      const [part = '', piece = ''] = args;
+      this.yskTemps.set(part, (script === YSK_PART_NEXT_SCRIPT ? this.yskTemps.get(part) ?? '' : '') + piece);
       return silent();
     }
     if (script === YSK_CLEANUP_SCRIPT) {
@@ -668,11 +671,13 @@ export class DemoHost implements HerdrTransport {
       return silent();
     }
     if (script === YSK_SWAP_SCRIPT) {
-      const [path, temp = '', version, contents] = args;
-      if (contents !== undefined) this.yskTemps.set(temp, contents);
-      const text = this.yskTemps.get(temp);
-      this.yskTemps.delete(temp);
-      if (text === undefined) return exit(1);
+      const [path = '', token = '', version, encoded] = args;
+      const part = yskPartPath(path, token);
+      if (encoded !== undefined) this.yskTemps.set(part, encoded);
+      const stored = this.yskTemps.get(part);
+      this.yskTemps.delete(part);
+      const text = stored === undefined ? null : textFromBase64(stored);
+      if (text === null) return exit(1);
       if (this.yskStaleNext) {
         this.yskStaleNext = false;
         this.touchNotes();

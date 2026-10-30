@@ -8,6 +8,17 @@ export function shellQuote(argument: string): string {
 }
 
 /**
+ * `shellQuote`'s `'\''` rewritten as `'"'"'`: the same quote to every POSIX
+ * shell, and to fish, with no backslash. sshd hands a command to the user's
+ * login shell first, and fish keeps `\\` and `\'` special inside single
+ * quotes, so a backslash in a command can reach `sh` altered. Only valid on
+ * text whose every backslash came from `shellQuote`.
+ */
+export function noBackslashes(command: string): string {
+  return command.replaceAll(`'\\''`, `'"'"'`);
+}
+
+/**
  * The program word of a command: quoted, except that a leading `~/` becomes
  * `"$HOME"/`.
  *
