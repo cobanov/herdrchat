@@ -4,6 +4,7 @@ import { agentSpec } from '@/lib/herdr/agents';
 import type { HerdrClient } from '@/lib/herdr/client';
 import type { AgentInfo } from '@/lib/herdr/models';
 import { errorText } from '@/lib/herdr/protocol';
+import { STATUS_POLL_MS } from '@/lib/poll';
 import {
   blockedPromptSignature,
   blockedPendingTimeout,
@@ -15,7 +16,6 @@ import {
 } from '@/lib/transcript/blockedPrompt';
 import { parsePaneOverlay } from '@/lib/transcript/paneOverlay';
 
-import { STATUS_POLL_MS } from './useAgentPoll';
 
 const BLOCKED_PENDING_ERROR = 'The reply may not have landed, check the agent.';
 /** When to look at a blocked pane again after answering it. */

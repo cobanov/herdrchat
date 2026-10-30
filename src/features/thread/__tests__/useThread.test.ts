@@ -1496,6 +1496,73 @@ describe('the agents pane', () => {
   });
 });
 
+// The two notes on #186: the read at a turn's end ran for every agent though
+// only Claude draws the pane, and with the event stream live the poll slowed
+// to 30 s while agents still ran, so the bar lagged the last one finishing.
+describe('the agents pane, beyond Claude and while its agents run', () => {
+  const RUNNING = [
+    '❯ ',
+    '  ⏵⏵ auto mode on · ← for agents · ↓ to manage',
+    '',
+    '  ⏺ main',
+    '  ◯ general-purpose  Reviewing the notes                 12s · ↓ 12.4k tokens',
+  ].join('\n');
+  const FINISHED = RUNNING.replace('◯ general-purpose', '⏺ general-purpose');
+
+  it('never reads the screen for it in a Codex chat, not even when a turn ends', async () => {
+    mockLive = false;
+    const codex: AgentInfo = { ...agent, agent: 'codex' };
+    const status = jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([codex]));
+    const read = jest.spyOn(client, 'paneVisible').mockResolvedValue('› ');
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    // The one look for a slash command's panel, which Codex draws too.
+    const opened = read.mock.calls.length;
+
+    // A turn: the live preview's reads, whatever the screen holds.
+    status.mockResolvedValue(snapshot([{ ...codex, agentStatus: 'working' }]));
+    read.mockResolvedValue(RUNNING);
+    await act(async () => { await jest.advanceTimersByTimeAsync(4_100); });
+    expect(read.mock.calls.length).toBeGreaterThan(opened);
+    expect(result.current.agentsPane).toBeNull();
+
+    // The turn ends: no read at the first idle poll, nor after.
+    status.mockResolvedValue(snapshot([codex]));
+    const working = read.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(6_500); });
+    expect(read).toHaveBeenCalledTimes(working);
+    expect(result.current.agentsPane).toBeNull();
+    await unmount();
+  });
+
+  it('polls at the working rate while a row runs, and slows once every row is done', async () => {
+    mockLive = true; // idle polls 30 s apart
+    jest.spyOn(client, 'snapshot').mockResolvedValue(snapshot([agent]));
+    const read = jest.spyOn(client, 'paneVisible').mockResolvedValue(RUNNING);
+    const { result, unmount } = await renderHook(() => useThread(db, client, 'host', 'chat', []));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(result.current.agentsPane?.rows[0]?.state).toBe('running');
+
+    // Idle by herdr's account, an agent still running: every two seconds.
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(read).toHaveBeenCalledTimes(2);
+
+    // It finishes: the next fast poll sees it at once.
+    read.mockResolvedValue(FINISHED);
+    await act(async () => { await jest.advanceTimersByTimeAsync(2_100); });
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(result.current.agentsPane?.rows[0]?.state).toBe('done');
+
+    // Every row done: back to the idle rate, still reading while it is drawn.
+    await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    expect(read).toHaveBeenCalledTimes(3);
+    await act(async () => { await jest.advanceTimersByTimeAsync(20_100); });
+    expect(read).toHaveBeenCalledTimes(4);
+    await unmount();
+  });
+});
+
 // A reopened chat waited for the host before it showed the messages the phone
 // already had. Opened from the list, it shows them at once when they are the
 // session the list saw, and leaves a cache of another session alone.

@@ -76,3 +76,59 @@ export function needsTheUser(code: HerdrErrorCode | null | undefined): boolean {
     code === 'auth_failed' || code === 'host_key_changed' || code === 'credentials_missing' || code === 'bad_key'
   );
 }
+
+/** The open thread's status poll, while something on screen is changing. */
+export const STATUS_POLL_MS = 2000;
+
+/**
+ * The status poll's rate while the host's event stream is live and nothing
+ * calls for the fast one. Status flips and turn ends arrive as events and
+ * trigger a poll at once; this only catches what a dropped stream would lose.
+ */
+export const LIVE_POLL_MS = 30_000;
+
+/**
+ * Whether the thread's poll must keep the fast rate even with the host's
+ * events live, because what it watches changes with no event to say so.
+ *
+ * - `working`: the streaming preview and the tail watchdog are screen reads.
+ * - `blocked`: a question can change under an agent that stays blocked (the
+ *   next of several, then the review screen). At the idle rate the answered
+ *   question stayed up for half a minute.
+ * - `watchingPanel`: a slash command's panel is open over the idle agent.
+ * - `agentsRunning`: Claude Code's agents pane, last read, had a running row.
+ *   Claude idles while its background agents run, so herdr says `idle`, and a
+ *   finished agent is only a redrawn row. At the idle rate the bar said
+ *   "working" up to half a minute after the last one finished.
+ */
+export function pollsFast({
+  working,
+  blocked,
+  watchingPanel,
+  agentsRunning,
+}: {
+  working: boolean;
+  blocked: boolean;
+  watchingPanel: boolean;
+  agentsRunning: boolean;
+}): boolean {
+  return working || blocked || watchingPanel || agentsRunning;
+}
+
+/**
+ * The thread's poll interval before any backoff: the slow rate only when the
+ * event stream is live and nothing calls for the fast one (`pollsFast`).
+ * Without the stream the poll is the only way to notice anything, so it stays
+ * fast. `pollScale` is the user's setting, which slows the fast rate.
+ */
+export function statusPollMs({
+  streamLive,
+  fast,
+  pollScale,
+}: {
+  streamLive: boolean;
+  fast: boolean;
+  pollScale: number;
+}): number {
+  return streamLive && !fast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
+}
