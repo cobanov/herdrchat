@@ -25,6 +25,7 @@ import {
   DEMO_THEME_TEXT,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
+  DEMO_CODE_REPLY,
   DEMO_THINK_REPLY,
   DEMO_WORKING_SCREEN,
   DEMO_GROK_WORKING_SCREEN,
@@ -845,6 +846,7 @@ export class DemoHost implements HerdrTransport {
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
       if (asked.includes(DEMO_PHRASES.table)) return this.compareOptions(paneId);
+      if (asked.includes(DEMO_PHRASES.code)) return this.showCommands(paneId);
       if (asked.includes(DEMO_PHRASES.theme)) return this.writeTheme(paneId);
       if (asked.includes(DEMO_PHRASES.delegate) && this.isClaude(paneId)) return this.delegate(paneId);
       this.statuses.set(paneId, 'working');
@@ -1017,6 +1019,18 @@ export class DemoHost implements HerdrTransport {
       prompt: '',
       dueAt: this.now() + REPLY_DELAY_MS,
       lines: (next, timestamp) => [replyLine(DEMO_TABLE_REPLY, next(), timestamp)],
+    });
+    return silent();
+  }
+
+  /** A reply with two code blocks in it. */
+  private showCommands(paneId: string): ExecResult {
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + REPLY_DELAY_MS,
+      lines: (next, timestamp) => [replyLine(DEMO_CODE_REPLY, next(), timestamp)],
     });
     return silent();
   }
