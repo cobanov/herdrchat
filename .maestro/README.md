@@ -34,6 +34,7 @@ where regressions are found.
 | `regression/you-should-know` | Claude Code's built-in "You should know" plugin: no bar on the Demo until its agent has a note ("show me a note"), then after a pull the chats' bar with `✦ 2 notes for you`, the notes chat's Heads up offering Learn more, Knew this already, Discuss in chat, Dismiss and Go, another session's explained note ("another session on Demo") with only Understood and Dismiss, Learn more showing the explanation and turning the choices into Understood, Discuss in chat and Dismiss, Understood on the other note dropping the count to 1, Go opening the notes chat whose bar shows the note explained, and Discuss in chat putting the plugin's draft (`Here is a note offered by a side agent:` then `> Heads up · …`) in the composer as the bar goes (screenshots `ysk-bar-<appearance>`, `ysk-list-<appearance>`, `ysk-chat-<appearance>`: the star in the accent colour, the tag dimmed) |
 | `regression/host-theme` | a host's `~/.herdrchat/theme.json`: Settings says Default, the Demo agent writes a theme, Reload theme names it, Reset to default puts the app back on its own colours |
 | `regression/subagents` | a subagent's card in the thread running, then done; its chevron opening the agent's own transcript, read only, with its type and its answer; the review workflow's card opening its run with both phases and an agent still running; a workflow agent opening its transcript (screenshots `subagent-running`, `subagent-thread`, `workflow`) |
+| `regression/agents-pane` | Claude Code's agents pane as the bar above the composer, from the Demo's "delegate the review" (`delegateScreen`): folded to `2 agents working · …`; the live preview showing the reply, never a row (`general-purpose`, `tokens`, `more`); opened, the General row with the subagent's description, the Fork row, `1 more in the terminal`; the General row's time changing between two reads; the row opening the subagent's transcript; the bar gone once the delegation ends (screenshot `agents-bar-<appearance>`: the kinds in one column, the times on the right) |
 | `regression/slash-commands` | the `/` palette from the Demo's catalogue: Built-in and Skills sections, a built-in's hint (`/model [model]`), the hidden built-in left out, narrowing to one headerless ranked list (`/release-notes`, then `/review`), `/review` (optional `[pr]`) sent at once and answered, `/add-dir` filling in with its required `<path>` hint after it until something is typed, `/compact` (it rewrites the conversation) only filled from a fresh `/`, then sent by hand with its note in the thread, the notes folder's own `/notes:summarise` (screenshots `slash-palette-<appearance>`, `slash-filled-<appearance>`: the hint must start right after the caret) |
 | `regression/shell-commands` | a `!` command as one block in the thread: the Demo notes chat's seeded `! git status --short` with its two lines of output, the hint above the composer once `!` is typed in a Claude chat, a sent `! ls` landing as a block with the Demo's three-file listing under it and its echo confirmed rather than "Failed to send" (screenshots `shell-seeded-<appearance>`, `shell-<appearance>`: the output box must read as a terminal, stdout in the label colour) |
 | `regression/terminal` | the Demo's shell pane `w6:p3` as a terminal row under its card (`terminal-row-w6:p3`), opening its terminal (Connected, no Reconnect, no Take over), the accessory bar's Tab, Esc and sticky Ctrl, the keyboard from the bar's own control and `ls` typed; then a chat's header Terminal (`thread-terminal`) opening its agent's pane, and back to the chat (screenshots `terminal-row-<appearance>`, `terminal-<appearance>`: the recorded prompt, `ls` listing and coloured `git status` with `ls` echoed after the last prompt, in the app's colours; `terminal-agent-<appearance>`) |
@@ -277,7 +278,7 @@ maestro test .maestro/smoke.yaml .maestro/new-chat.yaml .maestro/folder-picker.y
 | `thread-bottom` | initial bottom, jump, reload and reopen | **yes**, final reply `HELLO` |
 | `thread-opening` | iPhone initial bottom, background return, reopen, draft and reload in both themes | no, selects Demo explicitly |
 | `thread-scroll` | a reader in history stays there across a background return, and sending brings them to the end, in both themes | no, sends only to local Demo |
-| `tool-activity` | tool runs folded into a summary line by default, the header switch opens them, in both themes; clear the stored choice first (see the flow) | no, selects Demo explicitly |
+| `tool-activity` | tool runs folded into a summary line by default, a tap on the line opens one and the Settings switch opens them all, in both themes; clear the stored choice first (see the flow) | no, selects Demo explicitly |
 | `thread-header` | floating glass header, long title, keyboard and scrolling under it; includes `thread-opening` | no, sends only to local Demo |
 | `composer` | multiline draft, keyboard and final-message clearance screenshot | **yes**, final reply `HELLO` |
 | `thread-empty` | usable initial conversation before the first transcript exists | **yes**, unprompted agent |
@@ -339,6 +340,19 @@ polling the screen for a prompt is what makes this class of test flaky.
 panel, but the actions behind it are Rename and Close, one of which stops every
 process in a workspace on a real machine. A flow that runs against a live host
 must not have that as its failure mode, so the swipe is verified by hand.
+
+### Against this Mac, in one command
+
+`npm run e2e:live` (`scripts/e2e-live.sh`) runs the app against the Mac it is
+on, for what the Demo cannot show: it starts its own sshd on 127.0.0.1 with a
+key made for the run, adds the host with `add-server`, and for each agent
+whose herdr integration is current starts a probe chat from New chat in a
+scratch folder (`live/probe.yaml`): the startup question answered, one
+message, the agent's reply. `LIVE_AGENTS="claude grok"` picks the agents and
+`LIVE_PICTURE=1` also sends a picture (`live/picture.yaml`). Pass or fail, it
+closes the probe workspaces, removes the host (`live/remove-host.yaml`), stops
+the sshd and deletes the key. It needs a simulator build signed ad hoc
+(`CODE_SIGN_IDENTITY=-`), since an unsigned one cannot save a host's key.
 
 ## Credentials
 

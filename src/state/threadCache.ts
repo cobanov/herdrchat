@@ -54,8 +54,17 @@ export async function appendMessages(
     // same next seq and filed their rows under duplicate numbers (#92).
     const start = await nextSeq(db, connectionId, workspaceId);
     await insertMessages(db, connectionId, workspaceId, sessionSig, messages, start);
+    // A reopen reads the newest `SEED_MESSAGE_LIMIT`; the rest only grew, by
+    // every line of every session, for as long as the chat was open.
+    await db.runAsync(
+      'DELETE FROM messages WHERE connection_id = ? AND workspace_id = ? AND seq <= ?',
+      connectionId, workspaceId, start + messages.length - 1 - MAX_CACHED_MESSAGES
+    );
   });
 }
+
+/** How many messages a chat's cache keeps: room above what a reopen reads. */
+export const MAX_CACHED_MESSAGES = 500;
 
 /** Replace the cached window only after the new host snapshot was read. */
 export async function replaceMessages(
@@ -80,13 +89,20 @@ async function insertMessages(
   messages: readonly ChatMessage[],
   start: number
 ): Promise<void> {
-  for (const [offset, message] of messages.entries()) {
-    await db.runAsync(
-      `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`,
-      connectionId, workspaceId, cacheStamp(sessionSig), message.id, start + offset, JSON.stringify(message)
-    );
+  if (messages.length === 0) return;
+  // One statement for the batch: run as a fresh statement per row, the same
+  // insert was compiled again for every message of a window.
+  const insert = await db.prepareAsync(
+    `INSERT INTO messages (connection_id, workspace_id, session_sig, message_id, seq, payload)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(connection_id, workspace_id, message_id) DO NOTHING`
+  );
+  try {
+    for (const [offset, message] of messages.entries()) {
+      await insert.executeAsync(connectionId, workspaceId, cacheStamp(sessionSig), message.id, start + offset, JSON.stringify(message));
+    }
+  } finally {
+    await insert.finalizeAsync();
   }
 }
 
@@ -98,6 +114,40 @@ async function insertMessages(
  * in-memory copy too. A no-op while the session is still unknown — binding to
  * nothing would throw away a perfectly good cache on every cold open.
  */
+/** A chat's cached messages and tail cursors, gone: what a reload starts from. */
+export async function clearThreadCache(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string
+): Promise<void> {
+  await inTransaction(db, async () => {
+    for (const table of ['messages', 'tail_cursors']) {
+      await db.runAsync(`DELETE FROM ${table} WHERE connection_id = ? AND workspace_id = ?`, connectionId, workspaceId);
+    }
+  });
+}
+
+/**
+ * The cached messages of a chat, but only when they are `sessionSig`'s: what
+ * a chat shows the moment it opens, before its first poll. Read only: a cache
+ * of another session is left for `rebind` to judge once the host has spoken,
+ * never dropped on the word of the list.
+ */
+export async function seedIfSession(
+  db: SQLite.SQLiteDatabase,
+  connectionId: string,
+  workspaceId: string,
+  sessionSig: string
+): Promise<ChatMessage[]> {
+  const row = await db.getFirstAsync<{ session_sig: string }>(
+    'SELECT session_sig FROM messages WHERE connection_id = ? AND workspace_id = ? LIMIT 1',
+    connectionId,
+    workspaceId
+  );
+  if (row === null || row.session_sig !== cacheStamp(sessionSig)) return [];
+  return seedMessages(db, connectionId, workspaceId);
+}
+
 export async function rebind(
   db: SQLite.SQLiteDatabase,
   connectionId: string,
@@ -201,7 +251,7 @@ export async function forgetWorkspace(
   workspaceId: string
 ): Promise<void> {
   await inTransaction(db, async () => {
-    for (const table of ['messages', 'tail_cursors', 'previews', 'thread_reads', 'chat_prefs']) {
+    for (const table of ['messages', 'tail_cursors', 'thread_reads', 'chat_prefs']) {
       // The workspace's own rows, and those of each agent in it, which are
       // filed under `w6/<pane>` (see chatKey). By prefix rather than by the
       // panes it has now: one that closed earlier left rows too. `substr`,

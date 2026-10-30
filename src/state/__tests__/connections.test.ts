@@ -5,6 +5,7 @@ import {
   clientFor,
   invalidateClient,
   resolveConnection,
+  sshConfig,
   testClient,
   useConnectionFor,
   useConnections,
@@ -15,7 +16,7 @@ import {
 // (Hoisted above the import by babel-jest.)
 const mockCommands: string[] = [];
 const mockClosed: string[] = [];
-jest.mock('@/lib/herdr/sshTransport', () => ({
+jest.mock('@/state/sshTransport', () => ({
   SshHerdrTransport: class {
     id: string;
     constructor(id: string) {
@@ -33,6 +34,16 @@ jest.mock('@/lib/herdr/sshTransport', () => ({
 
 const host = (id: string): ServerConnection =>
   ({ id, name: id, host: `${id}.local`, port: 22, username: 'me' }) as unknown as ServerConnection;
+
+// HC-7: both native modules read an encrypted key with its passphrase, but
+// the app always sent none, so such a key could not be used at all.
+it('sends a private key with its passphrase, and none for a password or a blank', () => {
+  const key = { ...host('k'), authKind: 'privateKey' } as ServerConnection;
+  expect(sshConfig(key, 'PEM', null, 'open sesame').auth).toEqual({ kind: 'privateKey', pem: 'PEM', passphrase: 'open sesame' });
+  expect(sshConfig(key, 'PEM', null, '').auth).toEqual({ kind: 'privateKey', pem: 'PEM', passphrase: null });
+  expect(sshConfig(key, 'PEM', null).auth).toEqual({ kind: 'privateKey', pem: 'PEM', passphrase: null });
+  expect(sshConfig({ ...key, authKind: 'password' }, 'pw', null, 'ignored').auth).toEqual({ kind: 'password', password: 'pw' });
+});
 
 describe('host selection (#90)', () => {
   it('falls back when the remembered host is no longer in the list', () => {

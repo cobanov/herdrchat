@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { toolCallLine, toolRunSummary, type ToolCall, type ToolKind } from '@/lib/threadItems';
 import { useSettings } from '@/state/settings';
 import { useToolRuns } from '@/state/toolRuns';
@@ -17,7 +17,7 @@ import { radius, size, spacing, typography, useScaledLine } from '@/theme/tokens
  * paragraphs rather than as content. Opened, each call hangs off a rail with
  * what it did in a line; a call opens in turn to show what it returned.
  *
- * Closed by default; the header's tool switch opens every run at once.
+ * Closed by default; the Settings switch opens every run at once.
  */
 export function ToolRun({ runKey, calls, thoughts }: { runKey: string; calls: readonly ToolCall[]; thoughts: number }) {
   const { colors } = useTheme();

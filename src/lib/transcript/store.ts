@@ -608,14 +608,13 @@ export class TranscriptStore {
 
   /**
    * Where the line that ends at (or contains) `byte - 1` starts: the host runs
-   * `grep -b` over the prefix and returns only that offset, never the content.
+   * `grep -b` over the 64 KB before it (`lineStartScript`) and returns only
+   * that offset, never the content.
    * Used where a read must begin exactly on a line boundary.
    */
   async lineStartBefore(path: string, byte: number): Promise<number> {
     if (byte <= 0) return 0;
-    const output = await this.shell(
-      `head -c ${byte} ${shellQuote(path)} | LC_ALL=C grep -a -b '' | cut -d: -f1 | tail -n 1`
-    );
+    const output = await this.shell(lineStartScript(path, byte));
     const lineStart = Number.parseInt(output.trim(), 10);
     if (!Number.isInteger(lineStart) || lineStart < 0 || lineStart >= byte) {
       throw new HerdrError('transcript_changed', 'Could not find where that line starts. Retrying.');
@@ -645,9 +644,10 @@ export class TranscriptStore {
     void
   > {
     let consumed = startByte;
-    const command = withPath(`tail -c +${startByte + 1} -f ${shellQuote(path)}`);
-    for await (const line of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS, signal)) {
-      consumed += byteLength(line) + 1; // + the newline the framing stripped
+    const command = withPath(tailScript(path, startByte));
+    for await (const framed of this.transport.streamLines(command, STREAM_START_TIMEOUT_MS, signal)) {
+      const { bytes, line } = unframe(framed);
+      consumed += bytes + 1; // + the newline the framing stripped
       const entry = parseTranscriptEntry(line, agentLabel);
       yield { message: entry.message, meta: entry.meta, consumedBytes: consumed };
     }
@@ -665,7 +665,7 @@ export class TranscriptStore {
    * Null when the tail holds no assistant turn with usage yet.
    */
   async sessionMeta(path: string, agent: string | null = null, tailBytes = 262_144): Promise<SessionMeta | null> {
-    const text = await this.shell(`tail -c ${tailBytes} ${shellQuote(path)} 2>/dev/null`);
+    const text = await this.shell(strippedTail(shellQuote(path), tailBytes));
     let model: string | null = null;
     let effort: string | null = null;
     let contextTokens: number | null = null;
@@ -775,7 +775,7 @@ export class TranscriptStore {
       script += `printf '\\n${marker} %s\\n' '${key}'; `;
       // Validate headers in the preview batch, not one SSH call per Pi/OMP row.
       if (isPiFamily(request.agent)) script += `head -n 2 "$f" 2>/dev/null; printf '\\n'; `;
-      script += `[ -n "$f" ] && tail -c ${tailBytes} "$f" 2>/dev/null; `;
+      script += `[ -n "$f" ] && ${strippedTail('"$f"', tailBytes)}; `;
     }
     if (script.length === 0) return new Map();
     script += 'true'; // a workspace without a transcript must not fail the batch
@@ -936,6 +936,82 @@ const WINDOW_CHUNK_BYTES = 4 * 1024 * 1024;
 /** See `linesBefore`. */
 const STRIP_PICTURES =
   's|"[A-Za-z0-9+/=]{128}[A-Za-z0-9+/=]*"|""|g; s|"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=]*"|""|g';
+
+/**
+ * The host side of `lineStartBefore`: where the line holding byte `e - 1`
+ * starts. It reads the 64 KB before `e`, by seeking as `windowScript` does,
+ * not the whole file before it: the full prefix of a 30 MB transcript was read
+ * on the host each time a chat reopened. Only a chunk with no newline in it
+ * (one line longer than 64 KB) falls back to the full read, since then the
+ * line's start is further back. All of it in the C locale: `LC_ALL=C` on
+ * `grep` alone left `cut` reading text it could stop on.
+ */
+export function lineStartScript(path: string, byte: number): string {
+  return `sh -c ${shellQuote([
+    // Bytes, for every tool in the pipe: a chunk can start inside a
+    // character, and BSD `cut` stops at an "Illegal byte sequence" there.
+    'LC_ALL=C; export LC_ALL',
+    `f=${shellQuote(path)}; e=${byte}; w=${LINE_START_CHUNK_BYTES}; b=0`,
+    '[ "$e" -gt "$w" ] && b=$((e - w))',
+    'starts() { grep -a -b "" | cut -d: -f1 | tail -n 1; }',
+    's=$({ dd bs=1 skip="$b" count=0 2>/dev/null; head -c $((e - b)); } < "$f" | starts)',
+    'if [ "$b" -gt 0 ] && [ "$s" = 0 ]; then b=0; s=$(head -c "$e" "$f" | starts); fi',
+    'echo $((b + s))',
+  ].join('\n'))}`;
+}
+
+/** How far before a cursor `lineStartScript` looks for the line's start. */
+const LINE_START_CHUNK_BYTES = 64 * 1024;
+
+/**
+ * The last `bytes` of a transcript with its pictures stripped on the host.
+ * Stripped BEFORE it is cut: a chat that ended on a screenshot filled a plain
+ * `tail -c` with one picture line, so the preview found no line to show and
+ * the header no model. A megabyte is read, a picture or two, and at most
+ * `bytes` cross the network.
+ */
+function strippedTail(file: string, bytes: number): string {
+  return `tail -c ${STRIP_WINDOW_BYTES} ${file} 2>/dev/null | sed -E ${shellQuote(STRIP_PICTURES)} | tail -c ${bytes}`;
+}
+
+/** How far back `strippedTail` reads before it strips. */
+const STRIP_WINDOW_BYTES = 1024 * 1024;
+
+/**
+ * The live tail's host side: from `startByte`, each line with its pictures
+ * stripped, after the size it has in the file (`<bytes>\t<line>`). A line with
+ * a screenshot was a megabyte across SSH, the bridge and `JSON.parse`, for a
+ * picture the thread shows as a path. The cursor counts the file's bytes, so
+ * the size comes from the host: `length` counts bytes in the C locale. The
+ * picture pattern is `STRIP_PICTURES`, spelt out rather than with `{128}`,
+ * which older mawk cannot read, and `fflush` sends each line as it lands.
+ *
+ * `fflush` flushes only what awk writes. mawk, the default awk on Debian and
+ * Ubuntu, also buffers what it reads from a pipe, so a followed transcript
+ * printed nothing, not even its first line, until the buffer filled. Its
+ * `-Winteractive` reads a line at a time; macOS awk refuses the flag and gawk
+ * reads a pipe as it comes, so the host picks it.
+ */
+export function tailScript(path: string, startByte: number, follow = true): string {
+  const awk = [
+    'BEGIN { c = "[A-Za-z0-9+/=]"; p = "\\""; for (i = 0; i < 128; i++) p = p c; p = p c "*\\""',
+    '  d = "\\"data:[A-Za-z0-9.+/-]*;base64," c "*\\"" }',
+    '{ n = length($0); gsub(p, "\\"\\""); gsub(d, "\\"\\""); print n "\\t" $0; fflush() }',
+  ].join('\n');
+  const mawk = 'hc_aw=; awk -W version </dev/null 2>/dev/null | grep -q mawk && hc_aw=-Winteractive; ';
+  return `${mawk}tail -c +${startByte + 1}${follow ? ' -f' : ''} ${shellQuote(path)} | LC_ALL=C awk $hc_aw ${shellQuote(awk)}`;
+}
+
+/**
+ * A line of `tailScript`: its size in the file and its text. A line without
+ * the frame, as a host might send if its awk failed, counts as it reads.
+ */
+function unframe(framed: string): { bytes: number; line: string } {
+  const frame = /^(\d+)\t/.exec(framed);
+  return frame === null
+    ? { bytes: byteLength(framed), line: framed }
+    : { bytes: Number(frame[1]), line: framed.slice(frame[0].length) };
+}
 
 const MARKER_PREFIX = '@@HERDRCHAT';
 

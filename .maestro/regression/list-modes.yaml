@@ -79,7 +79,7 @@ appId: dev.herdr.HerdrChat
     centerElement: true
 - assertVisible:
     id: terminal-row-w9:p1
-    text: Terminal in docs, opencode · demo/docs
+    text: Terminal in docs, OpenCode · demo/docs
 - takeScreenshot: list-agents-terminal-${APPEARANCE}
 # Back to the top (w1 needs you, so it leads the list) for the screenshot.
 - scrollUntilVisible:

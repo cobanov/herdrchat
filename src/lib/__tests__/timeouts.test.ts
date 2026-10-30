@@ -117,6 +117,8 @@ describe('HerdrClient.interrupt', () => {
     constructor(private readonly accept: (command: string) => boolean) {}
     async exec(command: string): Promise<ExecResult> {
       if (isSocketProbe(command)) return { ok: true, stdout: 'BRIDGE none', stderr: '', exitCode: 0 };
+      // The status check after a stop reads a snapshot; only keys count here.
+      if (command.includes('snapshot')) return { ok: true, stdout: '', stderr: '', exitCode: 0 };
       this.sent.push(command);
       return this.accept(command)
         ? { ok: true, stdout: '', stderr: '', exitCode: 0 }
@@ -142,6 +144,27 @@ describe('HerdrClient.interrupt', () => {
   it('surfaces a failure when the host accepts neither', async () => {
     const transport = new KeyTransport(() => false);
     await expect(new HerdrClient(transport).interrupt('w1:p1')).rejects.toThrow();
+  });
+
+  // HC-23: the host takes a key it does not know as text, so a taken key
+  // proved nothing. Stop now checks the agent left `working`.
+  it('says so when the agent is still working after the stop', async () => {
+    const working = (status: string) => JSON.stringify({ id: 'cli:api:snapshot', result: { snapshot: {
+      agents: [{ pane_id: 'w1:p1', workspace_id: 'w1', agent: 'claude', agent_status: status, cwd: '/w' }],
+      workspaces: [], panes: [], tabs: [], layouts: [], version: '0.9.5', protocol: 22,
+    } } });
+    let status = 'working';
+    const transport: HerdrTransport = {
+      async exec(command) {
+        if (isSocketProbe(command)) return { ok: true, stdout: 'BRIDGE none', stderr: '', exitCode: 0 };
+        if (command.includes('snapshot')) return { ok: true, stdout: working(status), stderr: '', exitCode: 0 };
+        return { ok: true, stdout: '', stderr: '', exitCode: 0 };
+      },
+      async *streamLines() {},
+    };
+    await expect(new HerdrClient(transport).interrupt('w1:p1', 10)).rejects.toMatchObject({ code: 'interrupt_unconfirmed' });
+    status = 'idle';
+    await expect(new HerdrClient(transport).interrupt('w1:p1', 10)).resolves.toBeUndefined();
   });
 
   it('sends Ctrl-C only for the hard stop', async () => {

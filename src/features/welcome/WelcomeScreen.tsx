@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { Icon, type IconName } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { SETUP_GUIDE_URL } from '@/lib/welcome';
 import { newConnection } from '@/state/connections';
 import { saveSetting } from '@/state/saveSetting';
@@ -268,7 +268,7 @@ function Requirements() {
       <View style={{ gap: spacing.lg }}>
         <Row icon="desktopcomputer" title="Your computer" detail="A Mac or Linux machine you can reach over SSH, with a password or a key." />
         <Row icon="terminal" title="herdr, running" detail="It turns each agent into a workspace the app can read. Install it from" mono="herdr.dev" />
-        <Row icon="sparkles" title="An agent" detail="Claude Code, Codex, Grok, Pi or OMP, installed and signed in on that computer." />
+        <Row icon="sparkles" title="An agent" detail="Claude Code, Codex, Grok, Antigravity, Pi or OMP, installed and signed in on that computer." />
         <Row icon="network" title="Tailscale, recommended" detail="Reach the computer from anywhere, privately, without opening a port." />
       </View>
       <Pressable

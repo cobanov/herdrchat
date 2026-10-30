@@ -9,6 +9,7 @@ import {
   isConversationalAgent,
   agentName,
   needsAttention,
+  sameAgents,
   sendTarget,
   sessionSignature,
   toAgentStatus,
@@ -282,6 +283,13 @@ describe('session signature', () => {
     expect(isConversationalAgent(agent({ agent: 'gemini' }))).toBe(false);
   });
 
+  it('tells a poll that saw nothing new from one that did', () => {
+    const a = agent({});
+    expect(sameAgents([a], [{ ...a }])).toBe(true);
+    expect(sameAgents([a], [agent({ agentStatus: 'working' })])).toBe(false);
+    expect(sameAgents([a], [a, a])).toBe(false);
+  });
+
   // A focused agent the app cannot read used to take a Claude chat's message.
   it('sends to the agent whose transcript the chat shows, even when another is focused', () => {
     const claude = agent({ paneId: 'p1' });
@@ -350,8 +358,9 @@ describe('session signature', () => {
 
 describe('agent name', () => {
   it('names the agents it knows, keeps herdr\'s id for the rest, and calls a shell a terminal', () => {
-    expect(['claude', 'codex', 'omp', 'letta'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta']);
-    expect(agentName('gemini')).toBe('gemini');
+    expect(['claude', 'codex', 'omp', 'letta', 'gemini'].map(agentName)).toEqual(['Claude', 'Codex', 'OMP', 'Letta', 'Gemini']);
+    // One a newer herdr detects before the table names it.
+    expect(agentName('newagent')).toBe('newagent');
     expect(agentName(null)).toBe('Terminal');
   });
 });

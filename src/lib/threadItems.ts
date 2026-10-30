@@ -135,7 +135,7 @@ export function threadItems(
   const items: ThreadItem[] = [];
   let run: Extract<ThreadItem, { kind: 'tools' }> | null = null;
   const open = new Map<string, ToolCall>();
-  let unmatched: ToolCall[] = [];
+  const unmatched: ToolCall[] = [];
   /** Calls that are cards, with when they were made and when their result came. */
   const delegated: { item: Extract<ThreadItem, { kind: 'subagent' | 'workflow' }>; at: number | null }[] = [];
   const resultAt = new Map<ToolCall, number | null>();
@@ -178,8 +178,9 @@ export function threadItems(
     call.result = segment.text;
     call.failed = segment.isError === true || call.failed;
     resultAt.set(call, at);
+    // A call with an id was never in `unmatched`, and one without was just
+    // taken off its front: nothing to filter out.
     if (call.id !== null) open.delete(call.id);
-    unmatched = unmatched.filter((candidate) => candidate !== call);
   };
 
   for (const message of messages) {
@@ -254,7 +255,7 @@ export function threadItems(
     const emitProse = (index: number) => {
       if (prose.length === 0) return;
       flush();
-      items.push({ kind: 'agent', key: `${message.id}:${index}`, message: { ...message, segments: prose } });
+      items.push({ kind: 'agent', key: `${message.id}:${index}`, message: proseOf(message, index, prose) });
       prose = [];
     };
     message.segments.forEach((segment, index) => {
@@ -394,7 +395,7 @@ export function toolKind(name: string): ToolKind {
   if (SEARCH_TOOLS.has(key)) return 'search';
   if (FETCH_TOOLS.has(key)) return 'fetch';
   if (TODO_TOOLS.has(key)) return 'todo';
-  if (key === 'askuserquestion') return 'question';
+  if (key === 'askuserquestion' || key === 'ask_question') return 'question';
   if (key === 'agent' || key === 'task') return 'agent';
   return 'tool';
 }
@@ -530,8 +531,31 @@ function isReadable(message: ChatMessage): boolean {
 
 function readableOnly(message: ChatMessage): ChatMessage {
   const segments = message.segments.filter((segment) => segment.kind === 'text' || segment.kind === 'image');
-  return segments.length === message.segments.length ? message : { ...message, segments };
+  return segments.length === message.segments.length ? message : proseOf(message, -1, segments);
 }
+
+/**
+ * A message cut down to some of its segments, the same object for the same
+ * message and cut every time. `Bubble` is memoized on its message, and a new
+ * object per rebuild, once per transcript line, rendered every visible reply
+ * again, Markdown parse and all. A transcript's message objects never change
+ * once read, so they key the cache.
+ */
+function proseOf(message: ChatMessage, index: number, segments: MessageSegment[]): ChatMessage {
+  let cuts = proseCache.get(message);
+  if (cuts === undefined) {
+    cuts = new Map();
+    proseCache.set(message, cuts);
+  }
+  const cached = cuts.get(index);
+  if (cached !== undefined && cached.segments.length === segments.length &&
+      cached.segments.every((segment, at) => segment === segments[at])) return cached;
+  const cut = { ...message, segments };
+  cuts.set(index, cut);
+  return cut;
+}
+
+const proseCache = new WeakMap<ChatMessage, Map<number, ChatMessage>>();
 
 function editedPath(call: ToolCall): string | null {
   return inputField(call.input, 'file_path') ?? inputField(call.input, 'notebook_path') ?? inputField(call.input, 'path');

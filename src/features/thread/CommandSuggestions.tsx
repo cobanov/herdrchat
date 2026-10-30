@@ -2,7 +2,7 @@ import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { Glass } from '@/components/Glass';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import type { CatalogueCommand, CommandSection, PaletteSection } from '@/lib/slashCommands';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';
@@ -63,7 +63,7 @@ export function CommandSuggestions({
                 testID={`command-section-${section}`}
                 variant="caption"
                 weight="600"
-                color="tertiary"
+                color="secondary"
                 accessibilityRole="header"
                 style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxs }}>
                 {SECTION_TITLES[section].toUpperCase()}
@@ -91,7 +91,7 @@ export function CommandSuggestions({
                     /{command.name}
                   </Text>
                   {command.argumentHint !== null && (
-                    <Text variant="subhead" color="tertiary" mono testID={`${commandTestID(command.name)}-hint`}>
+                    <Text variant="subhead" color="secondary" mono testID={`${commandTestID(command.name)}-hint`}>
                       {` ${command.argumentHint}`}
                     </Text>
                   )}

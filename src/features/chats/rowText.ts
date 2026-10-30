@@ -62,12 +62,18 @@ export function spaceTitle(summary: ChatSummary & { host?: HostRef | null }): st
  * 1 tab · 2 panes · side/herdrchat`; `no agent · 1 tab · 1 pane · demo/logs`.
  *
  * The counts are herdr's own (`tab_count`, `pane_count`), shells included;
- * from a herdr that sends none, what the snapshot listed.
+ * from a herdr that sends none, what the snapshot listed. An agent the app
+ * cannot read is a terminal row, and still one of the agents: a space holding
+ * only OpenCode said "no agent" above its OpenCode row (HC-135).
  */
 export function spaceStats(summary: Pick<ChatSummary, 'panes' | 'shellPanes' | 'tabs' | 'layouts' | 'tabCount' | 'paneCount'>): string {
-  const agents = summary.panes.length;
-  const waiting = summary.panes.filter((pane) => pane.status === 'blocked').length;
-  const working = summary.panes.filter((pane) => pane.status === 'working').length;
+  const statuses = [
+    ...summary.panes.map((pane) => pane.status),
+    ...summary.shellPanes.filter((shell) => shell.pane.agent !== null).map((shell) => shell.pane.agentStatus),
+  ];
+  const agents = statuses.length;
+  const waiting = statuses.filter((status) => status === 'blocked').length;
+  const working = statuses.filter((status) => status === 'working').length;
   const states = [
     waiting > 0 ? `${waiting} ${waiting === 1 ? 'needs' : 'need'} you` : '',
     working > 0 ? `${working} working` : '',
@@ -76,7 +82,7 @@ export function spaceStats(summary: Pick<ChatSummary, 'panes' | 'shellPanes' | '
     : agents === 1 ? `1 agent${waiting > 0 ? ' needs you' : working > 0 ? ' working' : ''}`
       : [`${agents} agents`, ...states].join(', ');
   const tabs = summary.tabCount > 0 ? summary.tabCount : Math.max(summary.tabs.length, summary.layouts.length);
-  const panes = summary.paneCount > 0 ? summary.paneCount : agents + summary.shellPanes.length;
+  const panes = summary.paneCount > 0 ? summary.paneCount : summary.panes.length + summary.shellPanes.length;
   const folder = sharedFolder([
     ...summary.panes.map((pane) => pane.agent.cwd),
     ...summary.shellPanes.map((shell) => shell.pane.cwd),

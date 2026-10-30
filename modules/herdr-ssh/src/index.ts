@@ -69,14 +69,51 @@ let streamCounter = 0;
  * Breaking out stops the command. AbortSignal also interrupts an idle read;
  * `.return()` alone queues behind a pending `next()` and cannot do that.
  */
-export async function* streamLines(
+export function streamLines(
   id: string,
   command: string,
   startTimeoutMs: number,
   signal?: AbortSignal
 ): AsyncGenerator<string, void, void> {
-  if (signal?.aborted) return;
+  return streamWith(id, `s${++streamCounter}`, command, startTimeoutMs, signal);
+}
+
+/**
+ * A long-lived command that is also written to: its stdout lines, and a way
+ * to put lines on its stdin. The host's socket bridge takes one request a
+ * line this way, so a request costs no new SSH channel or host process.
+ * `started` settles once the command runs; a write before it has nowhere to go.
+ */
+export function duplexLines(
+  id: string,
+  command: string,
+  startTimeoutMs: number,
+  signal?: AbortSignal
+): { lines: AsyncGenerator<string, void, void>; started: Promise<void>; write: (text: string) => Promise<boolean> } {
   const streamId = `s${++streamCounter}`;
+  let settle: { resolve: () => void; reject: (error: unknown) => void } = { resolve: () => undefined, reject: () => undefined };
+  const started = new Promise<void>((resolve, reject) => { settle = { resolve, reject }; });
+  // Nobody may wait on it: a failed start also throws out of `lines`.
+  started.catch(() => undefined);
+  return {
+    lines: streamWith(id, streamId, command, startTimeoutMs, signal, settle),
+    started,
+    write: async (text) => (await HerdrSshModule.writeStream(streamId, text)).ok,
+  };
+}
+
+async function* streamWith(
+  id: string,
+  streamId: string,
+  command: string,
+  startTimeoutMs: number,
+  signal?: AbortSignal,
+  onStart?: { resolve: () => void; reject: (error: unknown) => void }
+): AsyncGenerator<string, void, void> {
+  if (signal?.aborted) {
+    onStart?.reject(new SshStreamError({ ok: false, code: 'transport_failed', message: 'The stream was stopped before it started.' }));
+    return;
+  }
 
   const pending: string[] = [];
   let waiting: (() => void) | null = null;
@@ -123,11 +160,23 @@ export async function* streamLines(
   signal?.addEventListener('abort', abort);
 
   try {
-    const started = await HerdrSshModule.startStream(id, streamId, command, startTimeoutMs);
-    if (signal?.aborted) return;
-    if (!started.ok) {
-      throw new SshStreamError(started);
+    let started: Awaited<ReturnType<typeof HerdrSshModule.startStream>>;
+    try {
+      started = await HerdrSshModule.startStream(id, streamId, command, startTimeoutMs);
+    } catch (error) {
+      onStart?.reject(error);
+      throw error;
     }
+    if (signal?.aborted) {
+      onStart?.reject(new SshStreamError({ ok: false, code: 'transport_failed', message: 'The stream was stopped before it started.' }));
+      return;
+    }
+    if (!started.ok) {
+      const error = new SshStreamError(started);
+      onStart?.reject(error);
+      throw error;
+    }
+    onStart?.resolve();
 
     for (;;) {
       if (signal?.aborted) return;

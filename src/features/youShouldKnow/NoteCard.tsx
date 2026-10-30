@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 
 import { Markdown } from '@/components/Markdown';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import type { Note } from '@/lib/youShouldKnow/notes';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, size, spacing } from '@/theme/tokens';

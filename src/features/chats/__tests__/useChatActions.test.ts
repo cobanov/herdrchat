@@ -10,7 +10,7 @@ import type { ChatSummary } from '../useWorkspaces';
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/components/ActionSheet', () => ({ confirmDestructive: jest.fn(), showActionSheet: jest.fn() }));
-jest.mock('@/lib/haptics', () => ({ haptics: { medium: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { medium: jest.fn() } }));
 jest.mock('@/state/threadCache', () => ({ forgetWorkspace: jest.fn().mockResolvedValue(undefined) }));
 
 const client = new HerdrClient({

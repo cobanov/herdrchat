@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { DemoHost } from '@/lib/demo/host';
 import { HerdrClient } from '@/lib/herdr/client';
 import { withSession } from '@/lib/herdr/session';
-import { MissingCredentialsError, SshHerdrTransport } from '@/lib/herdr/sshTransport';
+import { MissingCredentialsError, SshHerdrTransport } from '@/state/sshTransport';
 import { normalizeFingerprint } from '@/lib/hostkey';
 import type { SshConfig } from '../../modules/herdr-ssh/src';
 
@@ -51,6 +51,7 @@ export function newConnection(): ServerConnection {
 
 const secretKey = (id: string) => `herdrchat.secret.${id}`;
 const pinKey = (id: string) => `herdrchat.hostkey.${id}`;
+const passphraseKey = (id: string) => `herdrchat.passphrase.${id}`;
 
 // Credentials for a machine on the owner's tailnet: never readable while the
 // device is locked, never restored onto a different device.
@@ -106,6 +107,20 @@ export async function loadSecret(id: string): Promise<string | null> {
 }
 
 /**
+ * The private key's passphrase, kept like the key. Empty deletes it: a key
+ * without one is read without one, and a stored passphrase for a key that
+ * has none would only confuse the next person to read this keychain.
+ */
+export async function savePassphrase(id: string, passphrase: string): Promise<void> {
+  if (passphrase.length === 0) await SecureStore.deleteItemAsync(passphraseKey(id));
+  else await SecureStore.setItemAsync(passphraseKey(id), passphrase, keychainOptions);
+}
+
+export async function loadPassphrase(id: string): Promise<string | null> {
+  return SecureStore.getItemAsync(passphraseKey(id));
+}
+
+/**
  * The stored pin, in today's format. Normalising on the way out is the whole
  * migration for pins written before the two platforms agreed on a format — see
  * `normalizeFingerprint`, which says which old forms carry over and which
@@ -131,6 +146,7 @@ export async function clearSecrets(id: string, { keepSecret = false } = {}): Pro
   if (!keepSecret) {
     await SecureStore.deleteItemAsync(secretKey(id));
     await SecureStore.deleteItemAsync(`${secretKey(id)}.migrating`);
+    await SecureStore.deleteItemAsync(passphraseKey(id));
   }
   await SecureStore.deleteItemAsync(pinKey(id));
   await SecureStore.deleteItemAsync(`${pinKey(id)}.migrating`);
@@ -279,9 +295,10 @@ export function clientFor(connection: ServerConnection): HerdrClient {
   const transport = new SshHerdrTransport(
     connection.id,
     async () => {
-      const [secret, pin] = await Promise.all([
+      const [secret, pin, passphrase] = await Promise.all([
         loadSecret(connection.id),
         loadHostKeyPin(connection.id),
+        connection.authKind === 'privateKey' ? loadPassphrase(connection.id) : null,
       ]);
       if (secret === null || secret.length === 0) {
         throw new MissingCredentialsError(
@@ -290,7 +307,7 @@ export function clientFor(connection: ServerConnection): HerdrClient {
             : `The private key for ${connection.name || connection.host} isn't on this device. Restoring a backup brings back hosts but not their keys. Add it again.`
         );
       }
-      return sshConfig(connection, secret, pin);
+      return sshConfig(connection, secret, pin, passphrase);
     },
     (fingerprint) => {
       // First contact: remember what we trusted, so a later key change is
@@ -324,7 +341,9 @@ export async function invalidateClient(id: string): Promise<void> {
 export function sshConfig(
   connection: ServerConnection,
   secret: string,
-  hostKeyFingerprint: string | null
+  hostKeyFingerprint: string | null,
+  /** An encrypted private key's passphrase; null for a key without one. */
+  passphrase: string | null = null
 ): SshConfig {
   return {
     host: connection.host,
@@ -333,7 +352,7 @@ export function sshConfig(
     auth:
       connection.authKind === 'password'
         ? { kind: 'password', password: secret }
-        : { kind: 'privateKey', pem: secret, passphrase: null },
+        : { kind: 'privateKey', pem: secret, passphrase: passphrase === '' ? null : passphrase },
     hostKeyFingerprint,
   };
 }
@@ -350,6 +369,7 @@ export function testClient(
   {
     enforceStoredPin = false,
     onFingerprint,
+    passphrase = null,
   }: {
     /**
      * True when editing an existing host whose endpoint is unchanged: the
@@ -360,6 +380,8 @@ export function testClient(
     enforceStoredPin?: boolean;
     /** The fingerprint the native layer accepted, for the caller to persist on save. */
     onFingerprint?: (fingerprint: string) => void;
+    /** The private key's passphrase, for an encrypted key. */
+    passphrase?: string | null;
   } = {}
 ): { client: HerdrClient; dispose: () => Promise<void> } {
   const id = `test-${connection.id}`;
@@ -367,7 +389,7 @@ export function testClient(
     id,
     async () => {
       const pin = enforceStoredPin ? await loadHostKeyPin(connection.id) : null;
-      return sshConfig(connection, secret, pin);
+      return sshConfig(connection, secret, pin, passphrase);
     },
     onFingerprint
   );

@@ -218,7 +218,8 @@ actor SshConnection {
     }
   }
 
-  private static func authMethod(for config: SshConfigRecord) throws -> SSHAuthenticationMethod {
+  // Internal, not private: NativeChecks parses keys through it.
+  static func authMethod(for config: SshConfigRecord) throws -> SSHAuthenticationMethod {
     if config.authKind == "password" {
       return .passwordBased(username: config.username, password: config.password ?? "")
     }
@@ -297,12 +298,22 @@ actor SshConnection {
     do {
       return try await withDeadline(timeoutMs) { try await self.execOnce(command) }
     } catch let failure as SshFailure {
-      if failure.code == "transport_failed" { await resetClient() }
+      if failure.code == "transport_failed" { await resetIfDisconnected() }
       throw failure
     } catch {
-      await resetClient()
+      await resetIfDisconnected()
       throw SshFailure(code: "transport_failed", message: SshFailure.friendly(error))
     }
+  }
+
+  /// A failed command is not a failed connection. A host at its session limit
+  /// (OpenSSH `MaxSessions`, 10 by default) refuses a channel on a link that is
+  /// fine, and dropping the client for that killed every live tail and the
+  /// event stream with it. Only a client that lost its connection goes; a
+  /// deadline still drops it (`withDeadline`), for the half-open socket.
+  private func resetIfDisconnected() async {
+    if let client, client.isConnected { return }
+    await resetClient()
   }
 
   /// Race an operation against its deadline.
@@ -370,7 +381,8 @@ actor SshConnection {
     startTimeoutMs: Int,
     onLine: @escaping @Sendable (String) -> Void,
     onEnd: @escaping @Sendable (Int) -> Void,
-    onError: @escaping @Sendable (String, String) -> Void
+    onError: @escaping @Sendable (String, String) -> Void,
+    onInput: @escaping @Sendable (StreamInput) -> Void = { _ in }
   ) async throws -> Task<Void, Never> {
     let ready = AsyncThrowingStream<Void, Error>.makeStream()
     let task = Task {
@@ -382,8 +394,10 @@ actor SshConnection {
         var started = false
         var readError: Error?
         do {
-          try await client.withExec(command) { stream, _ in
+          try await client.withExec(command) { stream, stdin in
             started = true
+            // Before `ready`: once the start returns, JS may write at once.
+            onInput(StreamInput(stdin))
             do {
               try Task.checkCancellation()
               ready.continuation.finish()
@@ -433,5 +447,19 @@ actor SshConnection {
 
   private func string(_ buffer: ByteBuffer) -> String {
     String(decoding: buffer.readableBytesView, as: UTF8.self)
+  }
+}
+
+/// A running command's stdin, for a stream that is also written to: the
+/// host's long-lived socket bridge takes one request a line.
+final class StreamInput: @unchecked Sendable {
+  private let writer: TTYStdinWriter
+
+  init(_ writer: TTYStdinWriter) {
+    self.writer = writer
+  }
+
+  func write(_ text: String) async throws {
+    try await writer.write(ByteBuffer(string: text))
   }
 }

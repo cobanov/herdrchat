@@ -17,7 +17,7 @@ jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView 
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
 jest.mock('@/components/Header', () => ({ Header: () => null }));
 jest.mock('@/components/Screen', () => ({ Screen: (props: ViewProps) => <MockView {...props} /> }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn() } }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('expo-router', () => ({ useRouter: () => ({ back: jest.fn(), push: jest.fn() }) }));
 let mockOthers: { id: string; name: string }[] = [];

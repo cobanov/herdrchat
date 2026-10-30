@@ -29,10 +29,13 @@ export function returnToChats() {
  * Expo Router's routing queue and are dispatched in one run, so the stack goes
  * from "chats, sheet" to "chats, chat" in one change.
  */
-export function openChat(connectionId: string, workspaceId: string, title?: string, paneId?: string) {
+export function openChat(connectionId: string, workspaceId: string, title?: string, paneId?: string, sig?: string | null) {
   // No `paneId` key at all for the workspace chat, so its params are exactly
-  // what they were before panes had chats of their own.
-  const params = { connectionId, workspaceId, title: title ?? '', ...(paneId ? { paneId } : {}) };
+  // what they were before panes had chats of their own. `sig`, the session the
+  // list saw, only from the list: it opens the chat from its cache at once.
+  const params = {
+    connectionId, workspaceId, title: title ?? '', ...(paneId ? { paneId } : {}), ...(sig ? { sig } : {}),
+  };
   if (Platform.OS === 'ios' && Platform.isPad) {
     // Replacing a sheet or legacy deep-link screen with another root would
     // leave two in history, so the selection changes under the root instead.

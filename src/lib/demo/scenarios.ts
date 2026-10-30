@@ -7,7 +7,8 @@
  * table, an agent restyling the app through the host's theme file, a
  * "You should know" note offered on the host, a
  * subagent handed the review (its files in
- * subagents.ts), a `!` line run in the agent's shell. The UI tests drive the
+ * subagents.ts), a `!` line run in the agent's shell, a long turn under
+ * Claude's spinner. The UI tests drive the
  * Demo with the phrases below, and anyone
  * trying the Demo can type them too. Screens copy captures from Claude Code
  * 2.1.285 (see src/lib/__tests__/fixtures/screens), so the real parsers read
@@ -23,6 +24,7 @@ export const DEMO_PHRASES = {
   theme: 'restyle the app',
   note: 'show me a note',
   delegate: 'delegate the review',
+  think: 'think it over',
 } as const;
 
 // MARK: - Slash command panels
@@ -118,6 +120,42 @@ export function panelFor(command: string): DemoPanel | null {
   if (name === '/effort') return { kind: 'effort', level: 2 };
   return null;
 }
+
+// MARK: - A long turn
+
+/**
+ * The pane while Claude works, as a phone read it in a report: the spinner,
+ * the update notice right under it, the composer and the mode line. The live
+ * preview took the spinner and the notice for the answer, and three working
+ * lines showed for one turn. What the Demo shows while it thinks it over.
+ */
+export const DEMO_WORKING_SCREEN = [
+  '❯ think it over',
+  '',
+  '✶ Propagating…',
+  `${' '.repeat(60)}✔ Update installed · Restart to update`,
+  '─'.repeat(96),
+  '❯ ',
+  '─'.repeat(96),
+  '  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt',
+].join('\n');
+
+/**
+ * The same for Grok, shaped like Grok 4.7's own screen: it keeps its reply
+ * scrolled out of view, so only its scrollbar is beside the blank rows, then
+ * its braille spinner and timer, and its composer box. The preview took the
+ * spinner line for the answer (src/lib/__tests__/fixtures/screens/grok-*).
+ */
+export const DEMO_GROK_WORKING_SCREEN = [
+  ...Array.from({ length: 6 }, () => `${' '.repeat(100)}█`),
+  `   ⠙ Responding… 0.4s${' '.repeat(70)}14s ⇣24.4k [stop]`,
+  `  ╭${'─'.repeat(96)}╮`,
+  `  │ ❯${' '.repeat(94)}│`,
+  `  ╰${'─'.repeat(60)} Grok 4.7 (xhigh) · always-approve ─╯`,
+  '  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts',
+].join('\n');
+
+export const DEMO_THINK_REPLY = 'Thought it over. The plan holds: ship the fix first, then the follow-ups.';
 
 // MARK: - A table
 

@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { notesBarLine, notesBarText, notesForYou, type Note } from '@/lib/youShouldKnow/notes';
 import { useTheme } from '@/theme/ThemeProvider';
 import { minTouchTarget, radius, screenPadding, size, spacing } from '@/theme/tokens';

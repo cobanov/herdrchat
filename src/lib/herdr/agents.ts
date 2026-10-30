@@ -90,9 +90,33 @@ export const AGENTS: Readonly<Record<string, AgentSpec>> = {
     integration: 'antigravity-cli',
     // Its title, idle or not: it never names its terminal after a conversation.
     defaultTitles: ['agy'],
+    // The digit alone answers a permission or a question (measured, agy
+    // 1.3.6); an Enter after it lands in the composer. Its trust menu has no
+    // numbers and takes the arrows.
+    digitAnswers: true,
     missing: 'The Antigravity conversation is identified, but its transcript is not in ~/.gemini/antigravity-cli/brain on this host. Resume that exact conversation on the host, then reload.',
   },
-  letta: { name: 'Letta', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  // The rest herdr detects (0.9.5), which the app names but cannot read: each
+  // is a terminal row. The integration is herdr's name for it, where it has one.
+  amp: { name: 'Amp', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  cline: { name: 'Cline', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  copilot: { name: 'Copilot', reader: null, integration: 'copilot', defaultTitles: [], missing: MISSING },
+  cursor: { name: 'Cursor', reader: null, integration: 'cursor', defaultTitles: [], missing: MISSING },
+  devin: { name: 'Devin', reader: null, integration: 'devin', defaultTitles: [], missing: MISSING },
+  droid: { name: 'Droid', reader: null, integration: 'droid', defaultTitles: [], missing: MISSING },
+  gemini: { name: 'Gemini', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  hermes: { name: 'Hermes', reader: null, integration: 'hermes', defaultTitles: [], missing: MISSING },
+  kilo: { name: 'Kilo', reader: null, integration: 'kilo', defaultTitles: [], missing: MISSING },
+  kimi: { name: 'Kimi', reader: null, integration: 'kimi', defaultTitles: [], missing: MISSING },
+  kiro: { name: 'Kiro', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  letta: { name: 'Letta', reader: null, integration: 'letta', defaultTitles: [], missing: MISSING },
+  maki: { name: 'Maki', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  // No detection rule of its own: herdr knows it only from its integration.
+  mastracode: { name: 'Mastra Code', reader: null, integration: 'mastracode', defaultTitles: [], missing: MISSING },
+  muse: { name: 'Muse', reader: null, integration: null, defaultTitles: [], missing: MISSING },
+  opencode: { name: 'OpenCode', reader: null, integration: 'opencode', defaultTitles: [], missing: MISSING },
+  qodercli: { name: 'Qoder', reader: null, integration: 'qodercli', defaultTitles: [], missing: MISSING },
+  qwen: { name: 'Qwen Code', reader: null, integration: 'qwen', defaultTitles: [], missing: MISSING },
 };
 
 /** The table's entry for an agent kind, or undefined for one it doesn't know. */

@@ -44,7 +44,7 @@ export function HostKeyChangedBanner({
         one.
       </Text>
       {pin !== null && (
-        <Text variant="caption" color="tertiary" mono selectable>
+        <Text variant="caption" color="secondary" mono selectable>
           Pinned: {formatFingerprint(pin)}
         </Text>
       )}

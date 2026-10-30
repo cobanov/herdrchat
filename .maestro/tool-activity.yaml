@@ -1,5 +1,7 @@
 # iPhone, Demo only. Tool calls fold into one summary line per run ("Read 1
-# file"), closed by default; the thread header's switch opens every run. Clear the stored choice first, so the default is tested:
+# file"), closed by default; a run opens with a tap on its line, and the
+# Settings switch opens every run. Clear the stored choice first, so the
+# default is tested:
 #   sqlite3 "$(xcrun simctl get_app_container booted dev.herdr.HerdrChat data)/Documents/SQLite/herdrchat.db" \
 #     "delete from settings where key='showToolActivity'"
 # Run with APPEARANCE=Dark, then Light.
@@ -37,19 +39,42 @@ appId: dev.herdr.HerdrChat
 - assertVisible: '.*Found it.*'
 - assertVisible: 'Read 1 file'
 - assertNotVisible: 'Read client.ts'
-- assertVisible:
-    id: thread-tool-toggle
-    checked: false
 - takeScreenshot: tools-hidden
-- tapOn:
-    id: thread-tool-toggle
-- assertVisible:
-    id: thread-tool-toggle
-    checked: true
+# A tap on the run's line opens that run, and another folds it again.
+- tapOn: 'Read 1 file'
 - assertVisible: 'Read client.ts'
 - takeScreenshot: tools-shown
+- tapOn: 'Read 1 file'
+- assertNotVisible: 'Read client.ts'
+# The Settings switch opens every run at once, for every chat. A run folded
+# by hand keeps that choice for the session, so the app is relaunched: the
+# switch is saved, the hand-made fold is not.
 - tapOn:
-    id: thread-tool-toggle
+    id: thread-back
+- runFlow:
+    file: regression/_menu.yaml
+    env:
+      ITEM: Settings
+- scrollUntilVisible:
+    element:
+      id: toggle-tool-activity
+    direction: DOWN
+- tapOn:
+    id: toggle-tool-activity
+- tapOn:
+    id: header-close
+- stopApp
+- launchApp
+- runFlow: regression/_skip-welcome.yaml
 - assertVisible:
-    id: thread-tool-toggle
-    checked: false
+    id: server-switcher
+- repeat:
+    times: 3
+    commands:
+      - swipe:
+          start: 50%, 35%
+          end: 50%, 85%
+- waitForAnimationToEnd
+- tapOn:
+    id: chat-row-w1
+- assertVisible: 'Read client.ts'

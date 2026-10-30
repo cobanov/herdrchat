@@ -189,9 +189,21 @@ class SshConnection(private val config: SshConfigRecord) {
     } catch (failure: SshFailure) {
       throw failure   // auth / host key / bad key / timeout: retrying changes nothing
     } catch (error: IOException) {
-      resetClient()
+      resetIfDisconnected()
       throw SshFailure("transport_failed", error.message ?: "The connection dropped.")
     }
+
+  /**
+   * A failed command is not a failed connection. A host at its session limit
+   * (OpenSSH `MaxSessions`, 10 by default) refuses a channel on a link that is
+   * fine, and dropping the client for that killed every live tail and the
+   * event stream with it. Only a client that lost its connection goes; a
+   * deadline still abandons it (`withDeadline`), for the half-open socket.
+   */
+  private suspend fun resetIfDisconnected() {
+    if (client?.let { it.isConnected && it.isAuthenticated } == true) return
+    resetClient()
+  }
 
   /**
    * Race an operation against its deadline.
@@ -276,7 +288,7 @@ class SshConnection(private val config: SshConfigRecord) {
 
     return withContext(Dispatchers.IO) {
       val reader = cmd.inputStream.bufferedReader()
-      val handle = StreamHandle(session)
+      val handle = StreamHandle(session, cmd)
       Thread {
         try {
           while (!handle.stopped) {
@@ -417,9 +429,23 @@ class SshConnection(private val config: SshConfigRecord) {
     val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   }
 
-  class StreamHandle(private val session: net.schmizz.sshj.connection.channel.direct.Session) {
+  class StreamHandle(
+    private val session: net.schmizz.sshj.connection.channel.direct.Session,
+    private val command: net.schmizz.sshj.connection.channel.direct.Session.Command,
+  ) {
     @Volatile var stopped = false
       private set
+
+    /**
+     * A line to the command's stdin: the host's socket bridge, which stays up
+     * for the connection and takes one request a line. One writer at a time,
+     * so two requests never interleave on the channel.
+     */
+    @Synchronized
+    fun write(text: String) {
+      command.outputStream.write(text.toByteArray(Charsets.UTF_8))
+      command.outputStream.flush()
+    }
 
     /**
      * Closing the session is what unblocks a `readLine()` parked on the channel.

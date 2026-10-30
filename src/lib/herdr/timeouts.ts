@@ -1,4 +1,5 @@
 import type { ExecResult } from '../../../modules/herdr-ssh/src';
+import { errorText } from './protocol';
 
 /**
  * How long each kind of remote command may take before we give up on it.
@@ -18,11 +19,28 @@ import type { ExecResult } from '../../../modules/herdr-ssh/src';
 /** A status/list poll. Short: it runs again in two seconds anyway. */
 export const POLL_TIMEOUT_MS = 15_000;
 
+/**
+ * Back in the foreground after this long, the connection may have died while
+ * iOS held the app suspended, with no keepalive to notice (`HerdrClient.wake`).
+ */
+export const WAKE_AFTER_MS = 60_000;
+
+/** How long the wake probe waits: well under a poll, so a dead socket goes fast. */
+export const WAKE_TIMEOUT_MS = 3_000;
+
 /** Reading a pane's visible screen — bounded output, same urgency as a poll. */
 export const SCREEN_TIMEOUT_MS = 15_000;
 
 /** Sending a message or a keystroke. The user is watching this one. */
 export const SEND_TIMEOUT_MS = 20_000;
+
+/**
+ * How long a stopped agent has to leave `working` before Stop says it did not
+ * take: herdr reads the status off the screen, which redraws within a second.
+ */
+export const INTERRUPT_CONFIRM_MS = 3_000;
+/** Between looks at the status while a stop is confirmed. */
+export const INTERRUPT_CHECK_MS = 500;
 
 /**
  * Reading transcript history. Deliberately looser: `recent()` may pull three
@@ -186,7 +204,7 @@ export function withJsDeadline(
         resolve({
           ok: false,
           code: 'transport_failed',
-          message: thrown instanceof Error ? thrown.message : String(thrown),
+          message: errorText(thrown),
         });
       }
     );

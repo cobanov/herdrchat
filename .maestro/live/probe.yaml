@@ -1,0 +1,97 @@
+# One probe chat on a live host, run by scripts/e2e-live.sh: a new chat in the
+# scratch folder ${CWD} with ${AGENT}, its startup question answered with the
+# first option, one message, and the agent's own reply.
+appId: dev.herdr.HerdrChat
+env:
+  PICTURE: ${PICTURE || '0'}
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: chats-view
+    timeout: 20000
+- tapOn:
+    id: header-action
+- assertVisible: New chat
+# The agent first, while the keyboard is down: with it up, a row low in the
+# picker sits behind it, and a tap there lands on the floating Start button
+# for the agent already chosen.
+- scrollUntilVisible:
+    element:
+      text: ${AGENT}
+    direction: DOWN
+- tapOn: ${AGENT}
+- assertVisible: Start ${AGENT}
+# New chat fills in the last folder used, and a tap puts the cursor
+# mid-path, so the field is cleared through its own Select All.
+- scrollUntilVisible:
+    element:
+      id: field-cwd
+    direction: UP
+- tapOn:
+    id: field-cwd
+- tapOn:
+    id: field-cwd
+- tapOn:
+    text: Select All
+    optional: true
+- eraseText: 300
+- inputText: ${CWD}
+# Cleanup only removes what is in the scratch folder: a probe must never start
+# in a real folder the field kept.
+- assertVisible:
+    id: field-cwd
+    text: ${CWD}
+- tapOn:
+    id: field-label
+- eraseText: 60
+- inputText: ${LABEL}
+- assertVisible: Start ${AGENT}
+- scrollUntilVisible:
+    element:
+      id: start-chat
+    direction: DOWN
+- tapOn:
+    id: start-chat
+- extendedWaitUntil:
+    visible:
+      id: composer-input
+    timeout: 60000
+# A first start in a new folder asks whether to trust it (Claude, agy), a
+# moment after the chat opens. The yes is matched by its words: Claude lists
+# "No, exit" first. An agent that does not ask leaves this to time out, which
+# is not a failure.
+- extendedWaitUntil:
+    visible:
+      id: blocked-bar
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: blocked-bar
+    commands:
+      - tapOn:
+          text: "(?i)(yes|trust)\\b[^?]*"
+      - extendedWaitUntil:
+          notVisible:
+            id: blocked-bar
+          timeout: 30000
+- takeScreenshot: ${LABEL}-started
+- tapOn:
+    id: composer-input
+- inputText: What is 6 times 7? Answer with the number only.
+- runFlow: ../regression/_send.yaml
+# The question does not hold the answer, so only the agent's reply can match.
+# Not after a colon: a row's time such as 09:42 would match too.
+- extendedWaitUntil:
+    visible: ".*(?<!:)\\b42\\b(?!:).*"
+    timeout: 180000
+- takeScreenshot: ${LABEL}-reply
+- runFlow:
+    when:
+      true: ${PICTURE == "1"}
+    file: picture.yaml
+- tapOn:
+    id: thread-back
+- waitForAnimationToEnd

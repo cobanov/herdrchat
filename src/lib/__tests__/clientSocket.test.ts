@@ -35,6 +35,33 @@ const requestIn = (command: string): { method: string; params: Record<string, un
 };
 
 describe('HerdrClient over the socket', () => {
+  // The iPad's list and open chat poll side by side, and a send re-reads the
+  // snapshot a poll may be reading at that moment: one read serves them all.
+  it('shares a snapshot already on its way, and asks again once it is back', async () => {
+    const { client, commands } = socketHost({
+      'session.snapshot':
+        '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}',
+    });
+    const reads = () => commands.filter((command) => !isSocketProbe(command)).length;
+    const [a, b] = await Promise.all([client.snapshot(), client.snapshot()]);
+    expect(a).toBe(b);
+    expect(reads()).toBe(1);
+    await client.snapshot();
+    expect(reads()).toBe(2);
+  });
+
+  // A send decides on a second Enter from the snapshot (#76); one that started
+  // before the keys went out can say idle when the agent is already blocked.
+  it('reads a fresh snapshot even with one on its way', async () => {
+    const { client, commands } = socketHost({
+      'session.snapshot':
+        '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}',
+    });
+    const reads = () => commands.filter((command) => !isSocketProbe(command)).length;
+    await Promise.all([client.snapshot(), client.snapshot({ fresh: true })]);
+    expect(reads()).toBe(2);
+  });
+
   it('reads the snapshot with session.snapshot and remembers the version', async () => {
     const { client, commands } = socketHost({
       'session.snapshot':
@@ -232,12 +259,31 @@ describe('HerdrClient over the socket', () => {
   it('creates a workspace without stealing focus, labelled only when asked', async () => {
     const created =
       '{"id":"x","result":{"type":"workspace_created","workspace":{"workspace_id":"w9","label":"x"},"tab":{},"root_pane":{"pane_id":"w9:p1","workspace_id":"w9"}}}';
-    const { client, commands } = socketHost({ 'workspace.create': created });
+    // The folder check (no socket method) prints the folder, as the host would.
+    const { client, commands } = socketHost({ 'workspace.create': created, '': () => '/home/u/proj\n' });
+    const creates = () => commands.filter((command) => command.includes('workspace.create'));
     const creation = await client.createWorkspace('/home/u/proj', 'proj');
     expect(creation.rootPane.paneId).toBe('w9:p1');
-    expect(requestIn(commands[0] ?? '').params).toEqual({ cwd: '/home/u/proj', label: 'proj', focus: false });
+    expect(requestIn(creates()[0] ?? '').params).toEqual({ cwd: '/home/u/proj', label: 'proj', focus: false });
     await client.createWorkspace('/home/u/proj', '');
-    expect(requestIn(commands[1] ?? '').params).toEqual({ cwd: '/home/u/proj', label: null, focus: false });
+    expect(requestIn(creates()[1] ?? '').params).toEqual({ cwd: '/home/u/proj', label: null, focus: false });
+  });
+
+  // Seen on a real host: herdr made the workspace for a folder that does not
+  // exist in the home folder instead, and the agent started there.
+  it('refuses a folder that is not on the host, before making anything', async () => {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        if (isSocketProbe(command)) return { ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never;
+        return { ok: true, exitCode: 1, stdout: '', stderr: '' } as never;
+      },
+      streamLines: async function* () {},
+    };
+    await expect(new HerdrClient(transport).createWorkspace('/home/u/no-such', null))
+      .rejects.toMatchObject({ code: 'dir_missing', message: expect.stringContaining('/home/u/no-such') });
+    expect(commands.some((command) => command.includes('workspace.create'))).toBe(false);
   });
 
   it('waits for a status with agent.wait and answers false on timeout', async () => {
@@ -253,5 +299,73 @@ describe('HerdrClient over the socket', () => {
       'pane.read': '{"id":"x","result":{"type":"pane_read","read":{"pane_id":"w1:p1","text":"❯ hello\\n","truncated":false}}}',
     });
     await expect(client.paneVisible('w1:p1', 40)).resolves.toBe('❯ hello\n');
+  });
+});
+
+describe('an open chat poll on one channel', () => {
+  const SNAPSHOT = '{"id":"x","result":{"type":"session_snapshot","snapshot":{"version":"0.9.0","workspaces":[],"tabs":[],"panes":[],"agents":[]}}}';
+  const replies: Record<string, string> = {
+    'session.snapshot': SNAPSHOT,
+    'pane.read': '{"id":"x","result":{"type":"pane_read","read":{"text":"⠋ Working"}}}',
+    'pane.report_metadata': '{"id":"x","result":{"type":"ok"}}',
+  };
+  /** A bridge host that answers each request of a batch in its own section. */
+  function batchHost() {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        if (isSocketProbe(command)) {
+          return { ok: true, exitCode: 0, stdout: 'BRIDGE python3\nSOCK /tmp/h.sock\n', stderr: '' } as never;
+        }
+        commands.push(command);
+        const methods = [...command.matchAll(/"method":"([a-z_.]+)"/g)].map((match) => match[1] ?? '');
+        const stdout = methods.map((method, index) =>
+          `\n@@hc-batch-begin ${index}\n${replies[method] ?? ''}\n@@hc-batch-end ${index} 0\n`).join('');
+        return { ok: true, exitCode: 0, stdout, stderr: '' } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+  const methodsIn = (command: string) => [...command.matchAll(/"method":"([a-z_.]+)"/g)].map((match) => match[1]);
+
+  afterEach(() => jest.useRealTimers());
+
+  // A working chat read its snapshot and its screen on two channels each poll,
+  // and its presence on a third every 20 s.
+  it('asks for the snapshot, the screen and the presence together', async () => {
+    jest.useFakeTimers();
+    const { client, commands } = batchHost();
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on' }, ttlMs: 45_000, seq: 1 });
+    const polled = await client.pollSnapshot({ paneId: 'w1:p1', lines: 30 });
+    expect(commands).toHaveLength(1);
+    expect(methodsIn(commands[0] ?? '')).toEqual(['session.snapshot', 'pane.read', 'pane.report_metadata']);
+    expect(polled.screen).toBe('⠋ Working');
+    expect(polled.snapshot.version).toBe('0.9.0');
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(commands).toHaveLength(1);
+  });
+
+  // The list beside an open chat on iPad takes the chat's poll for its own.
+  it('remembers the last snapshot any read brought, until it is as old as asked', async () => {
+    jest.useFakeTimers();
+    const { client } = batchHost();
+    expect(client.recentSnapshot(3_000)).toBeNull();
+    const polled = await client.pollSnapshot({ paneId: 'w1:p1', lines: 30 });
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(client.recentSnapshot(3_000)).toEqual({ snapshot: polled.snapshot, ageMs: 1_000 });
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(client.recentSnapshot(3_000)).toBeNull();
+  });
+
+  it('sends a presence report on its own when no poll carries it', async () => {
+    jest.useFakeTimers();
+    const { client, commands } = batchHost();
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on' }, ttlMs: 45_000, seq: 1 });
+    client.reportMetadata('w1:p1', { source: 'herdrchat', tokens: { phone: 'on', model: 'grok-5' }, ttlMs: 45_000, seq: 2 });
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(commands).toHaveLength(1);
+    expect(methodsIn(commands[0] ?? '')).toEqual(['pane.report_metadata']);
+    expect(commands[0]).toContain('"seq":2');
   });
 });

@@ -42,6 +42,9 @@ import {
   demoYskStore,
   DEMO_QUESTIONS,
   DEMO_TABLE_REPLY,
+  DEMO_THINK_REPLY,
+  DEMO_WORKING_SCREEN,
+  DEMO_GROK_WORKING_SCREEN,
   demoShellOutput,
   TRUST_OPTIONS,
   trustScreen,
@@ -79,7 +82,7 @@ import {
   userLine,
   type DemoFixtures,
 } from './fixtures';
-import { delegateSteps, demoSubagentFiles } from './subagents';
+import { DELEGATE_STEP_AT_MS, delegateScreen, delegateSteps, demoSubagentFiles } from './subagents';
 import { DEMO_PROMPT_COMMANDS, demoSlashScan } from './slashCommands';
 
 /** The version the demo claims, so the client picks the agent-aware verbs. */
@@ -101,11 +104,8 @@ const SHELL_DELAY_MS = 1_000;
 /** How often the fake tail looks for newly appended lines. */
 const TAIL_POLL_MS = 200;
 
-/**
- * The beat between the delegate scenario's steps: the call, the subagent's
- * work, its result. Long enough that a UI test sees the card running.
- */
-const DELEGATE_STEP_MS = 2_500;
+/** How long the long turn works: several polls, so a UI test sees what they read. */
+const THINK_MS = 8_000;
 
 function ok(result: unknown): ExecResult {
   return { ok: true, stdout: JSON.stringify({ id: 'demo', result }), stderr: '', exitCode: 0 };
@@ -258,6 +258,8 @@ interface Pending {
   lines?: (next: () => string, timestamp: string) => string[];
   /** What the scenario does to the host as its turns land, such as writing a file. */
   effect?: () => void;
+  /** What the pane shows until the turns land, when the scenario draws its work. */
+  screen?: string;
   dueAt: number;
 }
 
@@ -333,6 +335,12 @@ export class DemoHost implements HerdrTransport {
    */
   private readonly files = new Map<string, string>();
 
+  /**
+   * Panes drawing Claude Code's agents pane, from the delegate scenario's
+   * call until its result: epoch ms, the call's moment and the result's.
+   */
+  private readonly agentsPanes = new Map<string, { from: number; to: number }>();
+
   constructor(
     private readonly now: () => number = () => Date.now(),
     private readonly fixtures: DemoFixtures = DEMO_HOST
@@ -400,8 +408,11 @@ export class DemoHost implements HerdrTransport {
    * the consumer abandons the iterator when the thread goes away.
    */
   async *streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string> {
-    const follow = /^tail -c \+(\d+) -f '(.+?)'$/.exec(withoutPath(command));
+    // `tailScript` frames each line with its size; a bare `tail -f` does not.
+    // After `tailScript`'s mawk check, when there is one.
+    const follow = /^(?:hc_aw=; [^;]*; )?tail -c \+(\d+) -f '(.+?)'( \| LC_ALL=C awk (?:\$hc_aw )?'[^']*')?$/.exec(withoutPath(command));
     if (follow === null) return;
+    const framed = follow[3] !== undefined;
 
     const path = follow[2]!;
     let cursor = Number(follow[1]) - 1;
@@ -416,7 +427,7 @@ export class DemoHost implements HerdrTransport {
         // incomplete line, or the empty string. Either way it is not ours yet.
         for (const line of lines.slice(0, -1)) {
           cursor += byteLength(line) + 1;
-          if (line.length > 0) yield line;
+          if (line.length > 0) yield framed ? `${byteLength(line)}\t${line}` : line;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, TAIL_POLL_MS));
@@ -438,6 +449,9 @@ export class DemoHost implements HerdrTransport {
   /** `sh` reading transcripts. Returns null when the command is not one of these. */
   private filesystem(body: string): ExecResult | null {
     if (body === 'printf %s "$HOME"') return out(DEMO_HOME);
+    // New chat's folder check (`hostFolderCommand`): every folder is there.
+    const folder = /^p='(.+?)'; case "\$p" in /.exec(body);
+    if (folder !== null) return out(`${folder[1]!.replace(/^~(?=\/|$)/, DEMO_HOME)}\n`);
     if (body === 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"') return out(`${DEMO_HOME}/.claude`);
 
     // The Files tab. The demo has a small home folder with one folder in it,
@@ -558,10 +572,11 @@ export class DemoHost implements HerdrTransport {
     const previews = this.previewBatch(body);
     if (previews !== null) return previews;
 
-    const last = /^tail -c (\d+) '(.+?)' 2>\/dev\/null$/.exec(body);
+    // The demo has no pictures for the strip filter to take out.
+    const last = /^tail -c \d+ '(.+?)' 2>\/dev\/null \| sed -E '[^']*' \| tail -c (\d+)$/.exec(body);
     if (last !== null) {
-      const contents = this.read(last[2]!);
-      return out(contents === null ? '' : sliceLastBytes(contents, Number(last[1])));
+      const contents = this.read(last[1]!);
+      return out(contents === null ? '' : sliceLastBytes(contents, Number(last[2])));
     }
 
     return null;
@@ -579,7 +594,7 @@ export class DemoHost implements HerdrTransport {
     if (!body.endsWith('true') || !body.includes('[ -n "$f" ] && tail -c ')) return null;
     const claudeDir = `${DEMO_HOME}/.claude`;
     const step =
-      /f=(?:"([^"]*)"|'([^']*)'); (?:\[ -f "\$f" \] \|\| for g in "[^"]*"\/projects\/\*\/([A-Za-z0-9-]+)\.jsonl; do [^;]*; done; )?printf '\\n(\S+) %s\\n' '([A-Za-z0-9:_-]+)'; (head -n 2 "\$f" 2>\/dev\/null; printf '\\n'; )?\[ -n "\$f" \] && tail -c (\d+) "\$f" 2>\/dev\/null; /g;
+      /f=(?:"([^"]*)"|'([^']*)'); (?:\[ -f "\$f" \] \|\| for g in "[^"]*"\/projects\/\*\/([A-Za-z0-9-]+)\.jsonl; do [^;]*; done; )?printf '\\n(\S+) %s\\n' '([A-Za-z0-9:_-]+)'; (head -n 2 "\$f" 2>\/dev\/null; printf '\\n'; )?\[ -n "\$f" \] && tail -c \d+ "\$f" 2>\/dev\/null \| sed -E '[^']*' \| tail -c (\d+); /g;
     let stdout = '';
     for (const match of body.matchAll(step)) {
       const [, doubleQuoted, singleQuoted, anyFolderId, marker, key, header, bytes] = match;
@@ -870,12 +885,20 @@ export class DemoHost implements HerdrTransport {
     // `pane read <pane> --source visible --lines N`
     if (argv[1] === 'pane' && argv[2] === 'read') {
       const paneId = argv[3] ?? '';
+      const working = this.pending.find((reply) => reply.paneId === paneId && reply.screen !== undefined);
+      if (working?.screen !== undefined) return out(working.screen);
       const panel = this.panels.get(paneId);
       if (panel !== undefined) return out(panel.kind === 'model' ? modelPanelScreen(panel) : effortPanelScreen(panel));
       const questions = this.questions.get(paneId);
       if (questions !== undefined) return out(questionScreen(questions.step, questions.answers));
       const cursor = this.trusting.get(paneId);
       if (cursor !== undefined) return out(trustScreen(cursor));
+      const agents = this.agentsPanes.get(paneId);
+      if (agents !== undefined) {
+        const now = this.now();
+        if (now >= agents.to) this.agentsPanes.delete(paneId);
+        else if (now >= agents.from) return out(delegateScreen(now - agents.from));
+      }
       return out(this.statusOf(paneId) === 'blocked' ? DEMO_BLOCKED_SCREEN : '');
     }
 
@@ -888,6 +911,7 @@ export class DemoHost implements HerdrTransport {
       if (this.trusting.has(paneId)) return this.trustKeys(paneId, argv.slice(4));
       if (['Escape', 'escape', 'Esc', 'ctrl+c', 'C-c'].includes(choice)) {
         this.pending = this.pending.filter(reply => reply.paneId !== paneId);
+        this.agentsPanes.delete(paneId);
         this.statuses.set(paneId, 'idle');
         return silent();
       }
@@ -915,6 +939,7 @@ export class DemoHost implements HerdrTransport {
       if (text.startsWith('!') && this.isClaude(paneId)) return this.shell(paneId, text.slice(1));
       this.append(paneId, this.lineFor(paneId, 'user', text));
       const asked = text.toLowerCase();
+      if (asked.includes(DEMO_PHRASES.think)) return this.thinkItOver(paneId);
       if (asked.includes(DEMO_PHRASES.questions)) return this.askQuestions(paneId);
       if (asked.includes(DEMO_PHRASES.tools)) return this.runChecks(paneId);
       if (asked.includes(DEMO_PHRASES.trust)) return this.askTrust(paneId);
@@ -1068,6 +1093,22 @@ export class DemoHost implements HerdrTransport {
     return silent();
   }
 
+  /** A long turn, working under the spinner until the reply lands: Claude's, or Grok's in its pane. */
+  private thinkItOver(paneId: string): ExecResult {
+    const grok = this.fixtures.grokSessions[paneId] !== undefined;
+    this.statuses.set(paneId, 'working');
+    this.pending.push({
+      paneId,
+      prompt: '',
+      dueAt: this.now() + THINK_MS,
+      screen: grok ? DEMO_GROK_WORKING_SCREEN : DEMO_WORKING_SCREEN,
+      lines: (next, timestamp) => [
+        grok ? this.lineFor(paneId, 'assistant', DEMO_THINK_REPLY) : replyLine(DEMO_THINK_REPLY, next(), timestamp),
+      ],
+    });
+    return silent();
+  }
+
   /** A reply with a table in it. */
   private compareOptions(paneId: string): ExecResult {
     this.statuses.set(paneId, 'working');
@@ -1120,8 +1161,10 @@ export class DemoHost implements HerdrTransport {
 
   /**
    * The agent hands the review to a subagent: its call and meta land, its own
-   * transcript grows a beat later, and a beat after that its result lands and
+   * transcript grows a beat later, and a while after that its result lands and
    * the agent closes. A foreground agent, so its card runs until the result.
+   * Until then the pane's screen shows Claude Code's agents pane under the
+   * composer (`delegateScreen`), with this agent and a second one.
    */
   private delegate(paneId: string): ExecResult {
     const dir = demoSessionDir(paneId);
@@ -1131,11 +1174,14 @@ export class DemoHost implements HerdrTransport {
     const transcript = agentTranscriptPath(dir, agentId);
     const meta = agentMetaPath(dir, agentId);
     this.statuses.set(paneId, 'working');
+    const calledAt = this.now() + REPLY_DELAY_MS;
+    // Its agents pane is drawn from the call until the result, the steps between.
+    this.agentsPanes.set(paneId, { from: calledAt, to: calledAt + (DELEGATE_STEP_AT_MS.at(-1) ?? 0) });
     delegateSteps(toolUseId, agentId).forEach((step, index) => {
       this.pending.push({
         paneId,
         prompt: '',
-        dueAt: this.now() + REPLY_DELAY_MS + index * DELEGATE_STEP_MS,
+        dueAt: calledAt + (DELEGATE_STEP_AT_MS[index] ?? 0),
         lines: (next, timestamp) => {
           const written = step(next, timestamp);
           if (written.meta !== null) this.files.set(meta, written.meta);

@@ -1,6 +1,7 @@
 import { HerdrError, decodeEnvelope, herdrError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellQuote, withPath } from './shell';
-import type { HerdrTransport } from './transport';
+import { STREAM_START_TIMEOUT_MS } from './timeouts';
+import type { Duplex, HerdrTransport } from './transport';
 
 /**
  * The herdr socket API, reached over the same SSH connection as everything
@@ -42,6 +43,11 @@ import type { HerdrTransport } from './transport';
 export class HerdrSocket {
   private detection: Promise<SocketRoute | null> | null = null;
   private sequence = 0;
+  private live: LiveBridge | null = null;
+  /** Bridges in a row that ended without answering anything; at `MAX_SILENT_BRIDGES` this host execs. */
+  private silentBridges = 0;
+  /** Until when this host execs after `MAX_SILENT_BRIDGES`; then it tries a bridge again. */
+  private execUntil = 0;
 
   constructor(
     private readonly transport: HerdrTransport,
@@ -82,7 +88,11 @@ export class HerdrSocket {
       throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
     }
     const request = this.encode(method, params);
-    const result = await this.transport.exec(commandFor(route, request, this.herdr), timeoutMs);
+    // Built either way: a request too long for the exec path is refused on both.
+    const command = commandFor(route, request, this.herdr);
+    const live = await this.liveBridge(route, timeoutMs);
+    if (live !== null) return decodeEnvelope(await live.ask(request, timeoutMs));
+    const result = await this.transport.exec(command, timeoutMs);
     if (!result.ok) {
       throw transportError(result);
     }
@@ -123,12 +133,89 @@ export class HerdrSocket {
     paramsList: readonly Record<string, unknown>[],
     timeoutMs: number
   ): Promise<BatchAnswer[]> {
-    if (paramsList.length === 0) return [];
+    return this.callMany(paramsList.map((params) => ({ method, params })), timeoutMs);
+  }
+
+  /**
+   * Different requests on ONE SSH channel, as `callEach` sends one request
+   * with many params: run in order, each answer in its place, a failure as
+   * that entry's error. An open chat's poll asks for the snapshot, a screen
+   * and its presence at once this way, where it opened a channel for each.
+   */
+  async callMany(
+    requests: readonly { method: string; params: Record<string, unknown> }[],
+    timeoutMs: number
+  ): Promise<BatchAnswer[]> {
+    if (requests.length === 0) return [];
     const route = await this.detect();
     if (route === null) {
       throw new HerdrError('socket_unavailable', 'This host has no way to reach the herdr socket.');
     }
-    const commands = paramsList.map((params) => commandFor(route, this.encode(method, params), this.herdr));
+    const encoded = requests.map(({ method, params }) => this.encode(method, params));
+    const commands = encoded.map((request) => commandFor(route, request, this.herdr));
+    const live = await this.liveBridge(route, timeoutMs);
+    if (live === null) return this.runBatches(commands, timeoutMs);
+    // All at once: the bridge answers each on its own thread, in any order.
+    return Promise.all(encoded.map((request) => live.ask(request, timeoutMs).then(
+      (line): BatchAnswer => ({ ok: true, result: decodeEnvelope(line) })
+    ).catch((thrown: unknown): BatchAnswer => {
+      if (thrown instanceof HerdrError) return { ok: false, error: thrown };
+      throw thrown;
+    })));
+  }
+
+  /**
+   * The kept-open bridge (`LiveBridge`), started on first use and again after
+   * one ends; null where there is none to have, and the caller execs instead:
+   * another route, a transport that cannot write to a command (the
+   * Demo), a start that failed, or a host whose bridges kept ending
+   * without answering, for `SILENT_BRIDGE_BACKOFF_MS`.
+   *
+   * Waiting for a start counts against the call's own deadline. The start is
+   * not abandoned when it runs out: on a half-open connection the transport's
+   * start deadline is what drops the SSH client, as an exec's did.
+   */
+  private async liveBridge(route: SocketRoute, timeoutMs: number): Promise<LiveBridge | null> {
+    if (route.bridge !== 'python3' || this.transport.duplex === undefined) return null;
+    if (this.live === null || this.live.ended) {
+      if (this.live !== null) this.silentBridges = this.live.answered ? 0 : this.silentBridges + 1;
+      if (this.silentBridges >= MAX_SILENT_BRIDGES) {
+        // Not for good: one bad stretch of network ends bridges unanswered too.
+        this.silentBridges = 0;
+        this.execUntil = Date.now() + SILENT_BRIDGE_BACKOFF_MS;
+        this.live = null;
+      }
+      if (Date.now() < this.execUntil) return null;
+      const stop = new AbortController();
+      this.live = new LiveBridge(
+        this.transport.duplex(
+          withPath(`python3 -S -u -c ${shellQuote(LIVE_BRIDGE)} ${shellQuote(route.socketPath)}`),
+          STREAM_START_TIMEOUT_MS,
+          stop.signal
+        ),
+        () => stop.abort()
+      );
+    }
+    const live = this.live;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), timeoutMs); });
+    try {
+      if ((await Promise.race([live.started, late])) === 'late') {
+        throw transportError({ code: 'timeout', message: `herdr did not answer within ${Math.round(timeoutMs / 1000)} s.` });
+      }
+      return live;
+    } catch (thrown) {
+      if (thrown instanceof HerdrError) throw thrown;
+      // Nothing was sent; the next call tries again.
+      if (this.live === live) this.live = null;
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Bridge commands as few batches as fit, run in order; see `callEach`. */
+  private async runBatches(commands: readonly string[], timeoutMs: number): Promise<BatchAnswer[]> {
     const answers: BatchAnswer[] = [];
     for (const part of batchParts(commands)) {
       const result = await this.transport.exec(batchCommand(part), timeoutMs);
@@ -217,6 +304,118 @@ export class HerdrSocket {
     return parseProbe(result.stdout);
   }
 }
+
+/**
+ * The python bridge kept running for the life of the connection (HC-95): a
+ * request goes in on its stdin as `<tag>\t<request>` and its answer comes back
+ * as `<tag>\t<line>`. An exec opens an SSH channel and starts a host process
+ * for every request; this pays for both once. herdr's socket stays
+ * single-shot, so the bridge opens a connection per request, each on its own
+ * thread, and a slow request (`agent.prompt` waiting) holds up no other.
+ *
+ * Exported for tests.
+ */
+export class LiveBridge {
+  readonly started: Promise<void>;
+  ended = false;
+  answered = false;
+  private tags = 0;
+  private readonly waiting = new Map<string, { resolve: (line: string) => void; reject: (error: HerdrError) => void }>();
+
+  constructor(
+    private readonly duplex: Duplex,
+    /** Closes the bridge's channel. */
+    private readonly stop: () => void = () => {}
+  ) {
+    this.started = duplex.started;
+    void this.read();
+  }
+
+  /** The answer line to one request, or the transport's failure: `timeout` means nobody knows if it landed. */
+  ask(request: string, timeoutMs: number): Promise<string> {
+    if (this.ended) return Promise.reject(bridgeEnded());
+    this.tags += 1;
+    const tag = `b${this.tags}`;
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiting.delete(tag);
+        reject(transportError({ code: 'timeout', message: `herdr did not answer within ${Math.round(timeoutMs / 1000)} s.` }));
+        // Dead from here, as an exec past its deadline dropped the client: on a
+        // half-open connection every later request would wait out its own
+        // deadline until TCP gave up, minutes later. The next call starts a
+        // bridge, whose start deadline drops the SSH client if the link is gone.
+        this.end();
+      }, timeoutMs);
+      const settle = <T,>(done: (value: T) => void) => (value: T) => {
+        clearTimeout(timer);
+        this.waiting.delete(tag);
+        done(value);
+      };
+      this.waiting.set(tag, { resolve: settle(resolve), reject: settle(reject) });
+      this.duplex.write(`${tag}\t${request}\n`).then(
+        (written) => { if (!written) this.waiting.get(tag)?.reject(bridgeEnded()); },
+        () => this.waiting.get(tag)?.reject(bridgeEnded())
+      );
+    });
+  }
+
+  private async read(): Promise<void> {
+    try {
+      for await (const line of this.duplex.lines) {
+        const tab = line.indexOf('\t');
+        if (tab < 0) continue;
+        const waiter = this.waiting.get(line.slice(0, tab));
+        if (waiter === undefined) continue;
+        this.answered = true;
+        waiter.resolve(line.slice(tab + 1));
+      }
+    } catch {
+      // Ended either way; what is still waiting is told below.
+    }
+    this.end();
+  }
+
+  /** Ends the bridge: closes its channel and fails what is still waiting. */
+  end(): void {
+    if (!this.ended) {
+      this.ended = true;
+      this.stop();
+    }
+    for (const waiter of [...this.waiting.values()]) waiter.reject(bridgeEnded());
+  }
+}
+
+function bridgeEnded(): HerdrError {
+  return transportError({ code: 'transport_failed', message: 'The connection to herdr on the host closed.' });
+}
+
+/**
+ * The host side of `LiveBridge`. Bytes throughout, so a request with an emoji
+ * survives a host whose locale is not UTF-8. A connect failure is answered as
+ * the one-shot bridge answers it, an envelope with herdr's own code.
+ *
+ * No single quotes inside: the whole script travels inside one pair.
+ */
+export const LIVE_BRIDGE = [
+  'import socket,sys,json,threading',
+  'p=sys.argv[1]',
+  'o=threading.Lock()',
+  'w=sys.stdout.buffer',
+  'def say(i,t):',
+  ' with o:w.write(i+b"\\t"+t.rstrip(b"\\n")+b"\\n");w.flush()',
+  'def fail(i,c,m):',
+  ' say(i,json.dumps({"id":i.decode("utf-8","replace"),"error":{"code":c,"message":m}}).encode())',
+  'def ask(i,r):',
+  ' try:',
+  '  s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.connect(p);s.sendall(r+b"\\n");l=s.makefile("rb").readline();s.close()',
+  ' except OSError as e:',
+  '  return fail(i,"server_not_running","herdr socket %s: %s"%(p,e.strerror or e))',
+  ' if l:say(i,l)',
+  ' else:fail(i,"empty_response","herdr closed the connection without answering.")',
+  'for q in sys.stdin.buffer:',
+  ' i,_,r=q.rstrip(b"\\n").partition(b"\\t")',
+  ' if r:threading.Thread(target=ask,args=(i,r),daemon=True).start()',
+].join('\n');
 
 /** One entry of `callEach`: the envelope's result, or what went wrong for that entry alone. */
 export type BatchAnswer = { ok: true; result: unknown } | { ok: false; error: HerdrError };
@@ -339,6 +538,16 @@ export type SocketEvent =
    * (herdr #4225), a subscriber that fell behind and is about to be closed.
    */
   | { kind: 'refused'; code: string; message: string };
+
+/**
+ * Bridges that may end in a row without one answer before a client stops
+ * starting them. One is a dropped connection; three is a host whose python3
+ * cannot run the bridge, where each call would otherwise start one and fail.
+ */
+const MAX_SILENT_BRIDGES = 3;
+
+/** How long a host execs after `MAX_SILENT_BRIDGES` before it tries a bridge again. */
+const SILENT_BRIDGE_BACKOFF_MS = 5 * 60_000;
 
 /**
  * Long enough for `herdr status server` on a cold host, short enough that a

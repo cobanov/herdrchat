@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { showActionSheet, type SheetAction } from '@/components/ActionSheet';
 import { Text } from '@/components/Text';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { foldShellOutput, shellOutputText } from '@/lib/shellMode';
 import type { ShellItem } from '@/lib/threadItems';
 import { useToolRuns } from '@/state/toolRuns';
@@ -98,7 +98,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
             {item.command ?? 'Output'}
           </Text>
           {timeLabel !== null && (
-            <Text variant="caption2" color="tertiary">
+            <Text variant="caption2" color="secondary">
               {timeLabel}
             </Text>
           )}
@@ -113,7 +113,7 @@ export function ShellRun({ item, timeLabel }: { item: ShellItem; timeLabel: stri
               </Text>
             </View>
           ) : empty ? (
-            <Text testID="shell-empty" variant="caption" color="tertiary">
+            <Text testID="shell-empty" variant="caption" color="secondary">
               {emptyLabel}
             </Text>
           ) : (

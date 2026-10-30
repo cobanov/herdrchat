@@ -1,4 +1,5 @@
 import { exitCodeError, herdrErrorFrom } from '../herdr/client';
+import { errorText, HerdrError } from '../herdr/protocol';
 
 /**
  * What a phone shows when the host says no.
@@ -60,6 +61,19 @@ describe('exitCodeError', () => {
     expect(error.message).toMatch(/on this host/i);
   });
 
+  // A Windows host, reached with its OpenSSH default
+  // shell: the list showed cmd's own words, which say nothing of the fix.
+  it.each([
+    "'export' is not recognized as an internal or external command,\r\noperable program or batch file.",
+    "export : The term 'export' is not recognized as the name of a cmdlet, function, script file, or operable program.",
+    "export: The term 'export' is not recognized as a name of a cmdlet, function, script file, or executable program.",
+  ])('names the Windows shell and its fix: %s', (stderr) => {
+    const error = exitCodeError(1, stderr);
+    expect(error.code).toBe('windows_shell');
+    expect(error.message).toContain('DefaultShell');
+    expect(error.message).not.toContain('recognized');
+  });
+
   it('still diagnoses a missing binary from the exit code alone', () => {
     // 127 arrives with no envelope, because herdr never ran.
     expect(exitCodeError(127, '').code).toBe('herdr_not_found');
@@ -68,5 +82,28 @@ describe('exitCodeError', () => {
   it('falls back to the exit code when stderr carries nothing structured', () => {
     expect(exitCodeError(2, 'Killed').message).toContain('exit 2');
     expect(exitCodeError(2, '').message).toContain('exit 2');
+  });
+});
+
+describe('error codes', () => {
+  it('rejects a misspelt code at the typecheck', () => {
+    // @ts-expect-error: no such code. `tsc` fails here once a typo compiles.
+    const error = new HerdrError('host_key_change', 'typo');
+    // @ts-expect-error: the same for a comparison, which could never be true.
+    expect(error.code === 'server_not_runing').toBe(false);
+  });
+
+  it('keeps a code herdr sends that the app has no name for, with herdr\'s words', () => {
+    const error = herdrErrorFrom('{"error":{"code":"brand_new","message":"Something new went wrong."}}');
+    expect(error?.code).toBe('brand_new');
+    expect(error?.message).toBe('Something new went wrong.');
+  });
+});
+
+describe('errorText', () => {
+  it('reads the message of any error, and anything else as text', () => {
+    expect(errorText(new HerdrError('timeout', 'The host did not answer.'))).toBe('The host did not answer.');
+    expect(errorText(new Error('disk full'))).toBe('disk full');
+    expect(errorText('plain')).toBe('plain');
   });
 });

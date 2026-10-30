@@ -17,10 +17,13 @@ import { commandWord, shellCommand, shellQuote, withPath } from './shell';
 import { HerdrSocket } from './socket';
 import {
   INSTALL_TIMEOUT_MS,
+  INTERRUPT_CHECK_MS,
+  INTERRUPT_CONFIRM_MS,
   LAUNCH_TIMEOUT_MS,
   POLL_TIMEOUT_MS,
   SCREEN_TIMEOUT_MS,
   SEND_TIMEOUT_MS,
+  WAKE_TIMEOUT_MS,
 } from './timeouts';
 import type { HerdrTransport } from './transport';
 import {
@@ -39,6 +42,21 @@ export { exitCodeError, herdrErrorFrom } from './protocol';
  * What the host observed about a submitted prompt. See `sendPrompt`.
  */
 export type PromptOutcome = 'delivered' | 'stalled' | 'unverified';
+
+/** A `pane.report_metadata` request, as the socket takes it. */
+interface MetadataReport {
+  pane_id: string;
+  source: string;
+  tokens: Record<string, string>;
+  ttl_ms: number;
+  seq: number;
+}
+
+/**
+ * How long a presence report waits for a poll to carry it before it goes out
+ * on its own. Shorter than the 20 s between reports, so none is skipped.
+ */
+const REPORT_WAIT_MS = 5_000;
 
 /** The built-in integrations HerdrChat can install and update. */
 /** A herdr integration target (`herdr integration install <name>`), from `AGENTS`. */
@@ -130,10 +148,89 @@ export class HerdrClient {
 
   // MARK: - Reads
 
-  async snapshot(): Promise<Snapshot> {
+  /**
+   * The host's whole state. A call while one is already on its way shares its
+   * answer: on iPad the chat list and the open chat poll side by side, and a
+   * send re-reads the snapshot that a poll may be reading at that moment.
+   * `fresh` skips that: a send deciding whether a second Enter is safe (#76)
+   * needs a read that started after its keys went out.
+   */
+  snapshot({ fresh = false }: { fresh?: boolean } = {}): Promise<Snapshot> {
+    if (!fresh && this.snapshotInFlight !== null) return this.snapshotInFlight;
+    const pending = this.readSnapshot();
+    this.snapshotInFlight = pending;
+    const clear = () => {
+      if (this.snapshotInFlight === pending) this.snapshotInFlight = null;
+    };
+    pending.then(clear, clear);
+    return pending;
+  }
+
+  private snapshotInFlight: Promise<Snapshot> | null = null;
+
+  /**
+   * The last snapshot this client read, whoever asked, while it is younger
+   * than `maxAgeMs`; null otherwise. On iPad the chat list sits beside an open
+   * chat whose poll reads the host every couple of seconds, and the list's
+   * timer takes that read rather than asking for the same state again.
+   */
+  recentSnapshot(maxAgeMs: number): { snapshot: Snapshot; ageMs: number } | null {
+    if (this.lastSnapshot === null) return null;
+    const ageMs = Date.now() - this.lastSnapshot.at;
+    // A clock set back makes the age negative; that read is of unknown age.
+    return ageMs >= 0 && ageMs < maxAgeMs ? { snapshot: this.lastSnapshot.snapshot, ageMs } : null;
+  }
+
+  private lastSnapshot: { snapshot: Snapshot; at: number } | null = null;
+
+  private async readSnapshot(): Promise<Snapshot> {
     const result = await this.request('session.snapshot', {}, POLL_TIMEOUT_MS, () =>
       this.run([this.herdr, 'api', 'snapshot'], POLL_TIMEOUT_MS)
     );
+    return this.acceptSnapshot(result);
+  }
+
+  /**
+   * An open chat's poll in one command where it was two or three: the
+   * snapshot, the visible screen of `screen.paneId` (the one the last poll
+   * needed), and any presence waiting to go out, on one SSH channel. Without
+   * a socket bridge (the CLI path), the snapshot alone and a null screen, which
+   * the caller reads as before.
+   */
+  async pollSnapshot(
+    screen: { paneId: string; lines: number } | null
+  ): Promise<{ snapshot: Snapshot; screen: string | null }> {
+    const reports = this.takeReports();
+    if ((screen === null && reports.length === 0) || (await this.socket.detect()) === null) {
+      for (const report of reports) void this.sendReport(report);
+      return { snapshot: await this.snapshot(), screen: null };
+    }
+    const answers = await this.socket.callMany([
+      { method: 'session.snapshot', params: {} },
+      ...(screen === null ? [] : [{ method: 'pane.read', params: { pane_id: screen.paneId, source: 'visible', lines: screen.lines } }]),
+      ...reports.map((report) => ({ method: 'pane.report_metadata', params: { ...report } })),
+    ], POLL_TIMEOUT_MS);
+    const first = answers[0];
+    if (first === undefined) throw new HerdrError('snapshot_missing', 'The host sent no snapshot.');
+    if (!first.ok) throw first.error;
+    const read = screen === null ? undefined : answers[1];
+    const text = read?.ok === true ? field(field(read.result, 'read'), 'text') : null;
+    return { snapshot: this.acceptSnapshot(first.result), screen: typeof text === 'string' ? text : null };
+  }
+
+  /**
+   * Back after a long time away: one trivial command on a short deadline. A
+   * connection that died while the app was suspended (iOS sends no
+   * keepalive) times out here, and the native layer drops it on that
+   * timeout, so the polls racing it fail fast and redial instead of waiting
+   * out their own 15 s on a dead socket.
+   */
+  async wake(): Promise<void> {
+    await this.transport.exec(withPath('true'), WAKE_TIMEOUT_MS).catch(() => undefined);
+  }
+
+  /** A snapshot answer decoded, and its version remembered for the capability gates. */
+  private acceptSnapshot(result: unknown): Snapshot {
     const snapshot = decodeSnapshot(field(result, 'snapshot'));
     // Remembered so the capability gates below can answer from it instead of
     // spending a round-trip on `--help`. The field has been in the snapshot all
@@ -148,6 +245,7 @@ export class HerdrClient {
       if (this.agentPrompt?.provenance === 'probe') this.agentPrompt = null;
       if (this.agentStart?.provenance === 'probe') this.agentStart = null;
     }
+    this.lastSnapshot = { snapshot, at: Date.now() };
     return snapshot;
   }
 
@@ -633,8 +731,34 @@ export class HerdrClient {
    * nothing is worse than one that costs an extra round-trip on hosts where the
    * first spelling is wrong. Whichever works, works.
    */
-  async interrupt(paneId: string): Promise<void> {
+  async interrupt(paneId: string, confirmMs = INTERRUPT_CONFIRM_MS): Promise<void> {
     await this.sendFirstAccepted(paneId, ['Escape', 'esc']);
+    // A key the host took is not an agent that stopped: a host that types an
+    // unknown key name as text takes it without an error. One Escape only: a
+    // second one into Claude opens its rewind menu.
+    if (!(await this.leftWorking(paneId, confirmMs))) {
+      throw new HerdrError('interrupt_unconfirmed', 'The agent is still working. Tap Stop again, or hold it to force quit.');
+    }
+  }
+
+  /**
+   * Whether the pane's agent has left `working` within `ms`. True too when
+   * the status cannot be read: a stop that may well have worked is not
+   * reported as failed.
+   */
+  private async leftWorking(paneId: string, ms: number): Promise<boolean> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      let status: AgentStatus | undefined;
+      try {
+        status = (await this.snapshot()).agents.find((agent) => agent.paneId === paneId)?.agentStatus;
+      } catch {
+        return true;
+      }
+      if (status !== 'working') return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, INTERRUPT_CHECK_MS));
+    }
   }
 
   /**
@@ -678,17 +802,45 @@ export class HerdrClient {
    * `seq` orders concurrent reports. Best-effort throughout: decoration must
    * never take down a send.
    */
-  async reportMetadata(
+  /**
+   * Tell the host's sidebar something about a pane. Queued, not sent: the next
+   * poll that reads a snapshot carries it on its own channel
+   * (`pollSnapshot`), and only a report no poll picks up within
+   * `REPORT_WAIT_MS` goes out alone. The latest report for a pane wins.
+   */
+  reportMetadata(
     paneId: string,
     options: { source: string; tokens: Record<string, string>; ttlMs: number; seq: number }
-  ): Promise<void> {
-    const argv = [this.herdr, 'pane', 'report-metadata', paneId, '--source', options.source];
-    for (const [name, value] of Object.entries(options.tokens)) {
-      argv.push('--token', `${name}=${value}`);
-    }
-    argv.push('--ttl-ms', String(options.ttlMs), '--seq', String(options.seq));
+  ): void {
+    this.reports.set(paneId, {
+      pane_id: paneId, source: options.source, tokens: options.tokens, ttl_ms: options.ttlMs, seq: options.seq,
+    });
+    this.reportTimer ??= setTimeout(() => {
+      this.reportTimer = null;
+      for (const report of this.takeReports()) void this.sendReport(report);
+    }, REPORT_WAIT_MS);
+  }
+
+  private readonly reports = new Map<string, MetadataReport>();
+  private reportTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private takeReports(): MetadataReport[] {
+    if (this.reportTimer !== null) clearTimeout(this.reportTimer);
+    this.reportTimer = null;
+    const taken = [...this.reports.values()];
+    this.reports.clear();
+    return taken;
+  }
+
+  /** One report on its own: the socket where there is one, the CLI otherwise. */
+  private async sendReport(report: MetadataReport): Promise<void> {
     try {
-      checkEnvelope(await this.shell(shellCommand(argv), SEND_TIMEOUT_MS));
+      await this.request('pane.report_metadata', { ...report }, SEND_TIMEOUT_MS, async () => {
+        const argv = [this.herdr, 'pane', 'report-metadata', report.pane_id, '--source', report.source];
+        for (const [name, value] of Object.entries(report.tokens)) argv.push('--token', `${name}=${value}`);
+        argv.push('--ttl-ms', String(report.ttl_ms), '--seq', String(report.seq));
+        checkEnvelope(await this.shell(shellCommand(argv), SEND_TIMEOUT_MS));
+      });
     } catch {
       /* decoration, never fatal */
     }
@@ -709,7 +861,8 @@ export class HerdrClient {
    * Create a new workspace rooted at `cwd` without stealing focus on the
    * desktop. Follow with `startAgent` on the returned root pane.
    */
-  async createWorkspace(cwd: string, label: string | null): Promise<WorkspaceCreation> {
+  async createWorkspace(path: string, label: string | null): Promise<WorkspaceCreation> {
+    const cwd = await this.hostFolder(path);
     const named = label !== null && label.length > 0 ? label : null;
     const result = await this.request(
       'workspace.create',
@@ -722,6 +875,22 @@ export class HerdrClient {
       }
     );
     return decodeWorkspaceCreation(result);
+  }
+
+  /**
+   * `path` as a folder on the host, absolute, `~` read as the home folder.
+   * herdr makes a workspace for a folder that does not exist in the home
+   * folder instead, without a word: on a real host a mistyped path started an
+   * agent, with the permissions just chosen for it, in `~`.
+   */
+  private async hostFolder(path: string): Promise<string> {
+    const output = await this.shell(hostFolderCommand(path), LAUNCH_TIMEOUT_MS).catch((thrown: unknown) => {
+      throw thrown instanceof HerdrError && thrown.code === 'ssh_command_failed'
+        ? new HerdrError('dir_missing', `There's no folder ${path} on the host. Check the path, or pick one with Choose folder on the host.`)
+        : thrown;
+    });
+    const folder = output.trim();
+    return folder.length > 0 ? folder : path;
   }
 
   /** Give a workspace a new label. The chat list reads it as the chat's title. */
@@ -832,6 +1001,10 @@ export class HerdrClient {
         checkEnvelope(output);
         return true;
       } catch (thrown) {
+        // The agent came up and stopped at a startup question (Claude's "trust
+        // this folder?"): herdr keeps it registered and waiting. It is started;
+        // its chat is where the question gets answered.
+        if (thrown instanceof HerdrError && thrown.code === 'agent_not_ready') return true;
         const busy = thrown instanceof HerdrError && thrown.code === 'agent_pane_busy';
         if (!busy) throw thrown;
 
@@ -1134,4 +1307,13 @@ function field(result: unknown, key: string): unknown {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The shell that prints the absolute folder `path` names on the host, with `~`
+ * as the home folder, and fails when there is no such folder. Exported for
+ * tests, which run it under a real `sh`.
+ */
+export function hostFolderCommand(path: string): string {
+  return `p=${shellQuote(path)}; case "$p" in '~') p=$HOME ;; '~/'*) p="$HOME/\${p#'~/'}" ;; esac; cd "$p" 2>/dev/null && pwd`;
 }

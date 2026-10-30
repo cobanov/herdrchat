@@ -13,7 +13,7 @@ import Animated, {
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { activity, radius, spacing } from '@/theme/tokens';
+import { activity, motion, radius, spacing } from '@/theme/tokens';
 
 /** Three softly pulsing dots. Used beside "working…" wherever presence is shown. */
 export function TypingDots({ color, size = 5 }: { color?: string; size?: number }) {
@@ -53,11 +53,11 @@ function Dot({
     }
     opacity.set(
       withDelay(
-        index * 180,
+        index * motion.typingStagger,
         withRepeat(
           withSequence(
-            withTiming(1, { duration: 420, easing: Easing.inOut(Easing.quad) }),
-            withTiming(0.35, { duration: 420, easing: Easing.inOut(Easing.quad) })
+            withTiming(1, { duration: motion.typingPulse, easing: Easing.inOut(Easing.quad) }),
+            withTiming(0.35, { duration: motion.typingPulse, easing: Easing.inOut(Easing.quad) })
           ),
           -1,
           false
@@ -102,7 +102,7 @@ export function WaitingBar({ height = 3 }: { height?: number }) {
       return;
     }
     progress.set(
-      withRepeat(withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }), -1, true)
+      withRepeat(withTiming(1, { duration: motion.waitingSweep, easing: Easing.inOut(Easing.sin) }), -1, true)
     );
     return () => cancelAnimation(progress);
   }, [reduceMotion, progress]);
@@ -172,7 +172,7 @@ export function WorkingIndicator({ writing }: { writing: boolean }) {
       <Text variant="footnote" weight="500" color="secondary">
         {writing ? 'Writing…' : 'Working…'}
       </Text>
-      <Text variant="footnote" color="tertiary" style={{ fontVariant: ['tabular-nums'] }}>
+      <Text variant="footnote" color="secondary" style={{ fontVariant: ['tabular-nums'] }}>
         {elapsed(now - since)}
       </Text>
     </View>

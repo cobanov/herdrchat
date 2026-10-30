@@ -15,7 +15,7 @@ jest.mock('@/theme/ThemeProvider', () => ({
 }));
 jest.mock('@/components/Glass', () => ({ Glass: (props: ViewProps) => <MockView {...props} /> }));
 jest.mock('@/components/Icon', () => ({ Icon: () => null }));
-jest.mock('@/lib/haptics', () => ({ haptics: { selection: jest.fn() } }));
+jest.mock('@/components/haptics', () => ({ haptics: { selection: jest.fn() } }));
 const mockActions = {
   learnMoreAbout: jest.fn(async (..._args: unknown[]): Promise<string | null> => null),
   knowAbout: jest.fn(async (..._args: unknown[]): Promise<string | null> => null),

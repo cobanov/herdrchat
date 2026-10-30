@@ -13,7 +13,7 @@ import Animated, {
 import { Icon } from '@/components/Icon';
 import { Text } from '@/components/Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { screenPadding, spacing } from '@/theme/tokens';
+import { motion, screenPadding, spacing } from '@/theme/tokens';
 
 /**
  * A one-time nudge that chat rows can be swiped.
@@ -36,8 +36,8 @@ export function SwipeHint() {
     drift.set(
       withRepeat(
         withSequence(
-          withDelay(1200, withTiming(-6, { duration: 520, easing: Easing.out(Easing.quad) })),
-          withTiming(0, { duration: 420, easing: Easing.in(Easing.quad) })
+          withDelay(motion.swipeHint.rest, withTiming(-6, { duration: motion.swipeHint.out, easing: Easing.out(Easing.quad) })),
+          withTiming(0, { duration: motion.swipeHint.back, easing: Easing.in(Easing.quad) })
         ),
         -1,
         false
@@ -57,7 +57,7 @@ export function SwipeHint() {
         paddingHorizontal: screenPadding,
         paddingVertical: spacing.sm,
       }}>
-      <Text variant="caption" color="tertiary">
+      <Text variant="caption" color="secondary">
         Swipe a chat either way to pin, mute, rename or close it
       </Text>
       <Animated.View style={style}>

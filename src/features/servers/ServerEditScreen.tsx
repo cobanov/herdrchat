@@ -2,32 +2,34 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 
 import { confirmDestructive } from '@/components/ActionSheet';
 import { Button } from '@/components/Button';
-import { Field, FieldRow, SegmentedField } from '@/components/Field';
+import { FieldRow } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { SheetFooter } from '@/components/SheetFooter';
 import { Text } from '@/components/Text';
-import { KeyField } from '@/features/servers/KeyField';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { HostFields, type HostSection } from '@/features/servers/HostFields';
+import { useHostForm } from '@/features/servers/useHostForm';
+import { errorText, HerdrError, type HerdrErrorCode } from '@/lib/herdr/protocol';
 import { connectionRecovery, type RecoveryAction } from '@/lib/connectionRecovery';
 import { HostFingerprint, KeyChangedPanel } from '@/features/servers/HostKeyPanels';
 import { shouldResetPin } from '@/lib/hostkey';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, screenPadding, size, spacing } from '@/theme/tokens';
+import { radius, screenPadding, spacing } from '@/theme/tokens';
 import {
   clearSecrets,
   invalidateClient,
   loadHostKeyPin,
+  loadPassphrase,
   loadSecret,
   saveHostKeyPin,
+  savePassphrase,
   saveSecret,
   testClient,
   useConnections,
-  type ServerConnection,
 } from '@/state/connections';
 import { saveConnection, setSetting } from '@/state/db';
 import { SELECTED_KEY } from '@/state/Hydrate';
@@ -35,8 +37,9 @@ import { SELECTED_KEY } from '@/state/Hydrate';
 type TestState =
   | { kind: 'idle' }
   | { kind: 'testing' }
-  | { kind: 'ok'; version: string | null }
-  | { kind: 'failed'; message: string; code: string }
+  /** `live` is false on a host with no socket bridge: chats work on the CLI path, polled, with no live events (#158). */
+  | { kind: 'ok'; version: string | null; live: boolean }
+  | { kind: 'failed'; message: string; code: HerdrErrorCode }
   /**
    * The host answered with a key that differs from the stored pin. Its own
    * state, not a `failed` flavour: the only way forward is an explicit,
@@ -64,29 +67,26 @@ export default function ServerEditScreen() {
   const existing = connections.find((connection) => connection.id === params.id) ?? null;
   const isNew = existing === null;
 
-  const [name, setName] = useState(existing?.name ?? '');
-  const [host, setHost] = useState(existing?.host ?? '');
-  const [port, setPort] = useState(String(existing?.port ?? 22));
-  const [username, setUsername] = useState(existing?.username ?? '');
-  const [authKind, setAuthKind] = useState<ServerConnection['authKind']>(
-    existing?.authKind ?? 'password'
-  );
-  const [secret, setSecret] = useState('');
-  const [herdrPath, setHerdrPath] = useState(existing?.herdrPath ?? 'herdr');
-  const [sessionName, setSessionName] = useState(existing?.sessionName ?? '');
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
   // What the passing test's connection actually accepted; save() persists it
   // when the endpoint changed, so the pin is always a key we presented
   // credentials to, never whoever answers the next connect.
   const [observedFingerprint, setObservedFingerprint] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // The pin this host is already bound to, for the reader to compare against
   // `ssh-keygen -lf` on the machine itself. Read once: it only changes through
   // the flows on this screen, which set `observedFingerprint` anyway.
   const [storedPin, setStoredPin] = useState<string | null>(null);
   const form = useRef<ScrollView>(null);
-  const fieldOffsets = useRef({ address: 0, credentials: 0, path: 0 });
+  const fieldOffsets = useRef<Record<HostSection, number>>({ address: 0, credentials: 0, path: 0 });
   const testAttempt = useRef(0);
+  const fields = useHostForm(params.id, existing, () => {
+    testAttempt.current += 1;
+    setTest({ kind: 'idle' });
+  });
+  const { draft } = fields;
+  const { secret, passphrase } = fields.values;
   useEffect(() => {
     let alive = true;
     void loadHostKeyPin(params.id).then((pin) => {
@@ -100,33 +100,15 @@ export default function ServerEditScreen() {
   // and the interesting one is the key on the wire now.
   const fingerprint = observedFingerprint ?? storedPin;
 
-  const valid =
-    name.trim().length > 0 &&
-    host.trim().length > 0 &&
-    username.trim().length > 0 &&
-    Number.isInteger(Number(port)) &&
-    Number(port) > 0 &&
-    Number(port) <= 65535;
 
-  // Any change to a connection-relevant field invalidates a prior pass.
-  const invalidate =
-    <T,>(setter: (value: T) => void) =>
-    (value: T) => {
-      testAttempt.current += 1;
-      setter(value);
-      setTest({ kind: 'idle' });
-    };
-
-  const draft = (): ServerConnection => ({
-    id: params.id,
-    name: name.trim(),
-    host: host.trim(),
-    port: Number(port) || 22,
-    username: username.trim(),
-    authKind,
-    herdrPath: herdrPath.trim().length === 0 ? 'herdr' : herdrPath.trim(),
-    sessionName: sessionName.trim(),
-  });
+  /**
+   * A new key brings its own passphrase, blank for none. A kept key keeps its
+   * stored one unless another is typed.
+   */
+  const resolvePassphrase = async (): Promise<string | null> => {
+    if (passphrase.length > 0 || secret.length > 0) return passphrase;
+    return loadPassphrase(params.id);
+  };
 
   const resolveSecret = async (): Promise<string> => {
     if (secret.length > 0) return secret;
@@ -148,23 +130,22 @@ export default function ServerEditScreen() {
         // but the pinned one, because it authenticates with real credentials.
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
       await client.ping();
       const snapshot = await client.snapshot();
-      if (attempt === testAttempt.current) setTest({ kind: 'ok', version: snapshot.version });
+      // Memoised by the client, so after the snapshot this costs nothing more.
+      const live = (await client.socket.detect()) !== null;
+      if (attempt === testAttempt.current) setTest({ kind: 'ok', version: snapshot.version, live });
     } catch (thrown) {
       if (attempt !== testAttempt.current) return;
       const failure = thrown instanceof HerdrError ? thrown : null;
       if (failure?.code === 'host_key_changed') {
         setTest({ kind: 'keyChanged', message: failure.message, presented: failure.presentedFingerprint });
       } else {
-        setTest({
-          kind: 'failed',
-          message: failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)),
-          code: failure?.code ?? 'unknown',
-        });
+        setTest({ kind: 'failed', message: errorText(thrown), code: failure?.code ?? 'unknown' });
       }
     } finally {
       await dispose();
@@ -231,6 +212,7 @@ export default function ServerEditScreen() {
       {
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
@@ -243,7 +225,7 @@ export default function ServerEditScreen() {
       setInstalling(false);
       setTest({
         kind: 'failed',
-        message: thrown instanceof HerdrError ? thrown.message : String(thrown),
+        message: errorText(thrown),
         code: thrown instanceof HerdrError ? thrown.code : 'unknown',
       });
     }
@@ -268,6 +250,7 @@ export default function ServerEditScreen() {
       {
         enforceStoredPin: !shouldResetPin(existing, connection),
         onFingerprint: setObservedFingerprint,
+        passphrase: await resolvePassphrase(),
       }
     );
     try {
@@ -276,7 +259,7 @@ export default function ServerEditScreen() {
     } catch (thrown) {
       setTest({
         kind: 'failed',
-        message: thrown instanceof Error ? thrown.message : String(thrown),
+        message: errorText(thrown),
         code: thrown instanceof HerdrError ? thrown.code : 'unknown',
       });
     } finally {
@@ -285,9 +268,24 @@ export default function ServerEditScreen() {
     }
   };
 
+  // A keychain or database write that failed left Save doing nothing at all.
   const save = async () => {
+    setSaveError(null);
+    try {
+      await saveHost();
+    } catch (thrown) {
+      setSaveError(`Could not save this host. ${errorText(thrown)}`);
+    }
+  };
+
+  const saveHost = async () => {
     const connection = draft();
     if (secret.length > 0) await saveSecret(connection.id, secret);
+    if (connection.authKind === 'privateKey' && (secret.length > 0 || passphrase.length > 0)) {
+      await savePassphrase(connection.id, passphrase);
+    } else if (connection.authKind === 'password') {
+      await savePassphrase(connection.id, '');
+    }
     // The pin survives a cosmetic edit (name, herdr path, session). Only a
     // changed endpoint replaces it, and then with the key the passing test
     // actually saw, never a blank slate the next connect fills in blindly.
@@ -311,24 +309,8 @@ export default function ServerEditScreen() {
     router.dismissAll();
   };
 
-  /**
-   * Done used to drop a half-typed host without a word, key and all (#4
-   * acceptance). With anything entered or changed it asks first.
-   */
-  const dirty = isNew
-    ? [name, host, username, secret, sessionName].some((value) => value.trim().length > 0) ||
-      herdrPath !== 'herdr' ||
-      port !== '22'
-    : name !== existing.name ||
-      host !== existing.host ||
-      port !== String(existing.port) ||
-      username !== existing.username ||
-      authKind !== existing.authKind ||
-      secret.length > 0 ||
-      herdrPath !== existing.herdrPath ||
-      sessionName !== existing.sessionName;
   const close = () => {
-    if (!dirty) {
+    if (!fields.dirty) {
       router.back();
       return;
     }
@@ -371,115 +353,14 @@ export default function ServerEditScreen() {
         // with no way to reach it. With the inset the form can scroll the
         // keyboard's height further, and a focused key scrolls itself up.
         automaticallyAdjustKeyboardInsets>
-        <View
-          onLayout={(event) => {
-            fieldOffsets.current.address = event.nativeEvent.layout.y;
+        <HostFields
+          form={fields}
+          isNew={isNew}
+          onSectionLayout={(section, y) => {
+            fieldOffsets.current[section] = y;
           }}
-          style={{ gap: spacing.sm }}>
-          <Field
-            label="Name"
-            placeholder="nuc"
-            value={name}
-            onChangeText={invalidate(setName)}
-            testID="field-name"
-          />
-          <FieldRow weights={size.hostPortWeights}>
-            <Field
-              label="Host"
-              placeholder="100.x.y.z or a name"
-              value={host}
-              onChangeText={invalidate(setHost)}
-              autoCapitalize="none"
-              testID="field-host"
-            />
-            <Field
-              label="Port"
-              value={port}
-              onChangeText={invalidate(setPort)}
-              keyboardType="number-pad"
-              testID="field-port"
-            />
-          </FieldRow>
-          <Field
-            label="Username"
-            value={username}
-            onChangeText={invalidate(setUsername)}
-            autoCapitalize="none"
-            testID="field-username"
-          />
-        </View>
-
-        <View
-          onLayout={(event) => {
-            fieldOffsets.current.credentials = event.nativeEvent.layout.y;
-          }}
-          style={{ gap: spacing.sm }}>
-          <SegmentedField
-            label="Authentication"
-            options={[
-              { value: 'password', label: 'Password' },
-              { value: 'privateKey', label: 'Private key' },
-            ]}
-            value={authKind}
-            onChange={(kind) => {
-              Keyboard.dismiss();
-              invalidate(setAuthKind)(kind);
-            }}
-          />
-          {authKind === 'privateKey' ? (
-            <KeyField
-              value={secret}
-              onChangeText={invalidate(setSecret)}
-              // The key is several lines tall, so the inset alone can leave its
-              // top under the keyboard; bring the whole credentials block up.
-              onFocus={() => form.current?.scrollTo({ y: fieldOffsets.current.credentials, animated: true })}
-            />
-          ) : (
-            <Field
-              label="Password"
-              value={secret}
-              onChangeText={invalidate(setSecret)}
-              secureTextEntry
-              autoCapitalize="none"
-              testID="field-secret"
-            />
-          )}
-          <Text variant="caption" color="secondary">
-            {isNew
-              ? 'Stored in the device keychain, never in the database.'
-              : 'Leave empty to keep the current secret.'}
-          </Text>
-        </View>
-
-        {/* Blank session is the common case and the right default. Naming one
-            only matters on a host running more than one, where we previously
-            drove whichever the default resolved to without saying so. */}
-        <View
-          onLayout={(event) => {
-            fieldOffsets.current.path = event.nativeEvent.layout.y;
-          }}
-          style={{ gap: spacing.sm }}>
-          <FieldRow>
-            <Field
-              label="herdr path"
-              value={herdrPath}
-              onChangeText={invalidate(setHerdrPath)}
-              autoCapitalize="none"
-              testID="field-herdr-path"
-            />
-            <Field
-              label="herdr session"
-              placeholder="Default"
-              value={sessionName}
-              onChangeText={invalidate(setSessionName)}
-              autoCapitalize="none"
-              testID="field-session"
-            />
-          </FieldRow>
-          <Text variant="caption" color="secondary">
-            Leave the session empty unless this machine runs more than one herdr session.
-          </Text>
-        </View>
+          onKeyFocus={() => form.current?.scrollTo({ y: fieldOffsets.current.credentials, animated: true })}
+        />
 
         {/* What a test found beyond a plain pass sits at the end of the form,
             and the form scrolls to it: the recovery button is the next thing to
@@ -530,12 +411,22 @@ export default function ServerEditScreen() {
             Connected. herdr {test.version ?? 'is answering'}.
           </Text>
         )}
+        {test.kind === 'ok' && !test.live && (
+          <Text variant="footnote" color="secondary" style={{ textAlign: 'center' }} testID="test-no-bridge">
+            No live events on this host: the app polls it instead, so updates arrive a few seconds late.
+          </Text>
+        )}
+        {saveError !== null && (
+          <Text variant="footnote" color="destructive" style={{ textAlign: 'center' }} testID="save-error">
+            {saveError}
+          </Text>
+        )}
         <FieldRow>
           <Button
             title={test.kind === 'testing' ? 'Testing…' : 'Test connection'}
             variant="tinted"
             loading={test.kind === 'testing'}
-            disabled={!valid}
+            disabled={!fields.valid}
             onPress={() => void runTest()}
             testID="test-connection"
           />

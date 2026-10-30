@@ -45,9 +45,13 @@ export function withSession(
   if (!isNamedSession(sessionName)) return transport;
   const prefix = `export HERDR_SESSION=${shellQuote(sessionName.trim())}; `;
 
+  const duplex = transport.duplex?.bind(transport);
   return {
     exec: (command, timeoutMs) => transport.exec(prefix + command, timeoutMs),
     streamLines: (command, startTimeoutMs, signal) =>
       transport.streamLines(prefix + command, startTimeoutMs, signal),
+    ...(duplex === undefined ? {} : {
+      duplex: (command: string, startTimeoutMs: number, signal?: AbortSignal) => duplex(prefix + command, startTimeoutMs, signal),
+    }),
   };
 }

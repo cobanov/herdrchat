@@ -1,33 +1,28 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Platform, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Keyboard, Platform, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { confirmDestructive, showActionSheet } from '@/components/ActionSheet';
+import { showActionSheet } from '@/components/ActionSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { Icon } from '@/components/Icon';
-import { Text } from '@/components/Text';
-import { openChat } from './navigation';
-import { agentPrefRow, agentRowKey, agentTestKey, isAgentRow, isAgentUnread } from './agentRows';
-import { paneChats, spaceCardMode } from './chatGroups';
-import { isChatUnread, isPaneUnread } from './chatUnread';
-import { PaneRow } from './PaneRow';
+import { agentRowKey, isAgentRow } from './agentRows';
+import { ChatListItem, type LayoutButton } from './ChatListItem';
+import { ChatSearch } from './ChatSearch';
+import { paneChats } from './chatGroups';
 import { paneTarget } from './paneTarget';
 import { paneTitle, rowTitle } from './rowText';
-import { TabDivider } from './TabDivider';
-import { TerminalRow } from './TerminalRow';
+import { useHostRecovery } from './useHostRecovery';
+import { useListReads } from './useListReads';
 import { SkeletonRows } from '@/features/chats/SkeletonRows';
-import { SwipeableChatRow } from '@/features/chats/SwipeableChatRow';
 import { useChatPrefs } from '@/features/chats/useChatPrefs';
-import { terminalRowParams, type ListItemWithTerminals } from '@/features/terminal/listRows';
+import type { ListItemWithTerminals } from '@/features/terminal/listRows';
 import { chatListRows } from './chatListRows';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
-import { openTerminal } from '@/features/terminal/navigation';
 import { SwipeHint } from '@/features/chats/SwipeHint';
 import { StarCard } from '@/features/welcome/StarCard';
 import { HostKeyChangedBanner } from '@/features/chats/HostKeyChangedBanner';
@@ -40,10 +35,10 @@ import { HostNotices } from '@/features/chats/HostNotices';
 import { HostFeeds } from '@/features/chats/HostFeeds';
 import { NotesBar } from '@/features/youShouldKnow/NotesBar';
 import { useNotesOf } from '@/features/youShouldKnow/useHostNotes';
-import { openFor, readsOf, rowKey, type ListedChat, type OpenChat, type ReadsByConnection } from '@/features/chats/listedChat';
-import { LayoutPeekOverlay, useLayoutPeek, type LayoutAnchor } from '@/features/spaces/LayoutPeek';
+import { rowKey, type ListedChat, type OpenChat } from '@/features/chats/listedChat';
+import { LayoutPeekOverlay, useLayoutPeek } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
-import { haptics } from '@/lib/haptics';
+import { haptics } from '@/components/haptics';
 import { chatKey } from '@/lib/chatKey';
 import {
   LIST_MODE_SHEET_TITLE,
@@ -54,21 +49,14 @@ import {
   type ListMode,
 } from '@/lib/listModes';
 import { decodeActiveDays, shouldAskForStar } from '@/lib/welcome';
-import { useChatEdits } from '@/state/chatEdits';
 import { chatOf, useChatSelection } from '@/state/chatSelection';
 import { useSpaceLayoutSheet } from '@/state/spaceLayout';
-import {
-  clientFor,
-  isDemo,
-  loadHostKeyPin,
-  newConnection,
-  useSelectedConnection,
-} from '@/state/connections';
-import { loadThreadReads, setSetting } from '@/state/db';
+import { clientFor, isDemo, newConnection, useSelectedConnection } from '@/state/connections';
+import { setSetting } from '@/state/db';
 import { saveSetting } from '@/state/saveSetting';
 import { encodeBool, useSettings } from '@/state/settings';
 import { useTheme } from '@/theme/ThemeProvider';
-import { minTouchTarget, radius, screenPadding, size, spacing, typography } from '@/theme/tokens';
+import { screenPadding, size, spacing } from '@/theme/tokens';
 
 /**
  * Chats, the app's root, in one of two views picked from its title
@@ -147,29 +135,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     () => chatListRows(listMode, summaries, query, prefs.pinnedAt, isTerminalAvailable),
     [listMode, summaries, query, prefs.pinnedAt]
   );
-  // Whose reads to load, as a string so a rebuilt list of the same ids does
-  // not reload them.
-  const readIds = connectionIds.join('\n');
-  /** One flag for both recovery actions, only one is ever offered at a time. */
-  const [fixing, setFixing] = useState(false);
-  // A key change is not one failure among many: it is the only one where the
-  // right move might be to stop using the app. It gets its own surface.
-  // By code, not by the message: the wording is the transport's to change, and
-  // it did (the native sentence became a plain one), which silently turned
-  // this banner back into an ordinary error.
-  const keyChanged = error !== null && errorCode === 'host_key_changed';
-  const [storedPin, setStoredPin] = useState<string | null>(null);
-  useEffect(() => {
-    if (!keyChanged || connection === null) return;
-    let alive = true;
-    void loadHostKeyPin(connection.id).then((pin) => {
-      if (alive) setStoredPin(pin);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [keyChanged, connection]);
-  const [reads, setReads] = useState<ReadsByConnection>(new Map());
+  const { keyChanged, storedPin, fixing, recover } = useHostRecovery({ connection, client, error, errorCode, refresh });
   // The selection names the pane too; the prop only says which workspace, and
   // a pane row and its workspace's row are never selected together. A pane
   // that is not a chat of its own is the workspace chat to the list: its row
@@ -201,6 +167,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const terminalPaneId = selectedTerminal?.paneId;
   const openTerminalKey = terminalConnectionId === undefined || terminalPaneId === undefined
     ? null : `${terminalConnectionId}\n${terminalPaneId}`;
+  const reads = useListReads(db, connectionIds.join('\n'), open, refresh);
   const listExtra = useMemo(() => ({ open, reads, openTerminalKey }), [open, reads, openTerminalKey]);
   const insets = useSafeAreaInsets();
 
@@ -242,45 +209,21 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   const peek = useLayoutPeek();
   const peekSummary = peek.peek === null ? null : summaries.find((item) => rowKey(item) === peek.peek?.key) ?? null;
   const pointer = Platform.OS === 'ios' && Platform.isPad;
-  const openLayout = (item: ListedChat, anchor: LayoutAnchor) => {
-    Keyboard.dismiss();
-    if (pointer) {
-      peek.show(rowKey(item), anchor, 'pin');
-      return;
-    }
-    useSpaceLayoutSheet.getState().show(item);
-    router.push('/space-layout');
+  const layoutButton: LayoutButton = {
+    pointer,
+    open: (item, anchor) => {
+      Keyboard.dismiss();
+      if (pointer) {
+        peek.show(rowKey(item), anchor, 'pin');
+        return;
+      }
+      useSpaceLayoutSheet.getState().show(item);
+      router.push('/space-layout');
+    },
+    hover: (item, anchor) => peek.show(rowKey(item), anchor, 'hover'),
+    leave: (item) => peek.leaveButton(rowKey(item)),
   };
 
-  const editsDirty = useChatEdits((state) => state.dirty);
-  const clearEdits = useChatEdits((state) => state.clear);
-  // Re-read on focus rather than on an interval: the only thing that changes a
-  // read marker is opening a thread, and coming back from one is exactly this
-  // callback. A poll would just re-query the same rows every few seconds.
-  useFocusEffect(
-    useCallback(() => {
-      if (readIds === '') return;
-      void loadReads(db, readIds).then(setReads);
-      // A rename happened in the sheet that just closed. Re-fetch rather than
-      // wait out the poll, but only then, refreshing on every focus would cost
-      // a round-trip each time a sheet above this list closes.
-      if (editsDirty) {
-        clearEdits();
-        void refresh();
-      }
-    }, [db, readIds, editsDirty, clearEdits, refresh])
-  );
-
-  // The tablet list stays focused as its detail changes. Refresh read markers
-  // after the previous detail has stamped its final read time on unmount.
-  // By chat key, not workspace: moving between two agents of one workspace
-  // closes a thread too.
-  useEffect(() => {
-    if (readIds === '' || open === null) return;
-    let alive = true;
-    void loadReads(db, readIds).then((next) => { if (alive) setReads(next); });
-    return () => { alive = false; };
-  }, [db, readIds, open]);
 
   // The chat on screen is not news. With one agent of a workspace open, the
   // workspace still counts for its other agents.
@@ -309,52 +252,6 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
     shouldAskForStar({ days: decodeActiveDays(activeDays), starAsked, onRealHost: connection !== null && !isDemo(connection.id) });
   const answerStar = useCallback(() => saveSetting(db, 'starAsked', true), [db]);
 
-  /**
-   * The two things that can be fixed from here, and they are different sizes.
-   *
-   * Missing herdr downloads and runs an install script; a stopped server is one
-   * process. Offering them as one button would make the smaller one feel as
-   * consequential as the larger.
-   */
-  /** The fix that matches the failure, for the banner and the empty state alike. */
-  const recover = () => {
-    const { action } = connectionRecovery(errorCode ?? '');
-    if (action === 'install') confirmInstallHerdr();
-    else if (action === 'start') void fixHost('start');
-    else if (action === 'retry') void refresh();
-    else if (connection !== null) router.push({ pathname: '/server/[id]', params: { id: connection.id } });
-  };
-
-  const fixHost = async (action: 'install' | 'start') => {
-    if (client === null) return;
-    setFixing(true);
-    try {
-      await (action === 'install' ? client.installHerdr() : client.startServer());
-      await refresh();
-    } catch {
-      // The poll's own banner already carries the failure; a second one here
-      // would stack two messages about one problem.
-    } finally {
-      setFixing(false);
-    }
-  };
-
-  /**
-   * Never one tap. Installing pipes a script from the network into a shell on
-   * someone's machine, so the exact command is stated and confirmed before it
-   * runs, the same bargain a terminal would offer, where you would at least
-   * have typed it. Starting a stopped server is not in that class and goes
-   * straight through.
-   */
-  const confirmInstallHerdr = () => {
-    if (connection === null) return;
-    confirmDestructive({
-      title: 'Run the herdr installer?',
-      message: `This runs curl -fsSL https://herdr.dev/install.sh | sh on ${connection.host} as ${connection.username}. It downloads a script from herdr.dev and runs it there.`,
-      confirmLabel: 'Run the installer',
-      onConfirm: () => void fixHost('install'),
-    });
-  };
 
   return (
     <Screen>
@@ -408,31 +305,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           // no way to fix it (#4 acceptance).
           <ErrorBanner
             message={error}
-            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+            actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode).label}
             onAction={fixing ? undefined : recover}
           />
         ))}
 
-      {connection !== null && summaries.length > 0 && (
-        <View style={{ paddingHorizontal: screenPadding, paddingBottom: spacing.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: colors.chatCard }}>
-            <Icon name="magnifyingglass" tintColor={colors.secondaryLabel} />
-            <TextInput
-              testID="chat-search"
-              accessibilityLabel="Search chats"
-              placeholder="Search chats"
-              placeholderTextColor={colors.secondaryLabel}
-              value={query}
-              onChangeText={setQuery}
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-              returnKeyType="search"
-              style={{ flex: 1, minWidth: 0, minHeight: minTouchTarget, paddingVertical: spacing.md, color: colors.label, fontSize: typography.body.fontSize }}
-            />
-          </View>
-        </View>
-      )}
+      {connection !== null && summaries.length > 0 && <ChatSearch query={query} onChange={setQuery} />}
 
       {connection === null ? (
         <EmptyState
@@ -473,9 +351,9 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
               // (#96). Say which failure it was and offer the fix that matches.
               <EmptyState
                 symbol="exclamationmark.triangle"
-                title={connectionRecovery(errorCode ?? '').title}
+                title={connectionRecovery(errorCode).title}
                 body={error}
-                actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode ?? '').label}
+                actionLabel={fixing ? 'Working…' : connectionRecovery(errorCode).label}
                 onAction={fixing ? undefined : recover}
               />
             ) : error === null ? (
@@ -553,122 +431,18 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
           ) : (
             <EmptyState symbol="magnifyingglass" title="No matching chats" body="Try another chat name, agent or folder." />
           )}
-          renderItem={({ item: row }) => {
-            if (row.kind === 'group') return (
-              <View
-                testID={`chat-group-${row.id}`}
-                accessibilityRole="header"
-                accessibilityLabel={`${row.title}, ${row.count} chats`}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: minTouchTarget, paddingVertical: spacing.sm }}>
-                <Text variant="caption" mono color={row.id === 'needs-you' ? 'attention' : 'secondary'}>{row.title.toUpperCase()}</Text>
-                <View style={{ height: 1, flex: 1, backgroundColor: row.id === 'needs-you' ? colors.attentionBorder : colors.separator }} />
-                <Text variant="caption" mono color="secondary">{row.count}</Text>
-              </View>
-            );
-            if (row.kind === 'tab') return <TabDivider summary={row.summary} tabId={row.tabId} label={row.label} first={row.first} />;
-            if (row.kind === 'terminal') {
-              const { summary, terminal } = row;
-              return (
-                <TerminalRow
-                  summary={summary}
-                  terminal={terminal}
-                  first={row.first}
-                  last={row.last}
-                  standalone={row.standalone}
-                  selected={openTerminalKey === `${summary.connectionId}\n${terminal.paneId}`}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    openTerminal(terminalRowParams(summary.connectionId, terminal));
-                  }}
-                />
-              );
-            }
-            const item = row.summary;
-            // An agent's row in the Agents view: its pin, its read and its
-            // thread are its agent's (`chatKey`). Rename and Close still act
-            // on its workspace, as they do from an agent's row in Spaces.
-            const agent = isAgentRow(item) ? item : null;
-            const pinned = prefs.isPinned(item);
-            const muted = prefs.isMuted(item);
-            // Both belong to a conversation, so both wait for its session id.
-            const personal = item.sessionSig !== null;
-            const mutable = personal && prefs.canMute(item);
-            // Compared on the row's own connection: one host's `w1` is not
-            // another's.
-            const openHere = openFor(open, item);
-            const rowReads = readsOf(reads, item);
-            const manage = () => actions.manageChat(item, personal ? [
-              { label: pinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(item) },
-              ...(mutable ? [{ label: muted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(item) }] : []),
-            ] : []);
-            if (row.kind === 'pane') {
-              const { pane } = row;
-              const target = paneTarget(item, pane);
-              // The agent's own pin and mute, as its row in Agents reads and
-              // makes them (`agentPrefRow`): acting on the workspace from
-              // here pinned something the other view never showed. The one
-              // agent of its workspace is the workspace chat there, so it is
-              // pinned and muted as the workspace here too.
-              const own = target.paneId === undefined ? item : agentPrefRow(item, pane);
-              const ownPersonal = own.sessionSig !== null;
-              const ownPinned = prefs.isPinned(own);
-              const ownMuted = prefs.isMuted(own);
-              const ownMutable = ownPersonal && prefs.canMute(own);
-              // That workspace pin is drawn once, on the card above: the same
-              // pin on both rows read as two. Pin and Mute stay in this
-              // row's long-press sheet.
-              const sharesCard = target.paneId === undefined;
-              return (
-                <PaneRow
-                  summary={item}
-                  pane={pane}
-                  first={row.first}
-                  last={row.last}
-                  pinned={ownPinned && !sharesCard}
-                  muted={ownMuted && !sharesCard}
-                  selected={openHere === target.key}
-                  unread={isPaneUnread(item, pane, rowReads, openHere)}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    openChat(item.connectionId, item.workspaceId, target.title, target.paneId);
-                  }}
-                  onLongPress={() => actions.manageChat(item, ownPersonal ? [
-                    { label: ownPinned ? 'Unpin' : 'Pin', onPress: () => prefs.togglePin(own) },
-                    ...(ownMutable ? [{ label: ownMuted ? 'Unmute notifications' : 'Mute notifications', onPress: () => prefs.toggleMute(own) }] : []),
-                  ] : [])}
-                />
-              );
-            }
-            // A workspace card that stands for the workspace rather than one
-            // chat (`spaceCardMode`) shows its layout, and is never the
-            // selection: the agent rows under it are.
-            const space = agent === null && spaceCardMode(item) === 'space';
-            return (
-              <SwipeableChatRow
-                summary={item}
-                testKey={agent === null ? undefined : agentTestKey(agent)}
-                pinned={pinned}
-                muted={muted}
-                onTogglePin={personal ? () => prefs.togglePin(item) : undefined}
-                onToggleMute={mutable ? () => prefs.toggleMute(item) : undefined}
-                selected={!space && openHere === (agent?.chatKey ?? item.workspaceId)}
-                unread={agent === null ? isChatUnread(item, rowReads, openHere) : isAgentUnread(agent, rowReads, openHere)}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  openChat(item.connectionId, item.workspaceId, rowTitle(item), agent?.pane?.paneId);
-                }}
-                onLongPress={manage}
-                onSwiped={markHintSeen}
-                onRename={() => actions.renameChat(item)}
-                onClose={() => actions.closeChat(item)}
-                space={space ? {
-                  onOpenLayout: (anchor) => openLayout(item, anchor),
-                  onHoverLayout: pointer ? (anchor) => peek.show(rowKey(item), anchor, 'hover') : undefined,
-                  onLeaveLayout: pointer ? () => peek.leaveButton(rowKey(item)) : undefined,
-                } : undefined}
-              />
-            );
-          }}
+          renderItem={({ item: row }) => (
+            <ChatListItem
+              row={row}
+              prefs={prefs}
+              actions={actions}
+              open={open}
+              reads={reads}
+              openTerminalKey={openTerminalKey}
+              layout={layoutButton}
+              onSwiped={markHintSeen}
+            />
+          )}
           refreshControl={
             <RefreshControl
               refreshing={false}
@@ -698,10 +472,4 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
       />
     </Screen>
   );
-}
-
-/** Every listed host's read markers. */
-async function loadReads(db: Parameters<typeof loadThreadReads>[0], ids: string): Promise<ReadsByConnection> {
-  const loaded = await Promise.all(ids.split('\n').map(async (id) => [id, await loadThreadReads(db, id)] as const));
-  return new Map(loaded);
 }

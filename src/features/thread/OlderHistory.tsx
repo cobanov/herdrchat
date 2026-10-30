@@ -33,7 +33,7 @@ export function OlderHistory({
       {loading ? (
         <ActivityIndicator color={colors.secondaryLabel} />
       ) : reachedStart ? (
-        <Text variant="caption2" color="tertiary">
+        <Text variant="caption2" color="secondary">
           Beginning of conversation
         </Text>
       ) : null}

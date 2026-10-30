@@ -22,6 +22,7 @@ const mockList = jest.fn((props: { data: unknown[]; renderItem: (info: { item: u
 jest.mock('@shopify/flash-list', () => ({ FlashList: (props: Parameters<typeof mockList>[0]) => mockList(props) }));
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) }, useFocusEffect: jest.fn() }));
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
+jest.mock('@/features/usePollGate', () => ({ usePollGate: () => true }));
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 // One database for the app's life, as the provider gives.
 const mockDb = {};
@@ -230,7 +231,7 @@ describe('on the clock', () => {
     expect(useDelegationStates.getState().states[call.id]).toBeUndefined();
 
     // The result lands in the main transcript; nothing reports it to the store.
-    for (let step = 0; step < 4; step += 1) await advance(2_000);
+    for (let step = 0; step < 10; step += 1) await advance(2_000);
     expect(header().getByLabelText('done')).toBeOnTheScreen();
     expect(streams[0]?.aborted).toBe(true);
     expect(within(screen.getByTestId('subagent-messages')).getByText(/pinned on first contact/)).toBeOnTheScreen();

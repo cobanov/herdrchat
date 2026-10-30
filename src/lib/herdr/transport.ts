@@ -25,4 +25,19 @@ export interface HerdrTransport {
    * is unbounded by design.
    */
   streamLines(command: string, startTimeoutMs: number, signal?: AbortSignal): AsyncIterable<string>;
+  /**
+   * Run a long-lived command that is also written to: its stdout lines, and
+   * its stdin. Absent where the transport cannot write to a running command
+   * (the Demo); callers then use `exec`.
+   */
+  duplex?(command: string, startTimeoutMs: number, signal?: AbortSignal): Duplex;
+}
+
+/** A running command's stdout lines and stdin. */
+export interface Duplex {
+  lines: AsyncIterable<string>;
+  /** Settles once the command runs; rejects when it could not start. */
+  started: Promise<void>;
+  /** Puts `text` on the command's stdin; false when the command has ended. */
+  write(text: string): Promise<boolean>;
 }

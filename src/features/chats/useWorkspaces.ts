@@ -15,7 +15,7 @@ import { noteChats } from '@/lib/youShouldKnow/notes';
 import { checkYouShouldKnow, setNoteChats } from '@/state/youShouldKnow';
 
 import type { HerdrClient } from '@/lib/herdr/client';
-import { HerdrError } from '@/lib/herdr/protocol';
+import { errorText, HerdrError, type HerdrErrorCode } from '@/lib/herdr/protocol';
 import {
   needsAttention,
   sessionSignature,
@@ -25,6 +25,7 @@ import {
   type AgentStatus,
   type Pane,
   type RestoreError,
+  type Snapshot,
   type Tab,
   type TabLayout,
   type Workspace,
@@ -33,8 +34,9 @@ import { TranscriptStore, previewText, type PreviewRequest } from '@/lib/transcr
 import { titleAgent } from '@/lib/chatTitle';
 import { decodeProcessName, processNamesDue, processNamesWanted, terminalPanes, type TerminalPane } from '@/lib/terminal/rows';
 import type { BatchAnswer } from '@/lib/herdr/socket';
+import { keepUnchanged } from '@/lib/sameShape';
 import { isTerminalAvailable } from '../../../modules/herdr-terminal/src';
-import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS } from '@/lib/herdr/timeouts';
+import { POLL_TIMEOUT_MS, PROCESS_NAME_SWEEP_POLLS, WAKE_AFTER_MS } from '@/lib/herdr/timeouts';
 
 /** A row's last message: the Messages-style snippet and its time. */
 export interface ChatPreview {
@@ -130,7 +132,7 @@ export interface WorkspacesState {
   loading: boolean;
   error: string | null;
   /** The failure's code (`auth_failed`, `connect_failed`, …), for choosing a way out. */
-  errorCode: string | null;
+  errorCode: HerdrErrorCode | null;
   /** True when the connect failed because herdr isn't installed on the host. */
   herdrMissing: boolean;
   /**
@@ -181,7 +183,7 @@ export function useWorkspaces(
   // effect body just to get back to the initial value.
   const [loading, setLoading] = useState(client !== null);
   const [error, setError] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<HerdrErrorCode | null>(null);
   const [herdrMissing, setHerdrMissing] = useState(false);
   const [serverStopped, setServerStopped] = useState(false);
 
@@ -194,17 +196,24 @@ export function useWorkspaces(
    */
   const failures = useRef(0);
   /** The code of the last failure, to tell a pause from a retry. */
-  const lastCode = useRef<string | null>(null);
+  const lastCode = useRef<HerdrErrorCode | null>(null);
 
   /** Every agent pane the last refresh saw; what the event stream watches. */
   const [paneIds, setPaneIds] = useState<string[]>([]);
   /** Asks the running loop for a refresh soon. Set by the effect that owns the loop. */
   const kick = useRef<() => void>(() => undefined);
-  const forcePreviews = useRef(true);
-  const live = useHostEvents(client, paneIds, polling, () => {
+  /**
+   * Previews to read on the next refresh whatever the counters say: the panes
+   * events named, or `true` for every one (the first refresh, a resync).
+   */
+  const forcePreviews = useRef<true | Set<string>>(true);
+  const live = useHostEvents(client, paneIds, polling, (event) => {
     // The event may report the final idle state after a fast turn. Its preview
-    // is still new, even though this agent is no longer working.
-    forcePreviews.current = true;
+    // is still new, even though this agent is no longer working. Only that
+    // pane's, though: one event forced every chat's transcript to be read.
+    const forced = forcePreviews.current;
+    if (event.paneId === null) forcePreviews.current = true;
+    else if (forced !== true) forced.add(event.paneId);
     kick.current();
   });
   const liveRef = useRef(live);
@@ -241,14 +250,21 @@ export function useWorkspaces(
   const detectNotesNext = useRef(false);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
+  // After a long time away the connection may be dead under a suspended app;
+  // `wake` drops it in seconds rather than letting the first poll wait it out.
+  const awaySince = useRef<number | null>(null);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') awaySince.current ??= Date.now();
       if (state !== 'active') return;
+      const away = awaySince.current;
+      awaySince.current = null;
+      if (away !== null && Date.now() - away >= WAKE_AFTER_MS) void client?.wake();
       lastThemeCheck.current = null;
       lastNotesRead.current = null;
     });
     return () => subscription.remove();
-  }, []);
+  }, [client]);
 
   const previews = useRef(new Map<string, CachedPreview>());
   const tick = useRef(0);
@@ -269,8 +285,11 @@ export function useWorkspaces(
   }, [listMode]);
   const alive = useRef(true);
 
-  /** Resolves true when the poll failed, so the loop knows whether to back off. */
-  const refresh = useCallback(async (): Promise<boolean> => {
+  /**
+   * Resolves true when the poll failed, so the loop knows whether to back off.
+   * `recent` is a snapshot already read, which this round uses instead of its own.
+   */
+  const refresh = useCallback(async (recent?: Snapshot): Promise<boolean> => {
     if (client === null) return false;
     try {
       // One call, not two. `api snapshot` returns the whole session — workspaces
@@ -281,13 +300,13 @@ export function useWorkspaces(
       // only when this herdr does not send the field, which is a real
       // possibility on a host we have not seen. Null means ask; empty means
       // there genuinely are none, and asking again would be pointless.
-      const snapshot = await client.snapshot();
+      const snapshot = recent ?? (await client.snapshot());
       // Rides along with the poll that already runs. Settings reads this rather
       // than asking the host itself — see `state/hostVersion`. The selected
       // host's only: another host's poll runs alongside it and would
       // otherwise overwrite it with that host's herdr.
-      if (primary) {
-        useHostVersion.getState().setVersion(snapshot.version);
+      if (primary && connectionId !== null) {
+        useHostVersion.getState().setVersion(connectionId, snapshot.version);
       }
       const workspaces = snapshot.workspaces ?? (await client.workspaces());
       // Unmounted mid-flight: not a failure, just nothing left to do with it.
@@ -296,7 +315,7 @@ export function useWorkspaces(
       const store = new TranscriptStore(client.transport);
       dropStalePreviews(snapshot.agents, previews.current);
       const force = forcePreviews.current;
-      forcePreviews.current = false;
+      forcePreviews.current = new Set();
       processTick.current += 1;
       // Not awaited, and one round at a time: a round is one SSH exec for all
       // the panes, up to POLL_TIMEOUT_MS, and the list (statuses, Needs you)
@@ -321,7 +340,7 @@ export function useWorkspaces(
       await refreshPreviews(store, snapshot.agents, previews.current, tick, force, seqs.current);
       if (!alive.current) return false;
 
-      setSummaries(buildSummaries(
+      const built = buildSummaries(
         workspaces,
         snapshot.agents,
         previews.current,
@@ -329,8 +348,12 @@ export function useWorkspaces(
         snapshot.panes,
         processNameMap(processNames.current),
         { tabs: snapshot.tabs, layouts: snapshot.layouts }
-      ));
-      setPaneIds(snapshot.agents.map((agent) => agent.paneId));
+      );
+      // A poll that saw nothing new keeps the rows it had, so neither the
+      // list nor its rows render again; one that changed a row changes that row.
+      setSummaries((previous) => keepUnchanged(previous, built, (summary) => summary.workspaceId));
+      const ids = snapshot.agents.map((agent) => agent.paneId);
+      setPaneIds((previous) => (previous.join('\n') === ids.join('\n') ? previous : ids));
       setError(null);
       setErrorCode(null);
       lastCode.current = null;
@@ -374,7 +397,7 @@ export function useWorkspaces(
     } catch (thrown) {
       if (!alive.current) return true;
       const failure = thrown instanceof HerdrError ? thrown : null;
-      setError(failure?.message ?? (thrown instanceof Error ? thrown.message : String(thrown)));
+      setError(failure?.message ?? (errorText(thrown)));
       setErrorCode(failure?.code ?? null);
       lastCode.current = failure?.code ?? null;
       setHerdrMissing(failure?.code === 'herdr_not_found');
@@ -396,6 +419,8 @@ export function useWorkspaces(
     let inFlight = false;
     let again = false;
     let stopped = false;
+    /** The next round asks the host itself: the first one, and any a kick asks for. */
+    let fresh = true;
 
     // A chained timeout rather than an interval: an interval on a slow host
     // stacks overlapping polls, and each one costs a round-trip.
@@ -408,7 +433,15 @@ export function useWorkspaces(
         return;
       }
       inFlight = true;
-      const failed = await refresh();
+      // On iPad the open chat beside this list reads the snapshot every couple
+      // of seconds. One it read within this round's interval is this round's,
+      // and the next round comes that much sooner, so the rows are never older
+      // than the interval. Alone, the list's own last read is a full interval
+      // old by now, so it asks as before.
+      const interval = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
+      const recent = fresh ? null : client.recentSnapshot(interval);
+      fresh = false;
+      const failed = await refresh(recent?.snapshot);
       inFlight = false;
       if (!alive.current || stopped) return;
       failures.current = failed ? failures.current + 1 : 0;
@@ -416,7 +449,7 @@ export function useWorkspaces(
       // starts it again.
       if (failed && needsTheUser(lastCode.current) && !again) return;
       const base = liveRef.current ? LIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS * pollScale;
-      schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
+      schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current) - (recent?.ageMs ?? 0));
       again = false;
     };
     const schedule = (delayMs: number) => {
@@ -428,6 +461,7 @@ export function useWorkspaces(
     // instead lost it: the refresh's own `schedule(backoff)` cleared that timer
     // when it finished first, and "Needs you" waited for the next slow poll (#88).
     kick.current = () => {
+      fresh = true;
       if (inFlight) again = true;
       else schedule(EVENT_DEBOUNCE_MS);
     };
@@ -612,11 +646,12 @@ export async function refreshPreviews(
   agents: readonly AgentInfo[],
   previews: Map<string, CachedPreview>,
   tick: { current: number },
-  force = false,
+  force: boolean | ReadonlySet<string> = false,
   seqs: Map<string, number> = new Map()
 ): Promise<void> {
   tick.current += 1;
-  const fullSweep = force || tick.current % 5 === 1; // includes the very first poll
+  const fullSweep = force === true || tick.current % 5 === 1; // includes the very first poll
+  const named = (paneId: string) => typeof force !== 'boolean' && force.has(paneId);
 
   const requests: PreviewRequest[] = [];
   /** The session each request was made for; the answer is filed under it. */
@@ -635,7 +670,7 @@ export async function refreshPreviews(
     const active = agent.agentStatus !== 'idle' && agent.agentStatus !== 'unknown';
     const last = seqs.get(agent.paneId);
     const moved = agent.stateChangeSeq !== null && last !== undefined && last !== agent.stateChangeSeq;
-    if (!fullSweep && !active && !moved && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
+    if (!fullSweep && !active && !moved && !named(agent.paneId) && previews.get(agent.paneId)?.sessionSig === sessionSig) continue;
 
     requests.push({
       workspaceId: agent.workspaceId,
@@ -757,10 +792,4 @@ function processNameMap(cache: ReadonlyMap<string, CachedProcessName>): Map<stri
 
 export function summaryNeedsAttention(summary: ChatSummary): boolean {
   return needsAttention(summary.status);
-}
-
-/** A thrown value, as something a person can read. */
-export function errorText(thrown: unknown): string {
-  if (thrown instanceof HerdrError) return thrown.message;
-  return thrown instanceof Error ? thrown.message : String(thrown);
 }

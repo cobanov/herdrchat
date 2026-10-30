@@ -22,6 +22,11 @@ learned:
 - **Route-change invalidation.** iOS watches `NWPathMonitor`; when the interface
   set changes (wifi↔cellular, Tailscale up/down) the cached client is dropped so
   the next command dials on the new route rather than stalling on a dead socket.
+- **Private keys.** iOS reads ed25519 and RSA keys in OpenSSH format (Citadel);
+  Android reads whatever sshj parses, ECDSA included. Both decrypt a key
+  with its passphrase, which JS sends in `config.passphrase`; `NativeChecks`
+  proves the iOS side reads an `ssh-keygen` key with its passphrase and
+  refuses it without.
 - **TOFU host-key pinning.** The first key seen is returned to JS to persist; a
   later connection presenting a different key is refused with
   `host_key_changed`.

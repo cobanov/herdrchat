@@ -242,3 +242,58 @@ export function delegateSteps(toolUseId: string, agentId: string): ((uuid: () =>
     }),
   ];
 }
+
+/**
+ * When each of the scenario's steps lands, after the call: its work a beat
+ * later, its result well after that. The wait before the result is long so
+ * a UI test can open the agents bar, read it twice and follow a row to the
+ * agent's transcript while the agent still runs.
+ */
+export const DELEGATE_STEP_AT_MS = [0, 2_500, 17_500] as const;
+
+/** The scenario's reply above the spinner while its subagent runs: the live preview's prose. */
+export const DELEGATE_WAITING = "I've handed the wording review to a subagent and will pass on what it finds.";
+
+/** A second agent the pane lists, which the scenario does not otherwise model, and how long it had run at the call. */
+export const DEMO_FORK_TASK = 'Checking the links in the notes';
+const FORK_ELAPSED_AT_CALL_MS = 123_000;
+
+/**
+ * The pane's screen while the scenario's subagent runs, as Claude Code
+ * 2.1.310 draws it: the reply, the spinner of an agent waiting on its
+ * background agents, the composer between its rules, the footer with its
+ * `← for agents` hint, then the agents pane: `⏺ main`, a row for the
+ * subagent, a row for a fork, and one more below the fold. `elapsedMs` is
+ * the time since the call; both rows count on from it.
+ */
+export function delegateScreen(elapsedMs: number): string {
+  const row = (kind: string, task: string, ms: number, tokens: string) =>
+    `  ◯ ${kind.padEnd(17)}${task.padEnd(42)}${terminalElapsed(ms).padStart(10)} · ↓ ${tokens} tokens`;
+  return [
+    `⏺ ${DELEGATE_WAITING}`,
+    '',
+    '✻ Waiting for 1 background agent to finish',
+    '',
+    `${'─'.repeat(72)} notes ─`,
+    '❯ ',
+    '─'.repeat(80),
+    '  ⏵⏵ auto mode on · ← for agents · ↓ to manage',
+    '',
+    '  ⏺ main',
+    row('general-purpose', DELEGATE_DESCRIPTION, elapsedMs, '12.4k'),
+    row('fork', DEMO_FORK_TASK, FORK_ELAPSED_AT_CALL_MS + elapsedMs, '48.1k'),
+    '  ↓ 1 more',
+    '',
+  ].join('\n');
+}
+
+/** "12s", "2m 3s", "1h 13m 1s": how the agents pane writes a duration. */
+function terminalElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1_000));
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}

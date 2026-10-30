@@ -2,18 +2,20 @@ import {
   connect,
   disconnect,
   exec,
+  duplexLines,
   streamLines,
   SshStreamError,
   type ConnectResult,
   type ExecResult,
   type SshConfig,
-} from '../../../modules/herdr-ssh/src';
-import { checkDoneMark, withDoneMark } from './doneMark';
-import { friendlyFailure } from './nativeFailure';
-import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from './socket';
-import { untilChannelCloses } from './shell';
-import type { HerdrTransport } from './transport';
-import { withJsDeadline } from './timeouts';
+} from '../../modules/herdr-ssh/src';
+import { checkDoneMark, withDoneMark } from '@/lib/herdr/doneMark';
+import { friendlyFailure } from '@/lib/herdr/nativeFailure';
+import { MAX_COMMAND_BYTES, tooLarge, utf8Length } from '@/lib/herdr/socket';
+import { untilChannelCloses } from '@/lib/herdr/shell';
+import type { Duplex, HerdrTransport } from '@/lib/herdr/transport';
+import { withJsDeadline } from '@/lib/herdr/timeouts';
+import { errorText } from '@/lib/herdr/protocol';
 
 /**
  * A `HerdrTransport` backed by the native SSH module.
@@ -90,7 +92,7 @@ export class SshHerdrTransport implements HerdrTransport {
           return {
             ok: false,
             code: thrown instanceof MissingCredentialsError ? 'credentials_missing' : 'connect_failed',
-            message: thrown instanceof Error ? thrown.message : String(thrown),
+            message: errorText(thrown),
           };
         });
     }
@@ -139,6 +141,39 @@ export class SshHerdrTransport implements HerdrTransport {
       }
       throw thrown;
     }
+  }
+
+  /**
+   * A command that is also written to (`HerdrTransport.duplex`). Its stdin
+   * is the channel itself, so it is not wrapped in `untilChannelCloses`: the
+   * command ends at the channel's EOF on its own.
+   */
+  duplex(command: string, startTimeoutMs: number, signal?: AbortSignal): Duplex {
+    let write: (text: string) => Promise<boolean> = async () => false;
+    let started: Promise<void> = Promise.reject(new SshStreamError({ ok: false, code: 'transport_failed', message: 'The stream has not started.' }));
+    started.catch(() => undefined);
+    let ready: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => { ready = resolve; });
+    const lines = async function* (this: SshHerdrTransport): AsyncIterable<string> {
+      const connection = await this.open();
+      if (!connection.ok) {
+        const failure = new SshStreamError(friendlyFailure(connection));
+        started = Promise.reject(failure);
+        started.catch(() => undefined);
+        ready();
+        throw failure;
+      }
+      const stream = duplexLines(this.id, command, startTimeoutMs, signal);
+      write = stream.write;
+      started = stream.started;
+      ready();
+      yield* stream.lines;
+    }.call(this);
+    return {
+      lines,
+      started: opened.then(() => started),
+      write: (text) => opened.then(() => write(text)),
+    };
   }
 
   async close(): Promise<void> {

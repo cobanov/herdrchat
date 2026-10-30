@@ -8,6 +8,8 @@ export interface ChatSelection {
   title: string;
   /** Set when one agent of a workspace is open rather than the workspace chat. */
   paneId?: string;
+  /** The session the chat list saw for it, when opened from the list. */
+  sig?: string;
 }
 
 /** A chat in the iPad's detail column: the workspace's, or one agent's. */

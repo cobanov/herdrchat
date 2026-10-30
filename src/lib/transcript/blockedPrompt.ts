@@ -158,6 +158,8 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   const lines = rawLines.map(clean);
 
   const options: BlockedOption[] = [];
+  /** The line each option of the current menu starts on. */
+  const optionLines: number[] = [];
   let firstOptionLine: number | null = null;
   /** Where the current menu's numbers start, in columns. */
   let menuColumn: number | null = null;
@@ -186,10 +188,12 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
     const last = options[options.length - 1];
     if (last !== undefined && option.number <= last.number) {
       options.length = 0;
+      optionLines.length = 0;
       firstOptionLine = index;
     }
     if (firstOptionLine === null) firstOptionLine = index;
     options.push(option);
+    optionLines.push(index);
     menuColumn = column;
     underOption = true;
   }
@@ -197,6 +201,7 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
   if (options.length === 0 || firstOptionLine === null) {
     return parseTrustPrompt(raw) ?? { question: null, options: [], details: null };
   }
+  joinWrappedLabels(options, optionLines, lines, rawLines, menuColumn);
 
   // Question: the contiguous text lines immediately above the first option,
   // oldest first, up to a blank line or a rule. Claude 2.1.299 closes a Write
@@ -214,7 +219,7 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
 
   const question = questionLines.join(' ').trim();
   const multiSelect = options.some((option) => option.checked !== undefined);
-  const details = parsePromptDetails(rawLines, cursor + 1);
+  const details = agyDetails(lines, rawLines, cursor + 1) ?? parsePromptDetails(rawLines, cursor + 1);
   return {
     question: question.length > 0 ? question : null,
     options,
@@ -223,6 +228,61 @@ export function parseBlockedPrompt(raw: string): BlockedPrompt {
     ...(multiSelect ? { multiSelect } : {}),
   };
 }
+
+/**
+ * The rest of a label the terminal wrapped onto the next row. Antigravity
+ * wraps a long option back to the first column, under the menu rather than
+ * past it, where a description would sit: "2. Yes, and always allow in this
+ * conversation for" then "commands that start with 'echo'". A row between two
+ * options, no further in than their numbers and not an option itself, is the
+ * label above it going on. Below the last option it could be the key hints,
+ * so it is left.
+ */
+function joinWrappedLabels(
+  options: BlockedOption[],
+  optionLines: readonly number[],
+  lines: readonly string[],
+  rawLines: readonly string[],
+  menuColumn: number | null
+): void {
+  if (menuColumn === null) return;
+  for (let at = 0; at + 1 < options.length; at += 1) {
+    const option = options[at];
+    const from = optionLines[at];
+    const to = optionLines[at + 1];
+    if (option === undefined || from === undefined || to === undefined) continue;
+    const rest = lines.slice(from + 1, to).filter((line, offset) =>
+      line.length > 0 && contentColumn(rawLines[from + 1 + offset] ?? '') <= menuColumn && parseOption(line) === null);
+    if (rest.length > 0) option.label = [option.label, ...rest].join(' ');
+  }
+}
+
+/**
+ * Antigravity's permission prompt: the tool's name above the prompt's rule,
+ * then "Requesting permission for:" and what it would run, indented, then the
+ * question. Null for any other prompt.
+ *
+ *     Command
+ *     ──────────────────────────────
+ *
+ *     Requesting permission for:
+ *        echo herdrchat-probe
+ *
+ *     Run this command?
+ */
+function agyDetails(lines: readonly string[], rawLines: readonly string[], questionStart: number): PromptDetails | null {
+  const asking = lines.lastIndexOf(AGY_REQUEST, questionStart - 1);
+  if (asking < 0) return null;
+  const body = lines.slice(asking + 1, questionStart).filter((line) => line.length > 0);
+  // The tool's name is the line above the rule above the request. The rule is
+  // read raw: cleaning strips its characters and leaves an empty line.
+  let rule = asking - 1;
+  while (rule >= 0 && (rawLines[rule] ?? '').trim().length === 0) rule -= 1;
+  const title = rule > 0 && isRuleLine(rawLines[rule] ?? '') ? (lines[rule - 1] ?? '').trim() : '';
+  return { title: title.length > 0 ? title : null, summary: null, body, notes: [], deadline: null };
+}
+
+const AGY_REQUEST = 'Requesting permission for:';
 
 /** What `parsePromptDetails` returns for a prompt whose start has scrolled off. */
 export const OFF_SCREEN = 'off-screen';
@@ -578,7 +638,7 @@ export function parseTrustPrompt(raw: string): BlockedPrompt | null {
   let end = answer;
   while (end + 1 < rest.length && (rest[end + 1] ?? '').length > 0) end += 1;
   const rows = rest.slice(start, end + 1);
-  const cursor = rows.findIndex((line) => line.startsWith(TRUST_CURSOR));
+  const cursor = rows.findIndex((line) => TRUST_CURSORS.some((mark) => line.startsWith(mark)));
   if (cursor < 0) return null;
 
   const options = rows.map((line, index): BlockedOption => {
@@ -586,20 +646,27 @@ export function parseTrustPrompt(raw: string): BlockedPrompt | null {
     const arrows = Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? 'Down' : 'Up'));
     return { number: index + 1, label: withoutCursor(line), keys: [...arrows, 'Enter'] };
   });
-  // The folder is the first line under the heading, when it reads as a path.
-  const folder = rest.find((line) => line.length > 0) ?? '';
+  // The folder is the paragraph under the heading, when it reads as a path; a
+  // narrow pane wraps a long one over several rows, mid-name.
+  const first = rest.findIndex((line) => line.length > 0);
+  const paragraph = first < 0 ? [] : rest.slice(first, rest.findIndex((line, at) => at > first && line.length === 0));
+  const folder = paragraph.join('');
+  // The agent names itself: "Antigravity CLI requires permission to read…".
+  const agent = rest.map((line) => /^(.+?) requires permission to /.exec(line)?.[1]).find((name) => name !== undefined) ?? 'Claude Code';
   const question = /^[/~]/.test(folder)
-    ? `Trust ${folder}? Claude Code will be able to read, edit and run files there.`
-    : 'Trust this folder? Claude Code will be able to read, edit and run files here.';
+    ? `Trust ${folder}? ${agent} will be able to read, edit and run files there.`
+    : `Trust this folder? ${agent} will be able to read, edit and run files here.`;
   return { question, options, details: null, unnumbered: true };
 }
 
 const TRUST_HEADING = 'Accessing workspace:';
 const TRUST_ANSWER = 'Yes, I trust this folder';
-const TRUST_CURSOR = '❯';
+/** Claude's cursor, and Antigravity's. */
+const TRUST_CURSORS = ['❯', '>'];
 
 function withoutCursor(line: string): string {
-  return line.startsWith(TRUST_CURSOR) ? line.slice(TRUST_CURSOR.length).trim() : line;
+  const mark = TRUST_CURSORS.find((candidate) => line.startsWith(candidate));
+  return mark === undefined ? line : line.slice(mark.length).trim();
 }
 
 export function isBlockedPromptEmpty(prompt: BlockedPrompt | null): boolean {

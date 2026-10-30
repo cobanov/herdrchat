@@ -7,6 +7,7 @@ import type {
   NativeSshConfig,
   OpenShellResult,
   ShellWriteResult,
+  SshFailure,
   StartStreamResult,
 } from './HerdrSsh.types';
 
@@ -41,6 +42,12 @@ declare class HerdrSshModule extends NativeModule<HerdrSshEvents> {
   ): Promise<StartStreamResult>;
   /** Stop a stream and tear down its channel. Safe to call on a dead stream. */
   stopStream(streamId: string): Promise<void>;
+  /**
+   * Write `text` to a running stream's stdin, for a command that takes input
+   * as it runs (the host's long-lived socket bridge). Fails, never throws,
+   * when the stream has ended.
+   */
+  writeStream(streamId: string, text: string): Promise<{ ok: true } | SshFailure>;
   /**
    * Open a pseudo-terminal on the connection `id` and run `command` (POSIX
    * shell) in it, under the id `shellId` the caller chose. Resolves once the

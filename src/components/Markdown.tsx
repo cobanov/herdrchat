@@ -3,7 +3,7 @@ import { Alert, Linking, ScrollView, View, type LayoutChangeEvent } from 'react-
 
 import { Text } from './Text';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, size, spacing, typography } from '@/theme/tokens';
+import { onTintWash, radius, size, spacing, typography } from '@/theme/tokens';
 import {
   parseInline,
   parseMarkdown,
@@ -32,7 +32,7 @@ export function Markdown({ text, onTint = false }: { text: string; onTint?: bool
 
 function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
   const { colors } = useTheme();
-  const fill = onTint ? 'rgba(255,255,255,0.18)' : colors.fillSubtle;
+  const fill = onTint ? onTintWash.fill : colors.fillSubtle;
 
   switch (block.kind) {
     case 'paragraph':
@@ -71,9 +71,9 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <View
             style={{
-              width: 3,
-              borderRadius: 1.5,
-              backgroundColor: onTint ? 'rgba(255,255,255,0.4)' : colors.tertiaryLabel,
+              width: size.quoteBar,
+              borderRadius: size.quoteBar / 2,
+              backgroundColor: onTint ? onTintWash.quote : colors.tertiaryLabel,
             }}
           />
           <View style={{ flexShrink: 1 }}>
@@ -108,7 +108,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
         <View
           style={{
             height: 1,
-            backgroundColor: onTint ? 'rgba(255,255,255,0.25)' : colors.separator,
+            backgroundColor: onTint ? onTintWash.header : colors.separator,
             marginVertical: spacing.xxs,
           }}
         />
@@ -166,7 +166,7 @@ function Table({
   fill: string;
 }) {
   const { colors } = useTheme();
-  const line = onTint ? 'rgba(255,255,255,0.22)' : colors.separator;
+  const line = onTint ? onTintWash.line : colors.separator;
   const grid = [table.headers, ...table.rows];
 
   // Natural cell heights by `row:column`, the header being row 0.
@@ -299,13 +299,12 @@ function Span({
         </Text>
       );
     case 'code':
+      // The monospace face marks it, not a fill: iOS paints a span's fill
+      // from where it wraps to the end of that line, so `/ready` broken after
+      // its slash drew a bar across the rest of the line (HC-111). Nothing is
+      // added to keep it on one line: text copied from the bubble is the code.
       return (
-        <Text
-          mono
-          color={ink}
-          variant={variant}
-          weight={weight}
-          style={{ backgroundColor: onTint ? 'rgba(255,255,255,0.22)' : colors.fillSubtle }}>
+        <Text mono color={ink} variant={variant} weight={weight}>
           {span.text}
         </Text>
       );
