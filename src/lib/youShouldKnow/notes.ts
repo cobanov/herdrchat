@@ -253,8 +253,12 @@ export function noteOf(notes: readonly Note[], sessionId: string): Note | null {
 /**
  * A change to the store: given the object as it is on the host, the object to
  * write, or null when there is nothing to do (the note is gone, or the
- * terminal has moved it on). Works on the raw object, so every key and every
- * field this app does not know survives the write.
+ * terminal has moved it on). Works on the raw object, so what this app does
+ * not know survives the write: every top-level key, every row and every field
+ * of a row, and every entry of `known`, strings or not. A row's `view` is the
+ * exception, the way it is in the terminal: Learn more puts a new view in its
+ * place, as the terminal's own Learn more builds a new `explained` view
+ * rather than editing the offer, so a field of the offer goes with it.
  */
 export type YskChange = (raw: Record<string, unknown>) => Record<string, unknown> | null;
 
@@ -300,17 +304,25 @@ function resetCounters(raw: Record<string, unknown>): Record<string, unknown> {
   return next;
 }
 
-/** `known` with `line` at its end, once whatever its case, at most `KNOWN_MAX` long. */
-export function appendKnown(known: unknown, line: string): string[] {
-  const lines = Array.isArray(known) ? known.filter((entry): entry is string => typeof entry === 'string') : [];
+/**
+ * `known` with `line` at its end, once whatever its case, and at most
+ * `KNOWN_MAX` lines, the oldest going first. Only lines (strings) are
+ * deduplicated and counted; an entry that is not one stays where it was.
+ */
+export function appendKnown(known: unknown, line: string): unknown[] {
   const lower = line.toLowerCase();
-  return [...lines.filter((entry) => entry.toLowerCase() !== lower), line].slice(-KNOWN_MAX);
+  const entries: unknown[] = Array.isArray(known) ? known.filter((entry) => typeof entry !== 'string' || entry.toLowerCase() !== lower) : [];
+  entries.push(line);
+  let over = entries.filter((entry) => typeof entry === 'string').length - KNOWN_MAX;
+  return entries.filter((entry) => typeof entry !== 'string' || over-- <= 0);
 }
 
 /**
  * Learn more on an offer that carries its explanation: the row shows it, as
- * the terminal's Learn more does. Null for anything else (an offer without
- * one needs the terminal to write it).
+ * the terminal's Learn more does, in a new `explained` view that replaces
+ * the offer whole (the terminal writes `{ kind, line, text, iteration,
+ * shownAt }` the same way). Null for anything else (an offer without one
+ * needs the terminal to write it).
  */
 export function learnMore(note: Note, now: number): YskChange | null {
   const { view } = note;

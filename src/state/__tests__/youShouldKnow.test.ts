@@ -1,7 +1,8 @@
 import { DemoHost } from '@/lib/demo/host';
 import { DEMO_SESSION_IDS } from '@/lib/demo/fixtures';
 import { DEMO_YSK_ELSEWHERE, DEMO_YSK_LINE, DEMO_YSK_PATH, DEMO_YSK_UNKNOWN_KEY } from '@/lib/demo/scenarios';
-import { YSK_DETECT_INTERVAL_MS } from '@/lib/youShouldKnow/client';
+import { readYouShouldKnow, YSK_DETECT_INTERVAL_MS } from '@/lib/youShouldKnow/client';
+import { YSK_SWAP_SCRIPT } from '@/lib/youShouldKnow/command';
 import { dismissNote, knowNote, learnMore, type Note } from '@/lib/youShouldKnow/notes';
 import {
   changeHostNotes,
@@ -150,6 +151,29 @@ describe('changeHostNotes', () => {
     expect(results).toEqual(['changed', 'changed']);
     const rows = JSON.parse(host.yskText()!).sessions as Record<string, unknown>[];
     expect(rows.every((row) => !('view' in row))).toBe(true);
+  });
+
+  it('reads again when a read landed during the write, so it never keeps the older file', async () => {
+    const { host } = demo();
+    host.setUpNotes('w2:p1');
+    await checkYouShouldKnow('demo', host, { now: T0 });
+    // The swap lands; the terminal writes right after it, and the poll's read
+    // sees that before the write's answer is back.
+    const racing = {
+      exec: async (command: string, timeoutMs: number) => {
+        const result = await host.exec(command, timeoutMs);
+        if (command.includes(YSK_SWAP_SCRIPT.split('\n')[0]!)) {
+          host.touchNotes();
+          await checkYouShouldKnow('demo', host, { now: T0 + 10_000 });
+        }
+        return result;
+      },
+      streamLines: host.streamLines.bind(host),
+    };
+    await expect(changeHostNotes('demo', racing, dismissNote(noteOf(NOTES)))).resolves.toBe('changed');
+    const held = notesOf('demo');
+    await expect(readYouShouldKnow(host, DEMO_YSK_PATH, held.version)).resolves.toEqual({ kind: 'unchanged' });
+    expect(JSON.parse(host.yskText()!)).toEqual(held.file!.raw);
   });
 
   it('says it could not, on a host with no notes', async () => {

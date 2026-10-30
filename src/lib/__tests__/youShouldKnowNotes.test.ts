@@ -31,6 +31,11 @@ const file = () => parseYskFile(serializeYsk(store()))!;
 const offer = (): Note => file().notes[0]!;
 const explained = (): Note => file().notes[1]!;
 const rows = (raw: Record<string, unknown> | null) => (raw?.sessions ?? []) as Record<string, unknown>[];
+/** The store with a field this app does not know on the first row's view. */
+const withOfferField = (raw: Record<string, unknown>) => {
+  const [first, ...rest] = rows(raw);
+  return { ...raw, sessions: [{ ...first, view: { ...(first?.view as object), later: true } }, ...rest] };
+};
 
 describe('noteTag', () => {
   it('reads Heads up however it is written, and anything else as You should know', () => {
@@ -182,6 +187,10 @@ describe('changes', () => {
     });
     expect(rows(next).slice(1)).toEqual(rows(raw).slice(1));
     expect({ ...next, sessions: null }).toEqual({ ...raw, sessions: null });
+    // The offer's view is replaced whole, the way the terminal's Learn more writes it.
+    const withExtra = learnMore(offer(), 999)!(withOfferField(raw))!;
+    expect(rows(withExtra)[0]).toMatchObject({ view: { kind: 'explained', shownAt: 999 } });
+    expect((rows(withExtra)[0] as { view: object }).view).not.toHaveProperty('later');
     // Not for an offer without its explanation, nor for one already explained.
     expect(learnMore({ ...offer(), view: { kind: 'offer', line: 'x', explanation: null, shownAt: 1 } }, 1)).toBeNull();
     expect(learnMore(explained(), 1)).toBeNull();
@@ -201,12 +210,20 @@ describe('changes', () => {
   it('keeps known free of a line in another case, and at most fifty long', () => {
     expect(appendKnown(['a', 'THE LINE.', 'b'], 'The line.')).toEqual(['a', 'b', 'The line.']);
     expect(appendKnown('nonsense', 'x')).toEqual(['x']);
-    expect(appendKnown([1, 'a'], 'x')).toEqual(['a', 'x']);
     const full = Array.from({ length: KNOWN_MAX }, (_, index) => `line ${index}`);
     const next = appendKnown(full, 'new');
     expect(next).toHaveLength(KNOWN_MAX);
     expect(next[0]).toBe('line 1');
     expect(next.at(-1)).toBe('new');
+  });
+
+  it('leaves an entry of known that is not a line where it was, and does not count it', () => {
+    expect(appendKnown([1, 'a', { why: 'x' }, 'X'], 'x')).toEqual([1, 'a', { why: 'x' }, 'x']);
+    const full = [null, ...Array.from({ length: KNOWN_MAX }, (_, index) => `line ${index}`), 7];
+    const next = appendKnown(full, 'new');
+    expect(next).toHaveLength(KNOWN_MAX + 2);
+    expect(next.slice(0, 2)).toEqual([null, 'line 1']);
+    expect(next.slice(-2)).toEqual([7, 'new']);
   });
 
   it('Dismiss takes the note away and learns nothing', () => {

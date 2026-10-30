@@ -179,10 +179,25 @@ export function changeHostNotes(connectionId: string, transport: HerdrTransport,
     if (held === null) return 'failed';
     const result = await changeYouShouldKnow(transport, held, change);
     const after = result.held;
+    let readMeanwhile = false;
     if (after !== null && generationOf(connectionId) === generation) {
-      useYouShouldKnow.getState().update(connectionId, (entry) =>
-        entry.path === after.path ? { ...entry, version: after.version, file: after.file } : entry
-      );
+      useYouShouldKnow.getState().update(connectionId, (entry) => {
+        if (entry.path !== after.path) return entry;
+        readMeanwhile = entry.version !== held.version;
+        return { ...entry, version: after.version, file: after.file };
+      });
+    }
+    // A read landed while the write was out, and may have seen a file newer
+    // than the one written (the terminal writing right after the swap). Which
+    // of the two is newer cannot be told from them: a version is a cksum, with
+    // no order. So the host is read again, after any read still out (whose
+    // answer is now dropped, its version being gone), and holds what is there.
+    // Without it the next 10 s read would fix it, and a write in between is
+    // still a compare-and-swap, so nothing would be lost; this only shortens
+    // the time the app shows the older file.
+    if (readMeanwhile) {
+      await (inFlight.get(connectionId)?.check ?? Promise.resolve());
+      await checkYouShouldKnow(connectionId, transport);
     }
     return !result.ok ? 'failed' : result.changed ? 'changed' : 'unchanged';
   });
