@@ -250,6 +250,37 @@ describe('the commands on a real shell', () => {
     expect(readdirSync(store())).toEqual(['cc-plugin-you-should-know_m-abababababab.json']);
   });
 
+  /**
+   * The bug the base64 closes: sshd hands the command to the login shell, and
+   * fish keeps `\\` special inside single quotes, so a store sent as its JSON
+   * lost a backslash on the way. Run when fish is installed (`brew install
+   * fish`), skipped otherwise: the no-backslash assertion above pins the rule
+   * everywhere.
+   */
+  const fish = (() => {
+    try {
+      return execFileSync('sh', ['-c', 'command -v fish'], { encoding: 'utf8' }).trim();
+    } catch {
+      return '';
+    }
+  })();
+  (fish === '' ? it.skip : it)('lands the exact bytes through fish, which rewrites a backslash inside single quotes', () => {
+    // The rule fish breaks: the same argument reaches `sh` with one backslash fewer.
+    const arg = execFileSync(fish, ['-c', "sh -c 'printf %s \"$1\"' sh 'C:\\\\tmp'"], { encoding: 'utf8' });
+    expect(arg).toBe('C:\\tmp');
+
+    mkdirSync(store(), { recursive: true });
+    const path = join(store(), "cc-plugin-you-should-know_m-f1f1f1f1f1f1.json");
+    writeFileSync(path, '{}');
+    const version = (read(path, null) as { version: string }).version;
+    let stdout = '';
+    for (const command of yskWriteCommands(path, version, AWKWARD, 'tok')) {
+      stdout = execFileSync(fish, ['-c', command], { env: env(), encoding: 'utf8' });
+    }
+    expect(parseYskWrite(stdout)).toEqual({ kind: 'written', version: cksumOf(AWKWARD) });
+    expect(readFileSync(path)).toEqual(Buffer.from(AWKWARD, 'utf8'));
+  });
+
   it('removes the half-written part file when writing it fails', () => {
     mkdirSync(store(), { recursive: true });
     const path = join(store(), 'cc-plugin-you-should-know_m-cdcdcdcdcdcd.json');
