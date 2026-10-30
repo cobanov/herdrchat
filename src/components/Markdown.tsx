@@ -5,9 +5,9 @@ import { Alert, Linking, Pressable, ScrollView, View, type LayoutChangeEvent } f
 import { Icon } from './Icon';
 import { Text } from './Text';
 import { haptics } from '@/components/haptics';
-import { codeToCopy } from '@/lib/messageCopy';
+import { codeToCopy, hasCode } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
-import { motion, onTintWash, radius, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, motion, onTintWash, radius, size, spacing, typography } from '@/theme/tokens';
 import {
   parseInline,
   parseMarkdown,
@@ -116,6 +116,17 @@ function Block({ block, onTint, codeIndex }: { block: MarkdownBlock; onTint: boo
  * button sits in the header, never over the code, so it covers no line; the
  * header is drawn even with no language to name, to hold it.
  *
+ * A block with nothing in it yet (a reply still streaming its opening fence)
+ * has no Copy: copying it would clear the clipboard and say it worked.
+ *
+ * The target is a real `minTouchTarget` square, not a hitSlop around the
+ * glyph. A slop cannot reach past the block (its view is the nearest one with
+ * a fill, and hit-testing drops a point outside it) nor below the header (the
+ * code's scroll view is drawn later and wins there), so the glyph's 15pt slop
+ * left a target about 37 by 22. The square reaches into the block's padding
+ * above and to the right, and the header is as tall as the rest of it, so it
+ * never lies over the code and a sideways swipe on the code stays a swipe.
+ *
  * The tick after a tap is held as the text it copied rather than a flag: a
  * recycled thread row hands this component another message's block, which
  * then shows no tick it did not earn.
@@ -157,18 +168,29 @@ function CodeBlock({
         <Text variant="caption2" color={onTint ? 'onTint' : 'secondary'} mono>
           {block.language?.toLowerCase() ?? ''}
         </Text>
-        <Pressable
-          testID={`code-copy-${index}`}
-          accessibilityRole="button"
-          accessibilityLabel={done ? 'Copied' : 'Copy code'}
-          hitSlop={size.codeCopyReach}
-          onPress={copy}>
-          <Icon
-            name={done ? 'checkmark' : 'doc.on.doc'}
-            size={size.codeCopyGlyph}
-            tintColor={onTint ? colors.onTint : colors.secondaryLabel}
-          />
-        </Pressable>
+        {hasCode(block.content) && (
+          <Pressable
+            testID={`code-copy-${index}`}
+            accessibilityRole="button"
+            accessibilityLabel={done ? 'Copied' : 'Copy code'}
+            onPress={copy}
+            style={{
+              minWidth: minTouchTarget,
+              minHeight: minTouchTarget,
+              marginTop: -spacing.sm,
+              marginRight: -spacing.sm,
+              paddingTop: spacing.sm,
+              paddingRight: spacing.sm,
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+            }}>
+            <Icon
+              name={done ? 'checkmark' : 'doc.on.doc'}
+              size={size.codeCopyGlyph}
+              tintColor={onTint ? colors.onTint : colors.secondaryLabel}
+            />
+          </Pressable>
+        )}
       </View>
       {/* Code must scroll rather than wrap: a wrapped command line is a
           different command line, and this is a surface people copy from. */}

@@ -59,8 +59,21 @@ export const Bubble = memo(function Bubble({
    * are prose wrapped around the one line you actually wanted, and picking that
    * out by hand on a touchscreen is the thing this removes.
    */
+  const options = useMemo(() => copyOptions(message), [message]);
+  // One row per block, never the blocks joined: the person wants the one they
+  // meant, so a row names it.
+  const codeActions = useMemo(
+    () =>
+      options.blocks.map((block) => ({
+        label: options.blocks.length === 1 ? 'Copy code only' : `Copy code · ${block.label}`,
+        onPress: () => {
+          void Clipboard.setStringAsync(block.content);
+          haptics.success();
+        },
+      })),
+    [options]
+  );
   const copy = useCallback(() => {
-    const options = copyOptions(message);
     if (options.full.trim().length === 0) return;
 
     haptics.medium();
@@ -72,22 +85,12 @@ export const Bubble = memo(function Bubble({
           haptics.success();
         },
       },
+      // Below "Copy message", which keeps the general case where the thumb
+      // lands by default.
+      ...codeActions,
     ];
-    // Below "Copy message", which keeps the general case where the thumb lands
-    // by default. One row per block, never the blocks joined: the person
-    // wants the one they meant, so a row names it.
-    const single = options.blocks.length === 1;
-    for (const block of options.blocks) {
-      actions.push({
-        label: single ? 'Copy code only' : `Copy code · ${block.label}`,
-        onPress: () => {
-          void Clipboard.setStringAsync(block.content);
-          haptics.success();
-        },
-      });
-    }
     showActionSheet({ title: outgoing ? 'Your message' : 'Agent message', actions });
-  }, [message, outgoing]);
+  }, [options, codeActions, outgoing]);
 
   /**
    * The long press is the native recognizer, not a Pressable.
@@ -111,14 +114,24 @@ export const Bubble = memo(function Bubble({
     [copy, message.id]
   );
 
+  /**
+   * The bubble is one accessibility element, so VoiceOver never reaches the
+   * Copy on each code block inside it. Each block is offered as an action of
+   * its own instead, named as the sheet names it, so it copies in one step.
+   */
   const a11y = {
     accessible: true,
     accessibilityRole: 'button' as const,
     accessibilityLabel: `${outgoing ? 'Your message' : 'Agent message'}. ${displayText(message)}${pictures > 0 ? `, ${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : ''}${timeLabel ? `, ${timeLabel}` : ''}`,
     accessibilityHint: 'Long press to copy',
-    accessibilityActions: [{ name: 'longpress', label: 'Copy message' }],
+    accessibilityActions: [
+      { name: 'longpress', label: 'Copy message' },
+      ...codeActions.map((action, index) => ({ name: `copy-code-${index}`, label: action.label })),
+    ],
     onAccessibilityAction: (event: { nativeEvent: { actionName: string } }) => {
-      if (event.nativeEvent.actionName === 'longpress') copy();
+      const { actionName } = event.nativeEvent;
+      if (actionName === 'longpress') copy();
+      else if (actionName.startsWith('copy-code-')) codeActions[Number(actionName.slice('copy-code-'.length))]?.onPress();
     },
   };
 

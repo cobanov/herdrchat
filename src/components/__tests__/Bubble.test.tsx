@@ -78,3 +78,28 @@ it('keeps "Copy code only" for a message with one block, and offers none without
   expect(labels(await sheetFor('Run:\n```sh\nnpm test\n```'))).toEqual(['Copy message', 'Copy code only']);
   expect(labels(await sheetFor('Just prose.'))).toEqual(['Copy message']);
 });
+
+// The bubble is one accessibility element, so VoiceOver could not reach the
+// Copy drawn on each code block. Each block is an action of its own.
+it('offers each code block to VoiceOver as its own copy action', async () => {
+  jest.mocked(Clipboard.setStringAsync).mockClear();
+  await render(<Bubble message={message('assistant', 'First:\n```sh\ngit status --short\n```\nThen:\n```\nnpm ci\n```')} />);
+  const bubble = screen.getByTestId('bubble-m-assistant');
+  expect(bubble.props.accessibilityActions).toEqual([
+    { name: 'longpress', label: 'Copy message' },
+    { name: 'copy-code-0', label: 'Copy code · sh: git status --short' },
+    { name: 'copy-code-1', label: 'Copy code · npm ci' },
+  ]);
+
+  await fireEvent(bubble, 'accessibilityAction', { nativeEvent: { actionName: 'copy-code-1' } });
+  expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1);
+  expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith('npm ci');
+  expect(showActionSheet).not.toHaveBeenCalled();
+});
+
+it('offers VoiceOver no code action for a message without code', async () => {
+  await render(<Bubble message={message('assistant', 'Just prose.')} />);
+  expect(screen.getByTestId('bubble-m-assistant').props.accessibilityActions).toEqual([
+    { name: 'longpress', label: 'Copy message' },
+  ]);
+});

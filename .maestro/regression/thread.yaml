@@ -92,7 +92,8 @@ appId: dev.herdr.HerdrChat
 # by its language and first line. Each block's own Copy, in its header line,
 # cannot be tapped from here: the bubble is one accessibility element, so
 # nothing inside it is in Maestro's hierarchy (jest presses it and reads the
-# clipboard). Open the screenshot: a copy glyph at the end of each block's
+# clipboard; VoiceOver gets each block as an action of the bubble's, which
+# Bubble.test pins). Open the screenshot: a copy glyph at the end of each block's
 # header, over no code.
 - tapOn:
     id: composer-input

@@ -61,8 +61,28 @@ describe('copyOptions', () => {
     expect(copyOptions(message(text)).blocks[0]?.content).toBe('    x = 1\ndef f():\n    return 1');
   });
 
-  it('drops only the trailing newline', () => {
+  // The newlines at the end go, every one of them (a blank line before the
+  // closing fence), and nothing else: the last line keeps its trailing spaces.
+  it('drops the newlines at the end and nothing else', () => {
     expect(copyOptions(message('```\nls  \n\n```')).blocks[0]?.content).toBe('ls  ');
+  });
+
+  // A CRLF transcript leaves each line its \r; pasted into a terminal that is
+  // a keypress. The old trim() dropped the last one, so copying must too.
+  it('turns Windows line endings into plain ones', () => {
+    const text = 'Run:\r\n```sh\r\nls\r\npwd\r\n```\r\n';
+    expect(copyOptions(message(text)).blocks[0]?.content).toBe('ls\npwd');
+  });
+
+  // Two rows reading "sh: cd repo" would copy different things with nothing to
+  // tell them apart.
+  it('numbers blocks that would read the same in the sheet', () => {
+    const text = '```sh\ncd repo\nnpm ci\n```\n\n```sh\nls\n```\n\n```sh\ncd repo\nnpm test\n```';
+    expect(copyOptions(message(text)).blocks).toEqual([
+      { label: 'sh: cd repo (1)', content: 'cd repo\nnpm ci' },
+      { label: 'sh: ls', content: 'ls' },
+      { label: 'sh: cd repo (2)', content: 'cd repo\nnpm test' },
+    ]);
   });
 
   it('ignores tool chips and thinking, which are not the message', () => {
@@ -98,5 +118,20 @@ describe('codeBlockLabel', () => {
     const label = codeBlockLabel('sh', 'docker run --rm -it -v "$PWD":/work ghcr.io/example/tool:latest');
     expect(label).toBe('sh: docker run --rm -it -v "$PW…');
     expect(label).toHaveLength(COPY_LABEL_CHARS);
+  });
+
+  // The cut counted UTF-16 units, so an emoji at the edge left half a
+  // surrogate pair before the ellipsis.
+  it('never cuts a character in half', () => {
+    const label = codeBlockLabel(null, `${'a'.repeat(30)}😀😀😀`);
+    expect(label).toBe(`${'a'.repeat(30)}😀…`);
+    expect(Array.from(label)).toHaveLength(COPY_LABEL_CHARS);
+    expect(label).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it('keeps a suffix whole when it cuts', () => {
+    const label = codeBlockLabel('sh', 'docker run --rm -it -v "$PWD":/work ghcr.io/example/tool:latest', ' (2)');
+    expect(label).toBe('sh: docker run --rm -it -v… (2)');
+    expect(Array.from(label).length).toBeLessThanOrEqual(COPY_LABEL_CHARS);
   });
 });

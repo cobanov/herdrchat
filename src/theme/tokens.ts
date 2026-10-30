@@ -205,13 +205,10 @@ export const size = {
   /** The chevron at the end of a row that opens or goes somewhere. */
   rowChevron: 13,
   /**
-   * A code block's Copy, at the end of its header line: the glyph, and how far
-   * its touch area reaches past it on every side. Small enough that the header
-   * stays a caption's height; the reach makes the target `minTouchTarget`
-   * (14 + 15 + 15), which a test holds.
+   * The glyph of a code block's Copy, at the end of its header line. Its touch
+   * target is a `minTouchTarget` square around it (see `CodeBlock`).
    */
   codeCopyGlyph: 14,
-  codeCopyReach: 15,
 } as const;
 
 /**

@@ -1,19 +1,25 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
+import { StyleSheet } from 'react-native';
 
 import { haptics } from '../haptics';
 import { Markdown } from '../Markdown';
-import { minTouchTarget, motion, size } from '@/theme/tokens';
+import { minTouchTarget, motion, spacing } from '@/theme/tokens';
 
+// Each colour is its own name, so a test can tell which one was used.
 jest.mock('@/theme/ThemeProvider', () => ({
-  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
+  useTheme: () => ({ colors: new Proxy({}, { get: (_target, name) => `colors.${String(name)}` }) }),
 }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(() => Promise.resolve(true)) }));
 jest.mock('../haptics', () => ({ haptics: { success: jest.fn() } }));
-// The glyph by its name, so a test can see which one is drawn.
+// The glyph by its name and tint, so a test can see which one is drawn and how.
 jest.mock('../Icon', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
-  return { Icon: ({ name }: { name: string }) => <Text>{`icon:${name}`}</Text> };
+  return {
+    Icon: ({ name, tintColor }: { name: string; tintColor?: string }) => (
+      <Text testID={`icon-tint:${tintColor ?? 'none'}`}>{`icon:${name}`}</Text>
+    ),
+  };
 });
 
 const TABLE = [
@@ -31,7 +37,7 @@ function layout(height: number) {
 it('sets inline code in the monospace face, with no fill, and the text as it is', async () => {
   await render(<Markdown text="Waiting for `/ready` before probing fixes it." />);
   const code = screen.getByText('/ready');
-  expect(code).not.toHaveStyle({ backgroundColor: '#000000' });
+  expect(StyleSheet.flatten(code.props.style)).not.toHaveProperty('backgroundColor');
 });
 
 // Built row by row, each cell was as wide as its own text and every row put its
@@ -97,17 +103,46 @@ describe('a code block\'s Copy', () => {
     expect(screen.getAllByLabelText('Copy code')).toHaveLength(2);
   });
 
-  // The glyph is small so the header stays a caption's height; its reach is
-  // what makes it a thumb's target.
-  it('reaches a full touch target past its glyph', async () => {
+  // A hitSlop around the 14pt glyph was clipped to about 37 by 22 on a
+  // device: the block's view drops touches outside it, and the code's scroll
+  // view, drawn later, wins below the header. The button itself is the target.
+  it('is a full touch target in its own right, inside the block and above the code', async () => {
     await render(<Markdown text={TWO_BLOCKS} />);
-    expect(screen.getByTestId('code-copy-0').props.hitSlop).toBe(size.codeCopyReach);
-    expect(size.codeCopyGlyph + 2 * size.codeCopyReach).toBeGreaterThanOrEqual(minTouchTarget);
+    const button = screen.getByTestId('code-copy-0');
+    expect(button.props.hitSlop).toBeUndefined();
+    const style = StyleSheet.flatten(button.props.style);
+    expect(style.minWidth).toBeGreaterThanOrEqual(minTouchTarget);
+    expect(style.minHeight).toBeGreaterThanOrEqual(minTouchTarget);
+    // It reaches into the block's padding, never past it, where a touch is dropped.
+    expect(style.marginTop).toBeGreaterThanOrEqual(-spacing.sm);
+    expect(style.marginRight).toBeGreaterThanOrEqual(-spacing.sm);
+    expect(style.marginBottom ?? 0).toBeGreaterThanOrEqual(0);
   });
 
-  it('is drawn on the tint as well', async () => {
+  it('is drawn on the tint as well, in the tint\'s colour', async () => {
     await render(<Markdown text={TWO_BLOCKS} onTint />);
+    const button = screen.getByTestId('code-copy-1');
+    expect(within(button).getByTestId('icon-tint:colors.onTint')).toBeOnTheScreen();
+  });
+
+  it('is drawn in the secondary colour off the tint', async () => {
+    await render(<Markdown text={TWO_BLOCKS} />);
+    const button = screen.getByTestId('code-copy-1');
+    expect(within(button).getByTestId('icon-tint:colors.secondaryLabel')).toBeOnTheScreen();
+  });
+
+  // A reply still streaming "Run:\n```sh\n" is a block with nothing in it.
+  // Copying it put '' on the clipboard, wiping what was there, and showed a tick.
+  it('is not drawn on a block with nothing in it yet', async () => {
+    await render(<Markdown text={'Run:\n```sh\n'} />);
+    expect(screen.getByText('sh')).toBeOnTheScreen();
+    expect(screen.queryByTestId('code-copy-0')).toBeNull();
+
+    await render(<Markdown text={'```\n  \n```\n\n```sh\nls\n```'} />);
+    expect(screen.queryByTestId('code-copy-0')).toBeNull();
+    // Numbered within the text, so the block with code keeps its place.
     expect(screen.getByTestId('code-copy-1')).toBeOnTheScreen();
+    expect(screen.getAllByLabelText('Copy code')).toHaveLength(1);
   });
 
   it('puts only its own block on the clipboard, as written less the trailing newline', async () => {
