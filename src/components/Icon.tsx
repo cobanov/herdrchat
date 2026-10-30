@@ -55,6 +55,7 @@ const MATERIAL = {
   'display': ['monitor', 0xef5b],
   'doc': ['draft', 0xe66d],
   'doc.on.clipboard': ['content_paste', 0xe14f],
+  'doc.on.doc': ['content_copy', 0xe14d],
   'doc.text': ['description', 0xe873],
   // The menu's glyph on Android: Material's overflow is three dots stacked.
   'ellipsis': ['more_vert', 0xe5d4],

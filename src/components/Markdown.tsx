@@ -1,9 +1,13 @@
-import { Fragment, useState } from 'react';
-import { Alert, Linking, ScrollView, View, type LayoutChangeEvent } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, View, type LayoutChangeEvent } from 'react-native';
 
+import { Icon } from './Icon';
 import { Text } from './Text';
+import { haptics } from '@/components/haptics';
+import { codeToCopy, hasCode } from '@/lib/messageCopy';
 import { useTheme } from '@/theme/ThemeProvider';
-import { onTintWash, radius, size, spacing, typography } from '@/theme/tokens';
+import { minTouchTarget, motion, onTintWash, radius, size, spacing, typography } from '@/theme/tokens';
 import {
   parseInline,
   parseMarkdown,
@@ -21,16 +25,18 @@ import {
  */
 export function Markdown({ text, onTint = false }: { text: string; onTint?: boolean }) {
   const blocks = parseMarkdown(text);
+  // Each code block's place among the text's code blocks, for its Copy's testID.
+  let codeIndex = 0;
   return (
     <View style={{ gap: spacing.sm }}>
       {blocks.map((block, index) => (
-        <Block key={index} block={block} onTint={onTint} />
+        <Block key={index} block={block} onTint={onTint} codeIndex={block.kind === 'code' ? codeIndex++ : 0} />
       ))}
     </View>
   );
 }
 
-function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
+function Block({ block, onTint, codeIndex }: { block: MarkdownBlock; onTint: boolean; codeIndex: number }) {
   const { colors } = useTheme();
   const fill = onTint ? onTintWash.fill : colors.fillSubtle;
 
@@ -83,22 +89,7 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
       );
 
     case 'code':
-      return (
-        <View style={{ backgroundColor: fill, borderRadius: radius.xs, padding: spacing.sm }}>
-          {block.language !== null && (
-            <Text variant="caption2" color={onTint ? 'onTint' : 'secondary'} mono>
-              {block.language.toLowerCase()}
-            </Text>
-          )}
-          {/* Code must scroll rather than wrap: a wrapped command line is a
-              different command line, and this is a surface people copy from. */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <Text variant="footnote" color={onTint ? 'onTint' : 'label'} mono selectable>
-              {block.content}
-            </Text>
-          </ScrollView>
-        </View>
-      );
+      return <CodeBlock block={block} onTint={onTint} fill={fill} index={codeIndex} />;
 
     case 'table':
       return <Table table={block} onTint={onTint} fill={fill} />;
@@ -114,6 +105,102 @@ function Block({ block, onTint }: { block: MarkdownBlock; onTint: boolean }) {
         />
       );
   }
+}
+
+/**
+ * A fenced block: a header line with its language and a Copy, then the code.
+ *
+ * Copy copies this block alone. The bubble's long press used to be the only
+ * way, and it joined every block in the message, so a reply with a command, a
+ * config snippet and a second command put all three on the clipboard. The
+ * button sits in the header, never over the code, so it covers no line; the
+ * header is drawn even with no language to name, to hold it.
+ *
+ * A block with nothing in it yet (a reply still streaming its opening fence)
+ * has no Copy: copying it would clear the clipboard and say it worked.
+ *
+ * The target is a real `minTouchTarget` square, not a hitSlop around the
+ * glyph. A slop cannot reach past the block (its view is the nearest one with
+ * a fill, and hit-testing drops a point outside it) nor below the header (the
+ * code's scroll view is drawn later and wins there), so the glyph's 15pt slop
+ * left a target about 37 by 22. The square reaches into the block's padding
+ * above and to the right, and the header is as tall as the rest of it, so it
+ * never lies over the code and a sideways swipe on the code stays a swipe.
+ *
+ * The tick after a tap is held as the text it copied rather than a flag: a
+ * recycled thread row hands this component another message's block, which
+ * then shows no tick it did not earn.
+ */
+function CodeBlock({
+  block,
+  onTint,
+  fill,
+  index,
+}: {
+  block: Extract<MarkdownBlock, { kind: 'code' }>;
+  onTint: boolean;
+  fill: string;
+  index: number;
+}) {
+  const { colors } = useTheme();
+  const content = codeToCopy(block.content);
+  const [copied, setCopied] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    },
+    []
+  );
+  const done = copied === content;
+
+  const copy = () => {
+    void Clipboard.setStringAsync(content);
+    haptics.success();
+    setCopied(content);
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(null), motion.copiedFeedback);
+  };
+
+  return (
+    <View style={{ backgroundColor: fill, borderRadius: radius.xs, padding: spacing.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
+        <Text variant="caption2" color={onTint ? 'onTint' : 'secondary'} mono>
+          {block.language?.toLowerCase() ?? ''}
+        </Text>
+        {hasCode(block.content) && (
+          <Pressable
+            testID={`code-copy-${index}`}
+            accessibilityRole="button"
+            accessibilityLabel={done ? 'Copied' : 'Copy code'}
+            onPress={copy}
+            style={{
+              minWidth: minTouchTarget,
+              minHeight: minTouchTarget,
+              marginTop: -spacing.sm,
+              marginRight: -spacing.sm,
+              paddingTop: spacing.sm,
+              paddingRight: spacing.sm,
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+            }}>
+            <Icon
+              name={done ? 'checkmark' : 'doc.on.doc'}
+              size={size.codeCopyGlyph}
+              tintColor={onTint ? colors.onTint : colors.secondaryLabel}
+            />
+          </Pressable>
+        )}
+      </View>
+      {/* Code must scroll rather than wrap: a wrapped command line is a
+          different command line, and this is a surface people copy from. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <Text variant="footnote" color={onTint ? 'onTint' : 'label'} mono selectable>
+          {block.content}
+        </Text>
+      </ScrollView>
+    </View>
+  );
 }
 
 function ListRow({

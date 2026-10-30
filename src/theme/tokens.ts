@@ -209,6 +209,11 @@ export const size = {
   tableColumnMax: 220,
   /** The chevron at the end of a row that opens or goes somewhere. */
   rowChevron: 13,
+  /**
+   * The glyph of a code block's Copy, at the end of its header line. Its touch
+   * target is a `minTouchTarget` square around it (see `CodeBlock`).
+   */
+  codeCopyGlyph: 14,
 } as const;
 
 /**
@@ -517,6 +522,8 @@ export const motion = {
   hoverOut: 200,
   /** How long a finger rests on a message before its copy sheet opens. */
   longPress: 400,
+  /** How long a code block's Copy shows its tick after a tap, so the tap is seen to work. */
+  copiedFeedback: 1500,
   /**
    * The settings section a deep link points at: a glow in, a hold, a slower
    * fade. Reduce Motion gets a plain hold-and-fade with the same meaning.

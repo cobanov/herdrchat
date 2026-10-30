@@ -65,6 +65,20 @@ const MORE = /^↓\s+(\d+)\s+more$/u;
 const DONE_GLYPHS = '⏺●◉✓✔';
 const FAILED_GLYPHS = '✗✘×';
 
+/**
+ * Whether this agent draws the pane at all. Only Claude Code does, so only its
+ * chats read the screen for it: Codex, Grok and the rest would pay a screen
+ * read at every turn end for a pane they never draw.
+ */
+export function drawsAgentsPane(agent: string | null | undefined): boolean {
+  return agent === 'claude';
+}
+
+/** Whether any row on screen is still running, which keeps the poll fast. */
+export function hasRunningAgents(pane: AgentsPane | null): boolean {
+  return pane?.rows.some((row) => row.state === 'running') ?? false;
+}
+
 export function parseAgentsPane(screen: string): AgentsPane | null {
   const lines = screen.split('\n').map(clean);
   // The last header: the pane sits at the bottom of the screen, under the

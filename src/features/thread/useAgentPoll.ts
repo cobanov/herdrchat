@@ -5,24 +5,15 @@ import type { HerdrClient } from '@/lib/herdr/client';
 import { concernsWorkspace } from '@/lib/herdr/events';
 import { sameAgents, type AgentInfo } from '@/lib/herdr/models';
 import { errorText, HerdrError } from '@/lib/herdr/protocol';
-import { backoffDelay, needsTheUser } from '@/lib/poll';
+import { backoffDelay, needsTheUser, pollsFast, statusPollMs } from '@/lib/poll';
 import type { ThreadWindow } from '@/lib/threadWindow';
 import { extractLivePreview } from '@/lib/transcript/livePreview';
-import { parseAgentsPane, type AgentsPane } from '@/lib/transcript/agentsPane';
+import { drawsAgentsPane, hasRunningAgents, parseAgentsPane, type AgentsPane } from '@/lib/transcript/agentsPane';
 import type { ChatMessage } from '@/lib/transcript/message';
 import { seedIfSession, seedMessages } from '@/state/threadCache';
 
 import { useHostEvents } from '../useHostEvents';
 
-export const STATUS_POLL_MS = 2000;
-/**
- * The status poll's rate while the host's event stream is live and no agent
- * is working. Status flips and turn ends arrive as events and trigger a poll
- * at once; this only catches what a dropped stream would lose. While an agent
- * IS working the fast rate stays, because the streaming preview and the tail
- * watchdog are screen reads that no event announces.
- */
-const LIVE_POLL_MS = 30_000;
 /** Coalesce a burst of events (working → done → idle) into one poll. */
 const EVENT_DEBOUNCE_MS = 250;
 /**
@@ -83,7 +74,8 @@ interface Options {
 
 /**
  * The status poll: one snapshot every couple of seconds while an agent works
- * or asks, every 30 s while the host's events say the rest, backed off on
+ * or asks, or Claude's background agents run, every 30 s while the host's
+ * events say the rest (`pollsFast`, `statusPollMs`), backed off on
  * failure. Each snapshot goes to the session binding, the tails, the
  * question, the panel and the preview, in that order. It doubles as the tail
  * watchdog.
@@ -155,6 +147,7 @@ export function useAgentPoll({
         return;
       }
       inFlight = true;
+      // Until a poll gets far enough to say otherwise, the fast rate.
       let keepFast = true;
       let needsUser = false;
       try {
@@ -190,11 +183,8 @@ export function useAgentPoll({
         const primary =
           live.find((a) => a.focused) ?? live.find((a) => a.agent !== null) ?? live[0];
         const working = live.some((agent) => agent.agentStatus === 'working');
-        // A question can change under an agent that stays `blocked` (the next
-        // of several, then the review screen), and no status event says so. At
-        // the idle rate the answered question stayed up for half a minute and
-        // the chat had to be reopened to reach the next one.
-        keepFast = working || blocked !== undefined;
+        let watchingPanel = false;
+        let agentsRunning = false;
 
         // A panel only sits over an idle Claude, and never beside a question.
         const watching = watchingOverlay();
@@ -202,7 +192,7 @@ export function useAgentPoll({
         let idleScreen: string | null = null;
         if ((watching || lookForPanel) && blocked === undefined && !working && primary !== undefined && panelAgent) {
           lookForPanel = false;
-          if (watching) keepFast = true;
+          watchingPanel = watching;
           idleScreen = await readOverlay(primary.paneId);
         } else {
           closeOverlay();
@@ -214,16 +204,20 @@ export function useAgentPoll({
         // look for a slash command's panel serves too, never a second read.
         // A turn can start a background agent and end between two polls, so
         // no working read saw the pane; the first idle poll after a working
-        // one reads the screen once to catch it.
+        // one reads the screen once to catch it. Only Claude draws the pane,
+        // so none of these idle reads happen for any other agent.
+        const drawsPane = drawsAgentsPane(primary?.agent);
         const justIdled = wasWorking && !working;
         wasWorking = working;
-        const readAgents = (agentsPaneShown.current || idleScreen !== null || justIdled) && blocked === undefined;
+        const readAgents =
+          drawsPane && (agentsPaneShown.current || idleScreen !== null || justIdled) && blocked === undefined;
         if ((working || readAgents) && primary !== undefined) {
           const raw = idleScreen ?? await visible(primary.paneId, LIVE_SCREEN_LINES);
           if (stopped) return;
           setLivePreview(working ? extractLivePreview(raw) : null);
-          const found = parseAgentsPane(raw);
+          const found = drawsPane ? parseAgentsPane(raw) : null;
           agentsPaneShown.current = found !== null;
+          agentsRunning = hasRunningAgents(found);
           setAgentsRead(found === null ? null : { pane: found, at: Date.now() });
         } else {
           setLivePreview(null);
@@ -234,6 +228,7 @@ export function useAgentPoll({
           }
         }
         screenWant.current = nextWant;
+        keepFast = pollsFast({ working, blocked: blocked !== undefined, watchingPanel, agentsRunning });
 
         if (working) dropSilentTails(conversational);
         setPollError(null);
@@ -274,8 +269,7 @@ export function useAgentPoll({
         // recovery. Only the interval changes. A failure only the user can fix
         // pauses the loop instead (`needsTheUser`); Reload kicks it again.
         if (aliveRef.current && !stopped && !(needsUser && !again)) {
-          const base =
-            streamLiveRef.current && !keepFast ? LIVE_POLL_MS : STATUS_POLL_MS * pollScale;
+          const base = statusPollMs({ streamLive: streamLiveRef.current, fast: keepFast, pollScale });
           schedule(again ? EVENT_DEBOUNCE_MS : backoffDelay(base, failures.current));
           again = false;
         }

@@ -4,8 +4,8 @@
  * They exist so every feature has a host to run against without SSH: a slash
  * command's panel, a question asked in several parts, a run of tool calls with
  * one failure, the folder-trust question a first start asks, a reply with a
- * table, an agent restyling the app through the host's theme file, a
- * "You should know" note offered on the host, a
+ * table, a reply with two code blocks, an agent restyling the app through
+ * the host's theme file, a "You should know" note offered on the host, a
  * subagent handed the review (its files in
  * subagents.ts), a `!` line run in the agent's shell, a long turn under
  * Claude's spinner. The UI tests drive the
@@ -21,6 +21,7 @@ export const DEMO_PHRASES = {
   tools: 'run the checks',
   trust: 'open a new folder',
   table: 'compare the options',
+  code: 'show me the commands',
   theme: 'restyle the app',
   note: 'show me a note',
   delegate: 'delegate the review',
@@ -175,6 +176,27 @@ export const DEMO_TABLE_REPLY = [
   '| Relay | none | 140 | Push only, never chat: `watcher | relay | APNs`. |',
   '',
   'Tailscale is the one to start with.',
+].join('\n');
+
+// MARK: - Code blocks
+
+/**
+ * A reply with two fenced blocks, a command and a config snippet, the shape
+ * that showed "Copy code only" putting both on the clipboard at once. Each
+ * block has its own Copy, and the long-press sheet a row for each.
+ */
+export const DEMO_CODE_REPLY = [
+  'Check what changed first:',
+  '',
+  '```sh',
+  'git status --short',
+  '```',
+  '',
+  'Then set the theme in the config:',
+  '',
+  '```json',
+  '{"theme": "dark"}',
+  '```',
 ].join('\n');
 
 // MARK: - A question in two parts
