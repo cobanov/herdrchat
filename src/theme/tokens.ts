@@ -166,6 +166,11 @@ export const size = {
    */
   blockedBodyLines: 8,
   /**
+   * The tallest a note's explanation grows in a chat's bar above the
+   * composer before it scrolls: it shares the screen with the thread.
+   */
+  noteExplanationMaxHeight: 160,
+  /**
    * How many lines of a `!` command's output show before "Show all": more
    * than a tool's, since the person asked to see this, but `seq 1 200` still
    * folds rather than taking several screens.

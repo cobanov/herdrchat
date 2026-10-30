@@ -101,6 +101,8 @@ export interface ThreadState {
   transcriptPaths: string[];
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
+  /** On screen and in the foreground: the thread's poll gate, for side reads that follow it. */
+  polling: boolean;
   /** The live transcript stream failed and is being restarted. */
   paused: boolean;
   failedIds: Set<string>;
@@ -275,6 +277,7 @@ export function useThread(
       sessionState !== 'unsupported' &&
       sessionState !== 'replaced',
     offline: poll.offline,
+    polling,
     paused: tails.tailError !== null,
     transcriptPaths: tails.transcriptPaths,
     messages: history.messages,

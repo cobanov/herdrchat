@@ -1,0 +1,169 @@
+# Claude Code's built-in "You should know" plugin, on a host whose Claude Code
+# has it on (its store, ~/.claude/plugins/store/cc-plugin-you-should-know_*.json).
+# The Demo has no store at first, so the chats show no bar; its agent offers a
+# note when asked ("show me a note", src/lib/demo/scenarios.ts), and a pull to
+# refresh looks for the store at once. The store then holds a Heads up for the
+# notes chat (with its explanation) and an explained "You should know" for a
+# session no chat runs. The bar counts both, the screen offers each its
+# choices, Learn more and Understood write back, and the notes chat's own bar
+# fills the composer with the plugin's draft on Discuss in chat.
+# Open the screenshots: the star in the accent colour, the tag dimmed.
+appId: dev.herdr.HerdrChat
+---
+- runFlow: _start.yaml
+# A host without the plugin: nothing at all.
+- assertNotVisible:
+    id: ysk-bar
+
+# The agent's side agent has a note.
+- runFlow:
+    file: _open-chat.yaml
+    env:
+      QUERY: notes
+      ROW: chat-row-w2
+- extendedWaitUntil:
+    visible:
+      id: bubble-d2-2
+    timeout: 15000
+- assertNotVisible:
+    id: ysk-chat-bar
+- tapOn:
+    id: composer-input
+- inputText: show me a note
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: '.*"You should know" has a note for you.*'
+    timeout: 15000
+- tapOn:
+    id: thread-back
+
+# A pull looks for the store at once (the poll looks every ten minutes).
+- scrollUntilVisible:
+    element:
+      id: chat-search
+    direction: UP
+- swipe:
+    start: 50%, 30%
+    end: 50%, 80%
+- extendedWaitUntil:
+    visible:
+      id: ysk-bar
+      text: '✦ 2 notes for you'
+    timeout: 15000
+- takeScreenshot: ysk-bar-${APPEARANCE}
+
+# The notes, newest first: the notes chat's Heads up, then the other session's.
+- tapOn:
+    id: ysk-bar
+- extendedWaitUntil:
+    visible:
+      id: ysk-summary
+      text: '2 notes for you'
+    timeout: 10000
+- assertVisible:
+    id: ysk-learn-more-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-knew-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-discuss-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-dismiss-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-go-22222222-2222-4222-8222-222222222222
+# Another session on the computer: its explanation, Understood and Dismiss,
+# and no way to discuss it or go to it.
+- scrollUntilVisible:
+    element:
+      id: ysk-understood-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+    direction: DOWN
+- assertVisible:
+    id: ysk-from-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+    text: 'another session on Demo.*'
+- assertVisible:
+    id: ysk-explanation-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+- assertVisible:
+    id: ysk-dismiss-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+- assertNotVisible:
+    id: ysk-discuss-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+- assertNotVisible:
+    id: ysk-go-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+- takeScreenshot: ysk-list-${APPEARANCE}
+
+# Learn more shows the explanation, and the choices become the explained ones.
+- scrollUntilVisible:
+    element:
+      id: ysk-learn-more-22222222-2222-4222-8222-222222222222
+    direction: UP
+- tapOn:
+    id: ysk-learn-more-22222222-2222-4222-8222-222222222222
+- extendedWaitUntil:
+    visible:
+      id: ysk-explanation-22222222-2222-4222-8222-222222222222
+    timeout: 10000
+- assertVisible: 'Some fixes are not in the notes'
+- assertVisible:
+    id: ysk-understood-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-discuss-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-dismiss-22222222-2222-4222-8222-222222222222
+- assertNotVisible:
+    id: ysk-learn-more-22222222-2222-4222-8222-222222222222
+- assertNotVisible:
+    id: ysk-knew-22222222-2222-4222-8222-222222222222
+
+# Understood on the other session's note: it goes, and one is left.
+- scrollUntilVisible:
+    element:
+      id: ysk-understood-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+    direction: DOWN
+- tapOn:
+    id: ysk-understood-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+- extendedWaitUntil:
+    notVisible:
+      id: ysk-row-9c1e44aa-0b7d-4e6f-9a21-3c5d7e8f9a0b
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: ysk-summary
+      text: '1 note for you'
+    direction: UP
+
+# Go opens the notes chat, whose bar shows its note, explained.
+- tapOn:
+    id: ysk-go-22222222-2222-4222-8222-222222222222
+- extendedWaitUntil:
+    visible:
+      id: ysk-chat-bar
+    timeout: 15000
+- assertVisible:
+    id: ysk-chat-explanation-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: ysk-chat-understood-22222222-2222-4222-8222-222222222222
+- assertNotVisible:
+    id: ysk-chat-go-22222222-2222-4222-8222-222222222222
+- takeScreenshot: ysk-chat-${APPEARANCE}
+
+# Discuss in chat: the plugin's draft in the composer, and the note goes.
+- tapOn:
+    id: ysk-chat-discuss-22222222-2222-4222-8222-222222222222
+- assertVisible:
+    id: composer-input
+    text: 'Here is a note offered by a side agent:\s+> Heads up · The release notes were written from the merged pull requests only[\s\S]*'
+- extendedWaitUntil:
+    notVisible:
+      id: ysk-chat-bar
+    timeout: 10000
+# Leave the chat as it was.
+- tapOn:
+    id: composer-input
+- eraseText: 800
+- tapOn:
+    id: composer-hide-keyboard
+- tapOn:
+    id: thread-back
+# And the chats' bar has nothing more to say.
+- extendedWaitUntil:
+    notVisible:
+      id: ysk-bar
+    timeout: 15000
