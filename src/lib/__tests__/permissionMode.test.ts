@@ -1,6 +1,7 @@
 import {
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODES,
+  launchArgs,
   launchCommand,
   permissionModeCopy,
 } from '../herdr/permissionMode';
@@ -26,6 +27,22 @@ describe('permission modes', () => {
     expect(launchCommand('plan', '/opt/bin/claude')).toBe(
       '/opt/bin/claude --permission-mode plan'
     );
+  });
+
+  /**
+   * Auto mode is what someone who runs agents unattended uses for every
+   * session. The sheet once offered no way to pick it, so each such chat had to
+   * be started from a terminal instead. It sits right behind the default.
+   */
+  it('offers auto mode, second in the list', () => {
+    expect(PERMISSION_MODES).toContain('auto');
+    expect(PERMISSION_MODES[1]).toBe('auto');
+    expect(permissionModeCopy('auto').title).toBe('Auto mode');
+  });
+
+  it('launches auto mode with the flag the CLI expects', () => {
+    expect(launchCommand('auto')).toBe('claude --permission-mode auto');
+    expect(launchArgs('auto')).toEqual(['--permission-mode', 'auto']);
   });
 
   /**

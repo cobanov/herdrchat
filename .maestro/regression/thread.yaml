@@ -1,7 +1,7 @@
 # The thread's features against the Demo's scenarios (src/lib/demo/scenarios.ts):
-# effort in the header, a folded tool run, a question in two parts, the
-# keyboard button, the /model and /effort panels, and what a permission prompt
-# would run.
+# effort in the header, a folded tool run, a sheet row per code block, a
+# question in two parts, the keyboard button, the /model and /effort panels,
+# and what a permission prompt would run.
 appId: dev.herdr.HerdrChat
 ---
 - runFlow: _start.yaml
@@ -86,6 +86,33 @@ appId: dev.herdr.HerdrChat
     visible: Copy message
     timeout: 5000
 - tapOn: Cancel
+
+# Copying code copies the block meant, not every block in the message joined
+# (reported from a phone). The long-press sheet offers a row per block, named
+# by its language and first line. Each block's own Copy, in its header line,
+# cannot be tapped from here: the bubble is one accessibility element, so
+# nothing inside it is in Maestro's hierarchy (jest presses it and reads the
+# clipboard; VoiceOver gets each block as an action of the bubble's, which
+# Bubble.test pins). Open the screenshot: a copy glyph at the end of each block's
+# header, over no code.
+- tapOn:
+    id: composer-input
+- inputText: show me the commands
+- runFlow: _send.yaml
+- extendedWaitUntil:
+    visible: 'Agent message\. Check what changed first:.*'
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: thread-code-${APPEARANCE}
+- longPressOn: 'Agent message\. Check what changed first:.*'
+- extendedWaitUntil:
+    visible: 'Copy code · sh: git status --short'
+    timeout: 5000
+- assertVisible: 'Copy code · json: \{"theme": "dark"\}'
+- assertVisible: Copy message
+- assertNotVisible: Copy code only
+- tapOn: 'Copy code · json: \{"theme": "dark"\}'
+- assertNotVisible: 'Copy code · sh: git status --short'
 
 # Each question follows the last without reopening the chat (PR #137).
 - tapOn:

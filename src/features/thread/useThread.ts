@@ -67,7 +67,8 @@ export interface ThreadState {
    * Claude Code's agents pane (its background agents, drawn under the
    * composer), from the same screen read as the live preview; null when the
    * pane is not drawn. Read on while it has rows even with the agent idle,
-   * since the pane outlives the turn that started them.
+   * since the pane outlives the turn that started them, at the working rate
+   * while a row runs. Only for Claude, the one agent that draws it.
    */
   agentsPane: AgentsPane | null;
   /** When `agentsPane` was read, epoch ms, so its elapsed times can tick on. */
@@ -100,6 +101,8 @@ export interface ThreadState {
   transcriptPaths: string[];
   /** The host could not be reached on the last poll; what shows is saved history. */
   offline: boolean;
+  /** On screen and in the foreground: the thread's poll gate, for side reads that follow it. */
+  polling: boolean;
   /** The live transcript stream failed and is being restarted. */
   paused: boolean;
   failedIds: Set<string>;
@@ -274,6 +277,7 @@ export function useThread(
       sessionState !== 'unsupported' &&
       sessionState !== 'replaced',
     offline: poll.offline,
+    polling,
     paused: tails.tailError !== null,
     transcriptPaths: tails.transcriptPaths,
     messages: history.messages,

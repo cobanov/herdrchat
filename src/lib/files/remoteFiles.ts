@@ -1,6 +1,6 @@
 import { shellQuote } from '../herdr/shell';
 import type { HerdrTransport } from '../herdr/transport';
-import { UPLOAD_CHUNK_CHARS } from '../attachments/upload';
+import { decodeBase64, UPLOAD_CHUNK_CHARS } from '../attachments/upload';
 
 /**
  * The Files tab's whole protocol: plain POSIX commands over the SSH connection
@@ -99,10 +99,9 @@ export function uploadFileCommands(folder: string, name: string, base64: string,
   for (let start = 0; start < base64.length; start += chunk) pieces.push(base64.slice(start, start + chunk));
   if (pieces.length === 0) pieces.push('');
   const commands = pieces.map((piece, index) => `printf '%s' '${piece}' ${index === 0 ? '>' : '>>'} ${part}`);
-  // `base64 -d` on Linux and current macOS, `-D` on older macOS.
   commands.push(
     `if [ -e ${target} ]; then rm -f ${part}; echo 'A file with that name is already there' >&2; exit 17; fi; ` +
-      `{ base64 -d < ${part} 2>/dev/null || base64 -D < ${part}; } > ${target} && rm -f ${part}`
+      `${decodeBase64(part)} > ${target} && rm -f ${part}`
   );
   return commands;
 }

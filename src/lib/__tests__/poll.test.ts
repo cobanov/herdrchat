@@ -1,4 +1,4 @@
-import { BACKOFF_CEILING_MS, backoffDelay, shouldPoll } from '../poll';
+import { BACKOFF_CEILING_MS, backoffDelay, LIVE_POLL_MS, pollsFast, shouldPoll, STATUS_POLL_MS, statusPollMs } from '../poll';
 import { decodePollScale } from '@/state/settings';
 
 /**
@@ -61,5 +61,35 @@ describe('decodePollScale', () => {
     expect(decodePollScale('-3')).toBe(1);
     expect(decodePollScale('banana')).toBe(1);
     expect(decodePollScale('999')).toBe(1);
+  });
+});
+
+// With the host's events live the thread polls every 30 s, except while
+// something on screen changes with no event to say so.
+describe('the thread poll\'s pace', () => {
+  const quiet = { working: false, blocked: false, watchingPanel: false, agentsRunning: false };
+
+  it('is slow only when nothing calls for the fast rate', () => {
+    expect(pollsFast(quiet)).toBe(false);
+    expect(pollsFast({ ...quiet, working: true })).toBe(true);
+    expect(pollsFast({ ...quiet, blocked: true })).toBe(true);
+    expect(pollsFast({ ...quiet, watchingPanel: true })).toBe(true);
+  });
+
+  it('stays fast while Claude idles over background agents that still run', () => {
+    // herdr says idle; only the agents pane says otherwise. At 30 s the bar
+    // said "working" half a minute after the last agent finished.
+    expect(pollsFast({ ...quiet, agentsRunning: true })).toBe(true);
+    expect(statusPollMs({ streamLive: true, fast: pollsFast({ ...quiet, agentsRunning: true }), pollScale: 1 })).toBe(STATUS_POLL_MS);
+  });
+
+  it('slows to the live rate once every agent is done', () => {
+    expect(statusPollMs({ streamLive: true, fast: pollsFast(quiet), pollScale: 1 })).toBe(LIVE_POLL_MS);
+  });
+
+  it('stays at the fast rate, scaled, without the event stream', () => {
+    expect(statusPollMs({ streamLive: false, fast: false, pollScale: 1 })).toBe(STATUS_POLL_MS);
+    expect(statusPollMs({ streamLive: false, fast: false, pollScale: 5 })).toBe(STATUS_POLL_MS * 5);
+    expect(statusPollMs({ streamLive: true, fast: true, pollScale: 2 })).toBe(STATUS_POLL_MS * 2);
   });
 });

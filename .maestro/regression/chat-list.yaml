@@ -109,3 +109,19 @@ appId: dev.herdr.HerdrChat
 - waitForAnimationToEnd
 - assertNotVisible:
     id: swipe-action-close
+
+# Claude usage below the rows: the Demo shows its week and five hours from
+# the start, with no setup to agree to. It is read on the list's poll, so it
+# may land a moment after the rows.
+- scrollUntilVisible:
+    element:
+      id: usage-footer
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: usage-5h
+- assertVisible:
+    id: usage-week
+- assertNotVisible:
+    id: usage-setup
+- takeScreenshot: chat-list-usage-${APPEARANCE}

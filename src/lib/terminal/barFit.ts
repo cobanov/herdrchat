@@ -36,7 +36,7 @@ export interface BarMetrics {
 /** The keys that must show without a scroll: what a shell cannot do without. */
 export const ESSENTIAL_KEY_IDS: readonly string[] = ['esc', 'tab', 'ctrl', 'alt'];
 
-/** The narrowest the iPad's detail column gets: two columns start at the breakpoint. */
+/** The narrowest the detail column beside the chats gets: two columns start at the breakpoint. */
 export function narrowestDetailWidth(breakpoint: number, sidebar: number): number {
   return breakpoint - sidebar;
 }

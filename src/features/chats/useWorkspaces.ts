@@ -10,6 +10,9 @@ import { scanSlashCatalogue } from '@/state/slashCommands';
 import { projectFoldersToScan, slashScanDue } from '@/lib/slashCommands';
 import { useSettings } from '@/state/settings';
 import { themeCheckDue } from '@/lib/theme/hostThemeClient';
+import { yskReadDue } from '@/lib/youShouldKnow/client';
+import { noteChats } from '@/lib/youShouldKnow/notes';
+import { checkYouShouldKnow, setNoteChats } from '@/state/youShouldKnow';
 
 import type { HerdrClient } from '@/lib/herdr/client';
 import { errorText, HerdrError, type HerdrErrorCode } from '@/lib/herdr/protocol';
@@ -253,6 +256,13 @@ export function useWorkspaces(
    * or a pull, and the scan is the heaviest of these side tasks.
    */
   const lastSlashScan = useRef<number | null>(null);
+  /**
+   * When "You should know" was last read, the theme's way again
+   * (`yskReadDue`, every 10 s); the store itself keeps when it last looked
+   * for the plugin (every ten minutes). A pull asks for both at once.
+   */
+  const lastNotesRead = useRef<number | null>(null);
+  const detectNotesNext = useRef(false);
   // Back from the background, the theme may have been changed by the agent
   // the person left to do it. Checked on the first poll after, not 10 s later.
   // After a long time away the connection may be dead under a suspended app;
@@ -266,6 +276,7 @@ export function useWorkspaces(
       awaySince.current = null;
       if (away !== null && Date.now() - away >= WAKE_AFTER_MS) void client?.wake();
       lastThemeCheck.current = null;
+      lastNotesRead.current = null;
     });
     return () => subscription.remove();
   }, [client]);
@@ -383,6 +394,19 @@ export function useWorkspaces(
         // again on the cadence, not only on a thread's first open.
         void scanSlashCatalogue(connectionId, client.transport, { host: true, cwds: projectFoldersToScan(snapshot.agents) });
       }
+      // "You should know", every host's (their notes add up): which chats a
+      // note can be for, and the notes themselves on their cadence.
+      // `checkYouShouldKnow` never rejects, and on a host without the plugin
+      // it is one look every ten minutes and nothing else.
+      if (connectionId !== null) {
+        setNoteChats(connectionId, noteChats(snapshot.agents, snapshot.workspaces));
+        if (yskReadDue(lastNotesRead.current, now)) {
+          lastNotesRead.current = now;
+          const detect = detectNotesNext.current;
+          detectNotesNext.current = false;
+          void checkYouShouldKnow(connectionId, client.transport, { detect, now });
+        }
+      }
       return false;
     } catch (thrown) {
       if (!alive.current) return true;
@@ -479,6 +503,8 @@ export function useWorkspaces(
       forcePreviews.current = true;
       lastThemeCheck.current = null;
       lastSlashScan.current = null;
+      lastNotesRead.current = null;
+      detectNotesNext.current = true;
       // Resumes a loop paused on a failure that needed the user.
       if (!(await refresh())) kick.current();
     }, [refresh]),

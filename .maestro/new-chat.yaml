@@ -32,6 +32,14 @@ appId: dev.herdr.HerdrChat
 # app once launched plain `claude`, and because the host default is `manual`
 # every tool call then stopped for approval. Assert the non-default is settable.
 # Below the agent rows (seven agents stack as rows), so scrolled to.
+# Auto mode first: the row the sheet once lacked, and the one a person who runs
+# agents unattended picks for every chat.
+- scrollUntilVisible:
+    element:
+      id: "permission-auto"
+    direction: DOWN
+- tapOn:
+    id: "permission-auto"
 - scrollUntilVisible:
     element:
       id: "permission-plan"

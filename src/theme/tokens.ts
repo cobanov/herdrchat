@@ -48,8 +48,16 @@ export const size = {
   quoteBar: 3,
   /** Readable tablet column; narrow windows and phones still use their full width. */
   contentMaxWidth: 840,
-  tabletBreakpoint: 768,
-  tabletSidebarWidth: 320,
+  /**
+   * The chats beside the open chat (`src/lib/splitView.ts`), from the
+   * narrowest window with room for both: the open iPhone Duo (669 pt), and
+   * not its cover screen (466 pt). Below an iPad's width the sidebar
+   * narrows so the open Duo's chat stays as wide as a phone's (389 pt).
+   */
+  splitBreakpoint: 640,
+  splitSidebarWidth: 320,
+  splitSidebarCompactWidth: 280,
+  splitSidebarFullFrom: 768,
   /** The presence avatar on a chat row. Its ring adds 4pt on each side. */
   avatar: 52,
   /** Compact provider badge in the grouped chat cards, and the glyph in it. */
@@ -158,6 +166,11 @@ export const size = {
    */
   blockedBodyLines: 8,
   /**
+   * The tallest a note's explanation grows in a chat's bar above the
+   * composer before it scrolls: it shares the screen with the thread.
+   */
+  noteExplanationMaxHeight: 160,
+  /**
    * How many lines of a `!` command's output show before "Show all": more
    * than a tool's, since the person asked to see this, but `seq 1 200` still
    * folds rather than taking several screens.
@@ -204,6 +217,11 @@ export const size = {
   tableColumnMax: 220,
   /** The chevron at the end of a row that opens or goes somewhere. */
   rowChevron: 13,
+  /**
+   * The glyph of a code block's Copy, at the end of its header line. Its touch
+   * target is a `minTouchTarget` square around it (see `CodeBlock`).
+   */
+  codeCopyGlyph: 14,
 } as const;
 
 /**
@@ -469,6 +487,28 @@ export const connecting = {
 } as const;
 
 /**
+ * The chat list's Claude usage footer. `staleAfterMs`: how old a capture may
+ * be before the footer says when it was taken ("as of 2:14 PM"); Claude saves
+ * one only while a session's status line redraws, so older means no session
+ * has run since. `clockTickMs`: how often the reset labels are redrawn
+ * against the clock, so a window that has reset leaves without a new read.
+ * `lowPercent`: at or below this much left, the bar turns to the attention
+ * colour. `barHeight`: the bar's thickness.
+ */
+export const usageFooter = {
+  /**
+   * How often the footer reads the usage file while it is on screen. Claude
+   * rewrites the file at every status line redraw, so the list's own poll (30 s
+   * while the host's events are live) left the footer half a minute behind.
+   */
+  liveReadMs: 5_000,
+  staleAfterMs: 10 * 60_000,
+  clockTickMs: 30_000,
+  lowPercent: 10,
+  barHeight: 4,
+} as const;
+
+/**
  * The prompt a `!` command's block leads with, as a terminal draws one: it
  * says "this ran in a shell" before the command is read.
  */
@@ -512,6 +552,8 @@ export const motion = {
   hoverOut: 200,
   /** How long a finger rests on a message before its copy sheet opens. */
   longPress: 400,
+  /** How long a code block's Copy shows its tick after a tap, so the tap is seen to work. */
+  copiedFeedback: 1500,
   /**
    * The settings section a deep link points at: a glow in, a hold, a slower
    * fade. Reduce Motion gets a plain hold-and-fade with the same meaning.

@@ -8,6 +8,7 @@ import {
   HerdrSocket,
   MAX_COMMAND_BYTES,
   base64,
+  textFromBase64,
   batchCommand,
   batchParts,
   commandFor,
@@ -429,5 +430,17 @@ describe('batchCommand', () => {
     expect(parts.map((part) => part.length)).toEqual([2, 1]);
     for (const part of parts) expect(batchCommand(part).length).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
     expect(batchParts(['a', 'b'])).toEqual([['a', 'b']]);
+  });
+});
+
+describe('textFromBase64', () => {
+  it('undoes base64 for any text, and refuses what is not base64 of UTF-8', () => {
+    for (const text of ['', 'a', 'ab', 'abc', 'C:\\tmp $HOME `x` naïve ✓ 🙂', JSON.stringify({ known: ['a\\b'] })]) {
+      expect(base64(text)).toBe(Buffer.from(text, 'utf8').toString('base64'));
+      expect(textFromBase64(base64(text))).toBe(text);
+    }
+    expect(textFromBase64('abc')).toBeNull();
+    expect(textFromBase64('a$c=')).toBeNull();
+    expect(textFromBase64(Buffer.from([0xff, 0xfe]).toString('base64'))).toBeNull();
   });
 });

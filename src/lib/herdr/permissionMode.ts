@@ -6,12 +6,18 @@
  * time over SSH is the opposite of why you'd drive an agent from your pocket. So
  * new chats default to `bypassPermissions` — the mode you'd pick by hand anyway
  * — while the stricter modes stay one tap away.
+ *
+ * `auto` sits right behind it: Claude runs tools on its own, but a safety
+ * classifier reviews each action and stops only the risky ones. It is what a
+ * person who leaves agents running unattended actually uses, and the sheet
+ * remembers the last choice per host, so picking it once is enough.
  */
-export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'manual' | 'plan';
+export type PermissionMode = 'bypassPermissions' | 'auto' | 'acceptEdits' | 'manual' | 'plan';
 
 /** Ordered for the picker. The first entry is the default for a new chat. */
 export const PERMISSION_MODES: readonly PermissionMode[] = [
   'bypassPermissions',
+  'auto',
   'acceptEdits',
   'manual',
   'plan',
@@ -31,6 +37,11 @@ const COPY: Record<PermissionMode, PermissionModeCopy> = {
     title: 'Full access',
     detail: 'Runs tools without asking. Best from a phone.',
     symbol: 'bolt.fill',
+  },
+  auto: {
+    title: 'Auto mode',
+    detail: 'Runs tools on its own; a safety check stops the risky ones.',
+    symbol: 'checkmark.shield',
   },
   acceptEdits: {
     title: 'Auto-accept edits',

@@ -33,6 +33,9 @@ import { useChatActions } from '@/features/chats/useChatActions';
 import { useHostChats } from '@/features/chats/useHostChats';
 import { HostNotices } from '@/features/chats/HostNotices';
 import { HostFeeds } from '@/features/chats/HostFeeds';
+import { NotesBar } from '@/features/youShouldKnow/NotesBar';
+import { useNotesOf } from '@/features/youShouldKnow/useHostNotes';
+import { UsageFooter } from '@/features/chats/UsageFooter';
 import { rowKey, type ListedChat, type OpenChat } from '@/features/chats/listedChat';
 import { LayoutPeekOverlay, useLayoutPeek } from '@/features/spaces/LayoutPeek';
 import { connectionRecovery } from '@/lib/connectionRecovery';
@@ -116,6 +119,7 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
   // are the list's; another host's failure is a notice at the end.
   const chats = useHostChats(connection, client);
   const { summaries, loading, error, errorCode, refresh, notices, connectionIds } = chats;
+  const notes = useNotesOf(connectionIds);
   const integrations = useOutdatedIntegrations(client);
   const [query, setQuery] = useState('');
   const prefs = useChatPrefs(db, connection, summaries, connectionIds);
@@ -273,6 +277,8 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
         menuLabel="Settings"
         onMenu={() => router.navigate('/settings')}
       />
+      {/* "You should know"'s notes, on hosts whose Claude Code has it on; nothing on any other. */}
+      <NotesBar notes={notes} onPress={() => router.navigate('/you-should-know')} />
 
       {/* Rename and close fail outside the poll's own error path, so they get
           their own banner, dismissible, because unlike a connection error this
@@ -365,6 +371,13 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 <HostNotices notices={notices} />
               </View>
             )}
+            {/* Not under a host that could not be reached: its usage would
+                be as stale as its chats. */}
+            {error === null && (
+              <View style={{ paddingHorizontal: screenPadding, paddingBottom: insets.bottom + size.floatingBarClearance }}>
+                <UsageFooter host={connection} transport={client?.transport ?? null} />
+              </View>
+            )}
           </ScrollView>
         )
       ) : (
@@ -405,6 +418,12 @@ function ChatsForServer({ selectedWorkspaceId, selectedConnectionId, selectedTer
                 />
               )}
               <HostNotices notices={notices} />
+              {/* As in the empty list: not under a host that could not be
+                  reached, whose poll has stopped, or the footer's own read
+                  would keep asking it every few seconds. */}
+              {error === null && (
+                <UsageFooter host={connection} transport={client?.transport ?? null} style={{ marginTop: spacing.lg }} />
+              )}
               {seenSwipeHint || rows.length === 0 ? null : <SwipeHint />}
               {askForStar && (
                 <View style={{ marginTop: spacing.lg }}>

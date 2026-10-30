@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 import Animated from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BlockedBar } from '@/features/thread/BlockedBar';
 import { CommandPanelBar } from '@/features/thread/CommandPanelBar';
@@ -39,6 +40,7 @@ export function ThreadControls({
   onBlockedKeys: (keys: readonly string[]) => void;
   children: ReactNode;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Animated.View
       testID="thread-controls"
@@ -52,7 +54,8 @@ export function ThreadControls({
           right: 0,
           bottom: 0,
           gap: spacing.sm,
-          paddingHorizontal: screenPadding,
+          paddingLeft: screenPadding + insets.left,
+          paddingRight: screenPadding + insets.right,
           paddingTop: spacing.sm,
           paddingBottom: restingInset,
         },

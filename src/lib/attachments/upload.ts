@@ -31,6 +31,17 @@ export function newImageName(now: number = Date.now(), random: () => number = Ma
   return `${now.toString(36)}-${tail}.jpg`;
 }
 
+/**
+ * The base64 in `file` (a quoted path or a quoted variable), decoded to
+ * stdout: `base64 -d` on Linux and current macOS, `-D` on older macOS. Every
+ * write of content to a host goes this way, so the command carries only
+ * base64 and no login shell (fish keeps backslashes special inside single
+ * quotes) can alter what lands.
+ */
+export function decodeBase64(file: string): string {
+  return `{ base64 -d < ${file} 2>/dev/null || base64 -D < ${file}; }`;
+}
+
 /** The commands that write `base64` to the host as `name`, in order. */
 export function uploadCommands(name: string, base64: string, chunk: number = UPLOAD_CHUNK_CHARS): string[] {
   if (!NAME.test(name)) throw new Error(`Not an upload name: ${name}`);
@@ -46,9 +57,8 @@ export function uploadCommands(name: string, base64: string, chunk: number = UPL
       ? `umask 077 && mkdir -p ${dir} && printf '%s' '${piece}' > ${part}`
       : `printf '%s' '${piece}' >> ${part}`
   );
-  // `base64 -d` on Linux and current macOS, `-D` on older macOS.
   commands.push(
-    `{ base64 -d < ${part} 2>/dev/null || base64 -D < ${part}; } > ${file} && rm -f ${part} && ` +
+    `${decodeBase64(part)} > ${file} && rm -f ${part} && ` +
       `{ find ${dir} -type f -mtime +${UPLOAD_KEEP_DAYS} -delete 2>/dev/null; printf '%s\\n' ${file}; }`
   );
   return commands;

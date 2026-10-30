@@ -15,10 +15,12 @@ const bar: BarMetrics = {
   labelAdvance: terminal.keyLabelAdvance,
 };
 
-const narrowest = narrowestDetailWidth(size.tabletBreakpoint, size.tabletSidebarWidth);
+// The sidebar is narrower below an iPad's width, so the narrowest detail is at
+// the breakpoint with the compact sidebar (the open iPhone Duo is just above it).
+const narrowest = narrowestDetailWidth(size.splitBreakpoint, size.splitSidebarCompactWidth);
 
-it('takes the narrowest iPad column as the breakpoint less the sidebar', () => {
-  expect(narrowest).toBe(size.tabletBreakpoint - size.tabletSidebarWidth);
+it('takes the narrowest detail column as the breakpoint less the compact sidebar', () => {
+  expect(narrowest).toBe(size.splitBreakpoint - size.splitSidebarCompactWidth);
 });
 
 // The terminal beside the sidebar, at the narrowest two-column window: the

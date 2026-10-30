@@ -1,6 +1,7 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useRef, type RefObject } from 'react';
 import { Platform, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { WorkingIndicator } from '@/components/Activity';
 import { Text } from '@/components/Text';
@@ -42,6 +43,7 @@ export function ThreadMessages({
 }) {
   /** The history version the reader last scrolled, which allows paging up. */
   const historyInteraction = useRef<number | null>(null);
+  const insets = useSafeAreaInsets();
   return (
     // The cards in it open what they started on this host, under this
     // chat's session folders.
@@ -53,8 +55,11 @@ export function ThreadMessages({
         data={rows}
         keyExtractor={(row) => row.item.key}
         getItemType={(row) => row.item.kind}
+        // Edge-to-edge, so the sides are this list's to clear: an iPhone
+        // Duo puts the status bar and the tab bar in a strip on one side.
         contentContainerStyle={{
-          paddingHorizontal: screenPadding,
+          paddingLeft: screenPadding + insets.left,
+          paddingRight: screenPadding + insets.right,
           paddingTop: spacing.sm,
         }}
         scrollIndicatorInsets={{ top: headerHeight }}

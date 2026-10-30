@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { Screen } from '@/components/Screen';
 import { AgentsBar } from '@/features/thread/AgentsBar';
+import { ChatNoteBar } from '@/features/youShouldKnow/ChatNoteBar';
+import { useChatNote } from '@/features/youShouldKnow/useChatNote';
 import { Composer } from '@/features/thread/Composer';
 import { JumpToBottom } from '@/features/thread/JumpToBottom';
 import type { DelegationScope } from '@/features/thread/delegation';
@@ -119,6 +121,8 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
   const draft = visibleDraft(useDrafts((state) => state.drafts[key]), sessionSig);
   const saveDraft = useDrafts((state) => state.save);
   const setDraft = (text: string) => saveDraft(key, text, sessionSig);
+  /** The note "You should know" is showing for the session this chat sends to, on a host whose Claude Code has it on. */
+  const note = useChatNote(connection?.id ?? null, client?.transport ?? null, thread.agents, thread.polling);
   /**
    * The `/` palette: what the agent's own terminal offers for the same `/`,
    * for the agent the thread sends to (Claude's catalogue as read off this
@@ -304,14 +308,16 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
             />
           )}
 
-          {/* Sits just above the composer, so it never covers the newest bubble. */}
+          {/* Sits just above the composer, so it never covers the newest bubble,
+              and clear of a side strip as the composer is. */}
           <Animated.View
+            testID="jump-to-bottom-strip"
             pointerEvents="box-none"
             style={[
               {
                 position: 'absolute',
-                left: 0,
-                right: 0,
+                left: insets.left,
+                right: insets.right,
                 bottom: controlsHeight,
               },
               followKeyboard,
@@ -342,6 +348,9 @@ export default function ThreadScreen({ connectionId, workspaceId, paneId, listed
               blockedPrompt={thread.blockedPrompt}
               blockedPending={thread.blockedPending}
               onBlockedKeys={(keys) => void thread.sendKeys(keys)}>
+              {connection !== null && note !== null && (
+                <ChatNoteBar connectionId={connection.id} note={note} onDraft={setDraft} />
+              )}
               {thread.agentsPane !== null && thread.agentsPaneAt !== null && (
                 <AgentsBar
                   pane={thread.agentsPane}

@@ -1,5 +1,7 @@
 import {
   AGENT_ROW,
+  drawsAgentsPane,
+  hasRunningAgents,
   parseAgentRow,
   parseAgentsPane,
   parseElapsed,
@@ -190,5 +192,32 @@ describe('the live preview over the agents pane', () => {
   it('is null when the pane is all there is', () => {
     expect(extractLivePreview(['✻ Waiting for 6 background agents to finish', '', ...ABOVE.slice(4), ...PANE].join('\n'))).toBeNull();
     expect(extractLivePreview(PANE.join('\n'))).toBeNull();
+  });
+});
+
+// Two notes on #186: every agent paid a screen read at each turn end for a
+// pane only Claude draws, and the poll slowed to 30 s with agents running, so
+// the bar said "working" long after the last one finished.
+describe('who reads the pane, and when it keeps the poll fast', () => {
+  it('is drawn by Claude Code alone', () => {
+    expect(drawsAgentsPane('claude')).toBe(true);
+    for (const agent of ['codex', 'grok', 'gemini', 'omp', 'agy', 'pi', null, undefined]) {
+      expect(drawsAgentsPane(agent)).toBe(false);
+    }
+  });
+
+  const row = (state: 'running' | 'done' | 'failed') =>
+    ({ state, kind: 'general-purpose', task: 'Reviewing', elapsedMs: 1_000, tokens: null });
+
+  it('has running agents while any row on screen runs', () => {
+    expect(hasRunningAgents({ rows: [row('done'), row('running')], hidden: 0 })).toBe(true);
+    expect(hasRunningAgents({ rows: [row('done'), row('failed')], hidden: 3 })).toBe(false);
+    expect(hasRunningAgents(null)).toBe(false);
+  });
+
+  it('reads a pane of finished rows as nothing running', () => {
+    const pane = parseAgentsPane(['  ⏺ main', '  ⏺ general-purpose  Reviewing the notes   12s · ↓ 12.4k tokens'].join('\n'));
+    expect(pane?.rows).toHaveLength(1);
+    expect(hasRunningAgents(pane)).toBe(false);
   });
 });

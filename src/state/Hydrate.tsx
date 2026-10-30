@@ -6,11 +6,13 @@ import { getSetting, loadConnections } from './db';
 import { useDeviceIcons } from './deviceIcons';
 import { loadHostThemes, mirrorHostThemes } from './hostTheme';
 import { loadSlashCatalogues, mirrorSlashCatalogues } from './slashCommands';
+import { loadUsageConsent } from './usage';
 import { decodeListMode } from '@/lib/listModes';
 import {
   SETTINGS_DEFAULTS,
   decodeBool,
   decodePollScale,
+  decodeUsageShown,
   isThemePreference,
   useSettings,
 } from './settings';
@@ -53,6 +55,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         activeDays,
         useHostThemes,
         listMode,
+        usageShown,
       ] =
         await Promise.all([
           loadConnections(db),
@@ -70,6 +73,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
           getSetting(db, 'activeDays'),
           getSetting(db, 'useHostThemes'),
           getSetting(db, 'listMode'),
+          getSetting(db, 'usageShown'),
           // Before the connections land, so the selected host opens in its
           // own colours rather than flashing the default first.
           loadHostThemes(db).catch(() => undefined),
@@ -77,6 +81,9 @@ export function Hydrate({ children }: { children: ReactNode }) {
           loadSlashCatalogues(db).catch(() => undefined),
           // The glyph each host was given, so rows draw it from launch.
           useDeviceIcons.getState().load(db).catch(() => undefined),
+          // The hosts the person agreed to read Claude usage from, so the
+          // footer offers no setup where it is already done.
+          loadUsageConsent(db).catch(() => undefined),
         ]);
       hydrateSettings({
         themePreference: isThemePreference(theme) ? theme : SETTINGS_DEFAULTS.themePreference,
@@ -92,6 +99,7 @@ export function Hydrate({ children }: { children: ReactNode }) {
         activeDays: activeDays ?? SETTINGS_DEFAULTS.activeDays,
         useHostThemes: decodeBool(useHostThemes, SETTINGS_DEFAULTS.useHostThemes),
         listMode: decodeListMode(listMode),
+        usageShown: decodeUsageShown(usageShown),
       });
       // After the settings: `hydrated` is what the welcome waits on, and it
       // must not read the defaults (never welcomed) for a moment first.
