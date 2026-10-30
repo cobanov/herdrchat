@@ -55,9 +55,9 @@ export const Bubble = memo(function Bubble({
    * the phone. Chat rows had a long press; the bubbles, which are the reason the
    * app exists, did not.
    *
-   * "Copy code" only appears when there is code. Most answers are prose wrapped
-   * around the one line you actually wanted, and picking that out by hand on a
-   * touchscreen is the thing this removes.
+   * "Copy code" only appears when there is code, a row per block. Most answers
+   * are prose wrapped around the one line you actually wanted, and picking that
+   * out by hand on a touchscreen is the thing this removes.
    */
   const copy = useCallback(() => {
     const options = copyOptions(message);
@@ -73,13 +73,15 @@ export const Bubble = memo(function Bubble({
         },
       },
     ];
-    if (options.code !== null) {
-      // Above "Copy message" would put the narrower action first; below keeps
-      // the general case where the thumb lands by default.
+    // Below "Copy message", which keeps the general case where the thumb lands
+    // by default. One row per block, never the blocks joined: the person
+    // wants the one they meant, so a row names it.
+    const single = options.blocks.length === 1;
+    for (const block of options.blocks) {
       actions.push({
-        label: 'Copy code only',
+        label: single ? 'Copy code only' : `Copy code · ${block.label}`,
         onPress: () => {
-          void Clipboard.setStringAsync(options.code ?? '');
+          void Clipboard.setStringAsync(block.content);
           haptics.success();
         },
       });

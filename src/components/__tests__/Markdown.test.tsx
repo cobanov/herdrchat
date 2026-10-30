@@ -1,10 +1,20 @@
-import { fireEvent, render, screen, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
+import * as Clipboard from 'expo-clipboard';
 
+import { haptics } from '../haptics';
 import { Markdown } from '../Markdown';
+import { minTouchTarget, motion, size } from '@/theme/tokens';
 
 jest.mock('@/theme/ThemeProvider', () => ({
   useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
 }));
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(() => Promise.resolve(true)) }));
+jest.mock('../haptics', () => ({ haptics: { success: jest.fn() } }));
+// The glyph by its name, so a test can see which one is drawn.
+jest.mock('../Icon', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { Icon: ({ name }: { name: string }) => <Text>{`icon:${name}`}</Text> };
+});
 
 const TABLE = [
   '| Name | Type | Note |',
@@ -66,4 +76,64 @@ it('formats inline markup inside a cell', async () => {
   await render(<Markdown text={TABLE} />);
   expect(screen.getByText('id')).toBeOnTheScreen();
   expect(screen.queryByText(/`id`/)).toBeNull();
+});
+
+const TWO_BLOCKS = ['Check first:', '```sh', 'git status --short', '```', 'then:', '```', '  npm ci', '', '```'].join('\n');
+
+// Reported from a phone: the only way to copy code was the bubble's long press,
+// which joined every block in the message. Each block copies itself alone.
+describe('a code block\'s Copy', () => {
+  beforeEach(() => {
+    jest.mocked(Clipboard.setStringAsync).mockClear();
+    jest.mocked(haptics.success).mockClear();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('is drawn on every block, numbered within the text, with or without a language', async () => {
+    await render(<Markdown text={TWO_BLOCKS} />);
+    expect(screen.getByTestId('code-copy-0')).toBeOnTheScreen();
+    expect(screen.getByTestId('code-copy-1')).toBeOnTheScreen();
+    expect(screen.queryByTestId('code-copy-2')).toBeNull();
+    expect(screen.getAllByLabelText('Copy code')).toHaveLength(2);
+  });
+
+  // The glyph is small so the header stays a caption's height; its reach is
+  // what makes it a thumb's target.
+  it('reaches a full touch target past its glyph', async () => {
+    await render(<Markdown text={TWO_BLOCKS} />);
+    expect(screen.getByTestId('code-copy-0').props.hitSlop).toBe(size.codeCopyReach);
+    expect(size.codeCopyGlyph + 2 * size.codeCopyReach).toBeGreaterThanOrEqual(minTouchTarget);
+  });
+
+  it('is drawn on the tint as well', async () => {
+    await render(<Markdown text={TWO_BLOCKS} onTint />);
+    expect(screen.getByTestId('code-copy-1')).toBeOnTheScreen();
+  });
+
+  it('puts only its own block on the clipboard, as written less the trailing newline', async () => {
+    await render(<Markdown text={TWO_BLOCKS} />);
+    await fireEvent.press(screen.getByTestId('code-copy-1'));
+    expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1);
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('  npm ci');
+    expect(haptics.success).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(screen.getByTestId('code-copy-0'));
+    expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith('git status --short');
+  });
+
+  it('shows a tick for a moment after the tap, then goes back', async () => {
+    jest.useFakeTimers();
+    await render(<Markdown text={TWO_BLOCKS} />);
+    await fireEvent.press(screen.getByTestId('code-copy-0'));
+
+    const button = screen.getByTestId('code-copy-0');
+    expect(button).toHaveAccessibleName('Copied');
+    expect(within(button).getByText('icon:checkmark')).toBeOnTheScreen();
+    // The other block's Copy is untouched.
+    expect(screen.getByTestId('code-copy-1')).toHaveAccessibleName('Copy code');
+
+    await act(() => jest.advanceTimersByTime(motion.copiedFeedback));
+    expect(screen.getByTestId('code-copy-0')).toHaveAccessibleName('Copy code');
+    expect(within(screen.getByTestId('code-copy-0')).getByText('icon:doc.on.doc')).toBeOnTheScreen();
+  });
 });
