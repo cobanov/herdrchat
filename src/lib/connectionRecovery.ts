@@ -39,6 +39,14 @@ export function connectionRecovery(code: HerdrErrorCode | null): {
         label: 'Install herdr on the host',
         action: 'install',
       };
+    // Not Install: the installer's retest would run the same wrong path again.
+    // Cleared, the test finds no herdr and offers Install itself.
+    case 'herdr_incompatible':
+      return {
+        title: 'The herdr path runs a different program',
+        label: 'Set herdr path',
+        action: 'path',
+      };
     case 'herdr_not_on_path':
     case 'herdr_not_executable':
       return {

@@ -6,6 +6,7 @@ it.each([
   ['connect_failed', 'address'],
   ['herdr_not_found', 'install'],
   ['herdr_not_on_path', 'path'],
+  ['herdr_incompatible', 'path'],
   ['herdr_not_executable', 'path'],
   ['server_not_running', 'start'],
   ['timeout', 'retry'],
