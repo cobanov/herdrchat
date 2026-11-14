@@ -18,10 +18,23 @@ Pod::Spec.new do |s|
   # Citadel ships only through SPM. React Native's spm_dependency helper
   # (available since RN 0.75, and loaded by the generated Podfile) wires the
   # package into the Pods project so the Swift sources below can import it.
+  #
+  # Commits, not ranges or tags, matching ../Package.resolved: ios/ is
+  # regenerated on every prebuild, so a range re-resolved the SSH layer the app
+  # ships, and a tag can be moved (#194). Change them together with
+  # ../Package.swift and its Package.resolved.
   spm_dependency(s,
     url: 'https://github.com/orlandos-nl/Citadel.git',
-    requirement: { kind: 'upToNextMajorVersion', minimumVersion: '0.12.1' },
+    requirement: { kind: 'revision', revision: 'ae8562f895de06ccb86fdb1cbb65fd99c8976e12' }, # 0.12.1
     products: ['Citadel']
+  )
+  # Citadel asks for this fork as 0.3.4..<0.4.0, and the root pin wins
+  # (checked with xcodebuild -resolvePackageDependencies). No product: Citadel
+  # already links NIOSSH.
+  spm_dependency(s,
+    url: 'https://github.com/Wellz26/swift-nio-ssh.git',
+    requirement: { kind: 'revision', revision: 'd88989f3d3bb1dfb2a38ce4af598afbf7fc3095c' }, # 0.3.7
+    products: []
   )
 
   s.pod_target_xcconfig = {
