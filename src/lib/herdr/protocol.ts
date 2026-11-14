@@ -44,6 +44,7 @@ type AppErrorCode =
   | 'empty_response'
   | 'grok_session_ambiguous'
   | 'grok_session_invalid'
+  | 'herdr_incompatible'
   | 'herdr_not_executable'
   | 'herdr_not_on_path'
   | 'home_unknown'

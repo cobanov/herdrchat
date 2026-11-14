@@ -284,7 +284,19 @@ export class HerdrClient {
 
   /** Confirm the host is reachable and herdr is answering. */
   async ping(): Promise<void> {
-    await this.shell(shellCommand([this.herdr, 'status', 'server']), POLL_TIMEOUT_MS);
+    await this.shell(shellCommand([this.herdr, 'status', 'server']), POLL_TIMEOUT_MS).catch((thrown: unknown) => {
+      // Every herdr the app supports knows `status server`, so a usage error
+      // means the path runs another program. Herdr Desktop's herdr-core is the
+      // one people pick: it exits 2 with {"error":{"kind":"usage",…}} (#196).
+      throw thrown instanceof HerdrError &&
+        thrown.code === 'ssh_command_failed' &&
+        /unrecognized subcommand|"kind":"usage"/.test(thrown.message)
+        ? new HerdrError(
+            'herdr_incompatible',
+            `${this.herdr} isn't herdr: it doesn't know herdr's commands. herdr-core and hc come with Herdr Desktop, a separate product. Clear this host's herdr path and test again to install herdr itself.`
+          )
+        : thrown;
+    });
   }
 
   /**

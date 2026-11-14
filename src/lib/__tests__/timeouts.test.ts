@@ -237,3 +237,39 @@ describe('HerdrClient diagnosing a missing binary', () => {
     expect(failure?.code).toBe('herdr_not_found');
   });
 });
+
+/**
+ * A herdr path that runs another program (#196): Herdr Desktop's herdr-core,
+ * measured from its source, writes this to stderr when piped and exits 2. The
+ * test used to say only "The connection was interrupted", with Try again.
+ */
+describe('HerdrClient testing a path that is not herdr', () => {
+  const failureFrom = async (stderr: string) => {
+    const transport: HerdrTransport = {
+      exec: async () => ({ ok: true, stdout: '', stderr, exitCode: 2 }),
+      async *streamLines() {},
+    };
+    return new HerdrClient(transport, '/Users/me/.local/bin/herdr-core').ping().then(
+      () => null,
+      (error: unknown) => error as { code: string; message: string }
+    );
+  };
+
+  it('names herdr-core as a different program', async () => {
+    const failure = await failureFrom(
+      '{"error":{"kind":"usage","message":"unrecognized subcommand \'status\'","hint":"see `hc --help`"}}'
+    );
+    expect(failure?.code).toBe('herdr_incompatible');
+    expect(failure?.message).toContain("/Users/me/.local/bin/herdr-core isn't herdr");
+    expect(failure?.message).not.toContain('{');
+  });
+
+  it('says the same for a plain usage error', async () => {
+    const failure = await failureFrom("error: unrecognized subcommand 'status'");
+    expect(failure?.code).toBe('herdr_incompatible');
+  });
+
+  it('leaves any other failure as it was', async () => {
+    expect((await failureFrom('Killed'))?.code).toBe('ssh_command_failed');
+  });
+});
