@@ -72,8 +72,20 @@ it('resolves id-only reports exactly and rejects duplicate ids and mismatched he
 });
 
 it.each(['../secret.jsonl', '/tmp/../secret.jsonl', '/../secret.jsonl', '/tmp//../secret.jsonl',
-  '/tmp/chat.jsonl\n/etc/passwd', '/tmp/chat\0.jsonl', ''])('rejects unsafe path %p', async value => {
+  '/tmp/chat.jsonl\n/etc/passwd', '/tmp/chat\0.jsonl', '',
+  'C:\\Users\\PC\\..\\secret.jsonl', 'C:\\Users\\PC\\chat.jsonl\n/etc/passwd', 'C:chat.jsonl',
+  '\\\\server\\share\\chat.jsonl', 'C:\\Users\\PC\\chat.txt'])('rejects unsafe path %p', async value => {
   expect(await store.ompTranscriptPath(value, 'path')).toBeNull();
+});
+
+// herdr on Windows reports the native path; Git Bash reads that drive as /c (#199).
+it.each([
+  ['C:\\Users\\PC\\.omp\\agent\\sessions\\--E--Repositories--\\2026-11-16T15-20-35-044Z_abc-123.jsonl',
+    '/c/Users/PC/.omp/agent/sessions/--E--Repositories--/2026-11-16T15-20-35-044Z_abc-123.jsonl'],
+  ['d:/work/chat.jsonl', '/d/work/chat.jsonl'],
+])('reads the Windows path %p as Git Bash does', async (value, expected) => {
+  expect(await store.ompTranscriptPath(value, 'path')).toBe(expected);
+  expect(await store.agyTranscriptPath(value, 'path')).toBe(expected);
 });
 
 it('does not preview a foreign format, while keeping readable sibling previews', async () => {
