@@ -116,8 +116,9 @@ thinking and tool activity. Branch summaries, compactions and context resets
 appear as journal boundaries. The thread does not reproduce the active-branch
 tree view. Replies appear
 when the agent persists them, not token by token. The existing SSH transcript reader
-requires a POSIX host shell and absolute POSIX paths without `..` segments;
-Windows-native paths are not translated.
+requires a POSIX host shell and absolute POSIX paths without `..` segments.
+A Windows drive path (`C:\Users\...`) is read as Git Bash names it
+(`/c/Users/...`); UNC and Cygwin paths are not translated.
 
 ## Connect the phone
 

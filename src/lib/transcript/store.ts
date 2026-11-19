@@ -58,6 +58,20 @@ const codexPathsByTransport: PathCache = new WeakMap();
 const ompPathsByTransport: PathCache = new WeakMap();
 const grokPathsByTransport: PathCache = new WeakMap();
 
+/**
+ * A journal path an agent's herdr integration reported, as the host's shell
+ * reads it; null unless it is an absolute `.jsonl` path without `..` segments.
+ * herdr on Windows reports a native path (`C:\Users\...`), which Git Bash, the
+ * shell Windows OpenSSH needs for this app, reads as `/c/Users/...` (#199).
+ * Other Windows forms (UNC, `\\?\`, Cygwin's `/cygdrive`) are not translated.
+ */
+export function reportedJournalPath(value: string): string | null {
+  const drive = /^([A-Za-z]):[\\/]/.exec(value);
+  const path = drive ? `/${drive[1]!.toLowerCase()}/${value.slice(3).replace(/\\/g, '/')}` : value;
+  return path.startsWith('/') && path.endsWith('.jsonl') && !/[\0\r\n]/.test(path) &&
+    !path.split('/').includes('..') ? path : null;
+}
+
 export class TranscriptStore {
   private readonly transport: HerdrTransport;
 
@@ -226,10 +240,7 @@ export class TranscriptStore {
    * whole: the shorter one is what a phone wants.
    */
   async agyTranscriptPath(value: string, kind: string | null): Promise<string | null> {
-    if (kind === 'path') {
-      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
-        !value.split('/').includes('..') ? value : null;
-    }
+    if (kind === 'path') return reportedJournalPath(value);
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
     const home = await this.homeDirectory();
     return `${home}/.gemini/antigravity-cli/brain/${value}/.system_generated/logs/transcript.jsonl`;
@@ -378,10 +389,7 @@ export class TranscriptStore {
    * exact id, never for a cwd's newest journal.
    */
   async ompTranscriptPath(value: string, kind: string | null): Promise<string | null> {
-    if (kind === 'path') {
-      return value.startsWith('/') && value.endsWith('.jsonl') && !/[\0\r\n]/.test(value) &&
-        !value.split('/').includes('..') ? value : null;
-    }
+    if (kind === 'path') return reportedJournalPath(value);
     if (kind !== 'id' || !/^[A-Za-z0-9-]+$/.test(value)) return null;
     return this.remembered(ompPathsByTransport, value, () => this.findOmpTranscript(value));
   }
