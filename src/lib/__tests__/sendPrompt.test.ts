@@ -297,6 +297,47 @@ describe('startNamedAgent', () => {
     await expect(new HerdrClient(transport).startNamedAgent('p1', 'probe', 'claude', [], 'claude')).resolves.toBe(true);
   });
 
+  /** A host where the given agent names already belong to live agents. */
+  function takenNames(taken: readonly string[]) {
+    const commands: string[] = [];
+    const transport: HerdrTransport = {
+      exec: async (command: string) => {
+        commands.push(command);
+        const ok = { ok: true, exitCode: 0, stdout: '', stderr: '' };
+        if (command.includes('--help')) return { ...ok } as never;
+        const used = taken.find((name) => command.includes(`'agent' 'start' '${name}'`));
+        if (used !== undefined) {
+          return {
+            ...ok,
+            stdout: JSON.stringify({
+              error: { code: 'agent_name_taken', message: `agent name ${used} is already used; candidates: pane_id=w5N:p1` },
+            }),
+          } as never;
+        }
+        return { ...ok, stdout: JSON.stringify({ ok: true, result: {} }) } as never;
+      },
+      streamLines: async function* () {},
+    };
+    return { commands, client: new HerdrClient(transport) };
+  }
+
+  // GitHub #201: a second chat in a folder that already has a live agent got
+  // the same name, and herdr refused to start it.
+  it('numbers the name when a live agent already has it', async () => {
+    const { client, commands } = takenNames(['myapp', 'myapp-2']);
+    await expect(client.startNamedAgent('p1', 'myapp', 'claude', [], 'claude')).resolves.toBe(true);
+    expect(starts(commands).map((c) => c.match(/'start' '([^']+)'/)?.[1])).toEqual(['myapp', 'myapp-2', 'myapp-3']);
+    expect(runs(commands)).toEqual([]);
+  });
+
+  it('gives up with herdr\'s own error when every numbered name is taken', async () => {
+    const all = ['myapp', ...Array.from({ length: 8 }, (_, i) => `myapp-${i + 2}`)];
+    const { client, commands } = takenNames(all);
+    await expect(client.startNamedAgent('p1', 'myapp', 'claude', [], 'claude')).rejects.toThrow(/myapp-9 is already used/);
+    expect(starts(commands)).toHaveLength(9);
+    expect(runs(commands)).toEqual([]);
+  });
+
   it('does not retry an error that is not about pane readiness', async () => {
     // A timeout may mean the agent DID launch. Retrying that is how you end up
     // with two agents in one pane.

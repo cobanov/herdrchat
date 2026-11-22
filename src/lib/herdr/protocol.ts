@@ -19,6 +19,7 @@ type HerdrServerCode =
   | 'agent_blocked'
   | 'agent_not_ready'
   | 'agent_input_pending'
+  | 'agent_name_taken'
   | 'agent_not_found'
   | 'agent_pane_busy'
   | 'agent_prompt_stalled'
