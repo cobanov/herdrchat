@@ -100,8 +100,9 @@ export function useStartChat(connectionId: string | null) {
         pending.current = { directory: choice.directory, worktree: choice.worktree, creation };
       }
       // Named after the workspace, so `herdr agent list` on the desktop shows
-      // the same thing this app calls the chat. On a host without `agent start`
-      // this falls back to typing the launch command, which is what shipped.
+      // the same thing this app calls the chat; a second live chat in the same
+      // folder becomes `name-2`. On a host without `agent start` this falls back
+      // to typing the launch command, which is what shipped.
       await client.startNamedAgent(
         creation.rootPane.paneId,
         agentName(creation.workspace.label),

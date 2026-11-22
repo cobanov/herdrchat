@@ -11,6 +11,7 @@ import {
   type Workspace,
   type WorkspaceCreation,
 } from './models';
+import { numberedAgentName } from './agentName';
 import { integrationFor, READABLE_AGENTS } from './agents';
 import { HerdrError, checkEnvelope, decodeEnvelope, exitCodeError, herdrErrorFrom, transportError } from './protocol';
 import { commandWord, shellCommand, shellQuote, withPath } from './shell';
@@ -114,6 +115,8 @@ const SERVER_START_INTERVAL_MS = 1000;
  */
 const PANE_READY_RETRIES = 4;
 const PANE_READY_INTERVAL_MS = 750;
+/** `name`, then `name-2` … `name-9`: nine chats in one folder before giving up. */
+const NAME_TRIES = 9;
 
 /**
  * High-level herdr operations over any transport. Command shapes mirror the
@@ -1113,14 +1116,17 @@ export class HerdrClient {
       return false;
     }
 
-    for (let attempt = 0; ; attempt += 1) {
+    let candidate = name;
+    let nameTries = 1;
+    let busyRetries = 0;
+    for (;;) {
       try {
         const output = await this.shell(
           shellCommand([
             this.herdr,
             'agent',
             'start',
-            name,
+            candidate,
             '--kind',
             kind,
             '--pane',
@@ -1144,6 +1150,17 @@ export class HerdrClient {
         // this folder?"): herdr keeps it registered and waiting. It is started;
         // its chat is where the question gets answered.
         if (thrown instanceof HerdrError && thrown.code === 'agent_not_ready') return true;
+
+        // Names are unique among live agents, and a second chat in the same
+        // folder derives the same name as the first (GitHub #201). herdr checks
+        // the name before it touches the pane, so nothing was started: try
+        // `name-2`, `name-3`, … The name is freed again when its agent exits.
+        if (thrown instanceof HerdrError && thrown.code === 'agent_name_taken' && nameTries < NAME_TRIES) {
+          nameTries += 1;
+          candidate = numberedAgentName(name, nameTries);
+          continue;
+        }
+
         const busy = thrown instanceof HerdrError && thrown.code === 'agent_pane_busy';
         if (!busy) throw thrown;
 
@@ -1154,7 +1171,8 @@ export class HerdrClient {
         // and got away with it.
         //
         // Nothing was started, so retrying is safe and cannot double-launch.
-        if (attempt < PANE_READY_RETRIES) {
+        if (busyRetries < PANE_READY_RETRIES) {
+          busyRetries += 1;
           await new Promise((resolve) => setTimeout(resolve, PANE_READY_INTERVAL_MS));
           continue;
         }
